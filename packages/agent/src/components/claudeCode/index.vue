@@ -337,8 +337,14 @@ import {
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 const router = useRouter()
+const codehubSwitchToAgent = inject('codehubSwitchToAgent', null)
+
 function switchToCodex() {
-  router.push('/main/codex')
+  if (codehubSwitchToAgent) {
+    codehubSwitchToAgent('codex')
+  } else {
+    router.push('/main/codex')
+  }
 }
 
 // 消息上限：内存和 DOM 共用单一数组，超过此值丢弃最早的消息

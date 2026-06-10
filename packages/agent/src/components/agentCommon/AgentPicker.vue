@@ -6,29 +6,14 @@
         <div class="agent-picker-sub">选择后将直接进入，后续可随时切换</div>
 
         <div class="agent-picker-list">
-          <!-- Claude Code -->
-          <div class="agent-card" @click="selectAgent('claudeCode')">
+          <div v-for="agent in agentList" :key="agent.key"
+               class="agent-card" @click="selectAgent(agent.key)">
             <div class="agent-card-icon">
-              <div class="claude-avatar mindcraft-flow-win-iconfont icon-mindcraft-claude1"></div>
+              <div :class="agent.iconClass" :style="agent.iconStyle"></div>
             </div>
             <div class="agent-card-info">
-              <div class="agent-card-name">Claude Code</div>
-              <div class="agent-card-desc">Anthropic 出品的编程智能体，支持代码编写、调试和重构</div>
-            </div>
-            <svg class="agent-card-arrow" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/>
-            </svg>
-          </div>
-
-          <!-- GPT Codex -->
-          <div class="agent-card" @click="selectAgent('codex')">
-            <div class="agent-card-icon">
-              <div class="gpt-avatar icon iconfont icon-ChatGPT"></div>
-              
-            </div>
-            <div class="agent-card-info">
-              <div class="agent-card-name">GPT Codex</div>
-              <div class="agent-card-desc">OpenAI 编程智能体，支持多种语言代码生成和调试</div>
+              <div class="agent-card-name">{{ agent.name }}</div>
+              <div class="agent-card-desc">{{ agent.description }}</div>
             </div>
             <svg class="agent-card-arrow" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
               <path d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/>
@@ -43,6 +28,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
+import { AGENT_DEFINITIONS } from '../../registry/agentRegistry.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -52,6 +38,8 @@ const props = defineProps({
 const emit = defineEmits(['close', 'select'])
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
+
+const agentList = AGENT_DEFINITIONS
 
 const hasDefault = computed(() => {
   return !!localStorage.getItem('codeHub_default_agent')
@@ -105,12 +93,6 @@ function close() {
   width: 44px; height: 44px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   background: var(--cc-accent-bg, #2a2a4a); flex-shrink: 0;
-}
-.claude-avatar { font-size: 26px; color: var(--cc-primary, #c6613f); }
-.gpt-avatar {
-  font-size: 30px;
-  width: 30px; height: 30px;
-  color: #e0e0e0;
 }
 .agent-card-info { flex: 1; min-width: 0; }
 .agent-card-name { font-size: 14px; font-weight: 600; margin-bottom: 3px; color: var(--cc-text, #fff); }

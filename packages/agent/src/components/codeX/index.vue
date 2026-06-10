@@ -304,8 +304,14 @@ function buildUserContentBlocks(text, imgs = [], files = []) {
   return blocks
 }
 
+const codehubSwitchToAgent = inject('codehubSwitchToAgent', null)
+
 function switchToClaude() {
-  router.push('/main/claudeCode')
+  if (codehubSwitchToAgent) {
+    codehubSwitchToAgent('claudeCode')
+  } else {
+    router.push('/main/claudeCode')
+  }
 }
 
 /** 会话级：切换网络访问 */

@@ -15,37 +15,36 @@
         <button class="shared-settings-close" @click="close" title="关闭">✕</button>
       </div>
       <div class="shared-settings-body">
-        <ClaudeAPISetting v-show="active === 'claude'" ref="claudeSetting" embedded />
-        <CodexAPISetting v-show="active === 'codex'" ref="codexSetting" embedded />
+        <template v-for="t in tabs" :key="t.key">
+          <component
+            v-show="active === t.key"
+            :is="t.settingsComponent"
+            :ref="(el) => { if (el) settingsRefs[t.key] = el }"
+            embedded
+          />
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
-import ClaudeAPISetting from '../claudeCode/components/APISetting.vue'
-import CodexAPISetting from '../codeX/components/APISetting.vue'
+import { ref, computed, reactive, nextTick } from 'vue'
+import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
+
+const { agents } = useAgentRegistry()
 
 const visible = ref(false)
-const active = ref('claude')
-const claudeSetting = ref(null)
-const codexSetting = ref(null)
+const active = ref(agents.value[0]?.key || '')
+const settingsRefs = reactive({})
 
-const tabs = [
-  {
-    key: 'claude',
-    label: 'Claude Code',
-    iconClass: 'mindcraft-flow-win-iconfont icon-mindcraft-claude1',
-    iconStyle: { color: '#D97757', fontSize: '16px' },
-  },
-  {
-    key: 'codex',
-    label: 'GPT Codex',
-    iconClass: 'icon iconfont icon-ChatGPT',
-    iconStyle: { color: '#74AA9C', fontSize: '18px' },
-  },
-]
+const tabs = computed(() => agents.value.map(a => ({
+  key: a.key,
+  label: a.name,
+  iconClass: a.iconClass,
+  iconStyle: { ...a.iconStyle, fontSize: a.key === 'codex' ? '18px' : '16px' },
+  settingsComponent: a.settingsComponent,
+})))
 
 function open() {
   visible.value = true
@@ -62,11 +61,8 @@ function activateTab(key) {
 }
 
 function loadCurrentTab() {
-  if (active.value === 'claude') {
-    claudeSetting.value?.openSettings?.()
-  } else {
-    codexSetting.value?.openSettings?.()
-  }
+  const ref = settingsRefs[active.value]
+  ref?.openSettings?.()
 }
 
 defineExpose({ open, close })

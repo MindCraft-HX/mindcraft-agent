@@ -54,8 +54,14 @@
 
     <!-- ===== 内容区：始终渲染 Agent 组件 ===== -->
     <div class="codehub-content">
-      <ClaudeCodePanel v-if="mountedMap['claudeCode']" v-show="activeAgent === 'claudeCode'" ref="claudePanel" />
-      <CodexPanel v-if="mountedMap['codex']" v-show="activeAgent === 'codex'" ref="codexPanel" />
+      <template v-for="agent in agents" :key="agent.key">
+        <component
+          v-if="mountedMap[agent.key]"
+          v-show="activeAgent === agent.key"
+          :is="agent.component"
+          :ref="(el) => { if (el) panelRefs[agent.key] = el }"
+        />
+      </template>
 
       <!-- 局部空状态：只在内容区显示 -->
       <div v-if="showEmptyOverlay" class="codehub-empty-overlay">
@@ -76,25 +82,14 @@
           <button v-if="unifiedTabs.length > 0" class="codehub-picker-close" @click="showAgentPicker = false">×</button>
         </div>
         <div class="codehub-picker-list">
-          <div class="codehub-picker-option" @click="onAgentSelected('claudeCode')">
+          <div v-for="agent in agents" :key="agent.key"
+               class="codehub-picker-option" @click="onAgentSelected(agent.key)">
             <div class="picker-option-icon">
-              <div class="mindcraft-flow-win-iconfont icon-mindcraft-claude1"></div>
+              <div :class="agent.iconClass" :style="agent.iconStyle"></div>
             </div>
             <div class="picker-option-info">
-              <div class="picker-option-name">Claude Code</div>
-              <div class="picker-option-desc">Anthropic 出品的编程智能体</div>
-            </div>
-            <svg class="picker-option-arrow" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/>
-            </svg>
-          </div>
-          <div class="codehub-picker-option" @click="onAgentSelected('codex')">
-            <div class="picker-option-icon">
-              <div class="icon iconfont icon-ChatGPT"></div>
-            </div>
-            <div class="picker-option-info">
-              <div class="picker-option-name">GPT Codex</div>
-              <div class="picker-option-desc">OpenAI 编程智能体</div>
+              <div class="picker-option-name">{{ agent.name }}</div>
+              <div class="picker-option-desc">{{ agent.description }}</div>
             </div>
             <svg class="picker-option-arrow" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
               <path d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/>
@@ -113,23 +108,18 @@ defineOptions({ name: 'codeHub' })
 import { ref, computed, watch, watchEffect, onMounted, onUnmounted, nextTick, reactive, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
-import ClaudeCodePanel from '../claudeCode/index.vue'
-import CodexPanel from '../codeX/index.vue'
 import SharedSettings from './SharedSettings.vue'
 import { normalizeRequestedAgent, pickInitialCodeHubTab } from './agentRoutePreference.mjs'
 import { resolveCodeHubSyncedTabId } from './activeTabSync.mjs'
+import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
-const agentMeta = {
-  claudeCode: { iconClass: 'mindcraft-flow-win-iconfont icon-mindcraft-claude1', iconStyle: { color: '#D97757' } },
-  codex: { iconClass: 'icon iconfont icon-ChatGPT', iconStyle: { fontSize: '18px', color: '#74AA9C' } },
-}
+const { agents, agentKeys, getAgentMeta, isRegistered, createMountedMap } = useAgentRegistry()
 
-const claudePanel = ref(null)
-const codexPanel = ref(null)
+const panelRefs = reactive({})
 const sharedSettingsRef = ref(null)
 const showAgentPicker = ref(false)
 const activeTabId = ref(null)
@@ -146,11 +136,8 @@ function saveTabOrder() {
   localStorage.setItem('codehub_tab_order', JSON.stringify(tabOrder.value))
 }
 
-// 惰性挂载：记录哪些 Agent 已挂载。新增 Agent 从 false 开始，首次激活时变为 true
-const mountedMap = reactive({
-  claudeCode: true,
-  codex: true,
-})
+// 惰性挂载：记录哪些 Agent 已挂载。由 Registry 生成初始值，新增 Agent 从 false 开始
+const mountedMap = reactive(createMountedMap(['claudeCode', 'codex']))
 
 const ctxMenu = reactive({ visible: false, x: 0, y: 0, tab: null })
 
@@ -206,8 +193,14 @@ function collectTabs(panel, agentType, meta) {
 
 const unifiedTabs = computed(() => {
   const tabs = []
-  if (mountedMap.claudeCode) tabs.push(...collectTabs(claudePanel.value, 'claudeCode', agentMeta.claudeCode))
-  if (mountedMap.codex) tabs.push(...collectTabs(codexPanel.value, 'codex', agentMeta.codex))
+  for (const key of agentKeys.value) {
+    if (mountedMap[key]) {
+      const panel = panelRefs[key]
+      if (panel) {
+        tabs.push(...collectTabs(panel, key, getAgentMeta(key)))
+      }
+    }
+  }
 
   // 将新 tab 补充到排序列表中
   const order = tabOrder.value
@@ -289,9 +282,9 @@ function restoreActiveTab() {
   }
 }
 
-// 获取已挂载 Agent 的 panel ref
+// 获取已挂载 Agent 的 panel ref（通过 Registry 动态查找）
 function getPanel(agentType) {
-  return agentType === 'claudeCode' ? claudePanel.value : codexPanel.value
+  return panelRefs[agentType] || null
 }
 
 // ── 初始化：等待所有已挂载的 Agent 就绪后再恢复 Tab ──
@@ -440,6 +433,14 @@ function openSharedSettings() {
 provide('codehubEmbedded', true)
 provide('codehubActiveAgent', activeAgent)
 provide('codehubSwitchAgent', activateTab)
+provide('codehubSwitchToAgent', (agentKey) => {
+  const existingTab = unifiedTabs.value.find(t => t.agentType === agentKey)
+  if (existingTab) {
+    activateTab(existingTab)
+  } else {
+    onAgentSelected(agentKey)
+  }
+})
 provide('codehubOpenSharedSettings', openSharedSettings)
 </script>
 

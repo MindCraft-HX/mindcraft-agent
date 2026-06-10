@@ -1,4 +1,11 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
+import { AGENT_DEFINITIONS } from '@mindcraft/agent';
+
+// 从 Registry 动态生成 Agent 重定向路由
+const agentRedirectRoutes = AGENT_DEFINITIONS.map((agent) => ({
+    path: agent.routeAlias,
+    redirect: { path: '/main/codeHub', query: { agent: agent.key } }
+}));
 
 const routes = [
     {
@@ -23,14 +30,7 @@ const routes = [
                 component: async () => (await import('@mindcraft/agent')).CodeHub,
                 meta: { parent: '/main/codeHub' }
             },
-            {
-                path: 'claudeCode',
-                redirect: { path: '/main/codeHub', query: { agent: 'claudeCode' } }
-            },
-            {
-                path: 'codex',
-                redirect: { path: '/main/codeHub', query: { agent: 'codex' } }
-            },
+            ...agentRedirectRoutes,
             {
                 path: 'chat',
                 redirect: '/main/codeHub'

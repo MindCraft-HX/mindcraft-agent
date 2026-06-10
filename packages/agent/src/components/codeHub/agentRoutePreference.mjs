@@ -1,9 +1,9 @@
-const SUPPORTED_AGENTS = new Set(['claudeCode', 'codex'])
+import { agentRegistryMap } from '../../registry/agentRegistry.js'
 
 export function normalizeRequestedAgent(value) {
   const raw = Array.isArray(value) ? value[0] : value
   const agent = String(raw || '')
-  return SUPPORTED_AGENTS.has(agent) ? agent : ''
+  return agentRegistryMap.has(agent) ? agent : ''
 }
 
 export function pickInitialCodeHubTab({ tabs = [], savedTabId = '', requestedAgent = '' } = {}) {
