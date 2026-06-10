@@ -1,0 +1,556 @@
+import { applyToolResult } from '../../agentCommon/utils/helpers.js'
+import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
+import { nextTick } from 'vue'
+import {
+  applyPlanToolUse,
+  applyPlanToolResult,
+  beginTaskBatch,
+  getTaskDebugSnapshot,
+  isTaskToolName,
+  registerTaskStarted,
+  registerTaskUpdated,
+} from './useClaudeTaskState.mjs'
+
+/** 追加消息到 messages */
+function pushMessage(tab, onNewMessage, msg) {
+  tab.messages.push(msg)
+  onNewMessage?.()
+}
+
+/** 滚动节流：同一个 tab 在一个 tick 内只滚一次 */
+const scrollPending = new Set()
+function throttledScrollBottom(tabId, scrollBottom) {
+  if (scrollPending.has(tabId)) return
+  scrollPending.add(tabId)
+  nextTick(() => {
+    scrollBottom(tabId)
+    scrollPending.delete(tabId)
+  })
+}
+
+/** 保存历史节流：避免流式期间频繁保存 */
+let saveHistoryTimer = null
+function throttledSaveHistory(saveHistory) {
+  if (saveHistoryTimer) return
+  saveHistoryTimer = setTimeout(() => {
+    saveHistoryTimer = null
+    saveHistory()
+  }, 3000)
+}
+
+function ensureTaskToolUseIds(tab) {
+  if (!(tab._taskToolUseIds instanceof Set)) {
+    tab._taskToolUseIds = new Set()
+  }
+  return tab._taskToolUseIds
+}
+
+function findToolMessage(tab, toolUseId) {
+  if (!toolUseId || !Array.isArray(tab?.messages)) return null
+  for (let i = tab.messages.length - 1; i >= 0; i--) {
+    const msg = tab.messages[i]
+    if (msg?.role === 'tool' && msg.toolUseId === toolUseId) {
+      return msg
+    }
+  }
+  return null
+}
+
+function syncPlanTaskStateFromToolResult(tab, toolUseId, content, saveHistory, extraPayload = null) {
+  const toolMsg = findToolMessage(tab, toolUseId)
+  if (!toolMsg || !isTaskToolName(toolMsg.toolName)) return
+
+  const meta = applyPlanToolResult(tab, {
+    toolName: toolMsg.toolName,
+    toolUseId,
+    content: extraPayload && typeof extraPayload === 'object'
+      ? { ...extraPayload, content }
+      : content,
+    now: Date.now(),
+  })
+
+  if (meta.shouldPersistImmediately) {
+    saveHistory({ immediate: true })
+  }
+}
+
+export function useClaudeAgentStream({
+  tabs,
+  projects,
+  getActiveProjectId,
+  isPanelActive,
+  scrollBottom,
+  saveHistory,
+  nextMsgId,
+  isWriteTool,
+  isEditTool,
+  isBashTool,
+  isReadTool,
+  inferToolFailureFromText,
+  createToolMessage,
+  onCompactBoundary,
+  onNewMessage,
+  trimMessages,
+}) {
+  function onAgentMessage({ sessionId: sid, msg }) {
+    const tab = tabs.value.find(t => t.sessionId === sid)
+    if (!tab) return
+
+    // 诊断日志：记录所有 task 相关消息
+    if (msg.type === 'system' && (msg.subtype || '').startsWith('task_')) {
+      console.log('[task-diag] event', {
+        sid: sid.slice(-8),
+        type: msg.type,
+        subtype: msg.subtype,
+        taskId: msg.task_id || '',
+        toolUseId: msg.tool_use_id || '',
+        patch: msg.patch || {},
+        description: msg.description || '',
+      })
+    }
+
+    const isWorkingMsg = msg.type === 'assistant' || msg.type === 'user' || msg.type === 'tool_result'
+    if (!tab.thinking && isWorkingMsg) {
+      tab.thinking = true
+    }
+
+    if (msg.type === 'assistant') {
+      const content = msg.message?.content
+      if (!Array.isArray(content)) return
+      for (const block of content) {
+        if (block.type === 'text' && block.text) {
+          if (tab.currentAssistantId === null) {
+            tab.currentAssistantId = nextMsgId()
+            pushMessage(tab, onNewMessage, { id: tab.currentAssistantId, role: 'assistant', text: block.text })
+          } else {
+            const m = tab.messages.find(m => m.id === tab.currentAssistantId)
+            if (m) m.text += block.text
+          }
+          throttledScrollBottom(tab.id, scrollBottom)
+        } else if (block.type === 'tool_use') {
+          tab.currentAssistantId = null
+          const input = block.input || {}
+          const name = block.name
+          const nameLower = (name || '').toLowerCase()
+          if (isTaskToolName(nameLower)) {
+            const toolUseIds = ensureTaskToolUseIds(tab)
+            if (block.id) toolUseIds.add(block.id)
+            const syncMeta = applyPlanToolUse(tab, {
+              toolName: name,
+              toolUseId: block.id,
+              input,
+              now: Date.now(),
+            })
+            console.log('[task-diag] tool_use applied', {
+              sid: sid.slice(-8),
+              toolName: name,
+              toolUseId: block.id || '',
+              changed: syncMeta.changed,
+              snapshot: getTaskDebugSnapshot(tab),
+            })
+            if (syncMeta.shouldPersistImmediately) {
+              saveHistory({ immediate: true })
+            }
+          }
+
+          const filePath = input.path || input.file_path || input.filename || ''
+          const isBash = nameLower === 'bash' || nameLower === 'execute' || nameLower === 'run_command'
+          const bashCmd = isBash ? (input.command || input.cmd || '') : ''
+          const defaultExpanded = isWriteTool(name) || isEditTool(name) || isBash
+          const toolMsg = createToolMessage({
+            toolName: name,
+            status: 'running',
+            toolUseId: block.id,
+            filePath,
+            bashCmd,
+            bashCwd: isBash ? (tab.cwd || '') : '',
+            text: JSON.stringify(input, null, 2),
+            expanded: defaultExpanded,
+            newContent: input.content || input.new_content || input.file_content || input.new_string || '',
+            _diffInput: (isWriteTool(name) || isEditTool(name)) ? {
+              oldStr: input.old_string || input.old_str || input.old_content || '',
+              newStr: isWriteTool(name) && input._oldContent ? (input.content || input.new_content || '') : (input.new_string || input.new_str || input.new_content || ''),
+            } : null,
+          })
+          pushMessage(tab, onNewMessage, toolMsg)
+          throttledScrollBottom(tab.id, scrollBottom)
+        } else if (block.type === 'thinking') {
+          tab.currentAssistantId = null
+          const thinking = typeof block.thinking === 'string' ? block.thinking : (typeof block.text === 'string' ? block.text : '')
+          // 从尾部倒序查找（不走全量拷贝）
+          const msgs = tab.messages
+          let lastThinking = null
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            const m = msgs[i]
+            if (m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running') {
+              lastThinking = m
+              break
+            }
+          }
+          if (lastThinking) {
+            lastThinking.text = lastThinking.text ? (lastThinking.text + '\n\n' + thinking) : thinking
+            // 思考过程默认折叠，避免 CLS 和内容闪烁
+          } else {
+            pushMessage(tab, onNewMessage, createToolMessage({
+              toolName: 'thinking',
+              status: 'running',
+              toolUseId: null,
+              text: thinking,
+              expanded: false,
+              newContent: '',
+              diffLines: [],
+            }), onNewMessage)
+          }
+          throttledScrollBottom(tab.id, scrollBottom)
+        }
+      }
+    }
+    else if (msg.type === 'user') {
+      const content = msg.message?.content
+      if (!Array.isArray(content)) return
+      for (const block of content) {
+        if (block.type === 'tool_result') {
+          applyToolResult(tab.messages, block.tool_use_id, block.content, block.is_error === true, {
+            inferToolFailureFromText, isBashTool, isReadTool, isWriteTool, isEditTool,
+          })
+          syncPlanTaskStateFromToolResult(tab, block.tool_use_id, block.content, saveHistory, msg)
+        }
+      }
+    }
+    else if (msg.type === 'tool_result') {
+      applyToolResult(tab.messages, msg.tool_use_id, msg.content, msg.is_error === true, {
+        inferToolFailureFromText, isBashTool, isReadTool, isWriteTool, isEditTool,
+      })
+      syncPlanTaskStateFromToolResult(tab, msg.tool_use_id, msg.content, saveHistory, msg)
+    }
+    else if (msg.type === 'result') {
+      tab.currentAssistantId = null
+      // 倒序查找，不走全量拷贝
+      const msgs = tab.messages
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i]
+        if (m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running') {
+          m.status = 'done'
+          break
+        }
+      }
+      throttledScrollBottom(tab.id, scrollBottom)
+    }
+    else if (msg.type === 'system') {
+      const content = msg.message?.content
+      let text = ''
+      const subtype = msg.subtype || ''
+
+      if (subtype === 'task_started') {
+        const meta = registerTaskStarted(tab, {
+          taskId: msg.task_id,
+          description: msg.description || '',
+          toolUseId: msg.tool_use_id || '',
+          now: Date.now(),
+        })
+        console.log('[task-diag] task_started applied', {
+          sid: sid.slice(-8),
+          taskId: msg.task_id || '',
+          toolUseId: msg.tool_use_id || '',
+          created: meta.created,
+          adoptedPendingTaskId: meta.adoptedPendingTaskId || '',
+          snapshot: getTaskDebugSnapshot(tab),
+        })
+        if (meta.shouldPersistImmediately) {
+          saveHistory({ immediate: true })
+        }
+        return
+      }
+
+      if (subtype === 'task_updated') {
+        const meta = registerTaskUpdated(tab, {
+          taskId: msg.task_id,
+          patch: msg.patch || {},
+          now: Date.now(),
+        })
+        console.log('[task-diag] task_updated applied', {
+          sid: sid.slice(-8),
+          taskId: msg.task_id || '',
+          patch: msg.patch || {},
+          created: meta.created,
+          becameDone: meta.becameDone,
+          snapshot: getTaskDebugSnapshot(tab),
+        })
+        if (meta.shouldPersistImmediately) {
+          saveHistory({ immediate: true })
+        }
+        return
+      }
+
+      if (subtype.startsWith('task_')) {
+        return
+      }
+
+      if (subtype === 'local_command_output' && typeof msg.content === 'string' && msg.content.trim()) {
+        const raw = msg.content.trim()
+        const summaryMatch = /\nSummary:\s*\n([\s\S]*)$/i.exec(raw)
+        if (summaryMatch) {
+          const summary = summaryMatch[1].trim()
+          if (tab._awaitingCompactResult) {
+            tab._pendingCompactSummary = summary
+            return
+          }
+          const compactTitle = raw.split('\n')[0]?.trim() || 'Compacted chat'
+          pushMessage(tab, onNewMessage, {
+            id: nextMsgId(),
+            role: 'system',
+            text: compactTitle,
+            compactTitle,
+            compactSummary: summary,
+            expanded: false,
+            _isCompact: true,
+          })
+        } else {
+          pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: raw })
+        }
+        throttledScrollBottom(tab.id, scrollBottom)
+        return
+      }
+
+      if (subtype === 'compact_started') {
+        tab._compacting = true
+        const existingCompact = tab.messages.find(m => m._isCompact && m._compacting)
+        if (existingCompact) return
+        const compactMsg = {
+          id: nextMsgId(),
+          role: 'system',
+          text: '正在进行上下文压缩...',
+          compactTitle: '正在进行上下文压缩',
+          compactSummary: '',
+          expanded: false,
+          _isCompact: true,
+          _compacting: true,
+        }
+        tab.messages.push(compactMsg)
+        onNewMessage?.()
+        throttledScrollBottom(tab.id, scrollBottom)
+        return
+      }
+
+      if (subtype === 'compact_boundary') {
+        const compactingMsg = tab.messages.find(m => m._isCompact && m._compacting)
+        if (compactingMsg) compactingMsg._compacting = false
+        tab._compacting = false
+        const meta = msg.compact_metadata || {}
+        const pre = Number(meta.pre_tokens || 0)
+        const post = Number(meta.post_tokens || 0)
+        const saved = pre > 0 && post > 0 ? Math.max(0, pre - post) : 0
+        const compactTitle = pre > 0 && post > 0
+          ? `上下文已压缩：${pre} → ${post} tokens（减少 ${saved}）`
+          : '上下文已压缩'
+        const pendingSummary = tab._pendingCompactSummary || ''
+        tab._pendingCompactSummary = ''
+        pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: compactTitle, compactTitle, compactSummary: pendingSummary, expanded: false, _isCompact: true })
+        if (post > 0 && onCompactBoundary) {
+          onCompactBoundary(post)
+        }
+        throttledScrollBottom(tab.id, scrollBottom)
+        return
+      }
+
+      if (subtype === 'compact_summary') {
+        const raw = content?.find?.(b => b.type === 'text')?.text
+          || msg.content
+          || msg.compact_summary
+          || ''
+        const summary = raw.replace(/^压缩摘要：\n?/i, '').trim()
+        if (summary) {
+          tab._carryCompactSummary = summary
+          const last = tab.messages[tab.messages.length - 1]
+          if (last?._isCompact && !last.compactSummary) {
+            last.compactSummary = summary
+          } else {
+            tab._pendingCompactSummary = summary
+          }
+        }
+        return
+      }
+
+      // 新版 SDK 压缩状态：status: 'compacting' | 'requesting' | null
+      if (subtype === 'status') {
+        const sdkStatus = msg.status
+        if (sdkStatus === 'compacting') {
+          tab._compacting = true
+          const existingCompact = tab.messages.find(m => m._isCompact && m._compacting)
+          if (existingCompact) return
+          tab.messages.push({
+            id: nextMsgId(),
+            role: 'system',
+            text: '正在压缩上下文...',
+            compactTitle: '正在压缩上下文',
+            compactSummary: '',
+            expanded: false,
+            _isCompact: true,
+            _compacting: true,
+          })
+          onNewMessage?.()
+          throttledScrollBottom(tab.id, scrollBottom)
+          return
+        }
+        if (msg.compact_result === 'failed') {
+          const compactingMsg = tab.messages.find(m => m._isCompact && m._compacting)
+          if (compactingMsg) {
+            compactingMsg._compacting = false
+            compactingMsg.text = '上下文压缩失败' + (msg.compact_error ? `：${msg.compact_error}` : '')
+            compactingMsg.compactTitle = '上下文压缩失败'
+          }
+          tab._compacting = false
+          throttledScrollBottom(tab.id, scrollBottom)
+          return
+        }
+        if (msg.compact_result === 'success') {
+          // compact 成功但尚未收到 compact_boundary 时的状态
+          const compactingMsg = tab.messages.find(m => m._isCompact && m._compacting)
+          if (compactingMsg) {
+            compactingMsg.text = '上下文压缩完成，正在整理...'
+          }
+          return
+        }
+        // status: 'requesting' 等 → 不展示，过于频繁
+        return
+      }
+
+      if (Array.isArray(content)) {
+        text = content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+      } else if (typeof msg.message === 'string') {
+        text = msg.message
+      }
+
+      // 这些子类型永远不应出现在聊天中，无论是否有文本内容
+      const alwaysFiltered = new Set([
+      ])
+      if (alwaysFiltered.has(subtype)) return
+
+      if (subtype === 'init') {
+        return
+      } else if (!text) {
+        const noisySubtypes = new Set([
+          'token_count',
+          'context_usage',
+          'prompt_suggestion',
+          'agent_progress',
+          'tool_decision',
+          'api_retry',
+        ])
+        if (noisySubtypes.has(subtype)) return
+        return
+      }
+
+      if (text) {
+        pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text })
+        throttledScrollBottom(tab.id, scrollBottom)
+      }
+    }
+
+    // 流式过程中也保存（节流），避免用户中途关闭导致丢历史
+    throttledSaveHistory(saveHistory)
+  }
+
+  function onAgentPermission({ sessionId: sid, msg }) {
+    const tab = tabs.value.find(t => t.sessionId === sid)
+    if (!tab) return
+    if (!tab.thinking) tab.thinking = true
+    const toolName = msg.tool_name || msg.tool || 'permission'
+    const requestId = msg.id || msg.request_id || msg.requestId || msg._requestId || null
+    const input = msg.input || {}
+    const filePath = input.path || input.file_path || ''
+    const bashCmd = input.command || input.cmd || ''
+    pushMessage(tab, onNewMessage, createToolMessage({
+      toolName,
+      status: 'pending',
+      toolUseId: null,
+      requestId,
+      sessionId: sid,
+      permDesc: msg.description || `是否允许 Claude 执行 ${toolName}？`,
+      filePath,
+      bashCmd,
+      text: JSON.stringify(input, null, 2),
+      newContent: '',
+      diffLines: [],
+      expanded: true,
+    }))
+    scrollBottom(tab.id)
+  }
+
+  function onAgentDone({ sessionId: sid, cliSessionId, filePath }) {
+    const tab = tabs.value.find(t => t.sessionId === sid)
+    if (!tab) return
+    if (cliSessionId) {
+      tab.cliSessionId = cliSessionId
+      window.electronAPI.claudeRegisterCliSessions?.({ [sid]: cliSessionId })
+    }
+    if (filePath) {
+      tab.filePath = filePath
+      console.log('[ClaudeStream] onAgentDone → filePath:', filePath)
+    }
+    if (tab._awaitingCompactResult) {
+      tab._awaitingCompactResult = false
+      tab._pendingCompactSummary = ''
+    }
+    // 倒序查找 thinking 卡片，不走全量拷贝
+    const msgs = tab.messages
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running') {
+        m.status = 'done'
+        break
+      }
+    }
+    tab.thinking = false
+
+    if (projects && getActiveProjectId) {
+      const ownerProject = projects.value.find(p => (p.chats || []).some(c => c.sessionId === sid))
+      if (ownerProject) {
+        // 只有后台项目完成时才通知（前台项目用户能直接看到，不应残留 hasDoneNotification）
+        if (shouldNotifyOnTaskDone({
+          ownerProjectId: ownerProject.id,
+          activeProjectId: getActiveProjectId(),
+          isPanelActive: isPanelActive?.value,
+        })) {
+          ownerProject.hasDoneNotification = true
+          window.electronAPI?.flashTaskbar?.()
+        }
+      }
+    }
+    tab.currentAssistantId = null
+    tab._taskToolUseIds = new Set()
+    // 对话结束，截断旧消息
+    trimMessages?.(tab)
+    scrollBottom(tab.id)
+    // onAgentDone 是明确边界，立即保存
+    saveHistory()
+  }
+
+  function onAgentAskQuestion({ sessionId: sid, requestId, questions }) {
+    const tab = tabs.value.find(t => t.sessionId === sid)
+    if (!tab) return
+    if (!tab.thinking) tab.thinking = true
+    pushMessage(tab, onNewMessage, createToolMessage({
+      toolName: 'AskUserQuestion',
+      status: 'pending',
+      toolUseId: null,
+      requestId,
+      sessionId: sid,
+      permDesc: '',
+      filePath: '',
+      bashCmd: '',
+      text: JSON.stringify({ questions }, null, 2),
+      newContent: '',
+      diffLines: [],
+      expanded: true,
+    }))
+    scrollBottom(tab.id)
+  }
+
+  return {
+    onAgentMessage,
+    onAgentPermission,
+    onAgentAskQuestion,
+    onAgentDone,
+  }
+}

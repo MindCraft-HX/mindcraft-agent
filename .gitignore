@@ -1,18 +1,50 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Other files and folders
-.settings/
+node_modules
+.codex/agent-shared-layer-before-delete.patch
+.codex/agent-shared-layer-untracked-before-delete.zip
+.DS_Store
+dist
+dist-ssr
+dist_electron
+coverage
+*.local
+dist-electron
+source
+.history
+plugins
+.worktrees/
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+
+/cypress/videos/
+/cypress/screenshots/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 忽略 package-lock.json
+package-lock.json
+
+# 文档（不提交）
+docs/
+
+# Claude Code 工作指南（个人化，不提交）
+CLAUDE.md
+AGENTS.md
+

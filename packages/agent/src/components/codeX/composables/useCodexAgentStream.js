@@ -1,0 +1,814 @@
+// Codex 前端 debug 输出开关（需要查看详细日志时改为 true）
+import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
+import { applyToolResult } from '../../agentCommon/utils/helpers.js'
+import { findChatBySessionId } from '../utils/sessionRouting.mjs'
+import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs'
+const CODEX_DEBUG = false
+
+function pushMessage(tab, onNewMessage, msg) {
+  tab.messages.push(msg)
+  onNewMessage?.()
+}
+
+function ensureAssistantMessage(tab, nextMsgId, onNewMessage) {
+  let msg = tab.currentAssistantId
+    ? tab.messages.find(m => m.id === tab.currentAssistantId)
+    : null
+
+  if (msg) return msg
+
+  const id = nextMsgId()
+  tab.currentAssistantId = id
+  msg = { id, role: 'assistant', text: '' }
+  pushMessage(tab, onNewMessage, msg)
+  return msg
+}
+
+function appendAssistantText(tab, nextMsgId, onNewMessage, text) {
+  if (!text) return
+  const msg = ensureAssistantMessage(tab, nextMsgId, onNewMessage)
+  msg.text = (msg.text || '') + text
+}
+
+function normalizeToolStatus(itemStatus, isFinal) {
+  if (!isFinal) return 'running'
+  return itemStatus === 'failed' ? 'error' : 'done'
+}
+
+/**
+ * 将 patch_apply_end.changes 统一转为 _fileChanges 数组。
+ * SDK 可能返回对象格式 {path: {type, unified_diff, ...}} 或数组格式 [{path, operation, unified_diff}]，
+ * 此处兼容两种格式，与 electron 侧 toFileChangeChangesFromPatchEnd 逻辑一致。
+ */
+function mapPatchChangesToFileChanges(changes) {
+  // 数组格式（electron 富化后的 file_change.changes）
+  if (Array.isArray(changes)) {
+    return changes.map(c => ({
+      path: c?.path || '',
+      operation: c?.operation || c?.kind || '',
+      unified_diff: c?.unified_diff || '',
+      _oldStr: '',
+      _newStr: '',
+      diffLines: [],
+    }))
+  }
+  // 对象格式 {path: {type, unified_diff, move_path, ...}}（SDK 原始 patch_apply_end.changes）
+  if (changes && typeof changes === 'object') {
+    return Object.entries(changes).map(([filePath, info]) => ({
+      path: filePath,
+      operation: info?.type === 'create'
+        ? 'add'
+        : info?.type === 'delete'
+          ? 'delete'
+          : info?.move_path
+            ? 'rename'
+            : 'modify',
+      unified_diff: info?.unified_diff || '',
+      _oldStr: '',
+      _newStr: '',
+      diffLines: [],
+    }))
+  }
+  return []
+}
+
+function getActivityLabel(toolName) {
+  const n = String(toolName || '').toLowerCase()
+  if (['shell', 'bash', 'execute', 'command_execution'].includes(n)) return 'Ran'
+  if (['file_change', 'apply_patch', 'write_file', 'write', 'edit', 'str_replace', 'str_replace_editor'].includes(n)) return 'Edited'
+  if (['web_search'].includes(n)) return 'Searching'
+  if (['thinking', 'reasoning'].includes(n)) return 'Thinking'
+  if (['todo_list'].includes(n)) return 'Planning'
+  if (['mcp_tool'].includes(n)) return '插件'
+  return 'Tool'
+}
+
+/** 解析 apply_patch 原始输入文本，返回 _fileChanges 数组 */
+function parseApplyPatchInput(input) {
+  if (!input || typeof input !== 'string') return []
+  const lines = input.split(/\r?\n/)
+  const result = []
+  let curDel = []
+  let curAdd = []
+  
+  function parsePatchFileHeader(line) {
+    const match = line.match(/^\*\*\*\s+(Update|Add|Delete) File:\s*(.+)$/)
+    if (!match) return null
+    const [, kind, rawPath] = match
+    return {
+      path: rawPath.trim(),
+      operation: kind === 'Add' ? 'add' : kind === 'Delete' ? 'delete' : 'modify',
+    }
+  }
+
+  function flushHunk() {
+    if (curDel.length || curAdd.length) {
+      const last = result[result.length - 1]
+      if (last) last.diffHunks.push({ del: [...curDel], add: [...curAdd] })
+    }
+    curDel = []
+    curAdd = []
+  }
+
+  for (const line of lines) {
+    const fileHeader = parsePatchFileHeader(line)
+    if (fileHeader) {
+      flushHunk()
+      result.push({ path: fileHeader.path, operation: fileHeader.operation, unified_diff: '', diffHunks: [] })
+    } else if (line.startsWith('***')) {
+      // 忽略 *** Begin Patch 等标记
+    } else if (line.startsWith('@@')) {
+      flushHunk()
+    } else if (line.startsWith('-')) {
+      curDel.push(line.slice(1))
+    } else if (line.startsWith('+')) {
+      curAdd.push(line.slice(1))
+    }
+  }
+  flushHunk()
+
+  // 如果解析结果为空但 input 中有内容，兜底：从 input 文本中提取文件路径
+  if (!result.length) {
+    const match = input.match(/\*\*\*\s+(Update|Add|Delete) File:\s*(.+)/)
+    if (match) {
+      const [, kind, rawPath] = match
+      result.push({
+        path: rawPath.trim(),
+        operation: kind === 'Add' ? 'add' : kind === 'Delete' ? 'delete' : 'modify',
+        unified_diff: '',
+        diffHunks: [],
+      })
+    }
+  }
+
+  return result
+}
+
+function normalizeTodoItems(items) {
+  if (!Array.isArray(items)) return []
+  return items.map((item, index) => ({
+    id: item.id || `todo-${index}`,
+    content: item.content || item.text || '',
+    status: item.status || (item.completed ? 'completed' : 'pending'),
+  }))
+}
+
+function tryParseJsonObject(raw) {
+  if (!raw || typeof raw !== 'string') return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch (_) {
+    return null
+  }
+}
+
+function hasRichFileChangePreview(changes) {
+  if (!Array.isArray(changes) || !changes.length) return false
+  return changes.some(change => {
+    if (!change || typeof change !== 'object') return false
+    return Boolean(
+      change.unified_diff
+      || (Array.isArray(change.diffLines) && change.diffLines.length)
+      || (Array.isArray(change._diffHunks) && change._diffHunks.length)
+      || change._oldStr
+      || change._newStr
+    )
+  })
+}
+
+function mergeFileChangePreview(existingChanges, nextChanges) {
+  const existingList = Array.isArray(existingChanges) ? existingChanges : []
+  const nextList = Array.isArray(nextChanges) ? nextChanges : []
+
+  if (!nextList.length) return existingList
+  if (!existingList.length) return nextList
+
+  const existingByPath = new Map(existingList.map(change => [change?.path || '', change]))
+  return nextList.map(change => {
+    const path = change?.path || ''
+    const existing = existingByPath.get(path)
+    if (!existing) return change
+
+    return {
+      ...existing,
+      ...change,
+      operation: change?.operation || change?.kind || existing?.operation || '',
+      unified_diff: change?.unified_diff || existing?.unified_diff || '',
+      _diffHunks: Array.isArray(change?._diffHunks) && change._diffHunks.length
+        ? change._diffHunks
+        : (existing?._diffHunks || []),
+      diffLines: Array.isArray(change?.diffLines) && change.diffLines.length
+        ? change.diffLines
+        : (existing?.diffLines || []),
+      _oldStr: change?._oldStr || existing?._oldStr || '',
+      _newStr: change?._newStr || existing?._newStr || '',
+    }
+  })
+}
+
+function findRecentFileMutationMessage(tab, incomingFileChanges = []) {
+  const incomingPaths = new Set(
+    (Array.isArray(incomingFileChanges) ? incomingFileChanges : [])
+      .map(change => String(change?.path || '').trim())
+      .filter(Boolean)
+  )
+  if (!incomingPaths.size) return null
+
+  for (let index = tab.messages.length - 1; index >= 0; index -= 1) {
+    const message = tab.messages[index]
+    if (message?.role !== 'tool') continue
+
+    const toolName = String(message.toolName || '').toLowerCase()
+    const rawType = String(message.rawType || '').toLowerCase()
+    const isFileMutation = rawType === 'file_change'
+      || rawType === 'apply_patch'
+      || ['write', 'write_file', 'create_file', 'edit', 'edit_file', 'str_replace', 'str_replace_editor', 'str_replace_based_edit'].includes(toolName)
+    if (!isFileMutation) continue
+
+    const existingPaths = new Set(
+      [
+        ...String(message.filePath || '').split('\n'),
+        ...((Array.isArray(message._fileChanges) ? message._fileChanges : []).map(change => String(change?.path || '').trim())),
+      ]
+        .map(path => path.trim())
+        .filter(Boolean)
+    )
+    if (!existingPaths.size) continue
+
+    for (const path of incomingPaths) {
+      if (existingPaths.has(path)) return message
+    }
+  }
+
+  return null
+}
+
+function upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, factory) {
+  const existing = toolUseId
+    ? tab.messages.find(m => m.role === 'tool' && m.toolUseId === toolUseId)
+    : null
+
+  if (existing) {
+    const next = factory(existing, false) || existing
+    Object.assign(existing, next)
+    return existing
+  }
+
+  const created = factory(null, true)
+  pushMessage(tab, onNewMessage, createToolMessage(created))
+  return tab.messages[tab.messages.length - 1]
+}
+
+/** 各 item.type 对应的 tool handler 配置 */
+const ITEM_TOOL_HANDLERS = {
+  reasoning: {
+    toolName: 'thinking',
+    baseProps: () => ({ expanded: false, newContent: '', diffLines: [] }),
+    mergeProps: (item) => ({ text: item.text || '' }),
+    status: (item, isFinal) => isFinal ? 'done' : 'running',
+  },
+  command_execution: {
+    toolName: 'shell',
+    baseProps: (item, tab) => ({
+      filePath: '',
+      bashCmd: item.command || '',
+      bashCwd: tab.cwd || '',
+      expanded: true,
+      newContent: item.aggregated_output || '',
+      diffLines: [],
+    }),
+    mergeProps: (item, existing) => ({
+      status: undefined,  // 由 status() 单独控制
+      bashCmd: item.command || existing?.bashCmd || '',
+      bashOutput: item.aggregated_output || '',
+      bashExitCode: item.exit_code,
+      newContent: item.aggregated_output || '',
+      text: JSON.stringify({
+        command: item.command || existing?.bashCmd || '',
+        status: item.status,
+        exit_code: item.exit_code,
+      }, null, 2),
+    }),
+    status: (item, isFinal) => normalizeToolStatus(item.status, isFinal),
+    onFinal: (toolMsg, item) => {
+      toolMsg.expanded = true
+      applyToolResult(toolMsg._messagesContext || [], item.id, item.aggregated_output || '', item.status === 'failed', {
+        inferToolFailureFromText: toolMsg._inferToolFailureFromText,
+        isBashTool: toolMsg._isBashTool,
+        isReadTool: toolMsg._isReadTool,
+        isWriteTool: toolMsg._isWriteTool,
+        isEditTool: toolMsg._isEditTool,
+      })
+    },
+  },
+  file_change: {
+    toolName: 'file_change',
+    baseProps: (item) => {
+      const changes = Array.isArray(item.changes) ? item.changes : []
+      const filePath = changes.map(c => c.path).filter(Boolean).join('\n')
+      // 构建 _fileChanges 数组，每项包含 _diffInput 供 ToolWrite.vue 计算 diff
+      const _fileChanges = changes.map(c => ({
+        path: c.path || '',
+        operation: c.operation || '',
+        unified_diff: c.unified_diff || '',
+        _oldStr: '',
+        _newStr: '',
+        diffLines: [],
+      }))
+      return { expanded: true, newContent: '', diffLines: [], filePath, _fileChanges }
+    },
+    mergeProps: (item, existing) => {
+      const changes = Array.isArray(item.changes) ? item.changes : []
+      const filePath = changes.map(c => c.path).filter(Boolean).join('\n')
+      const nextFileChanges = changes.map(c => ({
+        path: c.path || '',
+        operation: c.operation || c.kind || '',
+        unified_diff: c.unified_diff || '',
+        _oldStr: '',
+        _newStr: '',
+        diffLines: [],
+      }))
+      const _fileChanges = hasRichFileChangePreview(existing?._fileChanges)
+        ? mergeFileChangePreview(existing?._fileChanges, nextFileChanges)
+        : nextFileChanges
+      return {
+        filePath: filePath || existing?.filePath || '',
+        _fileChanges,
+        text: JSON.stringify({ changes, status: item.status }, null, 2),
+      }
+    },
+    status: (item, isFinal) => normalizeToolStatus(item.status, isFinal),
+    findExistingMessage: (tab, item) => {
+      const changes = Array.isArray(item?.changes) ? item.changes : []
+      return findRecentFileMutationMessage(tab, changes)
+    },
+  },
+  mcp_tool_call: {
+    toolName: 'mcp_tool',
+    baseProps: (item) => ({
+      expanded: true, newContent: '', diffLines: [],
+      serverName: item.server || '',
+      mcpToolName: item.tool || '',
+    }),
+    mergeProps: (item) => ({
+      serverName: item.server || '',
+      mcpToolName: item.tool || '',
+      text: JSON.stringify(item.arguments || {}, null, 2),
+      toolResultContent: item.result ? JSON.stringify(item.result, null, 2) : '',
+      toolError: item.error?.message || '',
+    }),
+    status: (item, isFinal) => normalizeToolStatus(item.status, isFinal),
+  },
+  web_search: {
+    toolName: 'web_search',
+    baseProps: () => ({ expanded: false, newContent: '', diffLines: [] }),
+    mergeProps: (item) => ({ text: JSON.stringify({ query: item.query }, null, 2) }),
+    status: (item, isFinal) => isFinal ? 'done' : 'running',
+  },
+  todo_list: {
+    toolName: 'todo_list',
+    baseProps: () => ({ expanded: true, newContent: '', diffLines: [] }),
+    mergeProps: (item) => {
+      const todoItems = normalizeTodoItems(item.items)
+      return { text: JSON.stringify({ todos: todoItems }, null, 2), todoItems }
+    },
+    status: (item, isFinal) => isFinal ? 'done' : 'running',
+  },
+  error: {
+    toolName: 'error',
+    baseProps: () => ({ expanded: true, newContent: '', diffLines: [] }),
+    mergeProps: (item) => ({ text: item.message || '' }),
+    status: () => 'error',
+  },
+}
+
+export function useCodexAgentStream({
+  tabs, projects, getActiveProjectId, isPanelActive, onTaskDone,
+  scrollBottom, saveHistory, nextMsgId,
+  isWriteTool, isEditTool, isBashTool, isReadTool,
+  inferToolFailureFromText, createToolMessage, onNewMessage, trimMessages,
+  onCompactBoundary = () => {},
+}) {
+  function handleToolItem(tab, item, isFinal) {
+    if (item.type === 'patch_apply_end') {
+      const toolUseId = item.call_id || item.id
+      if (!toolUseId) return
+      const _fileChanges = mapPatchChangesToFileChanges(item.changes)
+      const filePath = _fileChanges.map(c => c.path).filter(Boolean).join('\n')
+      if (CODEX_DEBUG) console.log('[codex-stream] patch_apply_end -> file_change', {
+        itemId: item.id,
+        callId: item.call_id,
+        status: item.status,
+        changesCount: _fileChanges.length,
+        filePath,
+      })
+      upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, (existing, isNew) => ({
+        ...(!isNew ? {} : {
+          toolName: 'file_change',
+          rawType: 'file_change',
+          activityLabel: getActivityLabel('file_change'),
+          toolUseId,
+          expanded: true,
+          newContent: '',
+          diffLines: [],
+        }),
+        filePath,
+        _fileChanges,
+        status: normalizeToolStatus(item.status, true),
+        text: JSON.stringify({ changes: item.changes || [], status: item.status }, null, 2),
+      }))
+      return
+    }
+
+    // apply_patch 特殊处理：custom_tool_call 类型，需要解析 input 文本构建 _fileChanges
+    if (item.type === 'custom_tool_call' && item.name === 'apply_patch') {
+      const patchText = item.input || ''
+      const changes = parseApplyPatchInput(patchText)
+      const filePath = changes.map(c => c.path).filter(Boolean).join('\n')
+      const _fileChanges = changes.map(c => ({
+        path: c.path || '',
+        operation: c.operation || 'modify',
+        unified_diff: '',
+        _diffHunks: c.diffHunks || [],
+        diffLines: [],
+      }))
+      const toolUseId = item.call_id || item.id
+      if (CODEX_DEBUG) console.log('[codex-stream] apply_patch call', {
+        itemId: item.id,
+        callId: item.call_id,
+        status: item.status,
+        parsedFiles: _fileChanges.length,
+        filePath,
+      })
+      upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, (existing, isNew) => {
+        return {
+          ...(!isNew ? {} : {
+            toolName: 'apply_patch',
+            rawType: 'apply_patch',
+            activityLabel: getActivityLabel('apply_patch'),
+            toolUseId,
+            expanded: true,
+            newContent: '',
+            diffLines: [],
+            filePath,
+            _fileChanges,
+          }),
+          ...(isNew ? {} : { filePath, _fileChanges }),
+          status: normalizeToolStatus(item.status, isFinal),
+          text: JSON.stringify({ name: item.name, input: String(item.input || '').slice(0, 2000) }, null, 2),
+        }
+      })
+      return
+    }
+
+    if (item.type === 'function_call') {
+      const toolUseId = item.call_id || item.id
+      if (!toolUseId) return
+      const name = item.name || 'tool'
+      const args = tryParseJsonObject(item.arguments || '{}') || {}
+      const previewState = buildFunctionCallToolState({
+        toolName: name,
+        args,
+        isWriteTool,
+        isEditTool,
+        isBashTool,
+        isReadTool,
+      })
+
+      upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, (existing, isNew) => ({
+        ...(!isNew ? {} : {
+          toolName: name,
+          rawType: item.type || name,
+          activityLabel: getActivityLabel(name),
+          toolUseId,
+          expanded: true,
+          ...previewState,
+        }),
+        ...(isNew ? {} : previewState),
+        status: normalizeToolStatus(item.status, isFinal),
+        text: JSON.stringify(args, null, 2),
+      }))
+      return
+    }
+
+    const handler = ITEM_TOOL_HANDLERS[item.type]
+    if (!handler) {
+      // 始终输出未处理的 item 类型，方便排查"卡住"问题
+      console.warn(`[codex-stream] unhandled item type: "${item.type}"`, { itemId: item.id, itemName: item.name, keys: Object.keys(item).join(',') })
+      return
+    }
+
+    const toolName = typeof handler.toolName === 'function' ? handler.toolName(item) : handler.toolName
+
+    const toolUseId = item.call_id || item.id
+    const matchedExisting = typeof handler.findExistingMessage === 'function'
+      ? handler.findExistingMessage(tab, item)
+      : null
+
+    if (matchedExisting) {
+      const mergeProps = handler.mergeProps(item, matchedExisting)
+      const status = handler.status(item, isFinal)
+      Object.assign(matchedExisting, {
+        ...mergeProps,
+        rawType: matchedExisting.rawType || item.type || matchedExisting.toolName || toolName,
+        activityLabel: matchedExisting.activityLabel || getActivityLabel(matchedExisting.toolName || toolName),
+        status,
+      })
+      return
+    }
+
+    upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, (existing, isNew) => {
+      const baseProps = isNew ? handler.baseProps(item, tab) : {}
+      const mergeProps = handler.mergeProps(item, existing)
+      const status = handler.status(item, isFinal)
+      return {
+        ...baseProps,
+        ...mergeProps,
+        ...(isNew
+          ? { toolName, rawType: item.type || toolName, activityLabel: getActivityLabel(toolName), toolUseId }
+          : { rawType: item.type || existing?.rawType || toolName, activityLabel: getActivityLabel(toolName) }),
+        status,
+      }
+    })
+
+    // command_execution 完成时需要额外处理
+    if (isFinal && handler.onFinal) {
+      const msg = tab.messages.find(m => m.role === 'tool' && m.toolUseId === toolUseId)
+      if (msg) {
+        // 将 helper 函数临时挂到 msg 上供 onFinal 使用
+        msg._messagesContext = tab.messages
+        msg._inferToolFailureFromText = inferToolFailureFromText
+        msg._isBashTool = isBashTool
+        msg._isReadTool = isReadTool
+        msg._isWriteTool = isWriteTool
+        msg._isEditTool = isEditTool
+        handler.onFinal(msg, item)
+        delete msg._messagesContext
+        delete msg._inferToolFailureFromText
+        delete msg._isBashTool
+        delete msg._isReadTool
+        delete msg._isWriteTool
+        delete msg._isEditTool
+      }
+    }
+  }
+
+  function onAgentMessage({ sessionId: sid, msg }) {
+    // 打印最原始数据
+    if (msg.type === 'item.started' || msg.type === 'item.updated' || msg.type === 'item.completed') {
+      if (CODEX_DEBUG) console.log('[codex-stream] === RAW onAgentMessage ===',msg)
+    }
+
+    const match = findChatBySessionId({
+      sessionId: sid,
+      projects: projects?.value,
+      tabs: tabs.value,
+    })
+    const tab = match?.tab
+    if (!tab) return
+
+    const isWorking = msg.type === 'assistant' || msg.type === 'item.started' || msg.type === 'item.updated'
+    if (!tab.thinking && isWorking) tab.thinking = true
+
+    if (msg.type === 'assistant') {
+      const content = msg.message?.content
+      if (!Array.isArray(content)) return
+      for (const block of content) {
+        if (block.type === 'text' && block.text) appendAssistantText(tab, nextMsgId, onNewMessage, block.text)
+      }
+      scrollBottom(tab.id)
+      saveHistory()
+      return
+    }
+
+    if (msg.type === 'item.started' || msg.type === 'item.updated' || msg.type === 'item.completed') {
+      const item = msg.item
+      if (!item) return
+      const isFinal = msg.type === 'item.completed'
+      if (item.type === 'file_change') {
+        if (CODEX_DEBUG) console.log('[codex-stream] file_change received', {
+          eventType: msg.type,
+          itemId: item.id,
+          status: item.status,
+          changesCount: Array.isArray(item.changes) ? item.changes.length : 0,
+          sessionId: sid,
+        })
+      }
+
+      if (item.type === 'agent_message') {
+        const aMsg = ensureAssistantMessage(tab, nextMsgId, onNewMessage)
+        aMsg.text = item.message || item.text || ''
+        if (isFinal) tab.currentAssistantId = null
+        scrollBottom(tab.id)
+        saveHistory()
+        return
+      }
+
+      tab.currentAssistantId = null
+      handleToolItem(tab, item, isFinal)
+      if (item.type === 'file_change') {
+        const justUpserted = [...tab.messages].reverse().find(
+          m => m.role === 'tool' && (m.toolUseId === item.id || String(m.rawType || '').toLowerCase() === 'file_change')
+        )
+        if (CODEX_DEBUG) console.log('[codex-stream] file_change rendered', {
+          found: !!justUpserted,
+          toolUseId: justUpserted?.toolUseId,
+          status: justUpserted?.status,
+          filePath: justUpserted?.filePath,
+        })
+      }
+
+      scrollBottom(tab.id)
+      saveHistory()
+      return
+    }
+
+    if (msg.type === 'turn.failed') {
+      tab.thinking = false
+      tab._awaitingDone = false
+      tab.currentAssistantId = null
+      const errorText = msg.error?.message || msg.message || 'Turn 执行失败'
+      pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${errorText}` })
+      scrollBottom(tab.id)
+      saveHistory()
+      return
+    }
+
+    if (msg.type === 'system') {
+      if (msg.subtype === 'debug') {
+        // 调试消息，仅 console 输出，不渲染到对话
+        return
+      }
+      if (msg.subtype === 'abort') {
+        tab.thinking = false
+        tab._awaitingDone = false
+        tab.currentAssistantId = null
+        const lastThinking = [...tab.messages].reverse().find(
+          m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
+        )
+        if (lastThinking) lastThinking.status = 'done'
+        scrollBottom(tab.id)
+        saveHistory()
+        return
+      }
+      if (msg.subtype === 'error') {
+        // thread.error / turn.failed 发来的系统级错误，清理状态并显示
+        tab.thinking = false
+        tab._awaitingDone = false
+        tab.currentAssistantId = null
+        const lastThinking = [...tab.messages].reverse().find(
+          m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
+        )
+        if (lastThinking) lastThinking.status = 'done'
+        const content = msg.message?.content
+        const text = Array.isArray(content)
+          ? content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+          : String(msg.message || '')
+        pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${text || '执行异常'}` })
+        scrollBottom(tab.id)
+        saveHistory()
+        return
+      }
+      if (msg.subtype === 'compact_started') {
+        tab._compacting = true
+        pushMessage(tab, onNewMessage, {
+          id: nextMsgId(),
+          role: 'system',
+          text: 'CodeX 自动压缩中',
+          compactTitle: 'CodeX 自动压缩中',
+          compactSummary: '',
+          expanded: false,
+          _isCompact: true,
+          _compacting: true,
+        })
+        scrollBottom(tab.id)
+        saveHistory()
+        return
+      }
+      if (msg.subtype === 'compact_summary') {
+        tab._compacting = false
+        const content = msg.message?.content
+        const summary = Array.isArray(content)
+          ? content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+          : String(msg.message || '').trim()
+        tab._carryCompactSummary = summary
+        const lastCompact = [...tab.messages].reverse().find(m => m._isCompact)
+        if (lastCompact) {
+          lastCompact.compactSummary = summary
+          lastCompact._compacting = false
+        } else {
+          pushMessage(tab, onNewMessage, {
+            id: nextMsgId(),
+            role: 'system',
+            text: '上下文已压缩',
+            compactTitle: '上下文已压缩',
+            compactSummary: summary,
+            expanded: false,
+            _isCompact: true,
+          })
+        }
+        scrollBottom(tab.id)
+        saveHistory()
+        return
+      }
+      if (msg.subtype === 'compact_boundary') {
+        tab._compacting = false
+        const meta = msg.compact_metadata || {}
+        const pre = Number(meta.pre_compact_tokens || meta.preCompactTokens || 0)
+        const post = Number(meta.post_compact_tokens || meta.postCompactTokens || 0)
+        const preK = pre > 0 ? Math.round(pre / 1000) : 0
+        const postK = post > 0 ? Math.round(post / 1000) : 0
+        const title = post > 0
+          ? `上下文已压缩 ${preK}k → ${postK}k tokens`
+          : '上下文已压缩'
+        const lastCompact = [...tab.messages].reverse().find(m => m._isCompact)
+        if (lastCompact) {
+          lastCompact.text = title
+          lastCompact.compactTitle = title
+          lastCompact._compacting = false
+        } else {
+          pushMessage(tab, onNewMessage, {
+            id: nextMsgId(),
+            role: 'system',
+            text: title,
+            compactTitle: title,
+            compactSummary: '',
+            expanded: false,
+            _isCompact: true,
+          })
+        }
+        scrollBottom(tab.id)
+        saveHistory()
+        if (post > 0) onCompactBoundary(post)
+        return
+      }
+      // 已知的 system subtype 已在上面处理，未知 subtype 仅打日志不渲染
+      if (CODEX_DEBUG) {
+        console.warn('[codex] onAgentMessage: unhandled system subtype:', msg.subtype, 'text preview:', String(msg.message).slice(0, 200))
+      }
+      return
+    }
+
+    if (msg.type === 'metrics' && msg.usage) {
+      tab.lastMetrics = { ...tab.lastMetrics, ...msg.usage }
+      saveHistory()
+      return
+    }
+
+    // 未知 msg.type 兜底日志
+    console.warn('[codex] onAgentMessage: unhandled msg.type:', msg.type, msg)
+  }
+
+  function onAgentDone({ sessionId: sid, cliSessionId, filePath, reason = 'completed' }) {
+    // 跨所有项目搜索 session（不仅是当前活跃项目，后台项目也需要处理）
+    let tab = null
+    let ownerProject = null
+    if (projects) {
+      for (const p of projects.value) {
+        tab = (p.chats || []).find(c => c.sessionId === sid)
+        if (tab) { ownerProject = p; break }
+      }
+    }
+    if (!tab) {
+      // 回退到当前活跃 tab 列表
+      tab = tabs.value.find(t => t.sessionId === sid)
+    }
+    console.log(`[codex-done] onAgentDone: sid=${sid} tabFound=${!!tab} ownerProj=${ownerProject?.id || 'none'} activeProj=${getActiveProjectId?.() || 'none'} panelActive=${isPanelActive?.value ?? 'N/A'} reason=${reason}`)
+    if (!tab) return
+    if (cliSessionId) {
+      tab.cliSessionId = cliSessionId
+      window.electronAPI.codexRegisterCliSessions?.({ [sid]: cliSessionId })
+    }
+    if (filePath) {
+      tab.filePath = filePath
+      if (CODEX_DEBUG) console.log('[CodexStream] onAgentDone → filePath:', filePath)
+    }
+    const lastThinking = [...tab.messages].reverse().find(
+      m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
+    )
+    if (lastThinking) {
+      lastThinking.status = 'done'
+    }
+    tab.thinking = false
+    tab._awaitingDone = false
+    if (ownerProject && reason === 'completed') {
+      // 只有后台项目完成时才通知（前台项目用户能直接看到，不应残留 hasDoneNotification）
+      if (shouldNotifyOnTaskDone({
+        ownerProjectId: ownerProject.id,
+        activeProjectId: getActiveProjectId?.(),
+        isPanelActive: isPanelActive?.value,
+      })) {
+        ownerProject.hasDoneNotification = true
+        window.electronAPI?.flashTaskbar?.()
+      }
+      onTaskDone?.()
+    }
+    tab.currentAssistantId = null
+    trimMessages?.(tab)
+    scrollBottom(tab.id)
+    saveHistory()
+  }
+
+  return { onAgentMessage, onAgentDone }
+}

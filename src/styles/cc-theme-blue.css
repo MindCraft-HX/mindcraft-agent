@@ -1,0 +1,247 @@
+/* Claude Code - Blue 主题 */
+.cc-theme-blue {
+  /* 背景层级 */
+  --cc-bg: #0f1c2e;
+  --cc-bg-secondary: #0c1826;
+  --cc-bg-tertiary: #112240;
+  --cc-bg-input: #0c1826;
+  --cc-bg-elevated: #1b3a5c;
+  --cc-bg-deep: #0a1420;
+  --cc-bg-deepest: #07101a;
+  --cc-bg-code-deep: #091320;
+  --cc-bg-select: #0c1826;
+  --cc-bg-overlay: rgba(0, 0, 0, 0.7);
+  --cc-bg-hover: #243f5e;
+
+  /* 文字层级 */
+  --cc-text: #e2ecf5;
+  --cc-text-secondary: #c0d4e8;
+  --cc-text-tertiary: #a0bcd5;
+  --cc-text-muted: #88a8c4;
+  --cc-text-soft: #7498b5;
+  --cc-text-dim: #6088a5;
+  --cc-text-dimmer: #507898;
+  --cc-text-faint: #456a88;
+  --cc-text-placeholder: #456a88;
+  --cc-text-icon: #507898;
+  --cc-text-999: #88a8c4;
+  --cc-text-9a: #7498b5;
+  --cc-text-ddd: #e2ecf5;
+  --cc-text-b0: #a0bcd5;
+
+  /* 边框层级 */
+  --cc-border: #1b3a5c;
+  --cc-border-light: #152d47;
+  --cc-border-medium: #1b3a5c;
+  --cc-border-strong: #254a70;
+  --cc-border-stronger: #2d5580;
+  --cc-border-hover: #5b9bd5;
+  --cc-border-focus: #5b9bd5;
+
+  /* 主色 */
+  --cc-primary: #5b9bd5;
+  --cc-primary-hover: #4a88c4;
+  --cc-primary-bg: #0f2640;
+  --cc-primary-border: #1c4068;
+  --cc-btn-primary-text: #fff;
+
+  /* 按钮 */
+  --cc-btn-bg: #1b3a5c;
+  --cc-btn-border: #254a70;
+  --cc-btn-text: #c0d4e8;
+  --cc-btn-bg-hover: #2a4d6e;
+  --cc-btn-border-hover: #5b9bd5;
+  --cc-btn-text-hover: #e2ecf5;
+  --cc-btn-disabled-bg: #0f2030;
+  --cc-btn-disabled-text: #456a88;
+
+  /* 图标/占位 */
+  --cc-icon-muted: #507898;
+  --cc-ph-title: #507898;
+  --cc-ph-sub: #6088a5;
+
+  /* 滚动条 */
+  --cc-scrollbar-thumb: #1b3a5c;
+  --cc-scrollbar-thumb-hover: #254a70;
+  --cc-scrollbar-track: #0c1826;
+  --cc-scrollbar-thumb-alt: #254a70;
+  --cc-scrollbar-thumb-alt-hover: #2d5580;
+
+  /* 拖放 */
+  --cc-drop-mask-bg: rgba(91, 155, 213, 0.06);
+
+  /* 阴影/遮罩 */
+  --cc-shadow: rgba(0, 0, 0, 0.5);
+  --cc-shadow-light: rgba(0, 0, 0, 0.35);
+  --cc-overlay-bg: rgba(0, 0, 0, 0.6);
+  --cc-overlay-bg-strong: rgba(0, 0, 0, 0.7);
+
+  /* 信息色 */
+  --cc-info: #7ab3e0;
+  --cc-info-bg: rgba(122, 179, 224, 0.1);
+  --cc-info-text: #a0cef0;
+
+  /* 状态色 - 环境检测 */
+  --cc-env-ok: #6bc98f;
+  --cc-env-ok-bg: rgba(107, 201, 143, 0.1);
+  --cc-env-warn: #e0b050;
+  --cc-env-warn-bg: rgba(224, 176, 80, 0.1);
+  --cc-env-err: #e07070;
+  --cc-env-err-bg: rgba(224, 112, 112, 0.1);
+
+  /* 状态色 - 通用 */
+  --cc-success: #6bc98f;
+  --cc-success-bg: #0c1e14;
+  --cc-success-border: #1a3528;
+  --cc-success-text: #6bc98f;
+  --cc-warning: #e0b050;
+  --cc-warning-bg: #1a180c;
+  --cc-warning-border: #353015;
+  --cc-error: #e07070;
+  --cc-error-bg: #1a0e0e;
+  --cc-error-border: #351a1a;
+  --cc-error-text: #eba0a0;
+
+  --cc-hljs-default: #e2ecf5;
+
+  /* sidebar / panel */
+  --cc-panel-bg: #0c1826;
+  --cc-panel-border: #1b3a5c;
+  --cc-panel-item-hover: #1a3355;
+  --cc-panel-item-active: #243f5e;
+  --cc-panel-title: #c0d4e8;
+  --cc-panel-text: #88a8c4;
+  --cc-panel-active-text: #e2ecf5;
+
+  /* context menu */
+  --cc-menu-bg: #112240;
+  --cc-menu-border: #1b3a5c;
+  --cc-menu-text: #c0d4e8;
+  --cc-menu-hover: #243f5e;
+
+  /* confirm dialog */
+  --cc-dialog-bg: #112240;
+  --cc-dialog-border: #1b3a5c;
+  --cc-dialog-title: #e2ecf5;
+  --cc-dialog-cancel-bg: #1b3a5c;
+  --cc-dialog-cancel-border: #254a70;
+  --cc-dialog-cancel-text: #a0bcd5;
+  --cc-dialog-cancel-hover-bg: #2a4d6e;
+  --cc-dialog-cancel-hover-text: #e2ecf5;
+  --cc-dialog-confirm-bg: #5b9bd5;
+  --cc-dialog-confirm-border: #5b9bd5;
+  --cc-dialog-confirm-text: #fff;
+
+  /* user bubble */
+  --cc-user-bg: #3d7ab8;
+  --cc-user-text: #fff;
+  --cc-user-code-bg: rgba(0, 0, 0, 0.25);
+  --cc-user-code-border: rgba(0, 0, 0, 0.2);
+  --cc-user-code-text: #e0ecf5;
+  --cc-user-heading: #f0f6fc;
+
+  /* assistant bubble */
+  --cc-assistant-bg: #112240;
+  --cc-assistant-border: #1b3a5c;
+  --cc-assistant-label: #5b9bd5;
+  --cc-assistant-text: #e2ecf5;
+  --cc-assistant-code-bg: #0c1826;
+  --cc-assistant-code-border: #1b3a5c;
+  --cc-assistant-inline-code-bg: #0c1826;
+  --cc-assistant-inline-code-text: #a8d4a0;
+  --cc-assistant-heading: #f0f6fc;
+  --cc-assistant-table-border: #1b3a5c;
+  --cc-assistant-th-bg: #0c1826;
+  --cc-assistant-th-text: #e2ecf5;
+  --cc-assistant-td-text: #a0bcd5;
+
+  /* tool card */
+  --cc-tool-border: #1b3a5c;
+  --cc-tool-hover-bg: #0c1826;
+  --cc-tool-chevron: #507898;
+  --cc-tool-label: #6bc98f;
+  --cc-tool-output: #a8d4a0;
+  --cc-tool-done: #7ab3e0;
+  --cc-tool-running: #6bc98f;
+  --cc-tool-perm-name: #7ab3e0;
+  --cc-tool-perm-resource-bg: #0c1826;
+  --cc-tool-perm-resource-border: #1b3a5c;
+  --cc-tool-perm-resource-text: #e2ecf5;
+  --cc-tool-perm-resource-detail: #88a8c4;
+  --cc-tool-allow-bg: #0c1e14;
+  --cc-tool-allow-border: #1a3528;
+  --cc-tool-allow-text: #6bc98f;
+  --cc-tool-allow-hover-bg: #102818;
+  --cc-tool-allow-hover-text: #90ddb0;
+  --cc-tool-deny-bg: #1a0e0e;
+  --cc-tool-deny-border: #351a1a;
+  --cc-tool-deny-text: #e07070;
+  --cc-tool-deny-hover-bg: #2a1010;
+  --cc-tool-deny-hover-text: #eba0a0;
+
+  /* diff */
+  --cc-diff-add-bg: #122e1e;
+  --cc-diff-del-bg: #2e1212;
+  --cc-diff-ctx: #88a8c4;
+  --cc-diff-empty-bg: #0f1c2e;
+  --cc-diff-modal-overlay: rgba(0, 0, 0, 0.7);
+  --cc-diff-modal-bg: #112240;
+  --cc-diff-modal-header-bg: #152d47;
+  --cc-diff-modal-border: #254a70;
+  --cc-diff-modal-title: #e2ecf5;
+  --cc-diff-modal-close: #88a8c4;
+  --cc-diff-modal-close-hover-color: #f0f6fc;
+  --cc-diff-modal-close-hover-bg: #243f5e;
+  --cc-diff-modal-body-bg: #0c1826;
+  --cc-diff-modal-body-text: #e2ecf5;
+  --cc-diff-expand-btn: #88a8c4;
+  --cc-diff-expand-btn-hover-color: #f0f6fc;
+  --cc-diff-expand-btn-hover-bg: #243f5e;
+
+  /* toggle */
+  --cc-toggle-off: #254a70;
+  --cc-toggle-on: #5b9bd5;
+  --cc-toggle-knob: #fff;
+
+  /* status bar */
+  --cc-statusbar-bg: #0c1826;
+  --cc-statusbar-text: #c0d4e8;
+  --cc-statusbar-border: #1b3a5c;
+  --cc-statusbar-muted: #88a8c4;
+
+  /* highlight.js */
+  --cc-hljs-text: #e2ecf5;
+  --cc-hljs-keyword: #c792ea;
+  --cc-hljs-built-in: #ffcb6b;
+  --cc-hljs-string: #ffe082;
+  --cc-hljs-number: #f78c6c;
+  --cc-hljs-comment: #607888;
+  --cc-hljs-function: #80cbc4;
+  --cc-hljs-params: #e2ecf5;
+  --cc-hljs-tag: #f78c6c;
+  --cc-hljs-type: #ffcb6b;
+  --cc-hljs-operator: #89ddff;
+
+  /* busy banner */
+  --cc-busy-bg-from: #152535;
+  --cc-busy-bg-to: #0f1c2e;
+  --cc-busy-border: #254a70;
+  --cc-busy-spinner-ring: #254a70;
+  --cc-busy-spinner-arc: #5b9bd5;
+  --cc-busy-title: #a0cef0;
+  --cc-busy-sub: #88a8c4;
+
+  /* tool category colors (Phase 1 UI) */
+  --cc-tool-color-write: #5eead4;
+  --cc-tool-color-edit: #5eead4;
+  --cc-tool-color-read: #6ee7b7;
+  --cc-tool-color-terminal: #f59e0b;
+  --cc-tool-color-search: #6ee7b7;
+  --cc-tool-color-plan: #93c5fd;
+  --cc-tool-color-todo: #93c5fd;
+  --cc-tool-color-think: #c4b5fd;
+  --cc-tool-color-change: #5eead4;
+  --cc-tool-color-plugin: #b6c7d8;
+  --cc-tool-color-agent: #c4b5fd;
+  --cc-tool-color-other: #b6c7d8;
+}

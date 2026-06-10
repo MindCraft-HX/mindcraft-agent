@@ -1,0 +1,73 @@
+{
+  "appId": "com.gaotongfont.mindcraft",
+  "productName": "MindCraft",
+  "copyright": "Copyright © 2023 GENITOP",
+  "releaseInfo": {
+    "releaseNotesFile": "release/release-1.6.1.md"
+  },
+  "extraMetadata": {
+    "mode": "production",
+    "platform": "WIN"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "extraResources": [
+    {
+      "from": "./database/",
+      "to": "../database/"
+    },
+    {
+      "from": "./plugins/vendors",
+      "to": "vendors",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "./tools/rg",
+      "to": "tools/rg",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ],
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "packages/agent/**/*",
+    "!node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**",
+    "!node_modules/@openai/codex-win32-x64/**"
+  ],
+  "directories": {
+    "output": "dist_electron"
+  },
+  "win": {
+    "icon": "dist/logo-app.png",
+    "target": [
+      "nsis",
+      "zip"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown 文件",
+        "description": "Markdown Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown 文件",
+        "description": "Markdown Document",
+        "role": "Editor"
+      }
+    ]
+  },
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "https://download.mindcraft.com.cn/MindCraft/installer/win"
+    }
+  ]
+}

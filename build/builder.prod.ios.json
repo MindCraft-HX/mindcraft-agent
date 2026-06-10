@@ -1,0 +1,61 @@
+{
+  "appId": "com.gaotongfont.mindcraft",
+  "productName": "MindCraft",
+  "copyright": "Copyright © 2023 GENITOP",
+  "releaseInfo": {
+    "releaseNotesFile": "release/release-1.6.1.md"
+  },
+  "extraMetadata": {
+    "mode": "production",
+    "platform": "IOS"
+  },
+  "mac": {
+    "category": "public.app-category.utilities",
+    "icon": "dist/logo-app-ios.icns",
+    "target": [
+      "dmg",
+      "zip",
+      "dir"
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "extraResources": [
+    {
+      "from": "./database/",
+      "to": "../database/"
+    },
+    {
+      "from": "./plugins/vendors",
+      "to": "vendors",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ],
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**",
+    "!node_modules/@openai/codex-darwin-*/**"
+  ],
+  "directories": {
+    "output": "dist_electron"
+  },
+  "win": {
+    "icon": "dist/logo-app.png",
+    "target": [
+      "nsis",
+      "zip"
+    ]
+  },
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "https://download.mindcraft.com.cn/MindCraft/installer/mac"
+    }
+  ],
+  "afterSign": "build/notarize.js"
+}

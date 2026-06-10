@@ -1,0 +1,77 @@
+.code-block {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  overflow: hidden; // 添加这一行
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 4px;
+    background-color: #696969;
+    padding-left: 10px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    margin: 0; // 添加这一行
+
+    .name {
+      text-transform: uppercase;
+      color: #d2e7ff;
+    }
+    .copy-btn {
+      background-color:#696969; // 添加这一行
+      font-family: 'Consolas', 'Courier New', monospace;
+      margin-right: 5px;
+      border-radius: 5px;
+      color: #d2e7ff; // 添加这一行
+      height: 22px;
+      transition: color 0.3s ease; // 添加这一行
+
+      &:hover {
+        color: #fff; // 添加这一行
+        background-color:#808080;
+        cursor: pointer; // 添加这一行
+      }
+    }
+  }
+
+  pre.hljs {
+    margin: 0; // 这里添加一个margin: 0;可以消除pre的默认margin，使得header和pre更紧密
+    padding: 0;
+    position: relative;
+
+    code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      padding: 8px 2px;
+    }
+
+    ol {
+      list-style: none;
+      margin: 0;
+      margin-left: 8px;
+      padding: 0;
+
+      li {
+        position: relative;
+        padding-left: 10px;
+
+        .line-num {
+          margin-right: 25px;
+          // position: absolute;
+          // left: -40px;
+          // top: 0;
+          // width: 20px;
+          // height: 100%;
+          border-right: 1px solid rgba(117, 117, 117, 0.66);
+          padding-left: 1em;
+
+          &:before {
+            content: attr(data-line);
+            font-family: 'Consolas', 'Courier New', monospace;
+            position: absolute;
+            left: 5px;
+            top: 0;
+          }
+        }
+      }
+    }
+  }
+}
