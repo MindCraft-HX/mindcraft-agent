@@ -42,6 +42,10 @@ if(!app.isPackaged) {
 }
 const NODE_PLATFORM = packageJson.platform || "WIN"
 let initUrl = path.join(__dirname, "../dist/index.html")
+// 开发模式：优先使用 Vite dev server（HMR 支持）
+if (process.env.VITE_DEV_SERVER_URL) {
+  initUrl = process.env.VITE_DEV_SERVER_URL
+}
 let sideFloatWin = null
 let win = null
 
@@ -88,8 +92,19 @@ function createWindow() {
   win.center();
   //隐藏菜单栏
   win.setMenu(null);
-  // 始终从 dist 文件加载，避免依赖外部 dev server
-  win.loadFile(initUrl);
+  // 开发模式从 dev server 加载（支持 HMR），生产模式从 dist 文件加载
+  if (process.env.VITE_DEV_SERVER_URL) {
+    win.loadURL(initUrl);
+  } else {
+    win.loadFile(initUrl);
+  }
+  // 加载失败时打印详细错误
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('[main] Page load failed:', errorCode, errorDescription, validatedURL);
+  });
+  win.webContents.on('console-message', (_event, level, message) => {
+    if (level >= 2) console.log('[renderer]', message); // level>=2: warn/error
+  });
   win.on('close', (e) => {
     e.preventDefault();
     win.hide();
