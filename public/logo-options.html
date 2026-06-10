@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MindCraft-Agent — Logo 方案对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', 'PingFang SC', sans-serif; background: #f0f2f5; color: #333; }
+  .header { background: linear-gradient(135deg, #0d1117 0%, #1a1a2e 100%); padding: 40px 0; text-align: center; }
+  .header h1 { color: #00e5ff; font-size: 28px; font-weight: 600; letter-spacing: 2px; }
+  .header p { color: #8b949e; font-size: 14px; margin-top: 8px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* === 四个方案卡片 === */
+  .options-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 32px; }
+  .option-card { background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
+  .option-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+  .option-card .preview { background: #0d1117; padding: 32px; display: flex; justify-content: center; align-items: center; min-height: 200px; }
+  .option-card .preview img { width: 128px; height: 128px; }
+  .option-card .info { padding: 16px; }
+  .option-card .info h3 { font-size: 16px; color: #0d1117; margin-bottom: 4px; }
+  .option-card .info p { font-size: 12px; color: #666; line-height: 1.5; }
+  .option-card .tag { display: inline-block; background: #e0f7fa; color: #00838f; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 8px; }
+
+  /* === 模拟预览区 === */
+  .preview-section { margin-bottom: 32px; }
+  .preview-section h2 { font-size: 18px; color: #0d1117; margin-bottom: 16px; padding-left: 4px; border-left: 3px solid #409eff; padding-left: 12px; }
+
+  /* 导航栏模拟 */
+  .navbar-mock { display: flex; align-items: center; height: 48px; padding: 0 16px; gap: 12px; border-radius: 8px; margin-bottom: 12px; }
+  .navbar-dark { background: #409eff; }
+  .navbar-light { background: #fff; border: 1px solid #e4e7ed; }
+  .navbar-mock .nav-logo { width: 28px; height: 28px; flex-shrink: 0; }
+  .navbar-mock .nav-item { display: flex; align-items: center; gap: 6px; padding: 0 12px; height: 48px; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .navbar-dark .nav-item { color: rgba(255,255,255,0.85); }
+  .navbar-dark .nav-item.active { color: #fff; background: rgba(255,255,255,0.15); border-bottom-color: #fff; }
+  .navbar-light .nav-item { color: #606266; }
+  .navbar-light .nav-item.active { color: #409eff; border-bottom-color: #409eff; }
+  .navbar-mock .nav-spacer { flex: 1; }
+  .navbar-mock .nav-settings { font-size: 12px; opacity: 0.7; }
+  .navbar-dark .nav-settings { color: #fff; }
+
+  /* 窗口标题栏模拟 */
+  .window-mock { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 12px; }
+  .window-titlebar { display: flex; align-items: center; height: 32px; padding: 0 12px; background: #f5f5f5; border-bottom: 1px solid #e4e7ed; gap: 8px; }
+  .window-titlebar .dots { display: flex; gap: 6px; }
+  .window-titlebar .dots span { width: 10px; height: 10px; border-radius: 50%; }
+  .window-titlebar .dots span:nth-child(1) { background: #ff5f57; }
+  .window-titlebar .dots span:nth-child(2) { background: #ffbd2e; }
+  .window-titlebar .dots span:nth-child(3) { background: #28c840; }
+  .window-titlebar .title-icon { width: 16px; height: 16px; margin-left: 8px; }
+  .window-titlebar .title-text { font-size: 12px; color: #333; }
+  .window-body { height: 80px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 13px; }
+
+  /* Favicon 模拟 */
+  .favicon-row { display: flex; align-items: center; gap: 24px; margin-bottom: 12px; flex-wrap: wrap; }
+  .favicon-item { display: flex; align-items: center; gap: 8px; }
+  .favicon-item img { border-radius: 2px; }
+  .favicon-item .label { font-size: 11px; color: #999; }
+
+  /* 深色/浅色背景 */
+  .bg-test { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .bg-test .bg-panel { border-radius: 8px; padding: 24px; display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 120px; }
+  .bg-dark { background: #0d1117; }
+  .bg-light { background: #ffffff; border: 1px solid #e4e7ed; }
+  .bg-blue { background: #409eff; }
+  .bg-gradient { background: linear-gradient(135deg, #0d1117 0%, #1a3a4a 100%); }
+  .bg-panel img { width: 64px; height: 64px; }
+  .bg-panel .brand { font-size: 20px; font-weight: 600; letter-spacing: 1px; }
+  .bg-dark .brand { color: #e0e5e9; }
+  .bg-light .brand { color: #0d1117; }
+  .bg-blue .brand { color: #fff; }
+  .bg-gradient .brand { color: #00e5ff; }
+
+  /* 底部说明 */
+  .footer { text-align: center; padding: 24px; color: #999; font-size: 12px; }
+
+  /* 色彩板 */
+  .color-palette { display: flex; gap: 12px; margin-bottom: 32px; flex-wrap: wrap; }
+  .color-swatch { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .color-swatch .swatch { width: 32px; height: 32px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.08); }
+  .color-swatch .color-info { font-size: 12px; }
+  .color-swatch .color-info .hex { font-family: monospace; color: #333; font-weight: 600; }
+  .color-swatch .color-info .name { color: #999; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MindCraft-Agent · Logo 方案对比</h1>
+  <p>4 种设计方案 · 黑 + 白 + 青色系 · 选择后统一替换应用图标 / Favicon / 导航栏</p>
+</div>
+
+<div class="container">
+
+  <!-- 色板 -->
+  <div class="preview-section">
+    <h2>色彩板</h2>
+    <div class="color-palette">
+      <div class="color-swatch"><div class="swatch" style="background:#0d1117"></div><div class="color-info"><div class="hex">#0d1117</div><div class="name">深色背景</div></div></div>
+      <div class="color-swatch"><div class="swatch" style="background:#00e5ff"></div><div class="color-info"><div class="hex">#00e5ff</div><div class="name">亮青</div></div></div>
+      <div class="color-swatch"><div class="swatch" style="background:#409eff"></div><div class="color-info"><div class="hex">#409eff</div><div class="name">导航蓝</div></div></div>
+      <div class="color-swatch"><div class="swatch" style="background:#00acc1"></div><div class="color-info"><div class="hex">#00acc1</div><div class="name">中青</div></div></div>
+      <div class="color-swatch"><div class="swatch" style="background:#ffffff;border:1px solid #ccc"></div><div class="color-info"><div class="hex">#ffffff</div><div class="name">白色</div></div></div>
+    </div>
+  </div>
+
+  <!-- 四个方案 -->
+  <div class="preview-section">
+    <h2>方案总览</h2>
+    <div class="options-grid">
+      <div class="option-card">
+        <div class="preview"><img src="logo-A-geo.svg" alt="方案A"></div>
+        <div class="info">
+          <h3>A · 渐变几何 M</h3>
+          <p>青色渐变填充 M 形，底部双柱+中间V形，经典几何造型。沉稳现代。</p>
+          <span class="tag">品牌感强</span>
+        </div>
+      </div>
+      <div class="option-card">
+        <div class="preview"><img src="logo-B-minimal.svg" alt="方案B"></div>
+        <div class="info">
+          <h3>B · 极简线条 M</h3>
+          <p>青色描边 M 形 + 中心圆点。最少笔画，最大化辨识度。</p>
+          <span class="tag">极简主义</span>
+        </div>
+      </div>
+      <div class="option-card">
+        <div class="preview"><img src="logo-C-hex.svg" alt="方案C"></div>
+        <div class="info">
+          <h3>C · 六边形科技 M</h3>
+          <p>M 形置于六边形内，科技/工程感。半透明边框层次丰富。</p>
+          <span class="tag">技术范</span>
+        </div>
+      </div>
+      <div class="option-card">
+        <div class="preview"><img src="logo-D-arrow.svg" alt="方案D"></div>
+        <div class="info">
+          <h3>D · 渐变箭头 M</h3>
+          <p>横向渐变 M 形 + 底部装饰线。动感、方向感、前进。</p>
+          <span class="tag">活力动感</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导航栏模拟 -->
+  <div class="preview-section">
+    <h2>导航栏效果模拟</h2>
+
+    <p style="font-size:13px;color:#666;margin-bottom:8px">蓝色导航栏（当前配色）</p>
+    <div id="navbar-blue-dark"></div>
+
+    <p style="font-size:13px;color:#666;margin-bottom:8px;margin-top:16px">白色导航栏</p>
+    <div id="navbar-light"></div>
+
+    <p style="font-size:13px;color:#666;margin-bottom:8px;margin-top:16px">深色导航栏</p>
+    <div id="navbar-dark"></div>
+  </div>
+
+  <!-- 窗口标题栏 -->
+  <div class="preview-section">
+    <h2>窗口图标 / 任务栏</h2>
+    <div id="window-mocks"></div>
+  </div>
+
+  <!-- Favicon 模拟 -->
+  <div class="preview-section">
+    <h2>Favicon 浏览器标签</h2>
+    <div id="favicon-mocks"></div>
+  </div>
+
+  <!-- 多背景测试 -->
+  <div class="preview-section">
+    <h2>多背景适配</h2>
+    <div id="bg-tests"></div>
+  </div>
+
+</div>
+
+<div class="footer">
+  MindCraft-Agent v1.0.0 · Logo 方案对比 · 选择方案后执行统一替换
+</div>
+
+<script>
+const logos = {
+  A: 'logo-A-geo.svg',
+  B: 'logo-B-minimal.svg',
+  C: 'logo-C-hex.svg',
+  D: 'logo-D-arrow.svg',
+};
+const names = { A: '方案A', B: '方案B', C: '方案C', D: '方案D' };
+
+function img(key, size) {
+  return `<img src="${logos[key]}" width="${size}" height="${size}" alt="${names[key]}">`;
+}
+
+// 导航栏模拟
+function renderNavbars() {
+  for (const key of Object.keys(logos)) {
+    // 蓝色
+    document.getElementById('navbar-blue-dark').innerHTML += `
+      <div class="navbar-mock navbar-dark">
+        ${img(key, 28)}
+        <div class="nav-item active">编程智能体</div>
+        <div class="nav-item">文档浏览</div>
+        <div class="nav-spacer"></div>
+        <div class="nav-settings">⚙ 设置</div>
+      </div>`;
+  }
+  // 分隔
+  for (const key of Object.keys(logos)) {
+    document.getElementById('navbar-light').innerHTML += `
+      <div class="navbar-mock navbar-light">
+        ${img(key, 28)}
+        <div class="nav-item active">编程智能体</div>
+        <div class="nav-item">文档浏览</div>
+        <div class="nav-spacer"></div>
+      </div>`;
+  }
+  for (const key of Object.keys(logos)) {
+    document.getElementById('navbar-dark').innerHTML += `
+      <div class="navbar-mock navbar-dark" style="background:#0d1117">
+        ${img(key, 28)}
+        <div class="nav-item" style="color:#8b949e">编程智能体</div>
+        <div class="nav-item active" style="color:#00e5ff;border-bottom-color:#00e5ff;background:rgba(0,229,255,0.08)">文档浏览</div>
+        <div class="nav-spacer"></div>
+      </div>`;
+  }
+}
+
+// 窗口模拟
+function renderWindows() {
+  const container = document.getElementById('window-mocks');
+  for (const key of Object.keys(logos)) {
+    container.innerHTML += `
+      <div class="window-mock" style="display:inline-block;width:calc(25% - 9px);vertical-align:top;margin-right:8px;margin-bottom:12px">
+        <div class="window-titlebar">
+          <div class="dots"><span></span><span></span><span></span></div>
+          ${img(key, 16)}
+          <span class="title-text">MindCraft-Agent</span>
+        </div>
+        <div class="window-body">${names[key]}</div>
+      </div>`;
+  }
+}
+
+// Favicon 模拟
+function renderFavicons() {
+  const container = document.getElementById('favicon-mocks');
+  let html = '<div class="favicon-row">';
+  for (const key of Object.keys(logos)) {
+    html += `
+      <div class="favicon-item">
+        ${img(key, 16)}<span class="label">16px</span>
+        ${img(key, 24)}<span class="label">24px</span>
+        ${img(key, 32)}<span class="label">32px</span>
+        <span style="font-size:12px;color:#333;margin-left:8px;font-weight:600">${names[key]}</span>
+      </div>
+      <br>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// 多背景
+function renderBgTests() {
+  const container = document.getElementById('bg-tests');
+  for (const key of Object.keys(logos)) {
+    container.innerHTML += `
+      <p style="font-size:13px;color:#666;margin:8px 0">${names[key]}</p>
+      <div class="bg-test">
+        <div class="bg-panel bg-dark">${img(key, 64)}<span class="brand">MindCraft-Agent</span></div>
+        <div class="bg-panel bg-light">${img(key, 64)}<span class="brand">MindCraft-Agent</span></div>
+      </div>
+      <div class="bg-test">
+        <div class="bg-panel bg-blue">${img(key, 64)}<span class="brand">MindCraft-Agent</span></div>
+        <div class="bg-panel bg-gradient">${img(key, 64)}<span class="brand">MindCraft-Agent</span></div>
+      </div>`;
+  }
+}
+
+renderNavbars();
+renderWindows();
+renderFavicons();
+renderBgTests();
+</script>
+</body>
+</html>
