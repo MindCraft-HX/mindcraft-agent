@@ -1,6 +1,5 @@
 {
   "name": "@mindcraft/agent",
-  "type": "module",
   "private": true,
   "main": "./src/index.js",
   "exports": {
