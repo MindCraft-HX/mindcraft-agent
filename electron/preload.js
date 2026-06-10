@@ -4,25 +4,6 @@ const path = require("path");
 const os = require("os");
 const { createAgentBridge } = require("../packages/agent/preload");
 
-// 搭建sqlite3数据库
-// const dbService = require('./db/dbService');
-// let dbPath = path.join(__dirname, './db/database.db');
-// // 实例化
-// const db = new dbService(dbPath);
-
-// 请求麦克风权限
-// navigator.mediaDevices
-//   .getUserMedia({ audio: true })
-//   .then(function (stream) {
-//     // 用户同意授权，可以通过IPC通信将流传递给主进程
-//     ipcRenderer.send("microphone-access-granted", stream);
-//   })
-//   .catch(function (err) {
-//     // 用户拒绝授权或其他错误发生
-//     console.log(err);
-//     ipcRenderer.send("microphone-access-denied", err);
-//   });
-
 window.addEventListener("DOMContentLoaded", () => {
   const replaceText = (selector, text) => {
     const element = document.getElementById(selector);
@@ -37,9 +18,6 @@ window.addEventListener("DOMContentLoaded", () => {
 // 渲染进程查看窗口大小变化
 window.addEventListener("resize", () => {
   const { innerWidth, innerHeight } = window;
-  // console.log(`窗口大小变化：宽度${innerWidth},高度${innerHeight}`);
-
-  // 获取得到用户的视口
 });
 
 // 暴露
@@ -74,12 +52,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       unCompressedPath,
       zipFileNameEncoding
     ),
-  execKeilCmd: (compilerPath, projectPath, dir) =>
-    ipcRenderer.invoke("exec-keil-cmd", compilerPath, projectPath, dir),
-  execGccCmd: (cmd, dir) => ipcRenderer.invoke("exec-gcc-cmd", cmd, dir),
-  execIARCmd: (compilerPath, projectPath, configName, dir) => ipcRenderer.invoke("exec-iar-cmd", compilerPath, projectPath, configName, dir),
   getSystmpPath: () => os.tmpdir(),
-  //BUG:execCmd
   execCmd: (cmd, dir) => ipcRenderer.invoke("exec-cmd", cmd, dir),
   send: (channel, data) => {
     let validChannels = ["toMain"];
@@ -87,28 +60,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.send(channel, data);
     }
   },
-  // receive: (channel, func) => {
-  //   let validChannels = ["download-progress"];
-  //   if (validChannels.includes(channel)) {
-  //     ipcRenderer.on(channel, (event, ...args) => func(...args));
-  //   }
-  // },
-  // 数据库
-  // getUrls: (callback) => db.getUrls(callback),
-  // addUrl: (url, callback) => db.addUrl(url, callback),
 
-  openEmail: (emailAddress) => ipcRenderer.send("openEmail", emailAddress), // 打开邮箱
-  openCanvasWindow: () => ipcRenderer.send("open-canvas-window"),
+  // 文件/文件夹操作
+  openEmail: (emailAddress) => ipcRenderer.send("openEmail", emailAddress),
   openFolder: async (folderPath) =>
-    ipcRenderer.invoke("open-folder", folderPath), //打开文件夹
+    ipcRenderer.invoke("open-folder", folderPath),
   openFileWithDefault: (filePath) => ipcRenderer.invoke("open-file-with-default", filePath),
-  onDownloadProgress: (callback) => {
-    ipcRenderer.on("download-progress", (event, progress) => {
-      callback(progress);
-    });
-  },
-  openPaint: () => ipcRenderer.invoke("open-paint"), //打开绘画
   openNewWindow: (url) => ipcRenderer.send("open-new-window", url),
+
+  // 文档浏览
   openMdWin: (payload) => ipcRenderer.invoke("open-md-win", payload),
   resolveDocumentCandidate: (payload) => ipcRenderer.invoke('resolve-document-candidate', payload),
   openDocumentCandidate: (payload) => ipcRenderer.invoke('open-document-candidate', payload),
@@ -118,8 +78,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener('md-content', handler)
   },
   getPendingMdContent: () => ipcRenderer.invoke('md-viewer-ready'),
+
+  // Agent 窗口
   openClaudeWin: () => ipcRenderer.invoke('open-claude-win'),
   openCodexWin: () => ipcRenderer.invoke('open-codex-win'),
+
   // pty 终端
   ptyCreate: (opts) => ipcRenderer.invoke('pty-create', opts),
   ptyWrite: (tabId, data) => ipcRenderer.invoke('pty-write', { tabId, data }),
@@ -133,86 +96,39 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners('pty-data')
     ipcRenderer.removeAllListeners('pty-exit')
   },
+
+  // Agent bridge (来自 packages/agent/preload)
   ...createAgentBridge(ipcRenderer),
+
+  // 通用窗口
   openExternalWindow:(url) => ipcRenderer.send("open-external-window", url),
   openSingleWindow:(info) => ipcRenderer.send("open-single-window", info),
   openSystemSettings: () => ipcRenderer.send("open-system-settings"),
-  startExe: () => ipcRenderer.send("start-exe"),
-  readXmlFile: () => ipcRenderer.invoke("read-xml-file"),
-  updateXmlFile: (updatedData) =>
-    ipcRenderer.invoke("update-xml-file", updatedData),
-  checkFolder: () => ipcRenderer.send("check-folder"),
-  onFolderStatus: (callback) => ipcRenderer.on("folder-status", callback),
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
-  openCodeWin: (info) => ipcRenderer.invoke('open-code-win', info),
+
+  // 浮动窗口
   openFloat: () => ipcRenderer.send('open-float'),
   floatOperation: (info) => ipcRenderer.send('float-operation', info),
-  checkForUpdates: () => ipcRenderer.send('check-for-updates'),
   getFloatInfo: (info) => ipcRenderer.invoke('get-float-info', info),
   setFloatInfo: (info) => ipcRenderer.invoke('set-float-info', info),
   getSideFloatInfo: (info) => ipcRenderer.invoke('get-side-float-info', info),
   setSideFloatInfo: (info) => ipcRenderer.invoke('set-side-float-info', info),
-  clipboard: () => clipboard,
-  clipboardData: (callback) => {
-    ipcRenderer.on("clipboard-data", (event, progress) => {
-      console.log("clipboard-data", progress);
-      callback(progress);
-    });
-  },
-  openQAModel: (callback) => {
-    ipcRenderer.on("open-QA-model", (event, progress) => {
-      callback(progress);
-    });
-  },
-  openScreenShotsModel: (callback) => {
-    ipcRenderer.on("open-screen-shots-model", (event, progress) => {
-      callback(progress);
-    });
-  },
-  refreshFloatInfo: (callback) => {
-    ipcRenderer.on("refresh-float-info", (event, progress) => {
-      callback(progress);
-    });
-  },
-  getInitStream: (callback) => {
-    ipcRenderer.on("get-init-stream", (event, progress) => {
-      callback(progress);
-    });
-  },
-  openClient: (info) => ipcRenderer.send('open-client', info),
-  openRoomById: (callback) => {
-    ipcRenderer.on("open-room-by-id", (event, progress) => {
-      callback(progress);
-    });
-  },
+  sidefloatOperation: (info) => ipcRenderer.send('side-float-operation', info),
   beforeFloatWinClose: (callback) => {
     ipcRenderer.on('before-float-win-close', async () => {
       const allowClose = await callback();
       ipcRenderer.invoke('confirm-close-window', allowClose);
     });
   },
+
+  // 设置
   getLoginItemSettings: () => ipcRenderer.invoke('get-login-item-settings'),
   setLoginItemSettings: (settings) => ipcRenderer.invoke('set-login-item-settings', settings),
-  sidefloatOperation: (info) => ipcRenderer.send('side-float-operation', info),
   openTabByName: (callback) => {
     ipcRenderer.on("open-tab-by-name", (event, progress) => {
       callback(progress);
     });
   },
-  addSourceByDownLoadLink: (info) => ipcRenderer.invoke('add-source-by-download-Link', info),
-  addSourceByBase64: (info) => ipcRenderer.invoke('add-source-by-base64', info),
-  addSourceByUpload: (info) => ipcRenderer.invoke('add-source-by-upload', info),
-  deleteSourceByFilePath: (info) => ipcRenderer.invoke('delete-source-by-file-path', info),
-  copySourceFromPathToPath: (info) => ipcRenderer.send('copy-source-from-path-to-path', info),
-  getSourceByFilePath: (info) => ipcRenderer.invoke('get-source-by-file-path', info),
-  getSourceListByFilePath: (info) => ipcRenderer.invoke('get-source-list-by-file-path', info),
-  getEncodingList: (info) => ipcRenderer.invoke('get-encoding-list', info),
-  openDrawWin: (info) => ipcRenderer.send('open-draw-win', info),
-  openVoice: () => ipcRenderer.send('open-voice'),
-  voiceOperation: (info) => ipcRenderer.send('voice-operation', info),
-  addCharacterMediaByDownLoadLink: (info) => ipcRenderer.invoke('add-character-media-by-download-Link', info),
-  getCharacterMediaListByfilePath: (info) => ipcRenderer.invoke('get-character-media-list-by-file-path', info),
-  removeCharacterMedia: (info) => ipcRenderer.send('remove-character-media', info),
+  checkForUpdates: () => ipcRenderer.send('check-for-updates'),
   clientUpdateInfoData: (callback) => {
     ipcRenderer.on("client-update-info-data", (event, progress) => {
       callback(progress);
@@ -220,6 +136,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   getClientUpdateInfoData: () => ipcRenderer.send('get-update-info-data'),
 
+  // Clipboard
+  clipboard: () => clipboard,
+
+  // 页面搜索
   sendSearchPage: (info) => ipcRenderer.send('search-page', info),
   closeSearchPage: (info) => ipcRenderer.send('close-search-page', info),
   foundInPage: (callback) => {
@@ -227,6 +147,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
       callback(progress);
     });
   },
+
+  // 任务栏
   flashTaskbar: () => ipcRenderer.invoke('flash-taskbar'),
   appendTaskLog: (line) => ipcRenderer.invoke('append-task-log', line),
 });

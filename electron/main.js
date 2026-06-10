@@ -68,7 +68,7 @@ function createWindow() {
     minWidth: 920,
     minHeight: 600,
     show: false,
-    title: "智匠MindCraft AI", // 设置窗口标题
+    title: "MindCraft-Agent", // 设置窗口标题
     webPreferences: {
       preload: path.join(__dirname, "preload.js"), //引进preload
       webSecurity: false, 
@@ -94,16 +94,6 @@ function createWindow() {
     e.preventDefault();
     win.hide();
    })
-  //打开客户端
-  ipcMain.on("open-client", (event, id) => {
-    if(win.isDestroyed()) {
-      console.log("窗口已关闭")
-      createWindow()
-    } else {
-      win.show()
-    }
-    win.webContents.send('open-room-by-id', id);
-  });
 
   if(NODE_ENV != "production") {
     if(NODE_ENV == "development") {
@@ -212,12 +202,6 @@ function createTray(platform) {
   }
   const contextMenu = Menu.buildFromTemplate([
     { label: '打开', click: () => win.show() },
-    { label: '个人信息', click: () => {
-      win.show()
-      setTimeout(() => {
-        win.webContents.send("open-tab-by-name", {type: 'userprofile'});
-      }, 0);
-    }},
     { label: '设置', click: () => {
       win.show()
       setTimeout(() => {
@@ -227,7 +211,7 @@ function createTray(platform) {
     { label: '退出', click: () => app.exit() }
   ])
   tray.setContextMenu(contextMenu)
-  tray.setToolTip("智匠MindCraft AI");
+  tray.setToolTip("MindCraft-Agent");
   tray.on("click", () => {
     win.show();
   });
@@ -270,34 +254,6 @@ async function fetchImage(imageUrl) {
     return null;
   }
 }
-
-// 打开画图工具的函数
-function openPaint() {
-  exec("start mspaint", (error, stdout, stderr) => {
-    if (error) {
-      console.error(`执行的错误: ${error}`);
-      return;
-    }
-  });
-}
-
-if(NODE_PLATFORM == "WIN" && !ipcMain.listenerCount("open-paint")) {
-  // 监听渲染进程的请求
-  ipcMain.handle("open-paint", async () => {
-    openPaint();
-  });
-}
-
-const { openCodeWin } = require("./codeWindow")
-ipcMain.handle("open-code-win", (event, {title, type, codeData}) => {
-  openCodeWin({
-    initUrl,
-    env: NODE_ENV,
-    title,
-    type,
-    codeData
-  })
-})
 
 ipcMain.handle('open-md-win', (_event, payload) => openMdWin({ initUrl, env: NODE_ENV, payload }))
 registerMdViewerHandlers()
@@ -356,18 +312,15 @@ app.on("window-all-closed", function () {
 app.on("web-contents-created", (event, contents) => {
   contents.on("new-window", (event, url) => {
     const ownerWindow = contents.getOwnerBrowserWindow();
-    if (ownerWindow && ownerWindow.getTitle() === "智匠MindCraft AI") {
+    if (ownerWindow && ownerWindow.getTitle() === "MindCraft-Agent") {
       // 如果是 createWindow 创建的窗口，打开外部浏览器
       shell.openExternal(url);
-      event.preventDefault();
-    } else if (ownerWindow && ownerWindow.getTitle() === "linked_window") {
-      // 如果是 createCanvasWindow 创建的窗口，不进行跳转
       event.preventDefault();
     }
   });
   contents.on("will-navigate", (event, url) => {
     const ownerWindow = contents.getOwnerBrowserWindow();
-    if (ownerWindow && ownerWindow.getTitle() === "智匠MindCraft AI") {
+    if (ownerWindow && ownerWindow.getTitle() === "MindCraft-Agent") {
       // 如果是 createWindow 创建的窗口，打开外部浏览器
       shell.openExternal(url);
       event.preventDefault();
@@ -385,33 +338,6 @@ ipcMain.on('open-system-settings', () => {
     // Linux 用户需要根据具体的发行版和桌面环境来调整命令
     exec('gnome-control-center privacy');
   }
-});
-
-function createCanvasWindow() {
-  let canvasWin = new BrowserWindow({
-    width: 1000,
-    height: 800,
-    // minWidth: 1000,
-    // minHeight: 800,
-    // frame: false,  // 无边框窗口
-    resizable: false, // 禁止调整窗口大小
-    title: "画布", // 设置窗口标题
-    icon: path.join(__dirname, "../dist/logo-html.png"), // 设置窗口图标
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      sandbox: false,
-    },
-  });
-  canvasWin.setMenu(null);
-
-  canvasWin.loadURL(
-    `file://${path.join(__dirname, "../dist/index.html")}#/canvas`
-  );
-}
-
-ipcMain.on("open-canvas-window", () => {
-  createCanvasWindow();
 });
 
 ipcMain.handle('get-login-item-settings', () => {

@@ -1,5 +1,5 @@
 {
-  "name": "mindcraft",
+  "name": "mindcraft-agent",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -27,12 +27,9 @@
     "browser-image-compression": "^2.0.2",
     "compressing": "^1.10.0",
     "core-js": "^3.34.0",
-    "crypto-js": "^4.2.0",
     "electron-conf": "^1.2.1",
     "electron-updater": "^6.1.4",
     "fabric-with-erasing": "^1.0.1",
-    "fs-extra": "^11.2.0",
-    "iconv-lite": "^0.6.3",
     "idb": "^8.0.0",
     "js-audio-recorder": "^0.5.7",
     "js-web-screen-shot": "^1.9.9-rc.23",
@@ -43,8 +40,7 @@
     "node-stream-zip": "^1.15.0",
     "onnxruntime-web": "^1.14.0",
     "uuid": "^11.1.0",
-    "vue-katex-auto-render": "^0.2.0",
-    "xml2js": "^0.6.2"
+    "vue-katex-auto-render": "^0.2.0"
   },
   "devDependencies": {
     "@electron/notarize": "^3.0.1",
@@ -96,23 +92,22 @@
     "vue-codemirror": "^6.1.1",
     "vue-demi": "^0.14.7",
     "vue-router": "^4.2.5",
-    "vuex": "^4.1.0",
-    "vuex-persistedstate": "^4.1.0",
     "xlsx": "^0.18.5"
   },
-  "description": "MindCraft，一个基于AI对话的办公软件。",
+  "description": "轻量级多Agent集成平台",
   "keywords": [],
   "author": "Hanson Cui",
   "license": "ISC",
   "build": {
-    "appId": "com.gaotongfont.mindcraft-beta",
-    "productName": "MindCraft-BETA",
-    "copyright": "Copyright © 2023 GENITOP",
+    "appId": "com.mindcraft.agent",
+    "productName": "MindCraft-Agent",
+    "copyright": "Copyright © 2025 GENITOP",
     "releaseInfo": {
       "releaseNotesFile": "release/release-1.5.18.md"
     },
     "extraMetadata": {
       "mode": "testing",
+      "name": "mindcraft-agent",
       "platform": "WIN"
     },
     "mac": {

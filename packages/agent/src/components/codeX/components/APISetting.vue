@@ -184,7 +184,7 @@ import { ElMessage } from 'element-plus'
 import { useClaudeThemeStore } from '../../../stores/claudeTheme.js'
 import { useCodexConfigStore } from '../../../stores/codexConfig.js'
 import ProviderForm from './ProviderForm.vue'
-import ConfirmDialog from '../../claudeCode/components/ConfirmDialog.vue'
+import ConfirmDialog from '../../agentCommon/components/ConfirmDialog.vue'
 
 const confirmDialogRef = ref(null)
 const themeStore = useClaudeThemeStore()

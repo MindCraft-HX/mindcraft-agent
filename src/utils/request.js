@@ -2,8 +2,6 @@ import axios from "axios";
 import { ElMessage, ElMessageBox, ElLoading } from "element-plus";
 import router from "@/router";
 import { ref } from 'vue';
-import { userInformation } from "@/stores/userInformation";
-const userStore = userInformation();
 import { useMitt } from "@/utils/mitt.js";
 const mitt = useMitt();
 
@@ -125,23 +123,16 @@ service.interceptors.response.use(
         return service(error.config);
       } catch (refreshError) {
         console.log(refreshError);
-        // 获取新的访问令牌失败并且错误状态码为401，跳转到登录页面
-        // 之前得判断 error.response && error.response.status === 401
+        // 获取新令牌失败，清除旧令牌并刷新
         ElMessage.error("登录已过期，请重新登录");
-        userStore.logout()
-        console.log("刷新令牌失效，跳转到登录页面");
+        console.log("刷新令牌失效");
+        window.location.reload();
       }
     } else {
       // 对于非401错误，显示错误信息
       console.error(error);
       if (error.response && ( error.response.status === 406)) {
-        ElMessageBox.confirm('积分不足', '提示', {
-          confirmButtonText: '去充值',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }).then(() => {
-          mitt.emit("clickDrawer", "pointRecharge")
-        })
+        ElMessage.error("请求失败：积分不足");
       }
     }
 

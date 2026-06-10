@@ -1,9 +1,9 @@
 {
-  "appId": "com.gaotongfont.mindcraft-beta",
-  "productName": "MindCraft-BETA",
-  "copyright": "Copyright © 2023 GENITOP",
+  "appId": "com.mindcraft.agent",
+  "productName": "MindCraft-Agent-Test",
+  "copyright": "Copyright © 2025 GENITOP",
   "extraMetadata": {
-    "name": "mindcraft-beta",
+    "name": "mindcraft-agent",
     "mode": "testing",
     "platform": "WIN"
   },

@@ -1,27 +1,23 @@
-import api from "@/utils/request";
+// Stub: Full-business APIs removed in Phase 2 refactor
+// Float window still references these — provide no-op implementations
 
-
-/** 划词翻译智能体
- * /v1/agent/spotup_window/
+/**
+ * Get spotup window language list (was: /v1/data/spotup_window_language/)
  */
+export const apiSpotupWindowLanguage = async () => {
+  return {
+    data: {
+      data: [
+        { label: "简体中文", value: "简体中文" },
+        { label: "英文", value: "英文" },
+      ],
+    },
+  };
+};
 
-export const apiAgentSpotupWindow = (data) => {
-  return api.post("/v1/agent/spotup_window/", data);
-}
-
-
-/** 获取翻译语种
- * /v1/data/spotup_window_language/
+/**
+ * Add chat room (was: POST /llm/room_list/ — removed)
  */
-
-export const apiSpotupWindowLanguage = () => {
-  return api.post("/v1/data/spotup_window_language/");
-}
-
-/** 创建房间
- * /llm/add_room/
- */
-
-export const addRoom = (data) => {
-  return api.post("/llm/add_room/", data);
-}
+export const addRoom = async () => {
+  return { data: { id: null, msg: "Room system removed in mindcraft-agent" } };
+};

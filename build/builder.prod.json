@@ -1,7 +1,7 @@
 {
-  "appId": "com.gaotongfont.mindcraft",
-  "productName": "MindCraft",
-  "copyright": "Copyright © 2023 GENITOP",
+  "appId": "com.mindcraft.agent",
+  "productName": "MindCraft-Agent",
+  "copyright": "Copyright © 2025 GENITOP",
   "releaseInfo": {
     "releaseNotesFile": "release/release-1.6.1.md"
   },
