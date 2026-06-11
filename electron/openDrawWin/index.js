@@ -9,7 +9,7 @@ function openDrawWin() {
     minHeight: 450,
     show: false,
     title: '画布',
-    icon: path.join(__dirname, '../../dist/logo-html.png'),
+    icon: path.join(__dirname, '../../dist/logo-white.png'),
     webPreferences: {
       preload: path.join(__dirname, "../../electron/preload.js"), //引进preload
       webSecurity: true,
@@ -21,7 +21,7 @@ function openDrawWin() {
     },
   });
   //设置ICON
-  win.setIcon(path.join(__dirname, "../../dist/logo-html.png"));
+  win.setIcon(path.join(__dirname, "../../dist/logo-white.png"));
   //设置居中
   win.center();
   //隐藏菜单栏

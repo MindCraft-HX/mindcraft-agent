@@ -61,7 +61,7 @@ class SideFloatWin {
       transparent: true,
       backgroundColor: '#00000000',
       alwaysOnTop: true,
-      icon: path.join(__dirname, '../../dist/logo-html.png'),
+      icon: path.join(__dirname, '../../dist/logo-white.png'),
       webPreferences: {
         preload: path.join(__dirname, "../../electron/preload.js"), //引进preload
         nodeIntegration: true,

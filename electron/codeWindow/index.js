@@ -10,7 +10,7 @@ function openCodeWin(options) {
     minHeight: 450,
     show: false,
     title,
-    icon: path.join(__dirname, '../../dist/logo-html.png'),
+    icon: path.join(__dirname, '../../dist/logo-white.png'),
     webPreferences: {
       preload: path.join(__dirname, "../../electron/preload.js"), //引进preload
       webSecurity: true,
@@ -23,7 +23,7 @@ function openCodeWin(options) {
     },
   });
   //设置ICON
-  win.setIcon(path.join(__dirname, "../../dist/logo-html.png"));
+  win.setIcon(path.join(__dirname, "../../dist/logo-white.png"));
   //设置居中
   win.center();
   //隐藏菜单栏
