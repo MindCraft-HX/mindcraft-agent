@@ -2288,9 +2288,35 @@ function setupClaudeHandlers() {
           const s = agentSessions.get(sessionId)
           if (!resultReceived && s) {
             const fallbackCliSessionId = cliSessionIds.get(sessionId) || ''
+            // 如果错误发生在流式首条消息之前，cliSessionId 未注册。
+            // 兜底扫描项目目录，按修改时间找本次查询创建的 .jsonl（误差窗口 60s）。
+            let finalCliSessionId = fallbackCliSessionId
+            if (!finalCliSessionId && (s.cwd || resolvedCwd)) {
+              try {
+                const projectDir = getClaudeProjectsRootDir(s.cwd || resolvedCwd)
+                if (fs.existsSync(projectDir)) {
+                  const now = Date.now()
+                  const candidate = fs.readdirSync(projectDir)
+                    .filter(f => f.endsWith('.jsonl'))
+                    .map(f => {
+                      const fp = path.join(projectDir, f)
+                      try { return { id: f.replace(/\.jsonl$/, ''), mtime: fs.statSync(fp).mtimeMs, fp } }
+                      catch (_) { return null }
+                    })
+                    .filter(Boolean)
+                    .filter(c => now - c.mtime < 60000)
+                    .sort((a, b) => b.mtime - a.mtime)[0]
+                  if (candidate) {
+                    finalCliSessionId = candidate.id
+                    cliSessionIds.set(sessionId, finalCliSessionId)
+                    console.log(`[Claude] fallback scan found cliSessionId: ${finalCliSessionId.slice(0,8)}...`)
+                  }
+                }
+              } catch (_) {}
+            }
             const donePayload = buildClaudeAgentDonePayload({
               sessionId,
-              cliSessionId: fallbackCliSessionId,
+              cliSessionId: finalCliSessionId,
               cwd: s.cwd || resolvedCwd,
               reason: exitCode === 0 ? 'completed' : 'failed',
             })

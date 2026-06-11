@@ -1594,7 +1594,8 @@ async function refreshProjectSessionsInBackground(p) {
     // 说明 SDK 刚在磁盘上创建了会话文件但 onAgentDone 还没到。此时扫描
     // 会因无法匹配而误创建重复条目（"会话 XXXXXXXX"）。跳过新文件发现，
     // 等 onAgentDone 填充 cliSessionId/filePath 后下次扫描自然匹配。
-    const hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
+    // 注意：循环内领养后会重新计算，避免预计算过时导致合法新 JSONL 被忽略
+    let hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
     for (const s of scanned) {
       if (p.id !== activeProjectId.value) return
       const normalizedPath = (s.filePath || '').replace(/\\/g, '/')
@@ -1620,6 +1621,8 @@ async function refreshProjectSessionsInBackground(p) {
           if (pendingChat.sessionId && pendingChat.cliSessionId) {
             window.electronAPI?.claudeRegisterCliSessions?.({ [pendingChat.sessionId]: pendingChat.cliSessionId })
           }
+          // 领养后重新计算 pending 状态，避免过时的 hasPendingNewChat 阻止后续合法 JSONL
+          hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
           continue
         }
         if (hasPendingNewChat) continue  // 等 onAgentDone 填充 cliSessionId 后再匹配

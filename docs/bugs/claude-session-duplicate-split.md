@@ -2,7 +2,7 @@
 
 > 日期：2026-06-11（更新）
 > 范围：`packages/agent/src/components/claudeCode/**` + 主进程 `claudeAgent.js`
-> 状态：5 个根因已定位，P0(E/B/A) 已修复 (2026-06-11)，P1(C) / P2(D) 待修复
+> 状态：5 个根因已定位，全部已修复 (2026-06-11)
 
 ---
 
@@ -452,3 +452,39 @@ node --test tests/claude-history-persistence-sanitizer.test.mjs tests/codehub-ac
   │ findPendingClaudeSessionForAdoption(..., { scannedSessionId })
   │   → chat._expectedCliSessionId === scannedSessionId  ✓ 精确命中
 ```
+
+### P1-C: 错误路径孤儿 JSONL ✅
+
+**问题**：SDK 在流式首条消息之前报错 → `cliSessionIds` 未注册 → `onAgentDone` 携带空 `cliSessionId` → chat 滞留 pending 状态。
+
+**修复（1 处）**：
+
+| # | 文件 | 位置 | 改动 |
+|---|------|------|------|
+| 1 | `claudeAgent.js` | `finally` 块 L2288-2316 | 当 `fallbackCliSessionId` 为空时，反向扫描项目目录，按修改时间（60s 窗口）找到本次查询创建的 `.jsonl`，补注册 `cliSessionId` |
+
+**数据流**：
+```
+SDK 报错 (exitCode=-1, resultReceived=false)
+  │ cliSessionIds.get(sessionId) → undefined
+  │ fallback scan:
+  │   getClaudeProjectsRootDir(cwd)
+  │   → filter *.jsonl by mtime < 60s
+  │   → sort by mtime desc → pick latest
+  │   → cliSessionIds.set(sessionId, candidate.id)
+  │   → buildClaudeAgentDonePayload(cliSessionId=candidate.id)
+  ▼
+onAgentDone({ cliSessionId: uuid, filePath: .../uuid.jsonl })
+  → chat 正常完成绑定，不会滞留 pending
+```
+
+### P2-D: hasPendingNewChat 过时 ✅
+
+**问题**：`hasPendingNewChat` 在扫描循环外预计算为 `const`，循环内领养 pending chat 后未重新计算 → 后续合法的新 JSONL 被 `if (hasPendingNewChat) continue` 误跳。
+
+**修复（2 处）**：
+
+| # | 文件 | 位置 | 改动 |
+|---|------|------|------|
+| 1 | `index.vue` | L1597 | `const` → `let`，注释说明循环内会更新 |
+| 2 | `index.vue` | adoption `continue` 之前 | 领养成功后重新计算 `hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(...)`
