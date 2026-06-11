@@ -6,7 +6,8 @@ import electron from 'vite-plugin-electron/simple'
 export default defineConfig({
   server: {
     host: '127.0.0.1',
-    port: 6280,
+    port: 16288,
+    hmr: false,
     cors: true,
     proxy: {
       '/abc': {

@@ -49,11 +49,11 @@ if (process.env.VITE_DEV_SERVER_URL) {
 let sideFloatWin = null
 let win = null
 
-// 单实例锁：所有模式强制开启，防止多实例争抢 Chromium 用户数据目录
-{
+// 单实例锁（仅生产模式，dev 模式允许多开调试）
+if (NODE_ENV !== 'development') {
   const gotTheLock = app.requestSingleInstanceLock();
   if (!gotTheLock) {
-    app.exit();
+    app.quit();
   } else {
     app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
       if (win) {
@@ -111,7 +111,7 @@ function createWindow() {
     if (NODE_ENV === 'development') {
       globalShortcut.unregisterAll()
       win = null
-      app.exit()
+      app.quit()
     } else {
       e.preventDefault();
       win.hide();
