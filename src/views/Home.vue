@@ -1,122 +1,95 @@
 <template>
   <div class="home-page" :class="themeClass">
-    <!-- 上方卡片区 -->
+    <div class="home-hero">
+      <h1 class="hero-title">欢迎使用 MindCraft</h1>
+      <p class="hero-sub">选择一种方式开始工作</p>
+    </div>
+
     <div class="home-cards">
       <!-- 开始项目对话 -->
-      <div class="home-card home-card-project">
-        <div class="home-card-inner">
-          <div class="card-header">
-            <svg class="card-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9.5 7 4.5 14 9.5 21"/>
-              <polyline points="18.5 7 23.5 14 18.5 21"/>
-            </svg>
-            <h2 class="card-title">开始项目对话</h2>
-          </div>
-
-          <div class="card-body">
-            <template v-if="recentProject.hasRecent">
-              <div class="project-info">
-                <span class="project-agent-badge" :style="{ background: recentProject.agentColor }">
-                  {{ recentProject.agentName }}
-                </span>
-                <span class="project-name">{{ recentProject.projectName }}</span>
-                <span class="project-meta" v-if="recentProject.chatName">
-                  {{ recentProject.chatName }} · {{ formatTime(recentProject.updatedAt) }}
-                </span>
-                <span class="project-cwd" v-if="recentProject.cwd">{{ recentProject.cwd }}</span>
-              </div>
-            </template>
-            <template v-else>
-              <div class="home-empty">
-                <p class="home-empty-text">暂无最近项目</p>
-                <p class="home-empty-hint">点击下方按钮开始你的第一个对话</p>
-              </div>
-            </template>
-          </div>
-
-          <button class="card-action" @click="$router.push('/main/codeHub')">
-            进入项目
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <polyline points="5 2.5 10 7 5 11.5"/>
-            </svg>
-          </button>
+      <div class="home-card home-card-project" @click="router.push('/main/codeHub')">
+        <div class="card-icon-wrap">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="11 8 5 16 11 24"/>
+            <polyline points="21 8 27 16 21 24"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h3 class="card-title">开始项目对话</h3>
+          <template v-if="recentProject.hasRecent">
+            <p class="card-desc">
+              <span class="badge" :style="{ background: recentProject.agentColor }">
+                {{ recentProject.agentName }}
+              </span>
+              {{ recentProject.projectName }}
+            </p>
+            <p class="card-meta" v-if="recentProject.chatName">
+              {{ recentProject.chatName }} · {{ formatTime(recentProject.updatedAt) }}
+            </p>
+          </template>
+          <template v-else>
+            <p class="card-desc muted">暂无最近项目，点击开始第一个对话</p>
+          </template>
+        </div>
+        <div class="card-arrow">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="6 3 12 9 6 15"/>
+          </svg>
         </div>
       </div>
 
       <!-- 浏览文档 -->
-      <div class="home-card home-card-doc">
-        <div class="home-card-inner">
-          <div class="card-header">
-            <svg class="card-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15.5 3.5H7.5a2 2 0 0 0-2 2v17a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V10l-7-6.5z"/>
-              <polyline points="15.5 3.5 15.5 10 22.5 10"/>
-              <line x1="9.5" y1="16" x2="18.5" y2="16"/>
-              <line x1="9.5" y1="20" x2="15.5" y2="20"/>
-            </svg>
-            <h2 class="card-title">浏览文档</h2>
-          </div>
-
-          <div class="card-body">
-            <p class="card-desc">浏览和管理项目中的 Markdown 文档与笔记</p>
-            <ul class="card-features">
-              <li>Markdown 实时预览与语法高亮</li>
-              <li>支持 PDF、Office 等格式查看</li>
-              <li>目录导航，快速定位内容</li>
-            </ul>
-          </div>
-
-          <button class="card-action" @click="$router.push('/main/mdViewer')">
-            浏览文档
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <polyline points="5 2.5 10 7 5 11.5"/>
-            </svg>
-          </button>
+      <div class="home-card home-card-doc" @click="router.push('/main/mdViewer')">
+        <div class="card-icon-wrap">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 4H8.5a2.5 2.5 0 0 0-2.5 2.5v19a2.5 2.5 0 0 0 2.5 2.5h15a2.5 2.5 0 0 0 2.5-2.5V12l-6-8z"/>
+            <polyline points="18 4 18 12 26 12"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h3 class="card-title">浏览文档</h3>
+          <p class="card-desc muted">查看和管理项目中的 Markdown、PDF、Office 文档</p>
+        </div>
+        <div class="card-arrow">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="6 3 12 9 6 15"/>
+          </svg>
         </div>
       </div>
     </div>
 
-    <!-- 下方用量统计 -->
+    <!-- 用量统计 -->
     <div class="home-stats">
       <div class="stats-header">
         <h2 class="stats-title">用量统计</h2>
         <div class="trend-toggle">
-          <button
-            class="trend-btn"
-            :class="{ active: trendDays === 7 }"
-            @click="trendDays = 7"
-          >7天</button>
-          <button
-            class="trend-btn"
-            :class="{ active: trendDays === 30 }"
-            @click="trendDays = 30"
-          >30天</button>
+          <button :class="{ active: trendDays === 7 }" @click="trendDays = 7">7天</button>
+          <button :class="{ active: trendDays === 30 }" @click="trendDays = 30">30天</button>
         </div>
       </div>
 
       <div class="stats-body">
-        <!-- 今日数字 -->
         <div class="stats-today">
           <div class="stat-item">
-            <span class="stat-label">输入 Tokens</span>
+            <span class="stat-label">输入</span>
             <span class="stat-value">{{ formatNumber(todayStats.combined.inputTokens) }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">输出 Tokens</span>
+            <span class="stat-label">输出</span>
             <span class="stat-value">{{ formatNumber(todayStats.combined.outputTokens) }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">缓存 Tokens</span>
+            <span class="stat-label">缓存</span>
             <span class="stat-value">{{ formatNumber(todayStats.combined.cacheReadTokens + todayStats.combined.cacheCreationTokens) }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">预估费用</span>
-            <span class="stat-value stat-cost">{{ formatCost(todayStats.combined.costUsd) }}</span>
+            <span class="stat-label">费用</span>
+            <span class="stat-value accent">{{ formatCost(todayStats.combined.costUsd) }}</span>
           </div>
         </div>
-
-        <!-- 趋势图 -->
         <div class="stats-chart">
-          <TokenChart :data="trendData" />
+          <TokenChart v-if="trendData.length" :data="trendData" />
+          <div v-else class="chart-empty">暂无用量数据</div>
         </div>
       </div>
     </div>
@@ -134,206 +107,141 @@ const router = useRouter()
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
-const { recentProject, todayStats, trendData, trendDays, refresh } = useHomeData()
+const { recentProject, todayStats, trendData, trendDays } = useHomeData()
 </script>
 
 <style lang="scss" scoped>
 .home-page {
   height: 100%;
-  padding: 28px 32px;
   overflow-y: auto;
-  background: var(--cc-bg-secondary, #161b22);
+  padding: 36px 40px;
+  background: var(--cc-bg-secondary, #1e1e1e);
 }
 
-/* ===== 卡片区 ===== */
+/* ===== Hero ===== */
+.home-hero {
+  margin-bottom: 28px;
+}
+
+.hero-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--cc-text, #e0e0e0);
+  margin: 0 0 6px;
+}
+
+.hero-sub {
+  font-size: 14px;
+  color: var(--cc-text-muted, #bbb);
+  margin: 0;
+}
+
+/* ===== Cards ===== */
 .home-cards {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .home-card {
   flex: 1;
-  min-width: 280px;
-  border-radius: 12px;
-  border: 1px solid var(--cc-border, #30363d);
-  background: var(--cc-bg-elevated, #0d1117);
-  transition: border-color 0.2s, box-shadow 0.2s;
-  overflow: hidden;
-
-  &:hover {
-    border-color: var(--cc-primary, #409eff);
-    box-shadow: 0 2px 16px var(--cc-shadow, rgba(0,0,0,0.3));
-  }
-}
-
-.home-card-inner {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 24px;
-}
-
-.card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.card-icon {
-  color: var(--cc-primary, #409eff);
-  flex-shrink: 0;
-}
-
-.card-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--cc-text, #e0e5e9);
-  margin: 0;
-}
-
-.card-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 80px;
-}
-
-/* 项目信息 */
-.project-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.project-agent-badge {
-  display: inline-block;
-  align-self: flex-start;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  padding: 2px 10px;
-  border-radius: 4px;
-  letter-spacing: 0.3px;
-}
-
-.project-name {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--cc-text, #e0e5e9);
-}
-
-.project-meta {
-  font-size: 12px;
-  color: var(--cc-text-muted, #8b949e);
-}
-
-.project-cwd {
-  font-size: 11px;
-  color: var(--cc-text-dim, #6b7280);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  word-break: break-all;
-  line-height: 1.4;
-}
-
-/* 空状态 */
-.home-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-
-  .home-empty-text {
-    font-size: 14px;
-    color: var(--cc-text-muted, #8b949e);
-    margin: 0;
-  }
-
-  .home-empty-hint {
-    font-size: 12px;
-    color: var(--cc-text-dim, #6b7280);
-    margin: 0;
-  }
-}
-
-/* 文档卡片 */
-.card-desc {
-  font-size: 14px;
-  color: var(--cc-text-muted, #8b949e);
-  margin: 0 0 12px;
-}
-
-.card-features {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-
-  li {
-    font-size: 12px;
-    color: var(--cc-text-dim, #6b7280);
-    padding-left: 14px;
-    position: relative;
-
-    &::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 5px;
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: var(--cc-primary, #409eff);
-      opacity: 0.5;
-    }
-  }
-}
-
-/* 按钮 */
-.card-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  margin-top: 16px;
-  padding: 8px 18px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #fff;
-  background: var(--cc-primary, #409eff);
-  border: none;
-  border-radius: 6px;
+  gap: 16px;
+  padding: 20px 24px;
+  border-radius: 10px;
+  border: 1px solid var(--cc-border, #2a2a2a);
+  background: var(--cc-bg, #1a1a1a);
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+  user-select: none;
 
   &:hover {
-    background: var(--cc-primary-hover, #337ecc);
+    border-color: var(--cc-primary, #c6613f);
+    background: var(--cc-panel-item-hover, #1e1e1e);
+    box-shadow: 0 0 0 1px var(--cc-primary, #c6613f);
+
+    .card-arrow {
+      opacity: 1;
+      transform: translateX(2px);
+      color: var(--cc-primary, #c6613f);
+    }
   }
 
   &:active {
-    transform: scale(0.97);
-  }
-
-  svg {
-    flex-shrink: 0;
-    transition: transform 0.15s;
-  }
-
-  &:hover svg {
-    transform: translateX(2px);
+    transform: scale(0.99);
   }
 }
 
-/* ===== 用量统计 ===== */
+.card-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: var(--cc-primary-bg, #1c1408);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cc-primary, #c6613f);
+  flex-shrink: 0;
+}
+
+.card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cc-text, #e0e0e0);
+  margin: 0 0 5px;
+}
+
+.card-desc {
+  font-size: 13px;
+  color: var(--cc-text-secondary, #d4d4d4);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+
+  &.muted {
+    color: var(--cc-text-muted, #bbb);
+  }
+}
+
+.card-meta {
+  font-size: 11px;
+  color: var(--cc-text-dim, #888);
+  margin: 3px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-arrow {
+  color: var(--cc-text-dim, #888);
+  opacity: 0.4;
+  transition: all 0.18s;
+  flex-shrink: 0;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  padding: 1px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+/* ===== Stats ===== */
 .home-stats {
-  border-radius: 12px;
-  border: 1px solid var(--cc-border, #30363d);
-  background: var(--cc-bg-elevated, #0d1117);
+  border-radius: 10px;
+  border: 1px solid var(--cc-border, #2a2a2a);
+  background: var(--cc-bg, #1a1a1a);
   overflow: hidden;
 }
 
@@ -341,87 +249,92 @@ const { recentProject, todayStats, trendData, trendDays, refresh } = useHomeData
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px 0;
+  padding: 20px 24px 0;
 }
 
 .stats-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--cc-text, #e0e5e9);
+  color: var(--cc-text, #e0e0e0);
   margin: 0;
 }
 
 .trend-toggle {
   display: flex;
+  gap: 2px;
+  background: var(--cc-bg-secondary, #1e1e1e);
   border-radius: 6px;
-  border: 1px solid var(--cc-border, #30363d);
-  overflow: hidden;
-}
+  padding: 2px;
 
-.trend-btn {
-  padding: 4px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--cc-text-muted, #8b949e);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
+  button {
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--cc-text-muted, #bbb);
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
 
-  &:hover {
-    color: var(--cc-text, #e0e5e9);
-    background: var(--cc-bg-hover, rgba(255,255,255,0.06));
-  }
+    &:hover {
+      color: var(--cc-text, #e0e0e0);
+    }
 
-  &.active {
-    color: #fff;
-    background: var(--cc-primary, #409eff);
-  }
-
-  & + .trend-btn {
-    border-left: 1px solid var(--cc-border, #30363d);
+    &.active {
+      color: var(--cc-btn-primary-text, #fff);
+      background: var(--cc-primary, #c6613f);
+    }
   }
 }
 
 .stats-body {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 24px;
+  grid-template-columns: 160px 1fr;
+  gap: 28px;
   padding: 16px 24px 24px;
-  align-items: start;
 }
 
 .stats-today {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .stat-label {
   font-size: 11px;
-  color: var(--cc-text-muted, #8b949e);
-  text-transform: uppercase;
+  color: var(--cc-text-dim, #888);
   letter-spacing: 0.3px;
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
-  color: var(--cc-text, #e0e5e9);
+  color: var(--cc-text, #e0e0e0);
   font-variant-numeric: tabular-nums;
 
-  &.stat-cost {
-    color: var(--cc-primary, #409eff);
+  &.accent {
+    color: var(--cc-primary, #c6613f);
   }
 }
 
 .stats-chart {
-  min-height: 200px;
+  min-height: 220px;
+  position: relative;
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 220px;
+  color: var(--cc-text-dim, #888);
+  font-size: 13px;
 }
 </style>

@@ -14,50 +14,48 @@ const chartRef = ref(null)
 let instance = null
 let resizeObserver = null
 
-function buildOption(data) {
-  const dates = data.map(d => d.date)
-  const inputVals = data.map(d => d.totalInput)
-  const outputVals = data.map(d => d.totalOutput)
-  const cacheVals = data.map(d => d.totalCache)
+// Colors matching app's status palette
+const COL_INPUT = '#4a9eff'   // --cc-info blue
+const COL_OUTPUT = '#d4a84b'  // --cc-warning amber
+const COL_CACHE = '#6db86d'   // --cc-success green
+const TEXT_DIM = '#888'
+const GRID_COLOR = 'rgba(255,255,255,0.04)'
+const AXIS_COLOR = 'rgba(255,255,255,0.06)'
 
+function buildOption(data) {
   return {
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(20, 20, 22, 0.94)',
-      borderColor: 'rgba(255,255,255,0.08)',
-      textStyle: { color: '#e0e5e9', fontSize: 12 },
-      valueFormatter: (value) => {
-        if (value == null || value === 0) return '0'
-        if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M'
-        if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K'
-        return String(value)
+      backgroundColor: '#1a1a1a',
+      borderColor: '#2a2a2a',
+      textStyle: { color: '#e0e0e0', fontSize: 12 },
+      valueFormatter: (v) => {
+        if (v == null || v === 0) return '0'
+        if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M'
+        if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K'
+        return String(v)
       },
     },
     legend: {
       bottom: 0,
-      textStyle: { color: '#8b949e', fontSize: 11 },
-      itemWidth: 12,
-      itemHeight: 8,
-      itemGap: 20,
+      textStyle: { color: '#999', fontSize: 11 },
+      itemWidth: 14,
+      itemHeight: 2,
+      itemGap: 24,
     },
-    grid: {
-      left: 48,
-      right: 16,
-      top: 8,
-      bottom: 32,
-    },
+    grid: { left: 50, right: 10, top: 10, bottom: 30 },
     xAxis: {
       type: 'category',
-      data: dates,
-      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+      data: data.map(d => d.date),
+      axisLine: { lineStyle: { color: AXIS_COLOR } },
       axisTick: { show: false },
-      axisLabel: { color: '#8b949e', fontSize: 10 },
+      axisLabel: { color: TEXT_DIM, fontSize: 10, interval: 'auto' },
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
+      splitLine: { lineStyle: { color: GRID_COLOR } },
       axisLabel: {
-        color: '#8b949e',
+        color: TEXT_DIM,
         fontSize: 10,
         formatter: (v) => {
           if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M'
@@ -67,73 +65,47 @@ function buildOption(data) {
       },
     },
     series: [
-      {
-        name: '输入',
-        type: 'line',
-        data: inputVals,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: '#409EFF', width: 2 },
-        itemStyle: { color: '#409EFF' },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(64,158,255,0.18)' },
-          { offset: 1, color: 'rgba(64,158,255,0)' },
-        ])},
-      },
-      {
-        name: '输出',
-        type: 'line',
-        data: outputVals,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: '#E6A23C', width: 2 },
-        itemStyle: { color: '#E6A23C' },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(230,162,60,0.15)' },
-          { offset: 1, color: 'rgba(230,162,60,0)' },
-        ])},
-      },
-      {
-        name: '缓存',
-        type: 'line',
-        data: cacheVals,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: '#67C23A', width: 2, type: 'dashed' },
-        itemStyle: { color: '#67C23A' },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(103,194,58,0.12)' },
-          { offset: 1, color: 'rgba(103,194,58,0)' },
-        ])},
-      },
+      makeSeries('输入', data.map(d => d.totalInput), COL_INPUT),
+      makeSeries('输出', data.map(d => d.totalOutput), COL_OUTPUT),
+      makeSeries('缓存', data.map(d => d.totalCache), COL_CACHE, true),
     ],
+  }
+}
+
+function makeSeries(name, vals, color, dashed) {
+  return {
+    name,
+    type: 'line',
+    data: vals,
+    smooth: true,
+    symbol: 'none',
+    lineStyle: { color, width: 2, type: dashed ? 'dashed' : 'solid' },
+    itemStyle: { color },
+    areaStyle: {
+      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: color + '22' },
+        { offset: 1, color: color + '00' },
+      ]),
+    },
   }
 }
 
 function initChart() {
   if (!chartRef.value) return
   instance = echarts.init(chartRef.value)
-  if (props.data.length) {
-    instance.setOption(buildOption(props.data))
-  }
+  if (props.data.length) instance.setOption(buildOption(props.data))
 
-  resizeObserver = new ResizeObserver(() => {
-    instance?.resize()
-  })
+  resizeObserver = new ResizeObserver(() => instance?.resize())
   resizeObserver.observe(chartRef.value)
 }
 
-onMounted(() => {
-  initChart()
-})
+onMounted(() => initChart())
 
-watch(() => props.data, (newData) => {
-  if (!instance) {
-    initChart()
-    return
-  }
-  instance.setOption(buildOption(newData), true)
-}, { deep: true })
+watch(() => props.data, (d) => {
+  if (!d?.length) return
+  if (!instance) initChart()
+  else instance.setOption(buildOption(d), true)
+})
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
@@ -145,7 +117,6 @@ onUnmounted(() => {
 <style lang="scss" scoped>
 .token-chart {
   width: 100%;
-  height: 100%;
-  min-height: 200px;
+  height: 220px;
 }
 </style>
