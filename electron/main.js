@@ -100,7 +100,7 @@ function createWindow() {
   });
 
   //设置ICON
-  win.setIcon(path.join(__dirname, "../dist/logo-html.png"));
+  win.setIcon(path.join(__dirname, "../dist/logo-white.png"));
   //设置居中
   win.center();
   //隐藏菜单栏
@@ -250,7 +250,7 @@ function createWindow() {
 
 let tray = null;
 function createTray(platform) {
-  const iconPath = path.join(__dirname, '../dist/logo-html.png');
+  const iconPath = path.join(__dirname, '../dist/logo-white.png');
   if(process.platform == "darwin") {
     // 加载图标并调整尺寸
     const image = nativeImage.createFromPath(iconPath);
@@ -438,7 +438,7 @@ ipcMain.on('open-new-window', (event, arg) => {
       height: 915,
       title: "linked_window", // 设置窗口标题
       // resizable: false, // 禁止调整窗口大小
-      icon: path.join(__dirname, "../dist/logo-html.png"), // 设置窗口图标
+      icon: path.join(__dirname, "../dist/logo-white.png"), // 设置窗口图标
       webPreferences: {
           nodeIntegration: true,
           contextIsolation: false,
@@ -477,7 +477,7 @@ ipcMain.on('open-single-window', (event, arg) => {
       width: 1200,
       height: 915,
       title: "single_window", // 设置窗口标题
-      icon: path.join(__dirname, "../dist/logo-html.png"), // 设置窗口图标
+      icon: path.join(__dirname, "../dist/logo-white.png"), // 设置窗口图标
       webPreferences: {
           nodeIntegration: true,
           contextIsolation: false,

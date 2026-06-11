@@ -46,7 +46,7 @@
     "output": "dist_electron"
   },
   "win": {
-    "icon": "dist/logo-app.png",
+    "icon": "dist/logo-white.png",
     "target": [
       "nsis",
       "zip"
