@@ -124,3 +124,44 @@ export function safeIpcPayload(obj, label = 'ipc') {
     return obj
   }
 }
+
+/**
+ * 剥离 SDK 注入到用户消息中的系统上下文 XML 标签。
+ *
+ * SDK 在写入会话 JSONL 时，会在用户消息开头注入各类系统上下文块
+ * （AGENTS.md 内容、环境信息、系统提醒等）。这些块使用 XML 标签包装。
+ *
+ * 采用标签命名模式匹配（snake_case / kebab-case / ALLCAPS），
+ * 而非硬编码标签白名单，确保未来 SDK 新增标签类型时自动覆盖。
+ *
+ * 模式：
+ *   Pass 1 — 含 _ 或 - 的命名标签（snake_case / kebab-case）:
+ *     system-reminder, environment_context, task-notification, ide_*
+ *   Pass 2 — 全大写长标签（≥5 字符）:
+ *     INSTRUCTIONS
+ *
+ * 安全边界：不匹配标准 HTML 标签（div, span, code 等不含分隔符的短单词）。
+ *
+ * @param {string} text - 原始消息文本（可能含 SDK 系统上下文注入）
+ * @returns {string} 剥离系统上下文后的文本
+ */
+export function stripSystemContextTags(text) {
+  if (!text || typeof text !== 'string') return ''
+
+  let result = text
+
+  // Pass 1: 含 _ 或 - 的标签（SDK 主要命名风格，排除标准 HTML 标签）
+  result = result.replace(
+    /<([a-zA-Z][\w-]*(?:[_-])[\w-]*)\b[^>]*>[\s\S]*?<\/\1>/g,
+    ''
+  )
+
+  // Pass 2: 全大写长标签（≥5 字符），如 INSTRUCTIONS
+  // 阈值排除 CODE, HTML, DIV 等短标签
+  result = result.replace(
+    /<([A-Z][A-Z_]{4,})\b[^>]*>[\s\S]*?<\/\1>/g,
+    ''
+  )
+
+  return result.trim()
+}

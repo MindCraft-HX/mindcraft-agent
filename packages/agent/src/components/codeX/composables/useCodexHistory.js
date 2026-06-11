@@ -1,4 +1,5 @@
 import { shouldPersistInlineMessages, shouldRestoreInlineMessages } from '../utils/historyLoadSafety.mjs'
+import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
 
 export function useCodexHistory({
   projects, setProjects, getProjectCounter, setProjectCounter,
@@ -32,7 +33,7 @@ export function useCodexHistory({
       .filter(Boolean)
     if (!userTexts.length) return true
     const hasSlashOnly = userTexts.some(t => t === '/')
-    const hasContextLeak = userTexts.some(t => t.includes('AGENTS.md instructions') || t.includes('<environment_context>'))
+    const hasContextLeak = userTexts.some(t => stripSystemContextTags(t).length === 0)
     return hasSlashOnly || hasContextLeak
   }
 

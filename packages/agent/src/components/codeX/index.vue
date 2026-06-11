@@ -251,7 +251,7 @@ import { mergeCodexMetrics } from './utils/codexMetricsMerge.mjs'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useCodexConfigStore } from '../../stores/codexConfig.js'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
-import { safeIpcPayload } from '../agentCommon/utils/helpers.js'
+import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 
 const themeStore = useClaudeThemeStore()
@@ -2125,14 +2125,11 @@ function isAgentDocLeak(m) {
   return hitCount >= 2
 }
 
-// 移除 SDK 注入到 user 消息中的系统上下文标签（system-reminder / environment_context / ide_*）
+// 移除 SDK 注入到 user 消息中的系统上下文标签
+// 委托给 helpers.js 共享实现，与 Claude Code 保持同步（避免白名单漂移）
 function stripCodexSystemContextTags(text) {
   if (!text || typeof text !== 'string') return ''
-  return text
-    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/g, '')
-    .replace(/<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/g, '')
-    .replace(/<ide_[^>]+>[\s\S]*?<\/ide_[^>]+>/g, '')
-    .trim()
+  return stripSystemContextTagsShared(text)
 }
 
 // 开关：从用户消息文本中剥离 compact 上下文，只保留真实用户输入
@@ -2227,8 +2224,6 @@ function filterCodexSystemMessages(messages) {
           if (b.type === 'text' || b.type === 'input_text' || b.type === 'output_text') {
             const stripped = stripCodexSystemContextTags(b.text || '')
             if (!stripped) return false
-            // 残余的安全网：纯 XML 标签/系统指令 不算真实用户输入
-            if (/^<[a-z]+_[a-z]+[\s>]/.test(stripped)) return false
             return true
           }
           // 图片/文件附件也算有效内容

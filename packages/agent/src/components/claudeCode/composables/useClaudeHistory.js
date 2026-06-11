@@ -1,4 +1,5 @@
 import { buildClaudePanelStatePayload } from '../utils/historyPersistenceSanitizer.mjs'
+import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
 
 export function useClaudeHistory({
   projects,
@@ -24,10 +25,8 @@ export function useClaudeHistory({
     const isSystemContextText = (text) => {
       const t = typeof text === 'string' ? text.trim() : ''
       if (!t) return false
-      return t.startsWith('<environment_context')
-        || t.startsWith('<system-reminder')
-        || t.startsWith('<ide_')
-        || t === '[Request interrupted by user]'
+      if (t === '[Request interrupted by user]') return true
+      return stripSystemContextTags(t).length === 0
     }
 
     if (message.role === 'system' && isSystemContextText(message.text)) return true
@@ -135,7 +134,7 @@ export function useClaudeHistory({
   function normalizeMessagesForRestore(messages) {
     const restoredMessages = (Array.isArray(messages) ? messages : [])
       .filter(m => {
-        if (m?.role === 'system' && typeof m?.text === 'string' && m.text.includes('<task-notification>')) {
+        if (m?.role === 'system' && typeof m?.text === 'string' && stripSystemContextTags(m.text).length === 0) {
           return false
         }
         if (isPureSystemContextMessage(m)) {

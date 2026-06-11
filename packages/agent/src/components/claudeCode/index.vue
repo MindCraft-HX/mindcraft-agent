@@ -326,7 +326,7 @@ import {
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
-import { buildDiffLines, applyToolResult, safeIpcPayload } from '../agentCommon/utils/helpers.js'
+import { buildDiffLines, applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
@@ -772,15 +772,11 @@ function stripLocalCommandTags(text) {
     .trim()
 }
 
-// 移除 SDK 注入到 user 消息中的系统上下文标签（system-reminder / environment_context / ide_* / task-notification）
+// 移除 SDK 注入到 user 消息中的系统上下文标签
+// 委托给 helpers.js 共享实现，与 CodeX 保持同步（避免白名单漂移）
 function stripSystemContextTags(text) {
   if (!text || typeof text !== 'string') return ''
-  return text
-    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/g, '')
-    .replace(/<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/g, '')
-    .replace(/<ide_[^>]+>[\s\S]*?<\/ide_[^>]+>/g, '')
-    .replace(/<task-notification\b[^>]*>[\s\S]*?<\/task-notification>/g, '')
-    .trim()
+  return stripSystemContextTagsShared(text)
 }
 
 function applyToolResultToHistoryMessages(messages, toolUseId, content, isErrorFlag) {

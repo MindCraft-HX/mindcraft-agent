@@ -17,6 +17,7 @@
 | T048 | bug | CodeX "额外目录"：默认展开/收缩逻辑缺失 + 缓存/数据流可能断裂 | P2 | ✅ 已修复 (2026-06-11) |
 | T050 | bug+ux | 任务完成通知系统修复：提示音稳定性 + ClaudeCode 缺失 + 导航栏提醒 + "编程"→"项目" | P1 | ✅ 已修复 (2026-06-11) |
 | T049 | bug | 关闭项目 Tab 重开后自定义会话命名全部丢失（ClaudeCode + CodeX） | P1 | ✅ ClaudeCode selectDir 漏传 `_userRenamed` 已修复 (2026-06-11) → CodeX 待确认复现路径 |
+| T051 | bug | 系统标签剥离白名单不同步：用户 bubble 显示 SDK 注入的系统上下文（AGENTS.md / INSTRUCTIONS / 环境变量） | P0 | ✅ 统一为 helpers.js 模式匹配，覆盖 6 处调用点 (2026-06-11) |
 
 ## T047 详情：工具栏 @ 选择文件时输入框有文字就选不了
 
