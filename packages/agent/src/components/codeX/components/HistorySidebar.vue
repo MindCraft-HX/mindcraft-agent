@@ -1,21 +1,20 @@
 <template>
   <div class="cc-sidebar" :class="{ collapsed: !sidebarOpen }">
     <div class="sidebar-header">
-      <span v-if="sidebarOpen" class="sidebar-title" @click="!refreshing && emit('refresh')" title="刷新列表">历史对话
-        <button
-          v-if="sidebarOpen"
-          class="sidebar-icon-btn"
-          :disabled="refreshing"
-          @click.stop="emit('refresh')"
-          title="刷新列表"
-        >
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" :class="{ 'spinning': refreshing }">
-            <path d="M8 3a5 5 0 104.546 2.914.5.5 0 11.908-.418A6 6 0 118 2v1z"/>
-            <path d="M8 1a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 1z"/>
-            <path d="M8 5.5L5.5 3H10.5L8 5.5z"/>
-          </svg>
-        </button>
-      </span>
+      <button
+        v-if="sidebarOpen"
+        class="sidebar-refresh-btn"
+        :disabled="refreshing"
+        @click="emit('refresh')"
+        title="刷新列表"
+      >
+        历史对话
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" :class="{ 'spinning': refreshing }">
+          <path d="M8 3a5 5 0 104.546 2.914.5.5 0 11.908-.418A6 6 0 118 2v1z"/>
+          <path d="M8 1a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 1z"/>
+          <path d="M8 5.5L5.5 3H10.5L8 5.5z"/>
+        </svg>
+      </button>
       <div class="sidebar-header-actions">
 
         <button
@@ -449,7 +448,7 @@ function formatSessionTime(timestamp) {
   flex-shrink: 0;
   border-bottom: 1px solid var(--cc-border);
 }
-.sidebar-title {
+.sidebar-refresh-btn {
   font-size: 11px;
   color: var(--cc-panel-title);
   font-weight: 600;
@@ -460,13 +459,26 @@ function formatSessionTime(timestamp) {
   line-height: 1;
   cursor: pointer;
   user-select: none;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.sidebar-refresh-btn:hover:not(:disabled) {
+  background: var(--cc-panel-item-hover);
+  color: var(--cc-primary);
+}
+.sidebar-refresh-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 .sidebar-header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
 }
-.sidebar-icon-btn,
 .sidebar-toggle {
   width: 22px;
   height: 22px;
@@ -479,20 +491,11 @@ function formatSessionTime(timestamp) {
   align-items: center;
   justify-content: center;
 }
-.sidebar-icon-btn:hover {
-  background: var(--cc-panel-item-hover);
-  color: var(--cc-primary);
-}
 .sidebar-toggle:hover {
   background: var(--cc-panel-item-hover);
   color: var(--cc-primary);
 }
-.sidebar-icon-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.sidebar-icon-btn svg.spinning {
+.sidebar-refresh-btn svg.spinning {
   animation: spin 1s linear infinite;
 }
 @keyframes spin {
