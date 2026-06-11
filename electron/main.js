@@ -21,7 +21,7 @@ const path = require("path");
 const { exec } = require('child_process');
 const { setupIpcHandlers } = require("./mainModules/ipcHandlers");
 const { setupAutoUpdater } = require("./mainModules/autoUpdate");
-const { setupPtyHandlers } = require("./mainModules/ptyManager");
+
 const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
 const { openClaudeWin } = require("./claudeWindow/index.js");
 const { openCodexWin } = require("./codexWindow/index.js");
@@ -325,7 +325,7 @@ app.whenReady().then(async () => {
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件
   setupAutoUpdater(NODE_ENV, win); //更新文件
-  setupPtyHandlers();
+
   registerAgentIPCs(ipcMain);
   ipcMain.handle('open-claude-win', () => openClaudeWin({ initUrl, env: NODE_ENV }));
   ipcMain.handle('open-codex-win', () => openCodexWin({ initUrl, env: NODE_ENV }));

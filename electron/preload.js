@@ -88,20 +88,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openClaudeWin: () => ipcRenderer.invoke('open-claude-win'),
   openCodexWin: () => ipcRenderer.invoke('open-codex-win'),
 
-  // pty 终端
-  ptyCreate: (opts) => ipcRenderer.invoke('pty-create', opts),
-  ptyWrite: (tabId, data) => ipcRenderer.invoke('pty-write', { tabId, data }),
-  ptyResize: (tabId, cols, rows) => ipcRenderer.invoke('pty-resize', { tabId, cols, rows }),
-  ptyDestroy: (tabId) => ipcRenderer.invoke('pty-destroy', tabId),
-  ptySelectDir: () => ipcRenderer.invoke('pty-select-dir'),
-  ptySaveImage: (dataUrl) => ipcRenderer.invoke('pty-save-image', { dataUrl }),
-  onPtyData: (cb) => ipcRenderer.on('pty-data', (_, d) => cb(d)),
-  onPtyExit: (cb) => ipcRenderer.on('pty-exit', (_, d) => cb(d)),
-  offPtyListeners: () => {
-    ipcRenderer.removeAllListeners('pty-data')
-    ipcRenderer.removeAllListeners('pty-exit')
-  },
-
   // Agent bridge (来自 packages/agent/preload)
   ...createAgentBridge(ipcRenderer),
 
