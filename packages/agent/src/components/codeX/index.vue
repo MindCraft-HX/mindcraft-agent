@@ -189,7 +189,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, nextTick, watch, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Conf } from 'electron-conf/renderer'
 import { ElMessage } from 'element-plus'
@@ -2416,6 +2416,11 @@ defineExpose({
   deleteProject(id) { const p = projects.value.find(x => x.id === id); if (p) requestDeleteProject(p) },
   refreshSessions() { handleRefreshSessions() },
   ready: isReady,
+})
+
+onActivated(() => {
+  // keep-alive 恢复后滚动到底部：ResizeObserver 不触发，需手动滚到底
+  nextTick(() => smartScrollBottom())
 })
 
 onUnmounted(() => {

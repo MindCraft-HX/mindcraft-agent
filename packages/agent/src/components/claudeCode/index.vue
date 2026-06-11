@@ -3120,6 +3120,8 @@ onActivated(() => {
   _hadAskDialogOnDeactivate.value = false
   _hadPlanReviewOnDeactivate.value = false
   // 不自动恢复弹窗：用户通过蓝色 pending-dot + 消息感知，手动点击"回答"按钮打开
+  // 恢复后滚动到底部：keep-alive 恢复时 ResizeObserver 不触发，需手动滚到底
+  nextTick(() => scrollToBottomActive(true))
 })
 
 onMounted(() => {
