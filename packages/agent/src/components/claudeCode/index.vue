@@ -161,7 +161,9 @@
           v-if="mentionSuggestions.length"
           :suggestions="mentionSuggestions"
           :activeIdx="mentionIdx"
+          :flatMode="mentionFlatMode"
           @applyMention="applyMention"
+          @toggleFlatMode="toggleMentionFlatMode"
         />
         <div class="input-box">
           <textarea
@@ -769,13 +771,14 @@ function stripLocalCommandTags(text) {
     .trim()
 }
 
-// 移除 SDK 注入到 user 消息中的系统上下文标签（system-reminder / environment_context / ide_*）
+// 移除 SDK 注入到 user 消息中的系统上下文标签（system-reminder / environment_context / ide_* / task-notification）
 function stripSystemContextTags(text) {
   if (!text || typeof text !== 'string') return ''
   return text
     .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/g, '')
     .replace(/<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/g, '')
     .replace(/<ide_[^>]+>[\s\S]*?<\/ide_[^>]+>/g, '')
+    .replace(/<task-notification\b[^>]*>[\s\S]*?<\/task-notification>/g, '')
     .trim()
 }
 
@@ -1301,6 +1304,15 @@ const activeRunMode = computed({
 const mentionSuggestions = ref([])
 const mentionIdx = ref(0)
 let mentionReqSeq = 0
+const mentionFlatMode = ref(false)
+const allFilesCache = ref(null)
+
+function toggleMentionFlatMode() {
+  mentionFlatMode.value = !mentionFlatMode.value
+  allFilesCache.value = null
+  const curQuery = extractMentionQuery(inputText.value || '', inputEl.value?.selectionStart)
+  if (curQuery != null) refreshMentionSuggestions(curQuery)
+}
 
 function extractMentionQuery(text, caretPos) {
   const pos = Number.isInteger(caretPos) ? caretPos : text.length
@@ -1313,7 +1325,7 @@ function extractMentionQuery(text, caretPos) {
 async function refreshMentionSuggestions(rawQuery) {
   const tab = activeTab.value
   const cwd = activeProject.value?.cwd || ''
-  if (!tab || tab.thinking || !cwd || !window.electronAPI?.claudeListFiles) {
+  if (!tab || tab.thinking || !cwd) {
     mentionSuggestions.value = []
     mentionIdx.value = 0
     return
@@ -1321,10 +1333,47 @@ async function refreshMentionSuggestions(rawQuery) {
   const query = typeof rawQuery === 'string' ? rawQuery : ''
   const seq = ++mentionReqSeq
   try {
-    const list = await window.electronAPI.claudeListFiles({
-      cwd,
-      query,
-    })
+    // ── 平铺模式：一次拉取全量文件，后续本地过滤 ──
+    if (mentionFlatMode.value && window.electronAPI?.localSearchFiles) {
+      if (!allFilesCache.value) {
+        const result = await window.electronAPI.localSearchFiles({ cwd, query: '', fileEnumLimit: 5000 })
+        if (seq !== mentionReqSeq) return
+        if (result?.ok && Array.isArray(result?.files)) {
+          const cwdNorm = cwd.replace(/\\/g, '/').replace(/\/$/, '') + '/'
+          allFilesCache.value = result.files.map(f => {
+            let p = String(f).replace(/\\/g, '/')
+            if (p.toLowerCase().startsWith(cwdNorm.toLowerCase())) {
+              p = p.slice(cwdNorm.length)
+            }
+            return p
+          })
+        } else {
+          allFilesCache.value = []
+        }
+      }
+      if (seq !== mentionReqSeq) return
+      const lowerQuery = query.toLowerCase()
+      let filtered = allFilesCache.value
+      if (lowerQuery) {
+        filtered = allFilesCache.value.filter(f => f.toLowerCase().includes(lowerQuery))
+      }
+      mentionSuggestions.value = filtered.slice(0, 20)
+      mentionIdx.value = 0
+      return
+    }
+    // ── 逐级模式：localSearchFiles 优先，claudeListFiles 兜底 ──
+    let list = []
+    if (window.electronAPI?.localSearchFiles) {
+      const result = await window.electronAPI.localSearchFiles({ cwd, query, maxResults: 10 })
+      if (seq !== mentionReqSeq) return
+      if (result?.ok && Array.isArray(result?.suggestions)) {
+        list = result.suggestions
+      }
+    }
+    if (!list.length && window.electronAPI?.claudeListFiles) {
+      list = await window.electronAPI.claudeListFiles({ cwd, query })
+      if (seq !== mentionReqSeq) return
+    }
     if (seq !== mentionReqSeq) return
     mentionSuggestions.value = Array.isArray(list) ? list : []
     mentionIdx.value = 0
@@ -1339,6 +1388,7 @@ function clearMentionSuggestions() {
   mentionReqSeq += 1
   mentionSuggestions.value = []
   mentionIdx.value = 0
+  allFilesCache.value = null
 }
 
 function onInputChange(e) {
@@ -1371,11 +1421,29 @@ function applyMention(item) {
   if (!match) return
   const prefix = beforeCaret.slice(0, beforeCaret.length - match[0].length)
   const lead = match[0].startsWith(' ') ? ' ' : ''
-  const val = item.endsWith('/') ? item.slice(0, -1) : item
-  inputText.value = `${prefix}${lead}@${val}${afterCaret}`
+  const isDir = item.endsWith('/')
+  const name = isDir ? item.slice(0, -1) : item
+  inputText.value = `${prefix}${lead}@${name}${isDir ? '/' : ''}${afterCaret}`
+
+  if (isDir) {
+    // 文件夹：保持弹窗，钻入下一级
+    const dirQuery = name + '/'
+    nextTick(() => {
+      if (inputEl.value) {
+        const cursor = (prefix + lead + '@' + dirQuery).length
+        inputEl.value.focus()
+        inputEl.value.setSelectionRange(cursor, cursor)
+        inputEl.value.style.height = 'auto'
+        inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+      }
+      refreshMentionSuggestions(dirQuery)
+    })
+    return
+  }
+  // 文件：关闭弹窗
   clearMentionSuggestions()
   nextTick(() => {
-    const cursor = (prefix + lead + '@' + val).length
+    const cursor = (prefix + lead + '@' + name).length
     if (inputEl.value) {
       inputEl.value.focus()
       inputEl.value.setSelectionRange(cursor, cursor)
