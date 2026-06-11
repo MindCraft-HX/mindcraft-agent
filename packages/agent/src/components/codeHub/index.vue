@@ -187,7 +187,8 @@ function collectTabs(panel, agentType, meta) {
     projectId: p.id,
     id: `${agentType}:${p.id}`,
     agentType,
-    ...meta,
+    iconClass: meta.iconClass,
+    iconStyle: meta.iconStyle,
   }))
 }
 

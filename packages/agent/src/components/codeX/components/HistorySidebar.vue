@@ -194,6 +194,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  locked: {
+    type: Boolean,
+    default: false
+  },
   // 项目设置
   projectCwd: {
     type: String,

@@ -172,6 +172,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  locked: {
+    type: Boolean,
+    default: false
+  },
 })
 
 const emit = defineEmits([
