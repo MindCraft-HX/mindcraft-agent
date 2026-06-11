@@ -49,12 +49,13 @@ if (process.env.VITE_DEV_SERVER_URL) {
 let sideFloatWin = null
 let win = null
 
-if(NODE_ENV != "development") {
+// 单实例锁：所有模式强制开启，防止多实例争抢 Chromium 用户数据目录
+{
   const gotTheLock = app.requestSingleInstanceLock();
   if (!gotTheLock) {
     app.exit();
   } else {
-    app.on("second-instance", (event, commandLine, workingDirectory) => {
+    app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
       if (win) {
         if (win.isMinimized()) win.restore();
         win.show();
@@ -105,10 +106,17 @@ function createWindow() {
   win.webContents.on('console-message', (_event, level, message) => {
     if (level >= 2) console.log('[renderer]', message); // level>=2: warn/error
   });
+  // 关闭窗口：开发模式直接退出（避免进程残留），生产模式隐藏到托盘
   win.on('close', (e) => {
-    e.preventDefault();
-    win.hide();
-   })
+    if (NODE_ENV === 'development') {
+      globalShortcut.unregisterAll()
+      win = null
+      app.exit()
+    } else {
+      e.preventDefault();
+      win.hide();
+    }
+  })
 
   if(NODE_ENV != "production") {
     if(NODE_ENV == "development") {

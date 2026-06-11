@@ -19,7 +19,7 @@ function openCodexWin({ initUrl, env }) {
     minHeight: 400,
     show: false,
     title: 'GPT Codex',
-    icon: path.join(__dirname, '../../dist/logo-html.png'),
+    icon: path.join(__dirname, '../../dist/logo-white.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload.js'),
       webSecurity: false,
@@ -87,7 +87,7 @@ function openCodexWin({ initUrl, env }) {
   })
 
   const url = env === 'development'
-    ? 'http://127.0.0.1:5173/#/main/codex'
+    ? `${initUrl}#/main/codex`
     : `file://${initUrl}#/main/codex`
 
   // 只在开发环境打开开发者工具
