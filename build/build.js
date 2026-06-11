@@ -58,7 +58,7 @@ function updateConfigJson() {
     const configJsonStr = fs.readFileSync(configJsonUrl, "utf-8");
     const configJson = JSON.parse(configJsonStr);
     try {
-        configJson.version = VERSION;
+        configJson.version = VERSION || configJson.version;
         fs.writeFileSync(configJsonUrl, JSON.stringify(configJson, null, 2));
     } catch (error) {
         console.log("error", error);
