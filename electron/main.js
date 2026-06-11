@@ -103,8 +103,11 @@ function createWindow() {
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('[main] Page load failed:', errorCode, errorDescription, validatedURL);
   });
+  win.webContents.on('did-finish-load', () => {
+    console.log('[main] Page finished loading');
+  });
   win.webContents.on('console-message', (_event, level, message) => {
-    if (level >= 2) console.log('[renderer]', message); // level>=2: warn/error
+    if (level >= 2) console.log('[renderer]', message);
   });
   // 关闭窗口：开发模式直接退出（避免进程残留），生产模式隐藏到托盘
   win.on('close', (e) => {
