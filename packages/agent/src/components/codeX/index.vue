@@ -2239,6 +2239,22 @@ function filterCodexSystemMessages(messages) {
         })
         if (!hasRealText) return false
       }
+
+      // 剥离注入到 user 消息中的 SDK 系统上下文标签
+      // （INSTRUCTIONS / environment_context / task-notification 等）
+      // 注：hasRealText 仅用剥离结果做过滤判断，未实际修改消息内容，
+      // 导致系统标签残留在 UI 展示中——此处显式剥离
+      if (typeof m?.text === 'string') {
+        m.text = stripCodexSystemContextTags(m.text)
+      }
+      if (Array.isArray(m?.content)) {
+        m.content = m.content.map(b => {
+          if (b && (b.type === 'text' || b.type === 'input_text' || b.type === 'output_text')) {
+            return { ...b, text: stripCodexSystemContextTags(b.text || '') }
+          }
+          return b
+        })
+      }
     }
 
     return true
