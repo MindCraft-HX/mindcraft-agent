@@ -578,7 +578,12 @@ function insertTextAtCaret(insertText) {
 }
 
 function triggerMention() {
-  insertTextAtCaret('@')
+  const text = inputText.value || ''
+  const el = inputEl.value
+  const caretPos = Number.isInteger(el?.selectionStart) ? el.selectionStart : text.length
+  const charBefore = caretPos > 0 ? text[caretPos - 1] : ''
+  const needsSpace = charBefore !== '' && charBefore !== ' ' && charBefore !== '\n'
+  insertTextAtCaret(needsSpace ? ' @' : '@')
   nextTick(() => {
     refreshMentionSuggestions('')
     inputEl.value?.focus()

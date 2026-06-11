@@ -111,16 +111,20 @@
 import { provide, ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Setting, Check } from '@element-plus/icons-vue';
-import Settings from "./components/Settings.vue";
-import { useClaudeThemeStore } from '@mindcraft/agent';
+import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 
 const settingsDrawer = ref(false);
 const activeSetting = ref(null);
+const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
 const claudeTheme = useClaudeThemeStore();
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`);
 provide("settingsDrawer", settingsDrawer);
 provide("activeSetting", activeSetting);
+
+function openSettings() {
+  sharedSettingsRef.value?.open()
+}
 const route = useRoute();
 const router = useRouter();
 
@@ -142,10 +146,9 @@ onUnmounted(() => {
   if (typeof disposeOpenMdViewer === 'function') disposeOpenMdViewer()
 })
 
-// 设置入口（通过 Settings 组件内部触发）
+// 设置入口（通过 SharedSettings 弹窗触发）
 window.electronAPI?.openTabByName?.((progress) => {
-  settingsDrawer.value = true
-  activeSetting.value = progress.type
+  openSettings()
 })
 </script>
 

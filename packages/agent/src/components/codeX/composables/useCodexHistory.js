@@ -75,6 +75,7 @@ export function useCodexHistory({
       lastCwd: lastProjectCwd,
       projects: projects.value.map(p => ({
         id: p.id, name: p.name, cwd: p.cwd, cwdLocked: Boolean(p.cwdLocked), hasDoneNotification: Boolean(p.hasDoneNotification),
+        additionalDirectories: p.additionalDirectories || [],
         chats: (p.chats || []).map(c => ({
           id: c.id, name: c.name, sessionId: c.sessionId,
           messages: streamingIds.has(c.sessionId) || !shouldPersistInlineMessages(c) ? [] : (c.messages || []),
@@ -145,7 +146,7 @@ export function useCodexHistory({
         .sort((a, b) => getChatSortTime(b) - getChatSortTime(a))
       const locked = Boolean(p.cwdLocked)
       console.log('[codex-history] applyProjects: restoring project', p.id, 'cwd=', p.cwd, 'cwdLocked=', locked, 'raw=', p.cwdLocked)
-      return { id: p.id, name: p.name, cwd: p.cwd || '', cwdLocked: locked, hasDoneNotification: Boolean(p.hasDoneNotification), chats }
+      return { id: p.id, name: p.name, cwd: p.cwd || '', cwdLocked: locked, hasDoneNotification: Boolean(p.hasDoneNotification), additionalDirectories: p.additionalDirectories || [], chats }
     })
     setProjects(restored)
     return true
