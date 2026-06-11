@@ -469,10 +469,13 @@ const mentionIdx = ref(0)
 let mentionReqSeq = 0
 const mentionFlatMode = ref(false)
 const allFilesCache = ref(null)  // null=未加载, []=空
+let allFilesCacheTime = 0
+const ALL_FILES_CACHE_TTL = 30000  // 30 秒过期
 
 function toggleMentionFlatMode() {
   mentionFlatMode.value = !mentionFlatMode.value
   allFilesCache.value = null
+  allFilesCacheTime = 0
   // 重新触发当前查询的补全
   const curQuery = extractMentionQuery(inputText.value || '', inputEl.value?.selectionStart)
   if (curQuery != null) refreshMentionSuggestions(curQuery)
@@ -524,7 +527,8 @@ async function refreshMentionSuggestions(rawQuery) {
   try {
     // ── 平铺模式：一次拉取全量文件，后续本地过滤 ──
     if (mentionFlatMode.value && window.electronAPI?.localSearchFiles) {
-      if (!allFilesCache.value) {
+      // 缓存未加载或已过期时重新拉取
+      if (!allFilesCache.value || Date.now() - allFilesCacheTime > ALL_FILES_CACHE_TTL) {
         const result = await window.electronAPI.localSearchFiles({ cwd, query: '', fileEnumLimit: 5000 })
         if (seq !== mentionReqSeq) return
         if (result?.ok && Array.isArray(result?.files)) {
@@ -537,8 +541,10 @@ async function refreshMentionSuggestions(rawQuery) {
             }
             return p
           })
+          allFilesCacheTime = Date.now()
         } else {
           allFilesCache.value = []
+          allFilesCacheTime = Date.now()
         }
       }
       if (seq !== mentionReqSeq) return
@@ -579,6 +585,7 @@ function clearMentionSuggestions() {
   mentionSuggestions.value = []
   mentionIdx.value = 0
   allFilesCache.value = null
+  allFilesCacheTime = 0
 }
 
 function applyMention(item) {
@@ -1420,6 +1427,17 @@ const { sidebarOpen } = useCodexTabs({
 
 // Stream handler
 const codehubHasNotification = inject('codehubHasNotification', null)
+
+// ── 侧边栏「项目」通知指示器 ──
+// 与 ClaudeCode 对称：监测所有项目的所有 tab 通知状态，自动清除
+watch(
+  () => projects.value.flatMap(p => p?.chats || []).some(t => t.hasDoneNotification),
+  (has) => {
+    if (codehubHasNotification) codehubHasNotification.value = has
+  },
+  { immediate: true }
+)
+
 const { onAgentMessage, onAgentDone } = useCodexAgentStream({
   tabs: computed(() => {
     const p = activeProject.value

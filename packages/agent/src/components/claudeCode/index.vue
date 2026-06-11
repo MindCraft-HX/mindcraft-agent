@@ -3016,11 +3016,11 @@ function showPlanReviewDialog(data) {
   planReviewRequestId.value = data.requestId || ''
   planReviewSessionId.value = data.sessionId || ''
   planReviewVisible.value = true
-  // 超时保护：10 分钟后关闭弹窗，保持 pending 状态不自动决策
+  // 超时保护：10 分钟后自动拒绝计划（默认安全策略），防止 Agent 永久挂起
   _clearPlanReviewTimeout()
   _planReviewTimeout = setTimeout(() => {
     if (planReviewVisible.value) {
-      planReviewVisible.value = false
+      finishPlanReview({ type: 'reject', reason: 'timeout' })
     }
   }, ASK_TIMEOUT_MS)
 }

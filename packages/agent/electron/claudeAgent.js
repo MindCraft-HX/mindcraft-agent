@@ -2465,7 +2465,6 @@ function setupClaudeHandlers() {
       contextUsage: jsonlMetrics.contextUsage || 0,
       contextWindow: jsonlMetrics.contextWindow || 0,
       durationMs: jsonlMetrics.durationMs || 0,
-      speedInputPerSec: inputPerSec,
       speedOutputPerSec: outputPerSec,
     }
   })

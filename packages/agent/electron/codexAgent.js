@@ -596,7 +596,6 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
       contextUsage,
       contextWindow,
       durationMs: firstTimestamp != null && lastTimestamp != null ? Math.max(0, lastTimestamp - firstTimestamp) : 0,
-      speedInputPerSec: speedSec > 0 ? Math.round(totalSpeedInputTokens / speedSec) : 0,
       speedOutputPerSec: speedSec > 0 ? Math.round(totalSpeedOutputTokens / speedSec) : 0,
       gitBranch: gitInfo?.branch || '',
       gitChanges: gitInfo?.changes || 0,
@@ -1567,8 +1566,6 @@ function setupCodexSdkHandlers() {
     const runtime = readRuntimeConfig()
     console.log('[codex-diag] readRuntimeConfig:', {
       hasApiKey: !!runtime.apiKey,
-      apiKeyLen: (runtime.apiKey || '').length,
-      apiKeyPrefix: (runtime.apiKey || '').slice(0, 8),
       baseURL: runtime.baseURL,
       model: runtime.model,
       reasoningEffort: runtime.reasoningEffort,
@@ -1924,7 +1921,6 @@ function setupCodexSdkHandlers() {
                 contextUsage: parsedMetrics?.contextUsage ?? 0,
                 contextWindow: parsedMetrics?.contextWindow ?? 0,
                 durationMs: parsedMetrics?.durationMs || durationMs,
-                speedInputPerSec: parsedMetrics?.speedInputPerSec ?? 0,
                 speedOutputPerSec: parsedMetrics?.speedOutputPerSec ?? 0,
                 thinking: false,
                 gitBranch: parsedMetrics?.gitBranch || '',

@@ -49,6 +49,7 @@
               :width="150"
               trigger="click"
               :teleported="false"
+              :popper-options="{ strategy: 'fixed' }"
               popper-class="theme-picker-popover"
             >
               <template #reference>
