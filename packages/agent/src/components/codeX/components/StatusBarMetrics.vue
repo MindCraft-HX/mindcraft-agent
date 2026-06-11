@@ -66,8 +66,6 @@
       <!-- 速度 -->
       <span v-if="hasSpeed" class="sb-group">
         <span class="sb-icon">⚡</span>
-        <span class="sb-val">in {{ m.speedInputPerSec }}/s</span>
-        <span class="sb-sep">·</span>
         <span class="sb-val">out {{ m.speedOutputPerSec }}/s</span>
       </span>
 
@@ -117,7 +115,7 @@ const displayDurationMs = computed(() => {
   return props.liveDurationMs || 0
 })
 
-const hasSpeed = computed(() => m.value.speedInputPerSec > 0 || m.value.speedOutputPerSec > 0)
+const hasSpeed = computed(() => m.value.speedOutputPerSec > 0)
 
 function fmtK(n) {
   if (!n) return '0'
