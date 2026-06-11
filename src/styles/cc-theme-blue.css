@@ -222,14 +222,14 @@
   --cc-hljs-type: #ffcb6b;
   --cc-hljs-operator: #89ddff;
 
-  /* busy banner */
-  --cc-busy-bg-from: #152535;
-  --cc-busy-bg-to: #0f1c2e;
-  --cc-busy-border: #254a70;
-  --cc-busy-spinner-ring: #254a70;
-  --cc-busy-spinner-arc: #5b9bd5;
-  --cc-busy-title: #a0cef0;
-  --cc-busy-sub: #88a8c4;
+  /* busy banner — 使用暖琥珀色以在所有主题中保持高对比度可见 */
+  --cc-busy-bg-from: #2a1a08;
+  --cc-busy-bg-to: #1a1006;
+  --cc-busy-border: #5c3a10;
+  --cc-busy-spinner-ring: #5c4028;
+  --cc-busy-spinner-arc: #f59e0b;
+  --cc-busy-title: #fcd34d;
+  --cc-busy-sub: #a8a2a0;
 
   /* tool category colors (Phase 1 UI) */
   --cc-tool-color-write: #5eead4;

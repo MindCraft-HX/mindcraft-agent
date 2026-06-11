@@ -36,13 +36,13 @@
   --cc-border-strong: #ccc8c2;
   --cc-border-stronger: #b8b4ae;
   --cc-border-hover: #9a9690;
-  --cc-border-focus: #c6613f;
+  --cc-border-focus: #b85c3a;
 
   /* 主色 */
-  --cc-primary: #c6613f;
-  --cc-primary-hover: #a84e30;
+  --cc-primary: #b85c3a;
+  --cc-primary-hover: #9a3d22;
   --cc-primary-bg: #fdf5f0;
-  --cc-primary-border: #f5d0b0;
+  --cc-primary-border: #e8c0a0;
   --cc-btn-primary-text: #fff;
 
   /* 按钮 */
@@ -77,30 +77,30 @@
   --cc-overlay-bg-strong: rgba(0, 0, 0, 0.4);
 
   /* 信息色 */
-  --cc-info: #2563eb;
+  --cc-info: #1d4ed8;
   --cc-info-bg: rgba(37, 99, 235, 0.06);
   --cc-info-text: #1d4ed8;
 
   /* 状态色 - 环境检测 */
-  --cc-env-ok: #16a34a;
+  --cc-env-ok: #0f8a3a;
   --cc-env-ok-bg: #e6f4ea;
-  --cc-env-warn: #d97706;
+  --cc-env-warn: #c2680a;
   --cc-env-warn-bg: #fdf4e3;
-  --cc-env-err: #dc2626;
+  --cc-env-err: #c51e1e;
   --cc-env-err-bg: #fce8e8;
 
   /* 状态色 - 通用 */
-  --cc-success: #16a34a;
+  --cc-success: #0f8a3a;
   --cc-success-bg: #e6f4ea;
-  --cc-success-border: #a3d9b1;
-  --cc-success-text: #16a34a;
-  --cc-warning: #d97706;
+  --cc-success-border: #a0d5ae;
+  --cc-success-text: #0f8a3a;
+  --cc-warning: #c2680a;
   --cc-warning-bg: #fdf4e3;
   --cc-warning-border: #f0d89a;
-  --cc-error: #dc2626;
+  --cc-error: #c51e1e;
   --cc-error-bg: #fce8e8;
   --cc-error-border: #f0b8b8;
-  --cc-error-text: #dc2626;
+  --cc-error-text: #c51e1e;
 
   --cc-hljs-default: #2c2c2c;
 
@@ -128,12 +128,12 @@
   --cc-dialog-cancel-text: #5c5c5c;
   --cc-dialog-cancel-hover-bg: #e8e6e2;
   --cc-dialog-cancel-hover-text: #2c2c2c;
-  --cc-dialog-confirm-bg: #c6613f;
-  --cc-dialog-confirm-border: #c6613f;
+  --cc-dialog-confirm-bg: #b85c3a;
+  --cc-dialog-confirm-border: #b85c3a;
   --cc-dialog-confirm-text: #fff;
 
   /* user bubble */
-  --cc-user-bg: #c6613f;
+  --cc-user-bg: #b85c3a;
   --cc-user-text: #fff;
   --cc-user-code-bg: rgba(0, 0, 0, 0.08);
   --cc-user-code-border: rgba(0, 0, 0, 0.12);
@@ -143,7 +143,7 @@
   /* assistant bubble */
   --cc-assistant-bg: #f4f3f1;
   --cc-assistant-border: #e8e6e2;
-  --cc-assistant-label: #c6613f;
+  --cc-assistant-label: #b85c3a;
   --cc-assistant-text: #2c2c2c;
   --cc-assistant-code-bg: #eceae6;
   --cc-assistant-code-border: #e2dfd9;
@@ -200,7 +200,7 @@
 
   /* toggle */
   --cc-toggle-off: #d1cdc7;
-  --cc-toggle-on: #c6613f;
+  --cc-toggle-on: #b85c3a;
   --cc-toggle-knob: #fff;
 
   /* status bar */
@@ -212,15 +212,15 @@
   /* highlight.js */
   --cc-hljs-text: #24292e;
   --cc-hljs-keyword: #d73a49;
-  --cc-hljs-built-in: #e36209;
-  --cc-hljs-string: #22863a;
-  --cc-hljs-number: #005cc5;
+  --cc-hljs-built-in: #b85c3a;
+  --cc-hljs-string: #0f8a3a;
+  --cc-hljs-number: #1d4ed8;
   --cc-hljs-comment: #6a737d;
   --cc-hljs-function: #6f42c1;
   --cc-hljs-params: #24292e;
-  --cc-hljs-tag: #22863a;
-  --cc-hljs-type: #e36209;
-  --cc-hljs-operator: #d73a49;
+  --cc-hljs-tag: #0f8a3a;
+  --cc-hljs-type: #b85c3a;
+  --cc-hljs-operator: #c51e1e;
 
   /* busy banner */
   --cc-busy-bg-from: #fef6e0;
