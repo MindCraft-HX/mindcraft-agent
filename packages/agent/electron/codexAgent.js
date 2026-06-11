@@ -1564,6 +1564,15 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-agent-query', async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxLevel, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
     const runtime = readRuntimeConfig()
+    console.log('[codex-diag] readRuntimeConfig:', {
+      hasApiKey: !!runtime.apiKey,
+      apiKeyLen: (runtime.apiKey || '').length,
+      apiKeyPrefix: (runtime.apiKey || '').slice(0, 8),
+      baseURL: runtime.baseURL,
+      model: runtime.model,
+      reasoningEffort: runtime.reasoningEffort,
+      cwd: path.resolve(cwd || process.cwd()),
+    })
     const apiKey = runtime.apiKey || ''
     const baseURL = runtime.baseURL || ''
     const model = modelOverride?.trim() || runtime.model || ''

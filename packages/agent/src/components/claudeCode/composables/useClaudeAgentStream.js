@@ -91,6 +91,7 @@ export function useClaudeAgentStream({
   onCompactBoundary,
   onNewMessage,
   trimMessages,
+  onTaskDone,
 }) {
   function onAgentMessage({ sessionId: sid, msg }) {
     const tab = tabs.value.find(t => t.sessionId === sid)
@@ -477,7 +478,7 @@ export function useClaudeAgentStream({
     scrollBottom(tab.id)
   }
 
-  function onAgentDone({ sessionId: sid, cliSessionId, filePath }) {
+  function onAgentDone({ sessionId: sid, cliSessionId, filePath, reason = 'completed' }) {
     const tab = tabs.value.find(t => t.sessionId === sid)
     if (!tab) return
     if (cliSessionId) {
@@ -505,8 +506,10 @@ export function useClaudeAgentStream({
 
     if (projects && getActiveProjectId) {
       const ownerProject = projects.value.find(p => (p.chats || []).some(c => c.sessionId === sid))
-      if (ownerProject) {
-        // 只有后台项目完成时才通知（前台项目用户能直接看到，不应残留 hasDoneNotification）
+      if (ownerProject && reason === 'completed') {
+        // 提示音：任何任务完成都响，不受窗口焦点/活跃 Tab 影响
+        onTaskDone?.()
+        // 视觉提醒（任务栏闪烁 + Tab 高亮）：仅后台/非活跃项目时
         if (shouldNotifyOnTaskDone({
           ownerProjectId: ownerProject.id,
           activeProjectId: getActiveProjectId(),

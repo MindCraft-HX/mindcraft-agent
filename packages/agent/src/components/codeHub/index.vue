@@ -105,7 +105,7 @@
 <script setup>
 defineOptions({ name: 'codeHub' })
 
-import { ref, computed, watch, watchEffect, onMounted, onUnmounted, nextTick, reactive, provide } from 'vue'
+import { ref, computed, watch, watchEffect, onMounted, onUnmounted, nextTick, reactive, provide, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import SharedSettings from './SharedSettings.vue'
@@ -443,6 +443,18 @@ provide('codehubSwitchToAgent', (agentKey) => {
   }
 })
 provide('codehubOpenSharedSettings', openSharedSettings)
+
+// ── 侧边栏「项目」通知指示器 ──
+// Main.vue 提供此 ref，codeHub 根据 unifiedTabs 中是否有 hasDoneNotification 来更新它
+// 当有后台项目完成任务时，侧边栏图标会脉冲提醒
+const codehubHasNotification = inject('codehubHasNotification', null)
+watch(
+  () => unifiedTabs.value.some(t => t.hasDoneNotification),
+  (has) => {
+    if (codehubHasNotification) codehubHasNotification.value = has
+  },
+  { immediate: true }
+)
 </script>
 
 <style>

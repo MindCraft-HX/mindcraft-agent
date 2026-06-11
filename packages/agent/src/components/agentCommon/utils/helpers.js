@@ -81,3 +81,46 @@ export function applyToolResult(messages, toolUseId, content, isErrorFlag, {
   else if (isWriteTool(t.toolName) || isEditTool(t.toolName)) { t.expanded = true }
   if (isTaskTool && resultContent) t.toolResultContent = resultContent
 }
+
+/**
+ * 防御 Vue reactive Proxy 导致 Electron contextBridge 结构化克隆失败。
+ *
+ * 背景：Vue 3 reactive/ref 包裹的原始值（字符串、数组元素等）在某些 Electron
+ * 版本（36.x）的 contextBridge 结构化克隆中可能失败，即使值的类型是标准 JSON。
+ * 手动 JSON 序列化 + 反序列化可以剥离所有 Proxy，确保传给 IPC 的是纯对象。
+ *
+ * 用法：
+ *   const clean = safeIpcPayload(raw, 'codexAgentQuery')
+ *   await window.electronAPI.codexAgentQuery?.(clean)
+ *
+ * @param {object} obj  - 原始 payload（可能含 Vue reactive Proxy）
+ * @param {string} label - 调用方标识，仅用于诊断日志
+ * @returns {object} 纯 JSON 对象
+ */
+export function safeIpcPayload(obj, label = 'ipc') {
+  const DIAG = true // 设为 true 开启逐字段诊断日志
+  try {
+    if (DIAG) {
+      for (const [key, value] of Object.entries(obj)) {
+        try {
+          JSON.stringify(value)
+        } catch (fieldErr) {
+          console.error(`[safeIpcPayload] ${label} — 字段 "${key}" 序列化失败:`, {
+            type: typeof value,
+            constructor: value?.constructor?.name,
+            isProxy: typeof value === 'object' && value !== null && !!value?.__v_isRef,
+            message: fieldErr?.message,
+          })
+        }
+      }
+    }
+    return JSON.parse(JSON.stringify(obj))
+  } catch (err) {
+    console.error(`[safeIpcPayload] ${label} — 整体序列化失败，回退原始对象（可能导致 IPC 克隆错误）:`, {
+      message: err?.message,
+      keys: Object.keys(obj),
+      types: Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, typeof v])),
+    })
+    return obj
+  }
+}

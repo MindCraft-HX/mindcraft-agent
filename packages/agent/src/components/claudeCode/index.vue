@@ -326,7 +326,8 @@ import {
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
-import { buildDiffLines, applyToolResult } from '../agentCommon/utils/helpers.js'
+import { buildDiffLines, applyToolResult, safeIpcPayload } from '../agentCommon/utils/helpers.js'
+import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
 import { sanitizeClaudeProjectsForPersistence } from './utils/historyPersistenceSanitizer.mjs'
@@ -2733,12 +2734,14 @@ async function sendMessage() {
   }
 
   try {
-    await window.electronAPI.claudeAgentQuery({
+    const rawPayload = {
       prompt: promptToSend, images: imgs,
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
       runMode: tab.runMode || 'ask_before_edits',
-    })
+    }
+    const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
+    await window.electronAPI.claudeAgentQuery(payload)
   } catch (e) {
     tab.thinking = false
     pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '发送失败：' + e.message })
@@ -2855,6 +2858,7 @@ const {
   },
   onNewMessage: bumpScrollCount,
   trimMessages,
+  onTaskDone: playDoneSound,
 })
 
 function respondPermission(toolMsg, allowed) {

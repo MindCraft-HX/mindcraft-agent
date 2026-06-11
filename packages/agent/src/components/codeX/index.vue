@@ -136,7 +136,9 @@
             v-if="mentionSuggestions.length"
             :suggestions="mentionSuggestions"
             :activeIdx="mentionIdx"
+            :flatMode="mentionFlatMode"
             @applyMention="applyMention"
+            @toggleFlatMode="toggleMentionFlatMode"
           />
           <div class="input-box">
             <textarea
@@ -249,6 +251,8 @@ import { mergeCodexMetrics } from './utils/codexMetricsMerge.mjs'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useCodexConfigStore } from '../../stores/codexConfig.js'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
+import { safeIpcPayload } from '../agentCommon/utils/helpers.js'
+import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 
 const themeStore = useClaudeThemeStore()
 const codexConfigStore = useCodexConfigStore()
@@ -463,6 +467,16 @@ const isComposing = ref(false)
 const mentionSuggestions = ref([])
 const mentionIdx = ref(0)
 let mentionReqSeq = 0
+const mentionFlatMode = ref(false)
+const allFilesCache = ref(null)  // null=未加载, []=空
+
+function toggleMentionFlatMode() {
+  mentionFlatMode.value = !mentionFlatMode.value
+  allFilesCache.value = null
+  // 重新触发当前查询的补全
+  const curQuery = extractMentionQuery(inputText.value || '', inputEl.value?.selectionStart)
+  if (curQuery != null) refreshMentionSuggestions(curQuery)
+}
 let newChatLock = false
 const slashCommands = ref([
   { cmd: '/clear', desc: '清空当前对话' },
@@ -508,6 +522,36 @@ async function refreshMentionSuggestions(rawQuery) {
   const query = typeof rawQuery === 'string' ? rawQuery : ''
   const seq = ++mentionReqSeq
   try {
+    // ── 平铺模式：一次拉取全量文件，后续本地过滤 ──
+    if (mentionFlatMode.value && window.electronAPI?.localSearchFiles) {
+      if (!allFilesCache.value) {
+        const result = await window.electronAPI.localSearchFiles({ cwd, query: '', fileEnumLimit: 5000 })
+        if (seq !== mentionReqSeq) return
+        if (result?.ok && Array.isArray(result?.files)) {
+          const cwdNorm = cwd.replace(/\\/g, '/').replace(/\/$/, '') + '/'
+          allFilesCache.value = result.files.map(f => {
+            let p = String(f).replace(/\\/g, '/')
+            // PowerShell 回退路径可能是绝对路径，转为相对 cwd
+            if (p.toLowerCase().startsWith(cwdNorm.toLowerCase())) {
+              p = p.slice(cwdNorm.length)
+            }
+            return p
+          })
+        } else {
+          allFilesCache.value = []
+        }
+      }
+      if (seq !== mentionReqSeq) return
+      const lowerQuery = query.toLowerCase()
+      let filtered = allFilesCache.value
+      if (lowerQuery) {
+        filtered = allFilesCache.value.filter(f => f.toLowerCase().includes(lowerQuery))
+      }
+      mentionSuggestions.value = filtered.slice(0, 20)
+      mentionIdx.value = 0
+      return
+    }
+    // ── 逐级模式：保持原逻辑 ──
     let list = []
     if (window.electronAPI?.localSearchFiles) {
       const result = await window.electronAPI.localSearchFiles({ cwd, query, maxResults: 10 })
@@ -534,6 +578,7 @@ function clearMentionSuggestions() {
   mentionReqSeq += 1
   mentionSuggestions.value = []
   mentionIdx.value = 0
+  allFilesCache.value = null
 }
 
 function applyMention(item) {
@@ -546,11 +591,29 @@ function applyMention(item) {
   if (!match) return
   const prefix = beforeCaret.slice(0, beforeCaret.length - match[0].length)
   const lead = match[0].startsWith(' ') ? ' ' : ''
-  const val = item.endsWith('/') ? item.slice(0, -1) : item
-  inputText.value = `${prefix}${lead}@${val}${afterCaret}`
+  const isDir = item.endsWith('/')
+  const name = isDir ? item.slice(0, -1) : item
+  inputText.value = `${prefix}${lead}@${name}${isDir ? '/' : ''}${afterCaret}`
+
+  if (isDir) {
+    // 文件夹：保持弹窗，钻入下一级
+    const dirQuery = name + '/'
+    nextTick(() => {
+      if (inputEl.value) {
+        const cursor = (prefix + lead + '@' + dirQuery).length
+        inputEl.value.focus()
+        inputEl.value.setSelectionRange(cursor, cursor)
+        inputEl.value.style.height = 'auto'
+        inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+      }
+      refreshMentionSuggestions(dirQuery)
+    })
+    return
+  }
+  // 文件：关闭弹窗
   clearMentionSuggestions()
   nextTick(() => {
-    const cursor = (prefix + lead + '@' + val).length
+    const cursor = (prefix + lead + '@' + name).length
     if (inputEl.value) {
       inputEl.value.focus()
       inputEl.value.setSelectionRange(cursor, cursor)
@@ -1347,24 +1410,6 @@ let scrollThrottleTimer = null
 let wheelThrottleTimer = null
 let loadMoreCooldownTimer = null
 
-function playDoneSound() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(880, ctx.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(1100, ctx.currentTime + 0.1)
-    gain.gain.setValueAtTime(0.18, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.4)
-    osc.onended = () => ctx.close()
-  } catch (_) {}
-}
-
 // Tab management
 const { sidebarOpen } = useCodexTabs({
   tabs: computed(() => activeProject.value?.chats || []),
@@ -1803,15 +1848,20 @@ async function sendMessage(textOverride = null, targetTab = null) {
     finalPrompt = `${PLAN_MODE_INSTRUCTIONS}\n\n---\n\n${finalPrompt}`
   }
 
-  await window.electronAPI.codexAgentQuery?.({
-    prompt: finalPrompt, images, cwd: ownerProject.cwd, sessionId: tab.sessionId,
+  // 防御 Vue reactive Proxy → contextBridge structured clone 失败
+  // 手动 JSON 序列化确保传给 IPC 的是纯对象，同时逐字段诊断
+  const rawPayload = {
+    prompt: finalPrompt, images, cwd: ownerProject?.cwd || '',
+    sessionId: tab.sessionId,
     sandboxLevel: tab.sandboxLevel,
     networkAccessEnabled: tab.networkAccessEnabled,
     webSearchMode: tab.webSearchMode,
-    model: tab.model || tab.metrics?.model || '',
+    model: (tab.model || tab.metrics?.model || ''),
     reasoningEffort: tab.reasoningEffort || '',
     additionalDirectories: ownerProject?.additionalDirectories || [],
-  })
+  }
+  const payload = safeIpcPayload(rawPayload, 'codexAgentQuery')
+  await window.electronAPI.codexAgentQuery?.(payload)
 }
 
 async function openModelPicker() {

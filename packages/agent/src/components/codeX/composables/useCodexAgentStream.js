@@ -793,7 +793,9 @@ export function useCodexAgentStream({
     tab.thinking = false
     tab._awaitingDone = false
     if (ownerProject && reason === 'completed') {
-      // 只有后台项目完成时才通知（前台项目用户能直接看到，不应残留 hasDoneNotification）
+      // 提示音：任何任务完成都响，不受窗口焦点/活跃 Tab 影响
+      onTaskDone?.()
+      // 视觉提醒（任务栏闪烁 + Tab 高亮）：仅后台/非活跃项目时
       if (shouldNotifyOnTaskDone({
         ownerProjectId: ownerProject.id,
         activeProjectId: getActiveProjectId?.(),
@@ -802,7 +804,6 @@ export function useCodexAgentStream({
         ownerProject.hasDoneNotification = true
         window.electronAPI?.flashTaskbar?.()
       }
-      onTaskDone?.()
     }
     tab.currentAssistantId = null
     trimMessages?.(tab)

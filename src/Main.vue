@@ -117,7 +117,7 @@ const settingsDrawer = ref(false);
 const activeSetting = ref(null);
 const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
-// 任务完成通知状态：由 codeHub 注入更新，用于侧边栏提醒
+// 任务完成通知状态：由 codeHub 更新，用于侧边栏"项目"图标提醒
 const codehubHasNotification = ref(false);
 const claudeTheme = useClaudeThemeStore();
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`);
@@ -258,6 +258,25 @@ window.electronAPI?.openTabByName?.((progress) => {
     }
   }
 
+  /* 任务完成通知：侧边栏图标脉冲 + 右上角小圆点 */
+  &.has-notification {
+    color: var(--cc-warning, #e6a23c);
+    animation: sidebar-notify-pulse 1.6s ease-in-out infinite;
+
+    .sidebar-label { color: var(--cc-warning, #e6a23c); }
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--cc-warning, #e6a23c);
+    }
+  }
+
   .sidebar-icon-wrapper {
     width: 20px;
     height: 20px;
@@ -275,6 +294,12 @@ window.electronAPI?.openTabByName?.((progress) => {
     line-height: 1;
     white-space: nowrap;
   }
+}
+
+/* 侧边栏通知脉冲动画 */
+@keyframes sidebar-notify-pulse {
+  0%, 100% { background: transparent; }
+  50% { background: var(--cc-warning-bg, rgba(230, 162, 60, 0.12)); }
 }
 
 /* 底部 */

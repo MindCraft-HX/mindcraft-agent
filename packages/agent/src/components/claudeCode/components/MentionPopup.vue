@@ -1,5 +1,17 @@
 <template>
   <div class="mention-popup">
+    <div class="mention-header">
+      <span class="mention-hint">{{ flatMode ? `匹配 ${suggestions.length} 个文件` : '逐级选择' }}</span>
+      <button
+        type="button"
+        class="mention-flat-toggle"
+        :class="{ active: flatMode }"
+        :title="flatMode ? '切换为逐级模式' : '切换为平铺模式'"
+        @mousedown.prevent="$emit('toggleFlatMode')"
+      >
+        {{ flatMode ? '📂 平铺' : '📁 逐级' }}
+      </button>
+    </div>
     <div
       v-for="(item, i) in suggestions"
       :key="item"
@@ -24,9 +36,10 @@
 defineProps({
   suggestions: { type: Array, default: () => [] },
   activeIdx: { type: Number, default: -1 },
+  flatMode: { type: Boolean, default: false },
 })
 
-defineEmits(['applyMention'])
+defineEmits(['applyMention', 'toggleFlatMode'])
 </script>
 
 <style scoped>
@@ -45,6 +58,39 @@ defineEmits(['applyMention'])
   z-index: 51;
   box-shadow: 0 4px 16px var(--cc-shadow);
 }
+
+.mention-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--cc-border);
+  flex-shrink: 0;
+}
+.mention-hint {
+  font-size: 9px;
+  color: var(--cc-text-dim);
+}
+.mention-flat-toggle {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--cc-border-strong);
+  background: var(--cc-bg-secondary);
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.mention-flat-toggle:hover {
+  color: var(--cc-primary);
+  border-color: var(--cc-primary);
+}
+.mention-flat-toggle.active {
+  color: var(--cc-primary);
+  border-color: var(--cc-primary);
+  background: var(--cc-border);
+}
+
 .mention-item {
   padding: 7px 12px;
   cursor: pointer;
