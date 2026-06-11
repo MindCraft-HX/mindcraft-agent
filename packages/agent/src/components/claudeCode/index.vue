@@ -1969,6 +1969,7 @@ async function selectDir(project, onAfterSelect) {
         currentAssistantId: null,
         filePath: s.filePath || '',
         _pendingSessionBinding: false,
+        _userRenamed: Boolean(s._userRenamed),
         taskState: createEmptyTaskState(),
         _taskToolUseIds: new Set(),
       }))

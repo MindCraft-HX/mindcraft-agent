@@ -80,7 +80,7 @@
             </el-popover>
             <div
               class="sidebar-item"
-              @click="settingsDrawer = true"
+              @click="openSettings"
               title="设置"
             >
               <div class="sidebar-icon-wrapper">
@@ -102,8 +102,8 @@
       </el-main>
     </el-container>
 
-    <!-- 设置抽屉 -->
-    <Settings />
+    <!-- 设置弹窗（SharedSettings modal） -->
+    <SharedSettings ref="sharedSettingsRef" />
   </div>
 </template>
 

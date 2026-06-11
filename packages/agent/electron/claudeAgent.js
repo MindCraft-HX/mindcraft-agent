@@ -2154,6 +2154,7 @@ function setupClaudeHandlers() {
 
           for await (const msg of q) {
             if (!agentSessions.has(sessionId)) break
+            const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
             gotAnyMessage = true
             // 尽早注册 cliSessionId，并通知渲染进程用于精确匹配 pending chat
             if (msg?.session_id) {
@@ -2165,7 +2166,6 @@ function setupClaudeHandlers() {
               cliSessionIds.set(sessionId, msg.uuid)
               safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
             }
-            const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
               for (const block of msg.message.content) {
                 if (block.type === 'tool_use') {

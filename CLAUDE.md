@@ -83,6 +83,45 @@ When touching ANY code related to session management (chat creation, binding, sc
 6. **When modifying a guard condition** (like `shouldReloadClaudeChatFromDisk`), check both the "normal runtime protection" and "crash recovery" scenarios — they may require opposite behaviors.
 7. **Provider switch (`resetAgentRuntime`) affects ALL windows.** If you clear a shared Map, ensure ALL windows can recover, not just the active one.
 
+### Pre-Patch Safety Protocol
+
+> **适用于**：任何对 `packages/agent/electron/claudeAgent.js` 或 `codexAgent.js` 的编辑，以及其他超过 500 行的函数/文件。
+> 
+> **原因**：这两个文件各 3000+ 行，包含深层嵌套的闭包、Promise 链、`for await` 循环。T046 的 5 个根因修复后立即引入了一个 TDZ 回归——补丁越多，越容易踩坑。
+
+**编辑前必须执行（不可跳过）：**
+
+1. **读完整函数上下文**：`Read` 目标函数的完整代码（从 `function` 到闭合的 `}`），不只是 diff 周围几行。T046 TDZ 回归就是因为只看了要改的 if block，没注意到底下还有 `const sender` 声明。
+
+2. **变量声明扫描**：新增的任何变量引用，用 `Grep` 确认其在**当前作用域内的声明位置**。如果是 `const`/`let`，声明必须在所有引用**之前**（不是之后、不是同一行的后面、不是"下面几行"）。
+
+3. **控制流中断检查**：新增的 `continue` / `break` / `return` / `throw`，列出它跳过的所有后续代码，确认其中没有**本次补丁依赖的逻辑**（如消息清理、状态重置、资源释放）。
+
+4. **全局状态影响**：对 `agentSessions` / `cliSessionIds` / `sessionModels` / `codexSessions` 等全局 Map 的任何写操作，评估对**所有窗口、所有 tab** 的影响范围——不能假设"只有当前窗口"。
+
+5. **分支覆盖确认**：本次改动涉及的每个条件分支，是否在开发环境中**有路径能触发**？T046 TDZ 回归仅在 `!cliSessionIds.has(sessionId)` 为 `true` 时触发（首次消息），如果是已有会话的后续消息，永远不会走到这个分支。
+
+**编辑时的硬性约束：**
+
+- **禁止**在已有 block 中间插入代码后，不检查该 block 底部的变量声明（最常见的 TDZ 陷阱）
+- **禁止**展开单行 `if (cond) singleStatement` 为多行 `{ ... }` block 并新增变量引用，而不检查该作用域内的声明顺序
+- **禁止**在 `for await` / `while` 循环体中添加 `await` 或 `safeSend` 调用，而不确认被引用的变量已在循环体顶部声明
+- 如果一个函数连续出现 **≥3 次回归 bug**（见 `docs/session-pitfalls.md` §7.3 回归记录表），**不要继续补丁，考虑重写该函数**
+
+**建议的编辑工作流：**
+
+```
+1. Read 完整函数（offset/limit 设大一点，覆盖整个函数）
+2. 确认目标编辑区域的完整作用域边界（哪个 { 对应哪个 }）
+3. 列出作用域内所有 const/let 声明及其位置
+4. 如果新增代码引用了某个变量 → 确认声明在引用之前
+5. 如果新增了控制流中断 → 列出跳过的代码，与补丁目标比对
+6. 执行编辑
+7. Read 编辑后的区域，确认变量引用顺序
+```
+
+---
+
 ## Verification
 
 Use targeted tests first, then broader verification as needed.
