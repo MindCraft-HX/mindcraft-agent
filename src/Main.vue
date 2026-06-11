@@ -175,8 +175,8 @@ window.electronAPI?.openTabByName?.((progress) => {
       height: 32px;
       margin: 8px 8px 16px;
       .logo-icon {
-        width: 28px;
-        height: 28px;
+        width: 30px;
+        height: 30px;
       }
     }
     .sidebar-item {
@@ -210,10 +210,10 @@ window.electronAPI?.openTabByName?.((progress) => {
   }
 
   .logo-icon {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     background-image: url(./assets/mindcraft_logo_svg.svg);
-    background-size: contain;
+    background-size: 125%;
     background-repeat: no-repeat;
     background-position: center;
   }
