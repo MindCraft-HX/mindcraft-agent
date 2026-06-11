@@ -1812,7 +1812,8 @@ function setupClaudeHandlers() {
       try { session.query?.close?.() } catch (_) {}
       agentSessions.delete(sid)
     }
-    cliSessionIds.clear()
+    // 注意：不清理 cliSessionIds。它们是 SDK 会话 UUID → renderer sessionId 的映射，
+    // 仅用于 resume 查询，不依赖当前 SDK 实例。Provider 切换后 renderer 会重新注册所有聊天。
     sessionModels.clear()
     slowNoticeSent.clear()
     slashCommandsCache.clear()
@@ -1857,6 +1858,10 @@ function setupClaudeHandlers() {
         try { existing.query?.close?.() } catch (_) {}
         // 只清除 SDK Query 对象，保留 cliSessionIds 以便 resume 对话历史。
         agentSessions.delete(sessionId)
+        console.log(`[Claude] 检测到运行时配置变更，sessionId=${sessionId.slice(-8)}，已中止旧查询。` +
+          `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
+          `cliSessionId: ${cliSessionIds.get(sessionId) || '(none)'}`)
+        // 不 return，继续执行后续逻辑以创建新查询并 resume
       } else {
       existing.event = event
       const userMsg = {
@@ -1891,6 +1896,15 @@ function setupClaudeHandlers() {
       // 允许 resume 的条件：有 cliSessionId 且为有效 UUID 格式（CLI --resume 要求 UUID）
       const isValidUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
       const resumedSessionId = (previousCliSessionId && isValidUuid(previousCliSessionId)) ? previousCliSessionId : undefined
+
+      // 记录模型切换和 resume 状态
+      if (previousModel && previousModel !== model) {
+        console.log(`[Claude] 检测到模型切换 ${previousModel} → ${model}，sessionId=${sessionId.slice(-8)}，` +
+          `cliSessionId=${previousCliSessionId || '(none)'}，` +
+          `将${resumedSessionId ? 'resume 历史记录' : '创建新会话（无可用的 cliSessionId）'}`)
+      } else if (resumedSessionId) {
+        console.log(`[Claude] 继续会话，sessionId=${sessionId.slice(-8)}，cliSessionId=${resumedSessionId}，model=${model}`)
+      }
       const abortController = new AbortController()
       let gotAnyMessage = false
       let resultReceived = false
@@ -2141,11 +2155,15 @@ function setupClaudeHandlers() {
           for await (const msg of q) {
             if (!agentSessions.has(sessionId)) break
             gotAnyMessage = true
-            // 尽早注册 cliSessionId，让轮询器能正常工作
+            // 尽早注册 cliSessionId，并通知渲染进程用于精确匹配 pending chat
             if (msg?.session_id) {
-              if (!cliSessionIds.has(sessionId)) cliSessionIds.set(sessionId, msg.session_id)
+              if (!cliSessionIds.has(sessionId)) {
+                cliSessionIds.set(sessionId, msg.session_id)
+                safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.session_id })
+              }
             } else if (msg?.uuid && !cliSessionIds.has(sessionId)) {
               cliSessionIds.set(sessionId, msg.uuid)
+              safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
             }
             const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
@@ -2221,6 +2239,7 @@ function setupClaudeHandlers() {
           const errMsg = err?.message || String(err)
           if (err?.message?.includes('No conversation found') && resumedSessionId) {
             // session 失效，自动重试（不带 resume）
+            console.log(`[Claude] resume 失败 (No conversation found)，sessionId=${sessionId.slice(-8)}，cliSessionId=${resumedSessionId}，将创建新会话`)
             cliSessionIds.delete(sessionId)
             sessionModels.delete(sessionId)
             try {

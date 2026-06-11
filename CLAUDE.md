@@ -47,7 +47,7 @@
 
 - `T041`: `mindcraft-agent` host refactor and pruning
 - `T045`: stabilize and reuse the shared agent layer
-- `T046`: Claude session duplication / handoff issue remains a P0 risk — **5 root causes identified, see `docs/bugs/claude-session-duplicate-split.md`**
+- `T046`: Claude session duplication / handoff issue — **P0 fixes (E/B/A) applied 2026-06-11, P1(C)/P2(D) pending. See `docs/bugs/claude-session-duplicate-split.md`**
 
 Before major implementation work, read:
 

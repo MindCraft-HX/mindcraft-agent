@@ -1,7 +1,7 @@
 # MindCraft Agent 架构
 
-> 最后更新：2026-06-09
-> 当前状态：Agent 抽离 Phase A 已完成，代码事实以 `packages/agent/**` 为准
+> 最后更新：2026-06-11
+> 当前状态：Agent 抽离 Phase A 已完成，代码事实以 `packages/agent/**` 为准；T046 P0 修复(E/B/A)已合入
 
 ---
 
@@ -238,11 +238,11 @@ createChat()                            PENDING
 
 | 操作 | 触发时机 | 同步方向 | 已知陷阱 |
 |------|---------|---------|---------|
-| 后台扫描 | window focus, initNonCritical, 手动刷新 | 磁盘 → 内存（发现新 JSONL / 更新元信息） | Trap 1, 2, 3, 4 |
-| 会话领养 | 扫描发现 JSONL + 存在 pending chat | 磁盘 JSONL → 内存 chat（绑定身份） | Trap 2, 3 |
-| 消息加载 | `switchChat` + `messages.length === 0` | 磁盘 → 内存（替换 messages） | Trap 3 |
+| 后台扫描 | window focus, initNonCritical, 手动刷新 | 磁盘 → 内存（发现新 JSONL / 更新元信息） | Trap 2, 3, 4 |
+| 会话领养 | 扫描发现 JSONL + 存在 pending chat | 磁盘 JSONL → 内存 chat（绑定身份） | 已修复：精确匹配 `_expectedCliSessionId`（2026-06-11） |
+| 消息加载 | `switchChat` + `!_messagesLoaded` | 磁盘 → 内存（替换 messages） | 已修复：移除 `messages.length === 0` 条件（2026-06-11） |
 | 历史保存 | debounced 2s / immediate / onUnload | 内存 → 磁盘（panel-state.json） | Trap 4 |
-| Provider 切换 | `claude-provider-activate` | 清空主进程 Map + 渲染恢复 | Trap 1 |
+| Provider 切换 | `claude-provider-activate` | 保留 cliSessionIds + 全量重注册 | 已修复：全项目遍历注册 + Map 不清理（2026-06-11） |
 
 ---
 

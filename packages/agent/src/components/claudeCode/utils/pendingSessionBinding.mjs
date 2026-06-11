@@ -21,9 +21,17 @@ export function hasUnboundClaudeSessionPendingAdoption(chats = []) {
   return (Array.isArray(chats) ? chats : []).some(isPendingClaudeSessionBinding)
 }
 
-export function findPendingClaudeSessionForAdoption(chats = [], { activeChatId = '' } = {}) {
+export function findPendingClaudeSessionForAdoption(chats = [], { activeChatId = '', scannedSessionId = '' } = {}) {
   const pendingChats = (Array.isArray(chats) ? chats : []).filter(isPendingClaudeSessionBinding)
   if (!pendingChats.length) return null
+
+  // 优先精确匹配：主进程在流式首条消息时推送 cliSessionId，
+  // 渲染侧在收到通知后将 UUID 写入 _expectedCliSessionId。
+  // 扫描器拿到 JSONL 文件名中的 UUID (scannedSessionId)，直接匹配即可确定归属。
+  if (scannedSessionId) {
+    const exact = pendingChats.find(chat => chat._expectedCliSessionId === scannedSessionId)
+    if (exact) return exact
+  }
 
   const activePending = activeChatId
     ? pendingChats.find(chat => chat?.id === activeChatId) || null
@@ -44,6 +52,8 @@ export function adoptScannedClaudeSession(pendingChat, scannedSession, resolvedN
   pendingChat.updatedAt = scannedSession.updatedAt || pendingChat.updatedAt || null
   pendingChat.fileSize = scannedSession.fileSize ?? pendingChat.fileSize ?? null
   pendingChat._pendingSessionBinding = false
+  // 领养后标记消息需从磁盘重新加载：中断恢复后内存中的部分消息不可靠
+  pendingChat._messagesLoaded = false
 
   if (!pendingChat._userRenamed && resolvedName) {
     pendingChat.name = resolvedName

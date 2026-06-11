@@ -2,7 +2,7 @@
 
 > 日期：2026-06-11（更新）
 > 范围：`packages/agent/src/components/claudeCode/**` + 主进程 `claudeAgent.js`
-> 状态：已定位 5 个剩余根因（含 1 个进程卡死级），待修复
+> 状态：5 个根因已定位，P0(E/B/A) 已修复 (2026-06-11)，P1(C) / P2(D) 待修复
 
 ---
 
@@ -396,3 +396,59 @@ node --test tests/claude-history-persistence-sanitizer.test.mjs tests/codehub-ac
 | **P0** | A: 多 pending 盲匹配 | 主进程在首个 stream message 拿到 `cliSessionId` 时立即 IPC 通知渲染进程 → 设 `_expectedCliSessionId` → 扫描按此匹配 | `claudeAgent.js`, `useClaudeAgentStream.js`, `pendingSessionBinding.mjs`, `index.vue` |
 | **P1** | C: 错误路径孤儿 JSONL | `finally` 块根据 sessionId 反向扫描 JSONL 目录取得 `cliSessionId`；或 SDK initial metadata 提前暴露 | `claudeAgent.js` |
 | **P2** | D: hasPendingNewChat 过时 | 在循环内每次领养后重新调用 `hasUnboundClaudeSessionPendingAdoption` | `index.vue` |
+
+---
+
+## 9. 已修复（2026-06-11）
+
+### P0-E: 中断恢复死锁 ✅
+
+**问题**：5 个设计正确的机制组合成死锁，崩溃/关闭后重启无法恢复渲染。
+
+**修复（4 处）**：
+
+| # | 文件 | 位置 | 改动 |
+|---|------|------|------|
+| 1 | `pendingSessionBinding.mjs` | `adoptScannedClaudeSession()` | 领养后设置 `_messagesLoaded = false` |
+| 2 | `index.vue` | `switchChat()` L1796 | 移除 `messages.length === 0` 条件，仅检查 `!_messagesLoaded` |
+| 3 | `index.vue` | 扫描领养路径 (adopt + continue 之间) | 领养后若为活跃 chat，清空 `messages` |
+| 4 | `index.vue` | 扫描后 reload 代码 L1693-1704 | 移除 `messages.length === 0` 条件 |
+
+### P0-B: Provider 切换 cliSessionIds 清空 ✅
+
+**问题**：`resetAgentRuntime()` 清空所有 `cliSessionIds`，renderer 仅恢复活跃 tab，其他 chat 丢失 resume 能力。
+
+**修复（2 处）**：
+
+| # | 文件 | 位置 | 改动 |
+|---|------|------|------|
+| 1 | `claudeAgent.js` | `resetAgentRuntime()` | 移除 `cliSessionIds.clear()`（UUID 不依赖 SDK 实例） |
+| 2 | `index.vue` | `handleProviderActivated()` | 遍历所有 project 的所有 chat 重新注册，而非仅活跃 tab |
+
+### P0-A: 多 pending 盲匹配 ✅
+
+**问题**：多个新对话同时 pending 时，`findPendingClaudeSessionForAdoption` 盲选最近创建的，JSONL 可能错误领养。
+
+**修复（4 处）**：
+
+| # | 文件 | 位置 | 改动 |
+|---|------|------|------|
+| 1 | `claudeAgent.js` | stream loop L2158-2163 | 首次检测到 `cliSessionId` 时，IPC 通知渲染进程 `claude-agent-early-cli-session` |
+| 2 | `preload/index.js` | bridge | 新增 `onClaudeAgentEarlyCliSession` 监听方法 |
+| 3 | `useClaudeAgentStream.js` | `onEarlyCliSession()` | 收到早期通知后设置 `_expectedCliSessionId` |
+| 4 | `pendingSessionBinding.mjs` | `findPendingClaudeSessionForAdoption()` | 优先按 `_expectedCliSessionId === scannedSessionId` 精确匹配 |
+
+**数据流**：
+```
+主进程 stream 首条消息
+  │ cliSessionId = msg.session_id
+  │ safeSend('claude-agent-early-cli-session', { sessionId, cliSessionId })
+  ▼
+渲染进程 onEarlyCliSession()
+  │ tab._expectedCliSessionId = cliSessionId
+  ▼
+后台扫描 refreshProjectSessionsInBackground()
+  │ scannedSessionId = s.id (JSONL UUID)
+  │ findPendingClaudeSessionForAdoption(..., { scannedSessionId })
+  │   → chat._expectedCliSessionId === scannedSessionId  ✓ 精确命中
+```

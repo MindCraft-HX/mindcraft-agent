@@ -547,10 +547,20 @@ export function useClaudeAgentStream({
     scrollBottom(tab.id)
   }
 
+  // 主进程在流式首条消息时推送到此事件，提前告知 cliSessionId，
+  // 让扫描器能精确匹配 pending chat 到对应的 JSONL 文件，无需盲猜
+  function onEarlyCliSession({ sessionId: sid, cliSessionId }) {
+    const tab = tabs.value.find(t => t.sessionId === sid)
+    if (tab && !tab.cliSessionId) {
+      tab._expectedCliSessionId = cliSessionId
+    }
+  }
+
   return {
     onAgentMessage,
     onAgentPermission,
     onAgentAskQuestion,
     onAgentDone,
+    onEarlyCliSession,
   }
 }

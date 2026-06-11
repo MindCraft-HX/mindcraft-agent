@@ -1604,13 +1604,19 @@ async function refreshProjectSessionsInBackground(p) {
         ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
         : `会话 ${String(s.id || '').slice(0, 8)}`
       const pendingChat = !cached
-        ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value })
+        ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value, scannedSessionId: s.id })
         : null
 
       if (!cached) {
         if (pendingChat) {
           changedCount++
           adoptScannedClaudeSession(pendingChat, s, name)
+          // 如果被领养的 pending chat 正是当前活跃对话，清除中断恢复后的残存消息，
+          // 因为 _messagesLoaded 已被 adoptScannedClaudeSession 置为 false，
+          // 下次 switchChat 或后续 reload 会自动从磁盘加载完整消息
+          if (pendingChat.id === activeChatId.value) {
+            pendingChat.messages = []
+          }
           if (pendingChat.sessionId && pendingChat.cliSessionId) {
             window.electronAPI?.claudeRegisterCliSessions?.({ [pendingChat.sessionId]: pendingChat.cliSessionId })
           }
@@ -1694,7 +1700,8 @@ async function refreshProjectSessionsInBackground(p) {
     const needReload = scanned.find(s => s._needReloadActiveChat)
     if (needReload) {
       const activeChat = p.chats?.find(c => c.id === activeChatId.value) || null
-      if (activeChat?.filePath && activeChat.messages.length === 0 && !activeChat._messagesLoaded) {
+      // 注意：不用 messages.length 判断——中断恢复后内存中可能有部分消息，也需覆盖
+      if (activeChat?.filePath && !activeChat._messagesLoaded) {
         activeChat._loadingMessages = true
         void ensureChatMessagesLoaded(activeChat).finally(() => {
           activeChat._loadingMessages = false
@@ -1792,8 +1799,9 @@ function switchChat(id) {
   if (chat) trimMessages(chat)
   resetScrollPrev()
   refreshMetricsForChat(chat)
-  // 有 filePath 但 messages 为空时，从文件加载
-  if (chat?.filePath && chat.messages.length === 0 && !chat._messagesLoaded) {
+  // 有 filePath 且未从磁盘加载过时，从文件加载
+  // 注意：不用 messages.length 判断——中断恢复后内存中可能有部分消息，也需覆盖
+  if (chat?.filePath && !chat._messagesLoaded) {
     chat._loadingMessages = true
     void ensureChatMessagesLoaded(chat).finally(() => {
       chat._loadingMessages = false
@@ -2256,18 +2264,30 @@ function openSettings() {
 }
 
 function handleProviderActivated() {
+  // 遍历所有项目的所有对话，重置状态并重新注册 cliSessionId 映射
+  // 主进程 resetAgentRuntime 已将 SDK 重置，但保留 cliSessionIds Map（见 claudeAgent.js 注释）
+  // 这里需要为所有聊天恢复状态，而不只是活跃 tab
+  const allRegistrations = {}
+  for (const p of projects.value) {
+    if (!p?.chats) continue
+    for (const chat of p.chats) {
+      // 清 currentAssistantId，避免 abort 后残存的流式消息追加到旧气泡
+      chat.currentAssistantId = null
+      chat.thinking = false
+      if (chat.sessionId && chat.cliSessionId) {
+        allRegistrations[chat.sessionId] = chat.cliSessionId
+      }
+    }
+  }
+  if (Object.keys(allRegistrations).length) {
+    window.electronAPI?.claudeRegisterCliSessions?.(allRegistrations)
+  }
+
   const tab = activeTab.value
   if (!tab) return
-  // 先清 currentAssistantId，避免 abort 后残存的流式消息追加到旧气泡
-  tab.currentAssistantId = null
-  // 主进程 resetAgentRuntime 已清空 cliSessionIds Map，需要重新注册以保留 resume 能力
-  if (tab.cliSessionId) {
-    window.electronAPI.claudeRegisterCliSessions?.({ [tab.sessionId]: tab.cliSessionId })
-  }
-  window.electronAPI.claudeAgentAbort?.(tab.sessionId)
-  tab.thinking = false
+  window.electronAPI?.claudeAgentAbort?.(tab.sessionId)
   // 同步更新状态栏模型显示（与 /model 保持一致）
-  window.electronAPI.claudeGetModel?.().then(m => {
+  window.electronAPI?.claudeGetModel?.().then(m => {
     tab.model = m
     metricsData.value.model = m
   })
@@ -2739,6 +2759,7 @@ const {
   onAgentPermission,
   onAgentAskQuestion,
   onAgentDone,
+  onEarlyCliSession,
 } = useClaudeAgentStream({
   tabs: computed(() => projects.value.flatMap(p => p.chats || [])),
   projects,
@@ -2957,6 +2978,7 @@ onMounted(() => {
   window.electronAPI.onClaudeAgentMessage(onAgentMessage)
   window.electronAPI.onClaudeAgentDone(onAgentDone)
   window.electronAPI.onClaudeAgentPermission(onAgentPermission)
+  window.electronAPI.onClaudeAgentEarlyCliSession?.(onEarlyCliSession)
   window.electronAPI.onClaudeAgentAskQuestion?.((data) => {
     onAgentAskQuestion(data)
     nextTick(() => {

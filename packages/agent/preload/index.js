@@ -99,6 +99,7 @@ function createAgentBridge(ipcRenderer) {
   onClaudeAgentAskQuestion: (callback) => ipcRenderer.on('claude-agent-ask-question', (_, data) => callback(data)),
   onClaudeAgentPlanReview: (callback) => ipcRenderer.on('claude-agent-plan-review', (_, data) => callback(data)),
   onClaudeAgentMetrics: (callback) => ipcRenderer.on('claude-agent-metrics', (_, data) => callback(data)),
+  onClaudeAgentEarlyCliSession: (callback) => ipcRenderer.on('claude-agent-early-cli-session', (_, data) => callback(data)),
   offClaudeAgentMetrics: (callback) => ipcRenderer.removeListener('claude-agent-metrics', callback),
   claudePermissionResponse: (payload) => ipcRenderer.invoke('claude-permission-response', payload),
   claudeAskQuestionResponse: (payload) => ipcRenderer.invoke('claude-ask-question-response', payload),
@@ -110,6 +111,7 @@ function createAgentBridge(ipcRenderer) {
     ipcRenderer.removeAllListeners('claude-agent-ask-question')
     ipcRenderer.removeAllListeners('claude-agent-plan-review')
     ipcRenderer.removeAllListeners('claude-agent-metrics')
+    ipcRenderer.removeAllListeners('claude-agent-early-cli-session')
   },
   // Codex Agent SDK
   codexAgentQuery: (payload) => ipcRenderer.invoke('codex-agent-query', payload),

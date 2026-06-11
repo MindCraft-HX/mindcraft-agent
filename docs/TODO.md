@@ -12,7 +12,7 @@
 | T040 | eval | Remote 远程接入方案研究与实现 | P1 | 待开始 |
 | T041 | refactor | mindcraft-agent 重构：在共享 Agent 层基础上裁剪宿主能力与导航 | P1 | 方案评审中 |
 | T045 | refactor | Agent 抽离：提取 Claude / Codex / codeHub / agentCommon 为共享 `packages/agent` 层 | P1 | Phase A 已完成，进入稳定与复用阶段 |
-| T046 | bug | ClaudeCode 会话重复 / 接力问题：重复 jsonl 绑定、active 丢失、renderer session 身份污染 | P0 | 5 个根因已定位（`docs/bugs/claude-session-duplicate-split.md`），待修复 |
+| T046 | bug | ClaudeCode 会话重复 / 接力问题：重复 jsonl 绑定、active 丢失、renderer session 身份污染 | P0 | P0(E/B/A) 已修复 (2026-06-11)，P1(C)/P2(D) 待修复 (`docs/bugs/claude-session-duplicate-split.md`) |
 
 ## T045 当前状态
 
@@ -33,6 +33,7 @@
 | 日期 | 分类 | 说明 |
 |------|------|------|
 | 2026-06-11 | doc | 创建跨 Agent 会话陷阱全景图 `docs/session-pitfalls.md`，新增 5 大 trap pattern 和排查决策树；补充 agent-architecture.md 会话管理章节；更新 CLAUDE.md 排查路由 |
+| 2026-06-11 | bug | 修复 T046 P0 根因 E/B/A：中断恢复死锁（移除 messages.length 检查）、Provider 切换清空 cliSessionIds（全量重注册+Map 不清理）、多 pending 盲匹配（早期 IPC 通知+_expectedCliSessionId 精确匹配） |
 | 2026-06-11 | bug | 定位 T046 ClaudeCode 会话重复的 5 个根因（A-E），更新专题文档 `docs/bugs/claude-session-duplicate-split.md` |
 | 2026-06-10 | bug | 修复 Codex 同一 `sessionId` 重复 query 造成多次 cleanup / 旧 turn 收尾误清新 turn 状态的问题；主进程增加 run ownership，重复运行中请求直接忽略，cleanup/done/metrics 仅作用于当前 run |
 | 2026-06-10 | bug | 补强 ClaudeCode 会话”接力”问题：加载/保存/刷新时清理重复 jsonl 绑定，补齐 active project/chat fallback，并同步 codeHub 顶部 tab；同日继续复现后确认还存在 renderer session 身份污染链路 |
