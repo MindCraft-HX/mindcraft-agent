@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#409eff"/>
+      <stop offset="100%" stop-color="#00e5ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="#0d1117"/>
+  <!-- 六边形外框 -->
+  <polygon points="128,20 218,72 218,184 128,236 38,184 38,72"
+           fill="none" stroke="url(#bc)" stroke-width="9" stroke-linejoin="round"/>
+  <!-- 内部 G/C 形 -->
+  <path d="M146 82 C116 72, 82 88, 82 128 C82 168, 116 184, 146 174"
+        fill="none" stroke="url(#bc)" stroke-width="11" stroke-linecap="round"/>
+  <!-- 右侧箭头 -->
+  <path d="M180 112 L214 128 L180 144"
+        fill="none" stroke="#00e5ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 中心菱形 -->
+  <polygon points="128,114 144,128 128,142 112,128" fill="#409eff" opacity="0.55"/>
+</svg>
