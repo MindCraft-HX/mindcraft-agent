@@ -573,6 +573,18 @@ const projectTabs = computed(() =>
   })
 )
 
+// ── 侧边栏「项目」通知指示器 ──
+// 直接维护 Main.vue 提供的 codehubHasNotification，确保 keep-alive 失活时仍能更新
+// (codeHub 中的 computed+watch 在失活时会暂停，因此通知必须在这里直推)
+const codehubHasNotification = inject('codehubHasNotification', null)
+watch(
+  () => projectTabs.value.some(t => t.hasDoneNotification),
+  (has) => {
+    if (codehubHasNotification) codehubHasNotification.value = has
+  },
+  { immediate: true }
+)
+
 const activeTab = computed(() => {
   const p = activeProject.value
   if (!p) return null
@@ -2856,6 +2868,10 @@ const {
   onNewMessage: bumpScrollCount,
   trimMessages,
   onTaskDone: playDoneSound,
+  onBackgroundTaskDone() {
+    // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
+    if (codehubHasNotification) codehubHasNotification.value = true
+  },
 })
 
 function respondPermission(toolMsg, allowed) {

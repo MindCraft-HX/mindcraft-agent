@@ -92,6 +92,7 @@ export function useClaudeAgentStream({
   onNewMessage,
   trimMessages,
   onTaskDone,
+  onBackgroundTaskDone,
 }) {
   function onAgentMessage({ sessionId: sid, msg }) {
     const tab = tabs.value.find(t => t.sessionId === sid)
@@ -516,6 +517,7 @@ export function useClaudeAgentStream({
           isPanelActive: isPanelActive?.value,
         })) {
           ownerProject.hasDoneNotification = true
+          onBackgroundTaskDone?.()
           window.electronAPI?.flashTaskbar?.()
         }
       }

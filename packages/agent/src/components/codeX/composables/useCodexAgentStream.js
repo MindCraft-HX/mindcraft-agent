@@ -384,7 +384,7 @@ const ITEM_TOOL_HANDLERS = {
 }
 
 export function useCodexAgentStream({
-  tabs, projects, getActiveProjectId, isPanelActive, onTaskDone,
+  tabs, projects, getActiveProjectId, isPanelActive, onTaskDone, onBackgroundTaskDone,
   scrollBottom, saveHistory, nextMsgId,
   isWriteTool, isEditTool, isBashTool, isReadTool,
   inferToolFailureFromText, createToolMessage, onNewMessage, trimMessages,
@@ -802,6 +802,7 @@ export function useCodexAgentStream({
         isPanelActive: isPanelActive?.value,
       })) {
         ownerProject.hasDoneNotification = true
+        onBackgroundTaskDone?.()
         window.electronAPI?.flashTaskbar?.()
       }
     }

@@ -1419,13 +1419,19 @@ const { sidebarOpen } = useCodexTabs({
 })
 
 // Stream handler
+const codehubHasNotification = inject('codehubHasNotification', null)
 const { onAgentMessage, onAgentDone } = useCodexAgentStream({
   tabs: computed(() => {
     const p = activeProject.value
     return p ? (p.chats || []) : []
   }),
   projects, getActiveProjectId: () => activeProjectId.value, isPanelActive,
-  onTaskDone: playDoneSound, scrollBottom: smartScrollBottom, saveHistory, nextMsgId,
+  onTaskDone: playDoneSound,
+  onBackgroundTaskDone() {
+    // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
+    if (codehubHasNotification) codehubHasNotification.value = true
+  },
+  scrollBottom: smartScrollBottom, saveHistory, nextMsgId,
   isWriteTool, isEditTool, isBashTool, isReadTool, inferToolFailureFromText, createToolMessage,
   onNewMessage: () => {},
   trimMessages,
