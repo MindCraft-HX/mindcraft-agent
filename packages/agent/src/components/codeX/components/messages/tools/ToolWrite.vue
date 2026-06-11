@@ -337,14 +337,14 @@ watch(() => props.msg._fileChanges, () => { computeFileChangeDiffs() }, { deep: 
   letter-spacing: 0.02em;
 }
 .tool-kind-write {
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.12);
-  border-color: rgba(37, 99, 235, 0.22);
+  color: var(--cc-tool-color-write);
+  background: var(--cc-info-bg);
+  border-color: var(--cc-info-bg);
 }
 .tool-kind-edit {
-  color: #b45309;
-  background: rgba(217, 119, 6, 0.12);
-  border-color: rgba(217, 119, 6, 0.24);
+  color: var(--cc-warning);
+  background: var(--cc-warning-bg);
+  border-color: var(--cc-warning-border);
 }
 .tool-kind-file-change,
 .tool-kind-apply-patch {

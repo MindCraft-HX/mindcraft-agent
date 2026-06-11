@@ -485,12 +485,12 @@ provide('codehubOpenSharedSettings', openSharedSettings)
   z-index: 1;
 }
 .codehub-tab.session-pending {
-  color: #f59e0b;
-  border-bottom: 2px solid #f59e0b;
+  color: var(--cc-warning);
+  border-bottom: 2px solid var(--cc-warning);
 }
 .codehub-tab.task-done {
-  color: #ff8c00;
-  border-bottom: 2px solid #ff8c00;
+  color: var(--cc-warning);
+  border-bottom: 2px solid var(--cc-warning);
   animation: tab-done-pulse 1.6s ease-in-out infinite;
 }
 .codehub-tab.task-done .codehub-tab-name {
@@ -498,7 +498,7 @@ provide('codehubOpenSharedSettings', openSharedSettings)
 }
 @keyframes tab-done-pulse {
   0%, 100% { background: var(--cc-bg-secondary); }
-  50% { background: rgba(255, 140, 0, 0.12); }
+  50% { background: var(--cc-warning-bg); }
 }
 .codehub-tab-agent-icon {
   font-size: 16px; line-height: 1; flex-shrink: 0;
@@ -514,7 +514,7 @@ provide('codehubOpenSharedSettings', openSharedSettings)
 /* 运行中小圆点 */
 .codehub-tab-name .running-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-  background: #ff8c00; margin-right: 6px; flex-shrink: 0;
+  background: var(--cc-warning); margin-right: 6px; flex-shrink: 0;
   animation: running-pulse 1.2s ease-in-out infinite;
 }
 @keyframes running-pulse {
@@ -531,7 +531,7 @@ provide('codehubOpenSharedSettings', openSharedSettings)
   height: 14px;
   padding: 0 4px;
   border-radius: 7px;
-  background: #ff8c00;
+  background: var(--cc-warning);
   color: #fff;
   font-size: 9px;
   font-weight: 700;
@@ -543,7 +543,7 @@ provide('codehubOpenSharedSettings', openSharedSettings)
 /* 等待用户响应小圆点 */
 .codehub-tab-name .pending-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-  background: #f59e0b; margin-right: 6px; flex-shrink: 0;
+  background: var(--cc-warning); margin-right: 6px; flex-shrink: 0;
   animation: pending-pulse 1.4s ease-in-out infinite;
 }
 @keyframes pending-pulse {

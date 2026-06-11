@@ -765,7 +765,7 @@ defineExpose({ open, close })
 
 /* 已安装提示 */
 .mp-installed-hint {
-  font-size: 14px; color: #15803d; padding: 2px 4px;
+  font-size: 14px; color: var(--cc-success); padding: 2px 4px;
 }
 
 /* 加载更多 */

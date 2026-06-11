@@ -161,13 +161,13 @@ const phaseLabel = computed(() => {
 }
 
 .claude-task-bar__badge.is-running {
-  background: rgba(34, 197, 94, 0.14);
-  color: #1f8f4e;
+  background: var(--cc-success-bg);
+  color: var(--cc-success);
 }
 
 .claude-task-bar__badge.is-done {
-  background: rgba(59, 130, 246, 0.14);
-  color: #2563eb;
+  background: var(--cc-info-bg);
+  color: var(--cc-info);
 }
 
 .claude-task-bar__badge.is-idle {
@@ -214,7 +214,7 @@ const phaseLabel = computed(() => {
 }
 
 .claude-task-bar__action.is-close:hover {
-  color: #b91c1c;
+  color: var(--cc-error);
 }
 
 .claude-task-bar__body {
@@ -283,25 +283,25 @@ const phaseLabel = computed(() => {
 }
 
 .claude-task-bar__dot.is-running {
-  background: #22c55e;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+  background: var(--cc-success);
+  box-shadow: 0 0 0 4px var(--cc-success-bg);
 }
 
 .claude-task-bar__dot.is-completed {
-  background: #2563eb;
+  background: var(--cc-info);
 }
 
 .claude-task-bar__dot.is-pending {
-  background: #f59e0b;
+  background: var(--cc-warning);
 }
 
 .claude-task-bar__dot.is-failed {
-  background: #ef4444;
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+  background: var(--cc-error);
+  box-shadow: 0 0 0 4px var(--cc-error-bg);
 }
 
 .claude-task-bar__dot.is-muted {
-  background: #94a3b8;
+  background: var(--cc-text-dim);
 }
 
 .claude-task-bar__text {

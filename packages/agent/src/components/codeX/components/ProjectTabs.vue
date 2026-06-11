@@ -196,7 +196,7 @@ function onDrop(e, toIndex) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ff8c00;
+  background: var(--cc-warning);
   margin-right: 6px;
   flex-shrink: 0;
   animation: running-pulse 1.2s ease-in-out infinite;
@@ -213,7 +213,7 @@ function onDrop(e, toIndex) {
   height: 14px;
   padding: 0 4px;
   border-radius: 7px;
-  background: #ff8c00;
+  background: var(--cc-warning);
   color: #fff;
   font-size: 9px;
   font-weight: 700;
@@ -226,7 +226,7 @@ function onDrop(e, toIndex) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f59e0b;
+  background: var(--cc-warning);
   margin-right: 6px;
   flex-shrink: 0;
   animation: pending-pulse 1.4s ease-in-out infinite;
@@ -236,8 +236,8 @@ function onDrop(e, toIndex) {
   50% { opacity: 1; transform: scale(1.15); }
 }
 .project-tab.session-pending {
-  color: #f59e0b;
-  border-bottom: 2px solid #f59e0b;
+  color: var(--cc-warning);
+  border-bottom: 2px solid var(--cc-warning);
 }
 .project-tab-close {
   width: 18px;
@@ -265,8 +265,8 @@ function onDrop(e, toIndex) {
 }
 
 .project-tab.task-done {
-  color: #ff8c00;
-  border-bottom: 2px solid #ff8c00;
+  color: var(--cc-warning);
+  border-bottom: 2px solid var(--cc-warning);
   animation: tab-done-pulse 1.6s ease-in-out infinite;
 }
 .project-tab.task-done .project-tab-title {
@@ -274,7 +274,7 @@ function onDrop(e, toIndex) {
 }
 @keyframes tab-done-pulse {
   0%, 100% { background: var(--cc-bg-secondary); }
-  50% { background: rgba(255, 140, 0, 0.12); }
+  50% { background: var(--cc-warning-bg); }
 }
 .add-project-btn {
   width: 28px; height: 28px; border-radius: 4px;
