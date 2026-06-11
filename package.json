@@ -39,6 +39,7 @@
     "node-pty": "^1.1.0",
     "node-stream-zip": "^1.15.0",
     "onnxruntime-web": "^1.14.0",
+    "sharp": "^0.35.0",
     "uuid": "^11.1.0",
     "vue-katex-auto-render": "^0.2.0"
   },
