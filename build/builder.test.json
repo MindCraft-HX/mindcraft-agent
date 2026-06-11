@@ -50,7 +50,7 @@
   "publish": [
     {
       "provider": "generic",
-      "url": "https://download.mindcraft.com.cn/MindCraft/installer/win"
+      "url": "https://download.mindcraft.com.cn/MindCraft-Agent/installer/win"
     }
   ]
 }

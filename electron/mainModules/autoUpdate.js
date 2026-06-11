@@ -6,7 +6,7 @@ const { Conf } = require('electron-conf')
 
 function setupAutoUpdater(env, win) {
   //检查更新
-  let updateUrl = "https://download.mindcraft.com.cn/MindCraft/installer/win/";
+  let updateUrl = "https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/";
   if(env === "development" || env === "testing") {
     // 本地服务的更新地址
     updateUrl = "http://localhost:8091/win"

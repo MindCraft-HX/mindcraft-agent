@@ -55,7 +55,7 @@
   "publish": [
     {
       "provider": "generic",
-      "url": "https://download.mindcraft.com.cn/MindCraft/installer/mac"
+      "url": "https://download.mindcraft.com.cn/MindCraft-Agent/installer/mac"
     }
   ],
   "afterSign": "build/notarize.js"
