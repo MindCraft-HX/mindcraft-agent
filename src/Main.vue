@@ -348,7 +348,7 @@ window.electronAPI?.openTabByName?.((progress) => {
 }
 
 .theme-dot-brown {
-  background: #b8860b;
+  background: #9b6b4a;
 }
 
 .theme-name {
