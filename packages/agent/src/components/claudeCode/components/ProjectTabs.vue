@@ -225,7 +225,7 @@ function onDrop(e, toIndex) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: #f59e0b;
   margin-right: 6px;
   flex-shrink: 0;
   animation: pending-pulse 1.4s ease-in-out infinite;
@@ -235,8 +235,8 @@ function onDrop(e, toIndex) {
   50% { opacity: 1; transform: scale(1.15); }
 }
 .project-tab.session-pending {
-  color: #3b82f6;
-  border-bottom: 2px solid #3b82f6;
+  color: #f59e0b;
+  border-bottom: 2px solid #f59e0b;
 }
 .project-tab-close {
   width: 18px;

@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-const THEMES = ['dark', 'light', 'blue']
+const THEMES = ['dark', 'light', 'blue', 'brown']
+
+const THEME_LABELS = {
+  dark: '暗色',
+  light: '亮色',
+  blue: '蓝调',
+  brown: '棕色',
+}
 
 function readPersistedTheme() {
   // 1. IPC 文件存储（主进程 userData 目录，跨启动可靠）
@@ -51,7 +58,11 @@ export const useClaudeThemeStore = defineStore('claudeTheme', () => {
     persistTheme(next)
   }
 
-  return { theme, themes, setTheme, nextTheme }
+  function themeLabel(name) {
+    return THEME_LABELS[name] || name
+  }
+
+  return { theme, themes, setTheme, nextTheme, themeLabel }
 }, {
   persist: {
     key: 'claudeTheme',

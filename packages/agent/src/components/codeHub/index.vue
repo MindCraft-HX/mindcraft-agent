@@ -485,8 +485,8 @@ provide('codehubOpenSharedSettings', openSharedSettings)
   z-index: 1;
 }
 .codehub-tab.session-pending {
-  color: #3b82f6;
-  border-bottom: 2px solid #3b82f6;
+  color: #f59e0b;
+  border-bottom: 2px solid #f59e0b;
 }
 .codehub-tab.task-done {
   color: #ff8c00;
@@ -543,7 +543,7 @@ provide('codehubOpenSharedSettings', openSharedSettings)
 /* 等待用户响应小圆点 */
 .codehub-tab-name .pending-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-  background: #3b82f6; margin-right: 6px; flex-shrink: 0;
+  background: #f59e0b; margin-right: 6px; flex-shrink: 0;
   animation: pending-pulse 1.4s ease-in-out infinite;
 }
 @keyframes pending-pulse {

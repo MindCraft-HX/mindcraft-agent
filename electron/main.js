@@ -365,7 +365,7 @@ ipcMain.handle('set-login-item-settings', (event, openAtLogin) => {
 
 // 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）
 const themeFilePath = path.join(app.getPath('userData'), 'theme.json')
-const VALID_THEMES = ['dark', 'light', 'blue']
+const VALID_THEMES = ['dark', 'light', 'blue', 'brown']
 function loadThemeFromFile() {
   try {
     if (fs.existsSync(themeFilePath)) {
