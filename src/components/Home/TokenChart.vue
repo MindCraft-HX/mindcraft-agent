@@ -14,18 +14,17 @@ const chartRef = ref(null)
 let instance = null
 let resizeObserver = null
 
-// Colors matching app's status palette
-const COL_INPUT = '#4a9eff'   // --cc-info blue
-const COL_OUTPUT = '#d4a84b'  // --cc-warning amber
-const COL_CACHE = '#6db86d'   // --cc-success green
+const COL_INPUT = '#4a9eff'
+const COL_OUTPUT = '#d4a84b'
+const COL_CACHE = '#6db86d'
 const TEXT_DIM = '#888'
-const GRID_COLOR = 'rgba(255,255,255,0.04)'
 const AXIS_COLOR = 'rgba(255,255,255,0.06)'
 
 function buildOption(data) {
   return {
     tooltip: {
       trigger: 'axis',
+      axisPointer: { type: 'shadow' },
       backgroundColor: '#1a1a1a',
       borderColor: '#2a2a2a',
       textStyle: { color: '#e0e0e0', fontSize: 12 },
@@ -39,11 +38,11 @@ function buildOption(data) {
     legend: {
       bottom: 0,
       textStyle: { color: '#999', fontSize: 11 },
-      itemWidth: 14,
-      itemHeight: 2,
+      itemWidth: 10,
+      itemHeight: 10,
       itemGap: 24,
     },
-    grid: { left: 50, right: 10, top: 10, bottom: 30 },
+    grid: { left: 50, right: 10, top: 14, bottom: 36 },
     xAxis: {
       type: 'category',
       data: data.map(d => d.date),
@@ -53,7 +52,7 @@ function buildOption(data) {
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { color: GRID_COLOR } },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
       axisLabel: {
         color: TEXT_DIM,
         fontSize: 10,
@@ -65,28 +64,28 @@ function buildOption(data) {
       },
     },
     series: [
-      makeSeries('输入', data.map(d => d.totalInput), COL_INPUT),
-      makeSeries('输出', data.map(d => d.totalOutput), COL_OUTPUT),
-      makeSeries('缓存', data.map(d => d.totalCache), COL_CACHE, true),
+      {
+        name: '输入',
+        type: 'bar',
+        data: data.map(d => d.totalInput),
+        itemStyle: { color: COL_INPUT, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 16,
+      },
+      {
+        name: '输出',
+        type: 'bar',
+        data: data.map(d => d.totalOutput),
+        itemStyle: { color: COL_OUTPUT, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 16,
+      },
+      {
+        name: '缓存',
+        type: 'bar',
+        data: data.map(d => d.totalCache),
+        itemStyle: { color: COL_CACHE, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 16,
+      },
     ],
-  }
-}
-
-function makeSeries(name, vals, color, dashed) {
-  return {
-    name,
-    type: 'line',
-    data: vals,
-    smooth: true,
-    symbol: 'none',
-    lineStyle: { color, width: 2, type: dashed ? 'dashed' : 'solid' },
-    itemStyle: { color },
-    areaStyle: {
-      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-        { offset: 0, color: color + '22' },
-        { offset: 1, color: color + '00' },
-      ]),
-    },
   }
 }
 

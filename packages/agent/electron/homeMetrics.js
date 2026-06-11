@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const { app } = require('electron')
 
 // ==================== 工具函数 ====================
 
@@ -334,7 +335,7 @@ let _recentProjectCache = null
 let _recentProjectCacheTime = 0
 const RECENT_PROJECT_TTL = 30000 // 30s
 
-function getRecentProject(app) {
+function getRecentProject() {
   const now = Date.now()
   if (_recentProjectCache && now - _recentProjectCacheTime < RECENT_PROJECT_TTL) {
     return _recentProjectCache
@@ -344,32 +345,27 @@ function getRecentProject(app) {
 
   // 读取 Claude panel state
   try {
-    let userData
-    if (app && typeof app.getPath === 'function') {
-      userData = app.getPath('userData')
-    }
-    if (userData) {
-      const claudeStatePath = path.join(userData, 'claude-panel-state.json')
-      if (fs.existsSync(claudeStatePath)) {
-        const raw = fs.readFileSync(claudeStatePath, 'utf8')
-        const state = JSON.parse(raw)
-        const projects = state?.projects || []
-        for (const proj of projects) {
-          const chats = proj?.chats || []
-          for (const chat of chats) {
-            const ts = chat.updatedAt || chat.createdAt
-            if (ts) {
-              candidates.push({
-                agentType: 'claudeCode',
-                agentName: 'Claude Code',
-                agentColor: '#D97757',
-                projectName: proj.name || '未命名项目',
-                chatName: chat.name || '新对话',
-                cwd: proj.cwd || '',
-                sessionId: chat.cliSessionId || chat.sessionId || '',
-                updatedAt: ts,
-              })
-            }
+    const userData = app.getPath('userData')
+    const claudeStatePath = path.join(userData, 'claude-panel-state.json')
+    if (fs.existsSync(claudeStatePath)) {
+      const raw = fs.readFileSync(claudeStatePath, 'utf8')
+      const state = JSON.parse(raw)
+      const projects = state?.projects || []
+      for (const proj of projects) {
+        const chats = proj?.chats || []
+        for (const chat of chats) {
+          const ts = chat.updatedAt || chat.createdAt
+          if (ts) {
+            candidates.push({
+              agentType: 'claudeCode',
+              agentName: 'Claude Code',
+              agentColor: '#D97757',
+              projectName: proj.name || '未命名项目',
+              chatName: chat.name || '新对话',
+              cwd: proj.cwd || '',
+              sessionId: chat.cliSessionId || chat.sessionId || '',
+              updatedAt: ts,
+            })
           }
         }
       }
@@ -426,7 +422,7 @@ function getRecentProject(app) {
 
 // ==================== IPC 注册 ====================
 
-function setupHomeMetricsHandlers(ipcMain, app) {
+function setupHomeMetricsHandlers(ipcMain) {
   ipcMain.handle('home-get-today-stats', async () => {
     try {
       return getTodayStats()
@@ -452,7 +448,7 @@ function setupHomeMetricsHandlers(ipcMain, app) {
 
   ipcMain.handle('home-get-recent-project', async () => {
     try {
-      return getRecentProject(app)
+      return getRecentProject()
     } catch (e) {
       console.error('[homeMetrics] getRecentProject error:', e.message)
       return { hasRecent: false }
