@@ -242,7 +242,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch, markRaw, inject, onErrorCaptured } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, nextTick, watch, markRaw, provide, inject, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
@@ -328,6 +328,7 @@ import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
 import { buildDiffLines, applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
+import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
 import { sanitizeClaudeProjectsForPersistence } from './utils/historyPersistenceSanitizer.mjs'
@@ -2878,6 +2879,12 @@ const askDialogQuestions = ref([])
 const askDialogToolMsg = ref(null)
 const askDialogRef = ref(null)
 const askDialogAnswers = ref({})
+// 失活/超时保护
+const _hadAskDialogOnDeactivate = ref(false)
+const _hadPlanReviewOnDeactivate = ref(false)
+let _askTimeout = null
+let _planReviewTimeout = null
+const ASK_TIMEOUT_MS = 10 * 60 * 1000  // 10 分钟超时自动应答
 
 function parseAskQuestions(msg) {
   try {
@@ -2917,6 +2924,7 @@ function handleAskDialogAnswer(question, option) {
     toolMsg.askAnswerText = Object.entries(askDialogAnswers.value).map(([k, v]) => `${k}: ${v}`).join('; ')
     toolMsg.status = 'done'
     askDialogVisible.value = false
+    _clearAskTimeout()
     window.electronAPI.claudeAskQuestionResponse({
       requestId: toolMsg.requestId,
       answers: { ...askDialogAnswers.value },
@@ -2924,12 +2932,34 @@ function handleAskDialogAnswer(question, option) {
   }
 }
 
+function _clearAskTimeout() {
+  if (_askTimeout) { clearTimeout(_askTimeout); _askTimeout = null }
+}
+function _clearPlanReviewTimeout() {
+  if (_planReviewTimeout) { clearTimeout(_planReviewTimeout); _planReviewTimeout = null }
+}
+
+// 供 ToolAskQuestion 的"回答"按钮调用，通过 provide/inject 传递
+function reopenAskDialog(toolMsg) {
+  if (!toolMsg || toolMsg.askAnswered) return
+  const questions = parseAskQuestions(toolMsg)
+  if (questions.length) showAskDialog(toolMsg, questions)
+}
+provide('reopenAskDialog', reopenAskDialog)
+
 function showAskDialog(toolMsg, questions) {
   askDialogToolMsg.value = toolMsg
   askDialogQuestions.value = questions
   askDialogAnswers.value = {}
   askDialogVisible.value = true
   askDialogRef.value?.reset?.()
+  // 10 分钟超时自动应答，防止 Agent 永久挂起
+  _clearAskTimeout()
+  _askTimeout = setTimeout(() => {
+    if (askDialogVisible.value) {
+      handleAskDialogClose()
+    }
+  }, ASK_TIMEOUT_MS)
 }
 
 function handleAskDialogClose() {
@@ -2947,7 +2977,8 @@ function handleAskDialogClose() {
     toolMsg.askAnswered = true
     toolMsg.askAnswerText = Object.entries(askDialogAnswers.value).map(([k, v]) => `${k}: ${v}`).join('; ')
     toolMsg.status = 'done'
-    window.electronAPI.claudeAskQuestionResponse({
+    _clearAskTimeout()
+    window.electronAPI?.claudeAskQuestionResponse?.({
       requestId: toolMsg.requestId,
       answers: { ...askDialogAnswers.value },
     })
@@ -2969,9 +3000,17 @@ function showPlanReviewDialog(data) {
   planReviewRequestId.value = data.requestId || ''
   planReviewSessionId.value = data.sessionId || ''
   planReviewVisible.value = true
+  // 超时保护：10 分钟后关闭弹窗，保持 pending 状态不自动决策
+  _clearPlanReviewTimeout()
+  _planReviewTimeout = setTimeout(() => {
+    if (planReviewVisible.value) {
+      planReviewVisible.value = false
+    }
+  }, ASK_TIMEOUT_MS)
 }
 
 function finishPlanReview(action) {
+  _clearPlanReviewTimeout()
   const toolMsg = planReviewToolMsg.value
   if (toolMsg) {
     if (action.type === 'accept') {
@@ -3048,6 +3087,25 @@ async function checkFirstTimeSetup() {
 }
 
 // ─── 生命周期 ────────────────────────────────────────────────
+// keep-alive 失活时关闭弹窗但不自动应答（保留 pending 状态）
+// 用户回来时看到蓝色 pending-dot + 消息卡"等待回答中"，手动点击"回答"按钮重新打开
+onDeactivated(() => {
+  if (askDialogVisible.value) {
+    _hadAskDialogOnDeactivate.value = true
+    askDialogVisible.value = false
+  }
+  if (planReviewVisible.value) {
+    _hadPlanReviewOnDeactivate.value = true
+    planReviewVisible.value = false
+  }
+})
+
+onActivated(() => {
+  _hadAskDialogOnDeactivate.value = false
+  _hadPlanReviewOnDeactivate.value = false
+  // 不自动恢复弹窗：用户通过蓝色 pending-dot + 消息感知，手动点击"回答"按钮打开
+})
+
 onMounted(() => {
   // ─── 性能检测：首次进入页面 ───
   // 关键路径：立即注册监听器和基础初始化，不阻塞首屏渲染
@@ -3057,6 +3115,7 @@ onMounted(() => {
   window.electronAPI.onClaudeAgentPermission(onAgentPermission)
   window.electronAPI.onClaudeAgentEarlyCliSession?.(onEarlyCliSession)
   window.electronAPI.onClaudeAgentAskQuestion?.((data) => {
+    playAskSound()
     onAgentAskQuestion(data)
     nextTick(() => {
       const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
@@ -3069,6 +3128,7 @@ onMounted(() => {
     })
   })
   window.electronAPI.onClaudeAgentPlanReview?.((data) => {
+    playAskSound()
     const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
     if (!tab) return
     tab.thinking = true
@@ -3181,6 +3241,8 @@ onUnmounted(() => {
   }
   if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
   if (loadMoreCooldownTimer) { clearTimeout(loadMoreCooldownTimer); loadMoreCooldownTimer = null }
+  _clearAskTimeout()
+  _clearPlanReviewTimeout()
   window.removeEventListener('beforeunload', flushHistoryOnUnload)
   flushHistoryOnUnload()
   disposeImageAttachments()
