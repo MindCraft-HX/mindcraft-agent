@@ -48,7 +48,7 @@
               placement="right-start"
               :width="150"
               trigger="click"
-              :teleported="true"
+              :teleported="false"
               popper-class="theme-picker-popover"
             >
               <template #reference>
@@ -281,11 +281,19 @@ window.electronAPI?.openTabByName?.((progress) => {
 }
 
 /* === 主题选择器 === */
+/* popover 面板主题适配 */
+:deep(.el-popover) {
+  background: var(--cc-menu-bg, #252525) !important;
+  border: 1px solid var(--cc-menu-border, #3a3a3a) !important;
+  box-shadow: 0 6px 16px var(--cc-shadow, rgba(0,0,0,0.6)) !important;
+  padding: 4px 0 !important;
+  border-radius: 8px !important;
+}
+
 .theme-picker {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px 0;
 }
 
 .theme-option {
@@ -296,16 +304,20 @@ window.electronAPI?.openTabByName?.((progress) => {
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--cc-text, #e0e5e9);
+  color: var(--cc-menu-text, #ccc);
   transition: background 0.12s;
 
   &:hover {
-    background: var(--cc-bg-hover, rgba(255, 255, 255, 0.06));
+    background: var(--cc-menu-hover, #3a3a3a);
   }
 
   &.active {
     background: var(--cc-primary-bg, rgba(64, 158, 255, 0.12));
     color: var(--cc-primary, #409eff);
+
+    .theme-name {
+      font-weight: 500;
+    }
   }
 
   .theme-check {
