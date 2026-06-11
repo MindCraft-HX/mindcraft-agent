@@ -2696,6 +2696,7 @@ function setupCodexSdkHandlers() {
   })
 
   // 从 mindcraft-electron 导入 Codex 配置（手动触发）
+  // 注意：~/.codex/config.toml 是共享文件，两个 App 天然互通；仅在用户通过 UI 覆盖配置时才有 electron-conf 差异
   ipcMain.handle('codex-import-legacy-config', (_, customPath) => {
     const imported = { key: false, url: false, model: false, reasoningEffort: false }
     try {
@@ -2704,8 +2705,16 @@ function setupCodexSdkHandlers() {
 
       // 读取 mindcraft-electron 的 mindcraft-codex.json
       const codexPath = path.join(legacyDir, 'mindcraft-codex.json')
+
+      // 文件不存在 → 配置可能在共享的 ~/.codex/config.toml 中，已天然互通
+      if (!fs.existsSync(codexPath)) {
+        return { success: true, imported, note: 'sharedConfigOnly' }
+      }
+
       let legacy = {}
-      try { legacy = JSON.parse(fs.readFileSync(codexPath, 'utf8')) } catch {}
+      try { legacy = JSON.parse(fs.readFileSync(codexPath, 'utf8')) } catch {
+        return { success: true, imported, note: 'emptyFile' }
+      }
 
       const rt = legacy.runtime || {}
 

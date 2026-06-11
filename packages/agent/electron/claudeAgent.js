@@ -1782,8 +1782,18 @@ function setupClaudeHandlers() {
 
       // 读取 mindcraft-electron 的 claude-internal.json
       const internalPath = path.join(legacyDir, 'claude-internal.json')
+
+      // 文件不存在 → 用户可能只用简单 Key 模式，没有创建过 Provider
+      if (!fs.existsSync(internalPath)) {
+        const sj = readSystemSettingsJson() || {}
+        const sharedKey = sj.env?.ANTHROPIC_AUTH_TOKEN || sj.primaryApiKey || sj.apiKey || ''
+        return { success: true, imported, note: sharedKey ? 'keyAlreadyShared' : 'noProviders' }
+      }
+
       let legacy = {}
-      try { legacy = JSON.parse(fs.readFileSync(internalPath, 'utf8')) } catch {}
+      try { legacy = JSON.parse(fs.readFileSync(internalPath, 'utf8')) } catch {
+        return { success: true, imported, note: 'emptyFile' }
+      }
 
       // 导入 providers 列表
       if (legacy.claudeProviders?.providers?.length) {

@@ -524,14 +524,20 @@ async function importFromLegacy() {
       return
     }
     if (!result.success) { ElMessage.error('导入失败：' + (result.error || '未知错误')); return }
-    const { imported } = result
+    const { imported, note } = result
     const parts = []
     if (imported.key) parts.push('API Key')
     if (imported.url) parts.push('Base URL')
     if (imported.model) parts.push('Model')
     if (imported.reasoningEffort) parts.push('Reasoning Effort')
     await loadProviders()
-    ElMessage.success(parts.length ? `已导入：${parts.join('、')}` : '已导入配置（无新增内容）')
+    if (parts.length) {
+      ElMessage.success(`已导入：${parts.join('、')}`)
+    } else if (note === 'sharedConfigOnly') {
+      ElMessage.success('Codex 配置已通过共享配置文件（~/.codex/config.toml）互通，无需额外导入')
+    } else {
+      ElMessage.warning('未在 MindCraft 中找到额外的 Codex 覆盖配置（共享文件已天然互通）')
+    }
   } catch (e) {
     ElMessage.error('导入失败：' + (e?.message || e))
   }

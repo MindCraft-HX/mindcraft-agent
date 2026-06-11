@@ -786,12 +786,18 @@ async function importFromLegacy() {
       return
     }
     if (!result.success) { ElMessage.error('导入失败：' + (result.error || '未知错误')); return }
-    const { imported } = result
+    const { imported, note } = result
     const parts = []
     if (imported.providers > 0) parts.push(`${imported.providers} 个 Provider`)
     if (imported.tierModels) parts.push('Tier Models')
     await openSettings()
-    ElMessage.success(parts.length ? `已导入：${parts.join('、')}` : '已导入配置（无新增内容）')
+    if (parts.length) {
+      ElMessage.success(`已导入：${parts.join('、')}`)
+    } else if (note === 'keyAlreadyShared') {
+      ElMessage.success('API Key 已通过共享配置文件互通，无需额外导入')
+    } else {
+      ElMessage.warning('未在 MindCraft 中找到 Provider 配置（可能仅使用简单 Key 模式，已通过共享配置文件互通）')
+    }
   } catch (e) {
     ElMessage.error('导入失败：' + (e?.message || e))
   }
