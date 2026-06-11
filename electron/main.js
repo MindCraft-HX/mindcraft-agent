@@ -45,6 +45,18 @@ let initUrl = path.join(__dirname, "../dist/index.html")
 // 开发模式：优先使用 Vite dev server（HMR 支持）
 if (process.env.VITE_DEV_SERVER_URL) {
   initUrl = process.env.VITE_DEV_SERVER_URL
+  // dev 守护：Vite 进程退出后（如 Ctrl+C 未能联动杀掉 Electron），自动退出避免孤儿进程
+  let devServerMisses = 0;
+  setInterval(() => {
+    fetch(initUrl, { method: 'HEAD' })
+      .then(() => { devServerMisses = 0; })
+      .catch(() => {
+        if (++devServerMisses >= 2) {
+          console.log('[main] dev server gone, exiting');
+          app.exit(0);
+        }
+      });
+  }, 3000);
 }
 let sideFloatWin = null
 let win = null
@@ -105,14 +117,41 @@ function createWindow() {
   });
   win.webContents.on('did-finish-load', () => {
     console.log('[main] Page finished loading');
+    // dev 自检：3 秒后打印路由与内容量，白屏问题可直接从终端看出
+    if (NODE_ENV === 'development') {
+      setTimeout(() => {
+        if (!win || win.isDestroyed()) return;
+        win.webContents.executeJavaScript('location.hash + " | #app len=" + (document.getElementById("app")||{innerHTML:""}).innerHTML.length')
+          .then(s => console.log('[main] route check:', s))
+          .catch(() => {});
+      }, 3000);
+    }
   });
-  win.webContents.on('console-message', (_event, level, message) => {
-    if (level >= 2) console.log('[renderer]', message);
+  // Electron 36: console-message 事件改为单事件对象，level 为字符串而非数字
+  win.webContents.on('console-message', (...args) => {
+    let level, message, source, line;
+    const ev = args[0];
+    if (ev && typeof ev === 'object' && 'message' in ev) {
+      level = ev.level; message = ev.message; source = ev.sourceId; line = ev.lineNumber;
+    } else {
+      level = args[1]; message = args[2]; line = args[3]; source = args[4];
+    }
+    const important = level === 'warning' || level === 'error' || (typeof level === 'number' && level >= 2);
+    if (important) console.log('[renderer]', level, message, source ? `(${source}:${line})` : '');
   });
-  // 关闭窗口：隐藏到托盘（对齐 mindcraft-electron）
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[main] renderer gone:', JSON.stringify(details));
+  });
+  // 关闭窗口：开发模式直接退出（避免进程残留占用端口），生产模式隐藏到托盘
   win.on('close', (e) => {
-    e.preventDefault();
-    win.hide();
+    if (NODE_ENV === 'development') {
+      globalShortcut.unregisterAll()
+      win = null
+      app.quit()
+    } else {
+      e.preventDefault();
+      win.hide();
+    }
   })
 
   if(NODE_ENV != "production") {
