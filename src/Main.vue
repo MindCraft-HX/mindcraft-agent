@@ -18,9 +18,9 @@
               title="编程智能体"
             >
               <div class="sidebar-icon-wrapper">
-                <i class="mindcraft-flow-win-iconfont mindcraft-flow-win-iconfont-ordinary icon-mindcraft-claude1"></i>
-                <svg class="icon mindcraft-flow-win-iconfont-icon" aria-hidden="true">
-                  <use xlink:href="#icon-mindcraft-claude1"></use>
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="7 5.5 3.5 10 7 14.5"/>
+                  <polyline points="13 5.5 16.5 10 13 14.5"/>
                 </svg>
               </div>
               <span v-show="!sidebarCollapsed" class="sidebar-label">编程</span>
@@ -33,9 +33,9 @@
               title="文档浏览"
             >
               <div class="sidebar-icon-wrapper">
-                <i class="mindcraft-flow-win-iconfont mindcraft-flow-win-iconfont-ordinary icon-mindcraft-markdown"></i>
-                <svg class="icon mindcraft-flow-win-iconfont-icon" aria-hidden="true">
-                  <use xlink:href="#icon-mindcraft-markdown"></use>
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 2.5H5.5a1.5 1.5 0 0 0-1.5 1.5v12a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7L11 2.5z"/>
+                  <polyline points="11 2.5 11 7 16 7"/>
                 </svg>
               </div>
               <span v-show="!sidebarCollapsed" class="sidebar-label">文档</span>
@@ -44,18 +44,40 @@
 
           <!-- 底部：收缩按钮 + 设置 -->
           <div class="sidebar-bottom">
-            <div
-              class="sidebar-item"
-              @click="claudeTheme.nextTheme()"
-              :title="'主题：' + claudeTheme.theme"
+            <el-popover
+              placement="right-start"
+              :width="150"
+              trigger="click"
+              :teleported="true"
+              popper-class="theme-picker-popover"
             >
-              <div class="sidebar-icon-wrapper">
-                <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1.5 8a6.5 6.5 0 0 1 13 0 6.5 6.5 0 0 0-6.5-6.5v13A6.5 6.5 0 0 1 1.5 8z"/>
-                </svg>
+              <template #reference>
+                <div
+                  class="sidebar-item"
+                  :title="'主题：' + claudeTheme.themeLabel(claudeTheme.theme)"
+                >
+                  <div class="sidebar-icon-wrapper">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1.5 8a6.5 6.5 0 0 1 13 0 6.5 6.5 0 0 0-6.5-6.5v13A6.5 6.5 0 0 1 1.5 8z"/>
+                    </svg>
+                  </div>
+                  <span v-show="!sidebarCollapsed" class="sidebar-label">主题</span>
+                </div>
+              </template>
+              <div class="theme-picker">
+                <div
+                  v-for="t in claudeTheme.themes"
+                  :key="t"
+                  class="theme-option"
+                  :class="{ active: claudeTheme.theme === t }"
+                  @click="claudeTheme.setTheme(t)"
+                >
+                  <span class="theme-dot" :class="`theme-dot-${t}`"></span>
+                  <span class="theme-name">{{ claudeTheme.themeLabel(t) }}</span>
+                  <el-icon v-if="claudeTheme.theme === t" class="theme-check"><Check /></el-icon>
+                </div>
               </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ claudeTheme.theme }}</span>
-            </div>
+            </el-popover>
             <div
               class="sidebar-item"
               @click="settingsDrawer = true"
@@ -88,7 +110,7 @@
 <script setup>
 import { provide, ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Setting } from '@element-plus/icons-vue';
+import { Setting, Check } from '@element-plus/icons-vue';
 import Settings from "./components/Settings.vue";
 import { useClaudeThemeStore } from '@mindcraft/agent';
 
@@ -228,14 +250,6 @@ window.electronAPI?.openTabByName?.((progress) => {
     .sidebar-label {
       color: var(--cc-primary, #409eff);
     }
-
-    .mindcraft-flow-win-iconfont-ordinary {
-      display: none;
-    }
-
-    .mindcraft-flow-win-iconfont-icon {
-      display: block;
-    }
   }
 
   .sidebar-icon-wrapper {
@@ -244,16 +258,10 @@ window.electronAPI?.openTabByName?.((progress) => {
     display: flex;
     align-items: center;
     justify-content: center;
+  }
 
-    .mindcraft-flow-win-iconfont-ordinary {
-      font-size: 20px;
-    }
-
-    .mindcraft-flow-win-iconfont-icon {
-      display: none;
-      width: 20px;
-      height: 20px;
-    }
+  .nav-icon {
+    display: block;
   }
 
   .sidebar-label {
@@ -270,6 +278,69 @@ window.electronAPI?.openTabByName?.((progress) => {
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
+}
+
+/* === 主题选择器 === */
+.theme-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--cc-text, #e0e5e9);
+  transition: background 0.12s;
+
+  &:hover {
+    background: var(--cc-bg-hover, rgba(255, 255, 255, 0.06));
+  }
+
+  &.active {
+    background: var(--cc-primary-bg, rgba(64, 158, 255, 0.12));
+    color: var(--cc-primary, #409eff);
+  }
+
+  .theme-check {
+    margin-left: auto;
+    color: var(--cc-primary, #409eff);
+    flex-shrink: 0;
+  }
+}
+
+.theme-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.theme-dot-dark {
+  background: #c6613f;
+}
+
+.theme-dot-light {
+  background: #b85c3a;
+}
+
+.theme-dot-blue {
+  background: #5b9bd5;
+}
+
+.theme-dot-brown {
+  background: #b8860b;
+}
+
+.theme-name {
+  white-space: nowrap;
 }
 
 /* === 内容区 === */
