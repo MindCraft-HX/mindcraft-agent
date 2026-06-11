@@ -27,7 +27,7 @@ const { openClaudeWin } = require("./claudeWindow/index.js");
 const { openCodexWin } = require("./codexWindow/index.js");
 const { SideFloatWin } = require("./floatWindow/sideFloatWin.js");
 const { initCodeWin } = require("./searchView/index.js");
-const { openMdWin, registerMdViewerHandlers } = require("./mdWindow/index.js");
+const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -270,12 +270,13 @@ async function fetchImage(imageUrl) {
   }
 }
 
-ipcMain.handle('open-md-win', (_event, payload) => openMdWin({ initUrl, env: NODE_ENV, payload }))
+ipcMain.handle('open-md-win', (_event, payload) => openMdInMain(payload))
 registerMdViewerHandlers()
 
 
 app.whenReady().then(async () => {
   createWindow();
+  setMainWindow(win);
   createTray(NODE_PLATFORM)
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件

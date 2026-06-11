@@ -78,6 +78,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener('md-content', handler)
   },
   getPendingMdContent: () => ipcRenderer.invoke('md-viewer-ready'),
+  onOpenMdViewer: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('open-md-viewer', handler)
+    return () => ipcRenderer.removeListener('open-md-viewer', handler)
+  },
 
   // Agent 窗口
   openClaudeWin: () => ipcRenderer.invoke('open-claude-win'),

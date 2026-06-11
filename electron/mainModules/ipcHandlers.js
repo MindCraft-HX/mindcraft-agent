@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const compressing = require("compressing");
 const { exec } = require("child_process");
-const { openMdWin } = require('../mdWindow')
+const { openMdInMain } = require('../mdRouting')
 const { openDocumentCandidate, resolveCandidatePath } = require('./documentLocator')
 
 
@@ -160,8 +160,7 @@ function setupIpcHandlers(env, platform) {
     return openDocumentCandidate({
       ...payload,
       openMdPayload: async (docPayload) => {
-        const initUrl = path.join(__dirname, '..', '..', 'dist', 'index.html')
-        openMdWin({ initUrl, env, payload: docPayload })
+        openMdInMain(docPayload)
       },
       openWithDefault: async (filePath) => shell.openPath(filePath),
     })
