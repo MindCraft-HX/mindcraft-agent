@@ -10,18 +10,6 @@ let loadingInstance; // 用于保存Loading实例
 let cancel; // 用于保存取消令牌
 
 
-//定义服务器地址
-// const serverURL = 'https://api.gaotongfont.cn/'   //生产  
-// const serverURL = "http://192.168.1.128:10001/"   //线下
-// const devURL = "http://localhost:8000/";         //本地
-
-
-// 现在生产 //http://106.13.10.232:10001
-// https://gray-api.gaotongfont.cn/
-// https://text-api.gaotongfont.cn   支付
-// http://192.168.1.128:10002/
-// 灰度 https://gray-api.gaotongfont.cn/
-
 const NODE_ENV = window.VITE_NODE_ENV || import.meta.env.VITE_NODE_ENV;
 let url = 'https://api.mindcraft.com.cn/'; 
 if(NODE_ENV === 'development' || NODE_ENV === 'testing'){
