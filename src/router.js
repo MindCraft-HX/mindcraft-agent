@@ -16,7 +16,7 @@ const routes = [
             if (lastRoute && lastRoute !== '/login' && lastRoute !== '/redirect') {
                 return lastRoute;
             }
-            return '/main/codeHub';
+            return '/main/home';
         }
     },
     {
@@ -24,6 +24,12 @@ const routes = [
         name: 'MainLayout',
         component: () => import('./Main.vue'),
         children: [
+            {
+                path: 'home',
+                name: 'home',
+                component: () => import('@/views/Home.vue'),
+                meta: { parent: '/main/home' }
+            },
             {
                 path: 'codeHub',
                 name: 'codeHub',

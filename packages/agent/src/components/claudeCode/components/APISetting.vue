@@ -117,7 +117,13 @@
 
         <div class="settings-main">
           <div class="sp-left">
-            <div class="sp-list-header">配置列表</div>
+            <div class="sp-list-header">
+                配置列表
+                <button class="import-legacy-btn" @click="importFromLegacy" title="从 MindCraft 导入 API 配置">
+                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                  从 MindCraft 导入
+                </button>
+              </div>
             <div class="sp-list">
               <div v-for="(p, i) in settingsForm.providers" :key="i"
                 class="sp-item" :class="{ active: settingsForm.selectedIdx === i, inuse: settingsForm.activeIdx === i }"
@@ -771,6 +777,26 @@ async function copyProvider(i) {
   await persistProviders()
 }
 
+async function importFromLegacy() {
+  try {
+    const result = await window.electronAPI?.claudeImportLegacyConfig?.()
+    if (!result) { ElMessage.error('导入失败：无法连接到主进程'); return }
+    if (result.notFound) {
+      ElMessage.warning('未找到 MindCraft 的用户数据目录，请确认 mindcraft-electron 已安装并至少运行过一次')
+      return
+    }
+    if (!result.success) { ElMessage.error('导入失败：' + (result.error || '未知错误')); return }
+    const { imported } = result
+    const parts = []
+    if (imported.providers > 0) parts.push(`${imported.providers} 个 Provider`)
+    if (imported.tierModels) parts.push('Tier Models')
+    await openSettings()
+    ElMessage.success(parts.length ? `已导入：${parts.join('、')}` : '已导入配置（无新增内容）')
+  } catch (e) {
+    ElMessage.error('导入失败：' + (e?.message || e))
+  }
+}
+
 async function importFromFile(i) {
   const name = settingsForm.value.providers[i]?.name || '未命名'
   const ok = await confirmDialogRef.value?.open({
@@ -1019,6 +1045,14 @@ async function removeProvider(i) {
   padding: 12px 12px 6px; font-size: 12px; color: var(--cc-text-dim); font-weight: 600;
   flex-shrink: 0; display: flex; align-items: center; gap: 6px;
   border-top: 1px solid var(--cc-border-light);
+}
+.import-legacy-btn {
+  margin-left: auto; font-size: 11px; padding: 3px 10px;
+  border: 1px solid var(--cc-warning, #e6a23c); border-radius: 4px;
+  color: var(--cc-warning, #e6a23c); background: transparent; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  transition: background .2s, color .2s;
+  &:hover { background: var(--cc-warning, #e6a23c); color: #fff; }
 }
 .sp-list {
   flex: 1; overflow-y: auto; padding: 6px;

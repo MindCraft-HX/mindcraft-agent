@@ -41,6 +41,7 @@ function createAgentBridge(ipcRenderer) {
   claudeSetSkipWebFetchPreflight: (v) => ipcRenderer.invoke('claude-set-skip-webfetch-preflight', v),
   claudeGetAutoCompactWindow: () => ipcRenderer.invoke('claude-get-auto-compact-window'),
   claudeSetAutoCompactWindow: (v) => ipcRenderer.invoke('claude-set-auto-compact-window', v),
+  claudeImportLegacyConfig: (customPath) => ipcRenderer.invoke('claude-import-legacy-config', customPath),
   // Claude Agent SDK
   claudeAgentQuery: (payload) => ipcRenderer.invoke('claude-agent-query', payload),
   claudeAgentAbort: (sessionId) => ipcRenderer.invoke('claude-agent-abort', sessionId),
@@ -152,6 +153,7 @@ function createAgentBridge(ipcRenderer) {
   codexSetModel: (model) => ipcRenderer.invoke('codex-set-model', model),
   codexGetReasoningEffort: () => ipcRenderer.invoke('codex-get-reasoning-effort'),
   codexSetReasoningEffort: (effort) => ipcRenderer.invoke('codex-set-reasoning-effort', effort),
+  codexImportLegacyConfig: (customPath) => ipcRenderer.invoke('codex-import-legacy-config', customPath),
   codexGetPermissionPolicy: () => ipcRenderer.invoke('codex-get-permission-policy'),
   codexSetPermissionPolicy: (policy) => ipcRenderer.invoke('codex-set-permission-policy', policy),
   codexGetProjectSettings: (cwd) => ipcRenderer.invoke('codex-get-project-settings', { cwd }),
@@ -183,6 +185,10 @@ function createAgentBridge(ipcRenderer) {
     ipcRenderer.on('skills-install-progress', handler)
     return () => ipcRenderer.removeListener('skills-install-progress', handler)
   },
+  // Home 页数据
+  loadRecentProject: () => ipcRenderer.invoke('home-get-recent-project'),
+  loadTodayStats: () => ipcRenderer.invoke('home-get-today-stats'),
+  loadTokenTrend: (days) => ipcRenderer.invoke('home-get-token-trend', days),
   }
 }
 

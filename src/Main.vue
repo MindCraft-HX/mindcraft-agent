@@ -5,7 +5,7 @@
       <el-aside class="sidebar" :class="{ collapsed: sidebarCollapsed }" :width="sidebarCollapsed ? '48px' : '64px'">
         <div class="sidebar-inner">
           <!-- Logo -->
-          <div class="sidebar-logo" @click="$router.push('/main/codeHub')" title="MindCraft-Agent">
+          <div class="sidebar-logo" @click="$router.push('/main/home')" title="MindCraft-Agent">
             <div class="logo-icon"></div>
           </div>
 

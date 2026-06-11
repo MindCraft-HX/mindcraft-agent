@@ -48,6 +48,7 @@
 - `T041`: `mindcraft-agent` host refactor and pruning
 - `T045`: stabilize and reuse the shared agent layer
 - `T046`: Claude session duplication / handoff issue — **all 5 root causes (A-E) fixed 2026-06-11. See `docs/bugs/claude-session-duplicate-split.md`**
+- `T051`: System context tag stripping unified — **6 hardcoded whitelists consolidated into one shared pattern matcher 2026-06-11. See `docs/session-pitfalls.md` Trap 7**
 
 Before major implementation work, read:
 
@@ -82,6 +83,8 @@ When touching ANY code related to session management (chat creation, binding, sc
 5. **Do not assume the scan runs after `onAgentDone`.** They are concurrent and can arrive in either order.
 6. **When modifying a guard condition** (like `shouldReloadClaudeChatFromDisk`), check both the "normal runtime protection" and "crash recovery" scenarios — they may require opposite behaviors.
 7. **Provider switch (`resetAgentRuntime`) affects ALL windows.** If you clear a shared Map, ensure ALL windows can recover, not just the active one.
+8. **Claude 和 Codex 之间的共享逻辑必须物理上只有一份代码。** 如果发现两边有重复的函数体（字符串处理、标签剥离、消息过滤等），必须提取到 `agentCommon/utils/helpers.js` 或对应的共享模块。分布式白名单必然漂移——T051 就是 6 处各自维护标签列表，SDK 新增 `<INSTRUCTIONS>` 后全员遗漏。（详见 `docs/session-pitfalls.md` Trap 7 + 修复原则 #7）
+9. **SDK 系统上下文标签剥离必须用模式匹配，禁止硬编码白名单。** Claude SDK 的用户消息 JSONL 中会注入多种系统标签（`<system-reminder>`, `<environment_context>`, `<task-notification>`, `<INSTRUCTIONS>` 等），所有剥离逻辑统一委托给 `stripSystemContextTags()`（`agentCommon/utils/helpers.js`）。新增剥离逻辑时只改这一处，不要在任何其他文件添加标签名硬编码检查。
 
 ### Pre-Patch Safety Protocol
 
@@ -156,3 +159,4 @@ Run only the tests relevant to the files you changed, then expand if the change 
 - Prefer host pruning over shared-core over-abstraction.
 - Prefer explicit agent capability boundaries over convenience shortcuts.
 - Prefer keeping lightweight Q&A simple rather than rebuilding the original full chat system.
+- **When Claude and Codex need the same logic, extract it to a shared module.** Never copy-paste a function between the two agent components. The most expensive bugs are the ones where two copies of the same logic drift apart over time (see Trap 7: system tag whitelist gap).

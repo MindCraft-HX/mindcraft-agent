@@ -7,6 +7,7 @@ const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
 const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
 const { augmentEnvWithBundledRg } = require('./localSearch')
+const { findLegacyUserData } = require('./findLegacyUserData')
 
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
 
@@ -1770,6 +1771,46 @@ function setupClaudeHandlers() {
   ipcMain.handle('claude-set-tier-models', (_, data) => {
     if (!data || typeof data !== 'object') return false
     return writeTierModelsToConf(data)
+  })
+
+  // 从 mindcraft-electron 导入 Claude 配置（手动触发）
+  ipcMain.handle('claude-import-legacy-config', (_, customPath) => {
+    const imported = { providers: 0, tierModels: false }
+    try {
+      const legacyDir = customPath || findLegacyUserData()
+      if (!legacyDir) return { notFound: true }
+
+      // 读取 mindcraft-electron 的 claude-internal.json
+      const internalPath = path.join(legacyDir, 'claude-internal.json')
+      let legacy = {}
+      try { legacy = JSON.parse(fs.readFileSync(internalPath, 'utf8')) } catch {}
+
+      // 导入 providers 列表
+      if (legacy.claudeProviders?.providers?.length) {
+        confSet('claudeProviders', legacy.claudeProviders)
+        imported.providers = legacy.claudeProviders.providers.length
+      }
+
+      // 导入 tier models
+      if (legacy.tierModels && typeof legacy.tierModels === 'object') {
+        confSet('tierModels', legacy.tierModels)
+        imported.tierModels = true
+      }
+
+      // 导入 model（真实模型 ID，存 internalConf）
+      if (typeof legacy.claudeModel === 'string' && legacy.claudeModel.trim()) {
+        internalConf.set('claudeModel', legacy.claudeModel.trim())
+      }
+
+      // 导入 thinking enabled
+      if (typeof legacy.claudeThinkingEnabled === 'boolean') {
+        internalConf.set('claudeThinkingEnabled', legacy.claudeThinkingEnabled)
+      }
+
+      return { success: true, imported }
+    } catch (e) {
+      return { success: false, error: e?.message || String(e) }
+    }
   })
 
   // 普通流式对话（运行时只读 ~/.claude/settings.json）

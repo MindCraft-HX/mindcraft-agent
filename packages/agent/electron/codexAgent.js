@@ -1,4 +1,4 @@
-const { ipcMain, dialog } = require('electron')
+const { ipcMain, dialog, app } = require('electron')
 const { Conf } = require('electron-conf')
 const path = require('path')
 const fs = require('fs')
@@ -8,6 +8,7 @@ const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { augmentEnvWithBundledRg } = require('./localSearch')
+const { findLegacyUserData } = require('./findLegacyUserData')
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
   try {
@@ -2693,6 +2694,43 @@ function setupCodexSdkHandlers() {
     } catch (_) {}
     return true
   })
+
+  // 从 mindcraft-electron 导入 Codex 配置（手动触发）
+  ipcMain.handle('codex-import-legacy-config', (_, customPath) => {
+    const imported = { key: false, url: false, model: false, reasoningEffort: false }
+    try {
+      const legacyDir = customPath || findLegacyUserData()
+      if (!legacyDir) return { notFound: true }
+
+      // 读取 mindcraft-electron 的 mindcraft-codex.json
+      const codexPath = path.join(legacyDir, 'mindcraft-codex.json')
+      let legacy = {}
+      try { legacy = JSON.parse(fs.readFileSync(codexPath, 'utf8')) } catch {}
+
+      const rt = legacy.runtime || {}
+
+      // 导入 runtime 配置（逐项写入，保留已有的其他配置不变）
+      const mergeRuntime = (key, val, flag) => {
+        if (!val) return
+        try {
+          const c = new Conf({ name: 'mindcraft-codex' })
+          const r = c.get('runtime') || {}
+          r[key] = val
+          c.set('runtime', r)
+          imported[flag] = true
+        } catch (_) {}
+      }
+      mergeRuntime('apiKey', rt.apiKey, 'key')
+      mergeRuntime('baseURL', rt.baseURL, 'url')
+      mergeRuntime('model', rt.model, 'model')
+      mergeRuntime('reasoningEffort', rt.reasoningEffort, 'reasoningEffort')
+
+      return { success: true, imported }
+    } catch (e) {
+      return { success: false, error: e?.message || String(e) }
+    }
+  })
+
   ipcMain.handle('codex-get-permission-policy', () => readPermissionPolicy())
   ipcMain.handle('codex-set-permission-policy', (_, policy) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('permissionPolicy', policy) } catch (_) {}
