@@ -35,12 +35,17 @@ const routes = [
                 path: 'chat',
                 redirect: '/main/codeHub'
             },
+            {
+                path: 'mdViewer',
+                name: 'mdViewer',
+                component: () => import('@/components/mdViewer/index.vue'),
+                meta: { parent: '/main/mdViewer' }
+            },
         ]
     },
     {
         path: '/mdViewer',
-        name: 'mdViewer',
-        component: () => import('@/components/mdViewer/index.vue')
+        redirect: '/main/mdViewer'
     },
     {
         path: '/floatWin',

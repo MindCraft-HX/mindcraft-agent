@@ -13,6 +13,7 @@ import './styles/claudeThemes.css';
 import './assets/iconfont/iconfont.css';
 import './assets/iconfont/iconfont.js';
 import './assets/iconfont_floatwin/iconfont.css';
+import './assets/iconfont_floatwin/iconfont.js';
 
 import Katex from 'vue-katex-auto-render';
 

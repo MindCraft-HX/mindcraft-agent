@@ -63,6 +63,8 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+
+defineOptions({ name: 'mdViewer' })
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { FolderOpened, Loading } from '@element-plus/icons-vue'
 import MarkdownViewer from './viewers/MarkdownViewer.vue'
@@ -261,19 +263,19 @@ onMounted(async () => {
 
 <style scoped>
 .doc-viewer {
-  --doc-bg: #ffffff;
-  --doc-paper: #ffffff;
-  --doc-line: #e5e7eb;
-  --doc-line-strong: #cbd5e1;
-  --doc-text: #1f2937;
-  --doc-muted: #64748b;
-  --doc-accent: #2563eb;
-  --doc-code-bg: #111827;
-  --doc-inline-code-bg: #eff6ff;
+  --doc-bg: var(--cc-bg, #ffffff);
+  --doc-paper: var(--cc-bg-secondary, #ffffff);
+  --doc-line: var(--cc-border-medium, #e5e7eb);
+  --doc-line-strong: var(--cc-border-strong, #cbd5e1);
+  --doc-text: var(--cc-text, #1f2937);
+  --doc-muted: var(--cc-text-dim, #64748b);
+  --doc-accent: var(--cc-primary, #2563eb);
+  --doc-code-bg: var(--cc-bg-code-deep, #111827);
+  --doc-inline-code-bg: var(--cc-bg-hover, #eff6ff);
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  background: radial-gradient(circle at top left, #f8fbff 0%, #ffffff 42%);
+  height: 100%;
+  background: var(--cc-bg, radial-gradient(circle at top left, #f8fbff 0%, #ffffff 42%));
 }
 
 .doc-toolbar {
@@ -283,7 +285,7 @@ onMounted(async () => {
   gap: 16px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--doc-line);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--cc-bg-elevated, rgba(255, 255, 255, 0.92));
   backdrop-filter: blur(12px);
   flex-shrink: 0;
 }
@@ -300,8 +302,8 @@ onMounted(async () => {
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--cc-primary-bg, #eff6ff);
+  color: var(--cc-primary, #1d4ed8);
   font-size: 11px;
   font-weight: 700;
 }
@@ -319,7 +321,7 @@ onMounted(async () => {
 .doc-tabs {
   flex-shrink: 0;
   padding: 0 16px;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--cc-bg-secondary, rgba(255, 255, 255, 0.88));
 }
 
 .doc-tab-label {
@@ -360,7 +362,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--cc-bg-overlay, rgba(255, 255, 255, 0.78));
   backdrop-filter: blur(4px);
 }
 
@@ -371,26 +373,26 @@ onMounted(async () => {
   gap: 8px;
   min-width: 280px;
   padding: 22px 24px;
-  border: 1px solid #dbe4f0;
+  border: 1px solid var(--cc-border-light, #dbe4f0);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 24px 40px rgba(15, 23, 42, 0.08);
+  background: var(--cc-bg-elevated, rgba(255, 255, 255, 0.94));
+  box-shadow: 0 24px 40px var(--cc-bg-overlay, rgba(15, 23, 42, 0.08));
 }
 
 .doc-loading-icon {
   font-size: 22px;
-  color: #2563eb;
+  color: var(--cc-primary, #2563eb);
 }
 
 .doc-loading-title {
   font-size: 15px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--cc-text, #0f172a);
 }
 
 .doc-loading-desc {
   font-size: 12px;
-  color: #64748b;
+  color: var(--cc-text-dim, #64748b);
 }
 
 .doc-empty {
