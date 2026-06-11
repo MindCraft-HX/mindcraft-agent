@@ -13,9 +13,9 @@
           <div class="sidebar-nav">
             <div
               class="sidebar-item"
-              :class="{ active: activeIndex === '/main/codeHub' }"
+              :class="{ active: activeIndex === '/main/codeHub', 'has-notification': codehubHasNotification && activeIndex !== '/main/codeHub' }"
               @click="$router.push('/main/codeHub')"
-              title="编程智能体"
+              title="项目"
             >
               <div class="sidebar-icon-wrapper">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -23,7 +23,7 @@
                   <polyline points="13 5.5 16.5 10 13 14.5"/>
                 </svg>
               </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">编程</span>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">项目</span>
             </div>
 
             <div
@@ -117,10 +117,13 @@ const settingsDrawer = ref(false);
 const activeSetting = ref(null);
 const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
+// 任务完成通知状态：由 codeHub 注入更新，用于侧边栏提醒
+const codehubHasNotification = ref(false);
 const claudeTheme = useClaudeThemeStore();
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`);
 provide("settingsDrawer", settingsDrawer);
 provide("activeSetting", activeSetting);
+provide("codehubHasNotification", codehubHasNotification);
 
 function openSettings() {
   sharedSettingsRef.value?.open()
@@ -172,8 +175,8 @@ window.electronAPI?.openTabByName?.((progress) => {
       height: 32px;
       margin: 8px 8px 16px;
       .logo-icon {
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
       }
     }
     .sidebar-item {
@@ -207,8 +210,8 @@ window.electronAPI?.openTabByName?.((progress) => {
   }
 
   .logo-icon {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
     background-image: url(./assets/mindcraft_logo_svg.svg);
     background-size: contain;
     background-repeat: no-repeat;
