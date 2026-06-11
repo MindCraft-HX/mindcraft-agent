@@ -108,9 +108,9 @@ function getTokenMetrics(cliSessionId) {
         const stopReason = parsed.message.stop_reason
         if (stopReason) {
           // inputTokens/cacheReadTokens/cacheCreationTokens 每轮 API 调用已包含前文全部上下文，
-          // 跨轮累加会导致重复计数（数量级偏高），对齐 CodeX 做法：取最后一轮的值
+          // 跨轮累加会导致重复计数（数量级偏高）；output 同样取最后一轮保持一致（对齐 CodeX 做法）
           inputTokens = usage.input_tokens || inputTokens
-          outputTokens += usage.output_tokens || 0
+          outputTokens = usage.output_tokens || outputTokens
           cacheReadTokens = usage.cache_read_input_tokens || cacheReadTokens
           cacheCreationTokens = usage.cache_creation_input_tokens || cacheCreationTokens
         }
@@ -142,9 +142,9 @@ function getTokenMetrics(cliSessionId) {
         const parsed = JSON.parse(line)
         if (parsed.type === 'assistant' && parsed.message?.usage) {
           const usage = parsed.message.usage
-          // 同上有 stop_reason 分支：input 取最后值避免重复计数，output 正常累加
+          // 同上：input/output/cache 均取最后值避免跨轮不对称
           inputTokens = usage.input_tokens || inputTokens
-          outputTokens += usage.output_tokens || 0
+          outputTokens = usage.output_tokens || outputTokens
           cacheReadTokens = usage.cache_read_input_tokens || cacheReadTokens
           cacheCreationTokens = usage.cache_creation_input_tokens || cacheCreationTokens
         }
