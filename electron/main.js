@@ -109,16 +109,10 @@ function createWindow() {
   win.webContents.on('console-message', (_event, level, message) => {
     if (level >= 2) console.log('[renderer]', message);
   });
-  // 关闭窗口：开发模式直接退出（避免进程残留），生产模式隐藏到托盘
+  // 关闭窗口：隐藏到托盘（对齐 mindcraft-electron）
   win.on('close', (e) => {
-    if (NODE_ENV === 'development') {
-      globalShortcut.unregisterAll()
-      win = null
-      app.quit()
-    } else {
-      e.preventDefault();
-      win.hide();
-    }
+    e.preventDefault();
+    win.hide();
   })
 
   if(NODE_ENV != "production") {
