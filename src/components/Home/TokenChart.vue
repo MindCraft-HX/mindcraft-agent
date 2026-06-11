@@ -5,7 +5,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
-import { useClaudeThemeStore } from '../../packages/agent/src/stores/claudeTheme.js'
+import { useClaudeThemeStore } from '../../../packages/agent/src/stores/claudeTheme.js'
 
 const props = defineProps({
   data: { type: Array, default: () => [] },
