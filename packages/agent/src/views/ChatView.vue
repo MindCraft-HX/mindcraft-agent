@@ -153,6 +153,7 @@ async function onNewSession() {
 }
 
 async function onSwitchSession(id) {
+  if (isStreaming.value) stopStreaming() // 安全复位：防止上次崩溃残留流状态
   await switchSession(id)
 }
 

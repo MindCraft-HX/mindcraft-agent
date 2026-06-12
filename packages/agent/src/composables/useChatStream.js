@@ -430,10 +430,16 @@ export function useChatStream(chatSession) {
     else api().codexChatAbort?.({ chatId: id })
   }
 
-  /** 停止流式（用户点击停止按钮） */
+  /** 停止流式（用户点击停止按钮 / 安全复位） */
   function stopStreaming() {
     userAborted = true
     abortCurrent()
+    // 安全网：如果当前无活跃 chatId（上次崩溃残留），强制复位 UI
+    if (!currentChatId && isStreaming.value) {
+      isStreaming.value = false
+      activeToolCall.value = null
+      streamError.value = null
+    }
   }
 
   /** 压缩上下文：用 LLM 将历史对话压缩为摘要（直调 IPC，不污染会话） */
