@@ -1878,72 +1878,139 @@ function setupClaudeHandlers() {
   // chatId -> AbortController（支持渲染进程主动中止主进程流）
   const activeChatAborts = new Map()
 
+  // ── 原生 fetch + SSE 流式（不用 SDK stream，避免内部缓冲 OOM）──
+  /** 硬上限：防止第三方模型 thinking 模式输出失控拖垮主进程 */
+  const MAX_STREAM_CHUNKS = 5000    // 最多处理 5000 个 SSE 事件
+  const MAX_STREAM_CHARS = 100_000  // 累计文本最多 100K 字符
+
   async function runClaudeChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, thinking, system }) {
     const rt = readChatRuntimeConfig()
     if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 Claude Provider）')
 
-    const Anthropic = require('@anthropic-ai/sdk')
-    const Ctor = Anthropic.default || Anthropic
-    const opts = { apiKey: rt.apiKey, maxRetries: 0 }
-    if (rt.baseURL) opts.baseURL = rt.baseURL
-    const client = new Ctor(opts)
+    const baseURL = (rt.baseURL || 'https://api.anthropic.com').replace(/\/+$/, '')
+    const url = baseURL + '/v1/messages'
 
-    const params = {
+    const body = {
       model: model || rt.model || 'claude-sonnet-4-20250514',
-      max_tokens: max_tokens || 8096,
+      max_tokens: max_tokens || 4096,
       messages,
+      stream: true,
     }
-    if (system) { params.system = system }
-    if (tools && tools.length > 0) { params.tools = tools }
-    if (tool_choice) { params.tool_choice = tool_choice }
+    if (system) body.system = system
+    if (tools && tools.length > 0) body.tools = tools
+    if (tool_choice) body.tool_choice = tool_choice
     if (thinking) {
-      const budget = Math.max(512, Math.min(thinking.budget_tokens || 4000, 4096))
-      params.thinking = { type: 'enabled', budget_tokens: budget }
-      // API 要求 max_tokens 必须大于 budget_tokens（思考 token 计入 max_tokens）
-      // 简易对话硬上限 8192，防止第三方模型 thinking 模式 OOM
-      params.max_tokens = Math.max(params.max_tokens, budget + 512)
-      params.max_tokens = Math.min(params.max_tokens, 8192)
+      const budget = Math.max(512, Math.min(thinking.budget_tokens || 4096, 4096))
+      body.thinking = { type: 'enabled', budget_tokens: budget }
+      body.max_tokens = Math.max(body.max_tokens, budget + 512)
+      body.max_tokens = Math.min(body.max_tokens, 8192)
     }
+    body.max_tokens = Math.min(body.max_tokens, 8192)
 
-    const ab = new AbortController()
-    if (chatId) activeChatAborts.set(chatId, ab)
+    const controller = new AbortController()
+    if (chatId) activeChatAborts.set(chatId, controller)
 
     let fullText = ''
     const toolUseBlocks = []
-    let finalMsg = null
+    let stopReason = null
+    let usage = null
+    let chunkCount = 0
 
     try {
-      const stream = client.messages.stream(params, { signal: ab.signal })
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': rt.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
 
-      for await (const chunk of stream) {
-        if (chunk.type === 'content_block_start') {
-          if (chunk.content_block?.type === 'tool_use') {
-            const block = { id: chunk.content_block.id, name: chunk.content_block.name, input: '' }
-            toolUseBlocks.push(block)
-            safeSend(event.sender, 'claude-stream-tool-start', { chatId, id: block.id, name: block.name })
-          }
-        }
-        if (chunk.type === 'content_block_delta') {
-          if (chunk.delta?.thinking) {
-            // 思考增量：只回传进度提示，不入正文
-            safeSend(event.sender, 'claude-stream-thinking', { chatId, text: chunk.delta.thinking })
-          }
-          if (chunk.delta?.text) {
-            fullText += chunk.delta.text
-            safeSend(event.sender, 'claude-stream-chunk', { chatId, text: chunk.delta.text })
-          }
-          if (chunk.delta?.partial_json) {
-            const last = toolUseBlocks[toolUseBlocks.length - 1]
-            if (last) { last.input += chunk.delta.partial_json }
-            safeSend(event.sender, 'claude-stream-tool-input', { chatId, id: last?.id, partial: chunk.delta.partial_json })
-          }
-        }
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '')
+        throw new Error(`Anthropic API ${resp.status}: ${errText.slice(0, 300)}`)
       }
 
-      // finalMessage 是方法，返回 Promise（此前误当属性取，导致 stop_reason 恒为 null）
-      finalMsg = await stream.finalMessage().catch(() => null)
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let lineBuffer = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          lineBuffer += decoder.decode(value, { stream: true })
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() || ''
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed || !trimmed.startsWith('data: ')) continue
+            const raw = trimmed.slice(6)
+
+            let json
+            try { json = JSON.parse(raw) } catch (_) { continue }
+
+            chunkCount++
+            if (chunkCount > MAX_STREAM_CHUNKS) {
+              // 输出失控，截断
+              controller.abort()
+              stopReason = 'max_chunks_exceeded'
+              break
+            }
+
+            switch (json.type) {
+              case 'content_block_start': {
+                if (json.content_block?.type === 'tool_use') {
+                  const block = { id: json.content_block.id, name: json.content_block.name, input: '' }
+                  toolUseBlocks.push(block)
+                  safeSend(event.sender, 'claude-stream-tool-start', { chatId, id: block.id, name: block.name })
+                }
+                break
+              }
+              case 'content_block_delta': {
+                const delta = json.delta || {}
+                if (delta.thinking) {
+                  safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
+                  // thinking 不计入 fullText，不走 chars 上限
+                }
+                if (delta.text) {
+                  if (fullText.length < MAX_STREAM_CHARS) {
+                    fullText += delta.text
+                    safeSend(event.sender, 'claude-stream-chunk', { chatId, text: delta.text })
+                  }
+                }
+                if (delta.partial_json) {
+                  const last = toolUseBlocks[toolUseBlocks.length - 1]
+                  if (last) {
+                    last.input += delta.partial_json
+                    safeSend(event.sender, 'claude-stream-tool-input', { chatId, id: last.id, partial: delta.partial_json })
+                  }
+                }
+                break
+              }
+              case 'message_delta': {
+                stopReason = json.delta?.stop_reason || null
+                usage = json.usage || null
+                break
+              }
+              case 'message_stop': {
+                // 流正常结束
+                break
+              }
+            }
+          }
+          // chunkCount 超限 → 退外层循环
+          if (chunkCount > MAX_STREAM_CHUNKS) break
+        }
+      } finally {
+        try { reader.releaseLock() } catch (_) {}
+      }
     } catch (e) {
-      if (ab.signal.aborted) {
+      if (controller.signal.aborted) {
         return { fullText, toolUseBlocks: [], stop_reason: 'aborted', usage: null }
       }
       throw e
@@ -1954,8 +2021,8 @@ function setupClaudeHandlers() {
     return {
       fullText,
       toolUseBlocks: toolUseBlocks.map(t => ({ id: t.id, name: t.name, input: t.input })),
-      stop_reason: finalMsg?.stop_reason || null,
-      usage: finalMsg?.usage || null,
+      stop_reason: stopReason || (toolUseBlocks.length > 0 ? 'tool_use' : 'end_turn'),
+      usage,
     }
   }
 

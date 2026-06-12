@@ -3280,6 +3280,10 @@ function setupCodexSdkHandlers() {
   // chatId -> AbortController（支持渲染进程主动中止）
   const activeChatAborts = new Map()
 
+  /** 硬上限：防止第三方模型输出失控拖垮主进程 */
+  const MAX_STREAM_CHUNKS = 5000
+  const MAX_STREAM_CHARS = 100_000
+
   async function runCodexChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, reasoning_effort }) {
     const rt = readRuntimeConfig()
     if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 CodeX Provider）')
@@ -3292,7 +3296,7 @@ function setupCodexSdkHandlers() {
       messages,
       stream: true,
     }
-    if (max_tokens) body.max_tokens = max_tokens
+    if (max_tokens) body.max_tokens = Math.min(max_tokens, 8192)
     if (tools && tools.length > 0) { body.tools = tools }
     if (tool_choice) { body.tool_choice = tool_choice }
     if (reasoning_effort) { body.reasoning_effort = reasoning_effort }
@@ -3303,6 +3307,7 @@ function setupCodexSdkHandlers() {
     let fullText = ''
     const toolCalls = []
     let finishReason = null
+    let chunkCount = 0
 
     try {
       const resp = await fetch(url, {
@@ -3322,16 +3327,16 @@ function setupCodexSdkHandlers() {
 
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      let lineBuffer = ''
 
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          buffer += decoder.decode(value, { stream: true })
+          lineBuffer += decoder.decode(value, { stream: true })
 
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
+          const lines = lineBuffer.split('\n')
+          lineBuffer = lines.pop() || ''
 
           for (const line of lines) {
             const trimmed = line.trim()
@@ -3341,6 +3346,13 @@ function setupCodexSdkHandlers() {
 
             let json
             try { json = JSON.parse(data) } catch (_) { continue }
+
+            chunkCount++
+            if (chunkCount > MAX_STREAM_CHUNKS) {
+              controller.abort()
+              finishReason = 'max_chunks_exceeded'
+              break
+            }
 
             const choice = json.choices?.[0]
             if (!choice) continue
@@ -3352,8 +3364,10 @@ function setupCodexSdkHandlers() {
               safeSend(event.sender, 'codex-stream-thinking', { chatId, text: delta.reasoning_content })
             }
             if (delta.content) {
-              fullText += delta.content
-              safeSend(event.sender, 'codex-stream-chunk', { chatId, text: delta.content })
+              if (fullText.length < MAX_STREAM_CHARS) {
+                fullText += delta.content
+                safeSend(event.sender, 'codex-stream-chunk', { chatId, text: delta.content })
+              }
             }
             if (delta.tool_calls) {
               for (const tc of delta.tool_calls) {
@@ -3366,6 +3380,7 @@ function setupCodexSdkHandlers() {
               }
             }
           }
+          if (chunkCount > MAX_STREAM_CHUNKS) break
         }
       } finally {
         reader.releaseLock()
