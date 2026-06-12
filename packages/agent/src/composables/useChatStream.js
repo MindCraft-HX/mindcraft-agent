@@ -248,8 +248,6 @@ export function useChatStream(chatSession) {
         if (textBlock) textBlock.text += text
       }
       const onThinking = (text) => {
-        // 思考开关关闭时，丢弃 thinking 事件（第三方 provider 可能忽略 thinking.type: 'disabled'）
-        if (!tc) return
         lastActivity = Date.now()
         const msg = chatSession.getLastAssistant?.()
         if (msg) {

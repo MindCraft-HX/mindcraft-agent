@@ -1981,10 +1981,7 @@ function setupClaudeHandlers() {
               case 'content_block_delta': {
                 const delta = json.delta || {}
                 if (delta.thinking) {
-                  // 思考开关关闭时，丢弃 thinking 事件（第三方 provider 可能忽略 thinking.type: 'disabled'）
-                  if (thinkingRequested) {
-                    safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
-                  }
+                  safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
                   // thinking 不计入 fullText，不走 chars 上限
                 }
                 if (delta.text) {

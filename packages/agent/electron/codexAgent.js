@@ -3453,10 +3453,7 @@ function setupCodexSdkHandlers() {
                   break
 
                 case 'response.reasoning_text.delta':
-                  // 思考开关关闭时，丢弃 thinking 事件
-                  if (reasoning?.effort && reasoning.effort !== 'none') {
-                    safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
-                  }
+                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
                   break
 
                 case 'response.output_item.added':
@@ -3497,10 +3494,7 @@ function setupCodexSdkHandlers() {
 
               const delta = choice.delta || {}
               if (delta.reasoning_content) {
-                // 思考开关关闭时，丢弃 thinking 事件
-                if (reasoning?.effort && reasoning.effort !== 'none') {
-                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: delta.reasoning_content })
-                }
+                safeSend(event.sender, 'codex-stream-thinking', { chatId, text: delta.reasoning_content })
               }
               if (delta.content) {
                 if (fullText.length < MAX_STREAM_CHARS) {
