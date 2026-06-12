@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 
 const MAX_TOOL_ITERATIONS = 5
-/** 无任何流式活动超过该时长则自动中止（毫秒） */
-const STALL_TIMEOUT = 90_000
+/** 无任何流式活动超过该时长则自动中止（毫秒）
+ *  大模型（GPT 5.x/o 系列等）首个 token 延迟可能 >60s，需给足余量 */
+const STALL_TIMEOUT = 180_000
 
 const SYSTEM_PROMPT = `你是 MindCraft 智能助手，可以回答问题、进行联网搜索和识别图片。
 
@@ -222,6 +223,7 @@ export function useChatStream(chatSession) {
       content: [{ type: 'text', text: '' }],
       isStreaming: true,
       thinkingChars: 0,
+      thinkingText: '',
     }
     chatSession.addMessage(assistantMsg)
 
@@ -240,7 +242,10 @@ export function useChatStream(chatSession) {
       const onThinking = (text) => {
         lastActivity = Date.now()
         const msg = chatSession.getLastAssistant?.()
-        if (msg) msg.thinkingChars = (msg.thinkingChars || 0) + (text?.length || 0)
+        if (msg) {
+          msg.thinkingChars = (msg.thinkingChars || 0) + (text?.length || 0)
+          msg.thinkingText = (msg.thinkingText || '') + (text || '')
+        }
       }
 
       if (provider === 'claude') {

@@ -217,7 +217,8 @@ function refreshModelOptions(resetModel = false) {
   modelOptions.value = localProvider.value === 'claude' ? buildClaudeOptions() : buildCodexOptions()
   const values = modelOptions.value.map(o => o.value)
   if (resetModel || !localModel.value || !values.includes(localModel.value)) {
-    localModel.value = defaultModel() || values[0] || ''
+    // 优先选用当前 provider 的默认模型，失败则用列表第一项，再失败用 props.model
+    localModel.value = defaultModel() || values[0] || props.model || ''
   }
 }
 
@@ -396,34 +397,47 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
 
 .think-dots-group {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
-  padding: 4px 6px;
+  padding: 5px 8px;
   background: var(--cc-bg-elevated, #252525);
   border: 1px solid var(--cc-border, #2a2a2a);
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
 .think-dot {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  border: none;
+  border: 2px solid var(--cc-text-dim, #555);
   cursor: pointer;
   padding: 0;
-  background: var(--cc-text-dim, #555);
-  transition: background 0.15s, transform 0.12s;
+  background: transparent;
+  transition: all 0.15s;
 
   &:hover {
-    transform: scale(1.2);
+    transform: scale(1.18);
+    border-color: var(--cc-primary, #c6613f);
   }
 
-  &.filled {
+  /* 低：浅橙 */
+  &:nth-child(1).filled {
+    background: #e8a87c;
+    border-color: #e8a87c;
+  }
+  /* 中：棕色 */
+  &:nth-child(2).filled {
+    background: #d47a5a;
+    border-color: #d47a5a;
+  }
+  /* 高：深棕 */
+  &:nth-child(3).filled {
     background: var(--cc-primary, #c6613f);
+    border-color: var(--cc-primary, #c6613f);
   }
 
   &.active {
-    box-shadow: 0 0 0 2px var(--cc-bg, #1a1a1a), 0 0 0 3.5px var(--cc-primary, #c6613f);
+    box-shadow: 0 0 0 2px var(--cc-bg, #1a1a1a), 0 0 0 4px var(--cc-primary, #c6613f);
   }
 }
 

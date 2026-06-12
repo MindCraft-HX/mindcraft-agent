@@ -129,6 +129,13 @@ const inputRef = ref(null)
 // 生命周期
 onMounted(async () => {
   await loadList()
+  // 首页跳转目标会话
+  const targetId = localStorage.getItem('mindcraft_agent_chat_target_session')
+  if (targetId) {
+    localStorage.removeItem('mindcraft_agent_chat_target_session')
+    await switchSession(targetId)
+    return
+  }
   if (sessionList.value.length > 0) {
     await switchSession(sessionList.value[0].id)
   } else {

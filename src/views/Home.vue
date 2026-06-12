@@ -108,8 +108,8 @@
       </div>
 
       <!-- 开始对话 -->
-      <div class="home-card home-card-chat" @click="router.push('/main/chat')">
-        <div class="card-head">
+      <div class="home-card home-card-chat">
+        <div class="card-head" @click="router.push('/main/chat')">
           <div class="card-icon-wrap">
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 6h16a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H11l-6 5V10a4 4 0 0 1 4-4z"/>
@@ -119,11 +119,29 @@
         </div>
 
         <div class="card-body">
-          <div class="feature-text">无需选择项目，快速问答、联网搜索与图片识别</div>
-          <div class="feature-text feature-text-sub">复用已配置的 API，开箱即用</div>
+          <template v-if="recentChats.length">
+            <div class="project-list">
+              <div
+                v-for="chat in recentChats.slice(0, 4)"
+                :key="chat.id"
+                class="project-entry"
+                @click.stop="openChat(chat)"
+              >
+                <span class="badge" :style="{ background: chat.provider === 'codex' ? '#10a37f' : '#c6613f' }">
+                  {{ chat.provider === 'codex' ? 'CodeX' : 'Claude' }}
+                </span>
+                <span class="project-entry-name">{{ chat.title || '新对话' }}</span>
+                <span class="project-entry-meta">{{ formatTime(chat.updatedAt) }}</span>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="feature-text">无需选择项目，快速问答、联网搜索与图片识别</div>
+            <div class="feature-text feature-text-sub">复用已配置的 API，开箱即用</div>
+          </template>
         </div>
 
-        <div class="card-foot">
+        <div class="card-foot" @click="router.push('/main/chat')">
           <span class="card-action">进入对话</span>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <polyline points="6 3 12 9 6 15"/>
@@ -167,7 +185,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClaudeThemeStore } from '@mindcraft/agent'
 import TokenChart from '@/components/Home/TokenChart.vue'
@@ -178,6 +196,23 @@ const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
 const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeData()
+
+// 最近对话会话
+const recentChats = ref([])
+onMounted(async () => {
+  try {
+    const api = window.electronAPI || {}
+    const result = await api.chatListSessions?.()
+    const sessions = Array.isArray(result?.sessions) ? result.sessions : []
+    recentChats.value = sessions
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  } catch (_) {}
+})
+
+function openChat(chat) {
+  localStorage.setItem('mindcraft_agent_chat_target_session', chat.id)
+  router.push('/main/chat')
+}
 
 function openProjectEntry(proj) {
   const query = { agent: proj.agentType, projectId: proj.projectId }

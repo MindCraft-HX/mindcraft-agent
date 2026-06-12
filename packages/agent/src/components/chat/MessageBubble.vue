@@ -48,6 +48,21 @@
           <span v-else>等待响应…</span>
         </div>
 
+        <!-- 思考过程（可折叠块） -->
+        <div v-if="thinkingText" class="msg-thinking" :class="{ expanded: thinkingExpanded }">
+          <div class="thinking-toggle" @click="thinkingExpanded = !thinkingExpanded">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="8" cy="8" r="5"/>
+              <path d="M8 5v3M8 10.5v0.5"/>
+            </svg>
+            <span class="thinking-label">思考过程（{{ msg.thinkingChars || 0 }} 字）</span>
+            <svg class="thinking-chevron" :class="{ open: thinkingExpanded }" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <polyline points="2 3.5 5 6.5 8 3.5"/>
+            </svg>
+          </div>
+          <div v-show="thinkingExpanded" class="thinking-content">{{ thinkingText }}</div>
+        </div>
+
         <!-- 内容块：遍历 content 数组 -->
         <template v-if="hasContentBlocks">
           <template v-for="(block, i) in contentBlocks" :key="i">
@@ -87,6 +102,12 @@ const props = defineProps({
 defineEmits(['preview-image'])
 
 const toolExpanded = ref(false)
+
+const thinkingExpanded = ref(false)
+const thinkingText = computed(() => {
+  if (props.msg.role !== 'assistant') return ''
+  return props.msg.thinkingText || ''
+})
 
 const userImages = computed(() => {
   if (props.msg.role !== 'user') return []
@@ -169,6 +190,53 @@ function renderMd(text) {
   background: transparent;
   padding: 0 16px;
   max-width: 85%;
+}
+
+.msg-thinking {
+  margin: 4px 0 8px;
+  border-left: 3px solid var(--cc-primary, #c6613f);
+  border-radius: 0 6px 6px 0;
+  background: rgba(198, 97, 63, 0.06);
+  overflow: hidden;
+}
+
+.thinking-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: var(--cc-primary, #c6613f);
+  transition: background 0.12s;
+
+  &:hover {
+    background: rgba(198, 97, 63, 0.1);
+  }
+}
+
+.thinking-label {
+  flex: 1;
+}
+
+.thinking-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  opacity: 0.6;
+  &.open { transform: rotate(180deg); }
+}
+
+.thinking-content {
+  padding: 8px 12px 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--cc-text-dim, #999);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-style: italic;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .msg-waiting {
