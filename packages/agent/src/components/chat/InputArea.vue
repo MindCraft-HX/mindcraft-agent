@@ -44,15 +44,18 @@
 
       <!-- 右侧：思考档位 + 搜索 + 发送 -->
       <div class="control-right">
-        <!-- 思考档位：关/低/中/高（Claude → budget，OpenAI → reasoning_effort） -->
-        <div class="think-seg" title="深度思考强度">
-          <span class="think-seg-label">思考</span>
-          <button
-            v-for="lv in thinkingLevels" :key="lv.value"
-            class="think-seg-btn"
-            :class="{ active: localThinkingLevel === lv.value, off: lv.value === 'off' && localThinkingLevel === 'off' }"
-            @click="localThinkingLevel = lv.value"
-          >{{ lv.label }}</button>
+        <!-- 思考档位：4 点指示器（关/低/中/高，匹配项目面板 effort 样式） -->
+        <div class="think-dots" title="深度思考强度">
+          <span class="think-dots-label">思考</span>
+          <div class="think-dots-group">
+            <button
+              v-for="(lv, idx) in thinkingLevels" :key="lv.value"
+              class="think-dot"
+              :class="{ filled: localThinkingLevel !== 'off' && idx < levelIndex(localThinkingLevel), active: localThinkingLevel === lv.value }"
+              :title="lv.label"
+              @click="onThinkingDotClick(lv)"
+            ></button>
+          </div>
         </div>
 
         <!-- 联网搜索 -->
@@ -127,11 +130,21 @@ const {
 } = useImageAttachments({ getActiveTab: () => null })
 
 const thinkingLevels = [
-  { value: 'off', label: '关' },
   { value: 'low', label: '低' },
   { value: 'medium', label: '中' },
   { value: 'high', label: '高' },
 ]
+
+function levelIndex(level) {
+  if (!level || level === 'off') return 0
+  const idx = thinkingLevels.findIndex(l => l.value === level)
+  return idx >= 0 ? idx + 1 : 0
+}
+
+function onThinkingDotClick(lv) {
+  // 点击已激活档位 → 关闭；否则切到该档位
+  localThinkingLevel.value = localThinkingLevel.value === lv.value ? 'off' : lv.value
+}
 
 // 本地状态（双向绑定到父组件）
 const localProvider = ref(props.provider)
@@ -367,55 +380,50 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
   text-overflow: ellipsis;
 }
 
-/* 思考档位（关/低/中/高） */
-.think-seg {
+/* 思考档位圆点（匹配项目 effort 4 点样式） */
+.think-dots {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 6px;
   height: 28px;
-  border: 1px solid var(--cc-border, #2a2a2a);
-  border-radius: 6px;
-  background: var(--cc-bg-elevated, #252525);
-  overflow: hidden;
 }
 
-.think-seg-label {
+.think-dots-label {
   font-size: 11px;
   color: var(--cc-text-dim, #888);
-  padding: 0 8px;
-  border-right: 1px solid var(--cc-border, #2a2a2a);
   user-select: none;
 }
 
-.think-seg-btn {
-  height: 100%;
-  padding: 0 9px;
-  border: none;
-  background: transparent;
-  color: var(--cc-text-dim, #888);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.12s;
+.think-dots-group {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--cc-bg-elevated, #252525);
+  border: 1px solid var(--cc-border, #2a2a2a);
+  border-radius: 14px;
+}
 
-  & + & {
-    border-left: 1px solid var(--cc-border, #2a2a2a);
+.think-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  background: var(--cc-text-dim, #555);
+  transition: background 0.15s, transform 0.12s;
+
+  &:hover {
+    transform: scale(1.2);
   }
 
-  &:hover:not(.active) {
-    color: var(--cc-text, #e0e0e0);
-    background: var(--cc-bg-hover, rgba(255,255,255,0.05));
+  &.filled {
+    background: var(--cc-primary, #c6613f);
   }
 
   &.active {
-    background: var(--cc-primary, #c6613f);
-    color: #fff;
-    font-weight: 600;
-  }
-
-  /* "关"档位激活时用中性色，避免误以为开启了功能 */
-  &.active.off {
-    background: var(--cc-border-strong, #444);
-    color: var(--cc-text-muted, #bbb);
+    box-shadow: 0 0 0 2px var(--cc-bg, #1a1a1a), 0 0 0 3.5px var(--cc-primary, #c6613f);
   }
 }
 

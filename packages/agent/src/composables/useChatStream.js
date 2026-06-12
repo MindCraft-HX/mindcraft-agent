@@ -47,11 +47,13 @@ const WEB_SEARCH_TOOL_OPENAI = {
   }
 }
 
-/** 思考档位 → Claude budget_tokens / OpenAI reasoning_effort */
+/** 思考档位 → Claude budget_tokens / OpenAI reasoning_effort
+ *  简易对话场景使用保守值，避免第三方模型在 thinking 模式产生过长输出导致 OOM
+ */
 const THINKING_LEVELS = {
-  low: { budget: 2048, effort: 'low' },
-  medium: { budget: 8192, effort: 'medium' },
-  high: { budget: 16384, effort: 'high' },
+  low:    { budget: 512,   effort: 'low' },
+  medium: { budget: 2048,  effort: 'medium' },
+  high:   { budget: 4096,  effort: 'high' },
 }
 
 function genChatId() {
@@ -201,15 +203,18 @@ export function useChatStream(chatSession) {
 
     // 思考档位
     const tc = thinkingConf()
+    // 简易对话 max_tokens 硬上限（防止第三方模型 thinking 模式产生过长输出导致 OOM）
+    const MAX_RESPONSE_TOKENS = 8192
     if (tc) {
       if (provider === 'claude') {
         payload.thinking = { type: 'enabled', budget_tokens: tc.budget }
-        payload.max_tokens = tc.budget + 8096 // 必须大于 budget_tokens
+        // max_tokens 必须 > budget_tokens，但 capped 防止 OOM
+        payload.max_tokens = Math.min(Math.max(tc.budget + 1024, 4096), MAX_RESPONSE_TOKENS)
       } else {
         payload.reasoning_effort = tc.effort
       }
     }
-    if (provider === 'claude' && !payload.max_tokens) payload.max_tokens = 8096
+    if (provider === 'claude' && !payload.max_tokens) payload.max_tokens = MAX_RESPONSE_TOKENS
 
     // assistant 占位消息（流式渲染目标）
     const assistantMsg = {

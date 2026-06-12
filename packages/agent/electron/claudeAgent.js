@@ -1897,10 +1897,12 @@ function setupClaudeHandlers() {
     if (tools && tools.length > 0) { params.tools = tools }
     if (tool_choice) { params.tool_choice = tool_choice }
     if (thinking) {
-      const budget = Math.max(1024, thinking.budget_tokens || 4000)
+      const budget = Math.max(512, Math.min(thinking.budget_tokens || 4000, 4096))
       params.thinking = { type: 'enabled', budget_tokens: budget }
       // API 要求 max_tokens 必须大于 budget_tokens（思考 token 计入 max_tokens）
-      if (params.max_tokens <= budget) params.max_tokens = budget + 8096
+      // 简易对话硬上限 8192，防止第三方模型 thinking 模式 OOM
+      params.max_tokens = Math.max(params.max_tokens, budget + 512)
+      params.max_tokens = Math.min(params.max_tokens, 8192)
     }
 
     const ab = new AbortController()
