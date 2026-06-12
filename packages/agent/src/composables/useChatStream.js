@@ -55,9 +55,28 @@ const THINKING_LEVELS = {
   high:   { budget: 4096,  effort: 'high' },
 }
 
+/** 上下文自动压缩阈值：200K 窗口的 80% = 160K tokens（当前主流模型均 ≥ 200K） */
+const AUTO_COMPRESS_THRESHOLD = 160000
+/** 粗糙 token 估算：中文 ~1.5 chars/token，英文 ~4 chars/token，取折中 *//** 粗糙 token 估算：中文 ~1.5 chars/token，英文 ~4 chars/token，取折中 */
+function estimateTokens(session) {
+  let chars = SYSTEM_PROMPT.length
+  if (session.contextSummary) chars += session.contextSummary.length
+  for (const m of (session.messages || [])) {
+    const content = Array.isArray(m.content) ? m.content : [{ type: 'text', text: String(m.content || '') }]
+    for (const b of content) {
+      if (b.type === 'text' && b.text) chars += b.text.length
+      else if (b.type === 'tool_use') chars += JSON.stringify(b.input || {}).length
+      else if (b.type === 'image' && b.data) chars += Math.round(b.data.length * 0.25)
+    }
+  }
+  return Math.ceil(chars / 1.5)
+}
+
 function genChatId() {
   return (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2, 10))
 }
+
+
 
 /**
  * 大图压缩：超过 1024px 缩放到 1024px 并转 JPEG 0.8 质量
@@ -389,6 +408,13 @@ export function useChatStream(chatSession) {
     if (isStreaming.value) return
     if (!chatSession.currentSession.id) return
 
+    // 上下文自动压缩：估算 token 超 160K 时自动处理
+    try {
+      if (estimateTokens(chatSession.currentSession) > AUTO_COMPRESS_THRESHOLD) {
+        await compressContext()
+      }
+    } catch (_) {}
+
     isStreaming.value = true
     streamError.value = null
     activeToolCall.value = null
@@ -425,6 +451,10 @@ export function useChatStream(chatSession) {
           break
         }
         if (result?.stop_reason === 'error') {
+          // 检测上下文溢出，给友好提示
+          if (streamError.value && /context.*(?:length|too.?long|exceed|overflow)|400|413|too.?many.?tokens|reduce.*(?:length|size)/i.test(streamError.value)) {
+            streamError.value = '上下文已达上限，请点击顶部「压缩」按钮后再发送。'
+          }
           // 错误时移除空的 assistant 占位气泡
           const last = chatSession.currentSession.messages[chatSession.currentSession.messages.length - 1]
           if (last?.role === 'assistant' && !extractTextFromBlocks(last.content).trim()
@@ -499,8 +529,9 @@ export function useChatStream(chatSession) {
   /** 压缩上下文：用 LLM 将历史对话压缩为摘要（直调 IPC，不污染会话） */
   async function compressContext() {
     const provider = chatSession.currentSession.provider
+    const existingSummary = chatSession.currentSession.contextSummary || ''
     const history = chatSession.currentSession.messages || []
-    if (!history.length) return
+    if (!history.length && !existingSummary) return
 
     isStreaming.value = true
     streamError.value = null
@@ -508,6 +539,11 @@ export function useChatStream(chatSession) {
 
     const compressPrompt = `请将以下对话内容压缩为一段简洁的摘要（200字以内），保留关键信息：\n- 用户的核心问题和需求\n- AI 提供的关键结论和发现\n- 重要的上下文信息\n\n仅输出摘要文本，不要加任何前缀。`
 
+    // 带上已有摘要，避免二次压缩丢失信息
+    let inputParts = []
+    if (existingSummary) {
+      inputParts.push(`## 之前的对话摘要\n${existingSummary}`)
+    }
     const historyText = history
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => {
@@ -517,13 +553,19 @@ export function useChatStream(chatSession) {
       })
       .filter(Boolean)
       .join('\n\n')
+    if (historyText) {
+      inputParts.push(`## 最近的对话\n${historyText}`)
+    }
+    if (!inputParts.length) return
+
+    const fullInput = `${compressPrompt}\n\n${inputParts.join('\n\n')}`
 
     try {
       const chatId = genChatId()
       currentChatId = chatId
       const payload = {
         chatId,
-        messages: [{ role: 'user', content: `${compressPrompt}\n\n### 对话内容\n${historyText}` }],
+        messages: [{ role: 'user', content: fullInput }],
         max_tokens: 1024,
       }
       if (chatSession.currentSession.model) payload.model = chatSession.currentSession.model

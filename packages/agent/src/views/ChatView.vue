@@ -33,7 +33,6 @@
             @click="onCompress"
             title="压缩上下文（AI 摘要）"
           >压缩</button>
-          <span class="chat-provider-badge">{{ providerBadge }}</span>
         </div>
       </div>
 
@@ -146,11 +145,6 @@ onMounted(async () => {
 // 路由记忆
 watch(() => currentSessionId.value, (id) => {
   if (id) localStorage.setItem('mindcraft_agent_last_chat_session', id)
-})
-
-const providerBadge = computed(() => {
-  const p = currentSession.provider
-  return p === 'codex' ? 'CodeX' : 'Claude'
 })
 
 // 会话操作
@@ -298,18 +292,6 @@ function imgPreviewSrc(img) {
     opacity: 0.35;
     cursor: not-allowed;
   }
-}
-
-.chat-provider-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--cc-primary-bg, rgba(198, 97, 63, 0.15));
-  color: var(--cc-primary, #c6613f);
-  letter-spacing: 0.3px;
-  flex-shrink: 0;
-  margin-left: 4px;
 }
 
 /* 图片预览 */

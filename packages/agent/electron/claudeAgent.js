@@ -1961,8 +1961,8 @@ function setupClaudeHandlers() {
 
           for (const line of lines) {
             const trimmed = line.trim()
-            if (!trimmed || !trimmed.startsWith('data: ')) continue
-            const raw = trimmed.slice(6)
+            if (!trimmed || !trimmed.startsWith('data:')) continue
+            const raw = trimmed.slice(5).trim()
 
             let json
             try { json = JSON.parse(raw) } catch (_) { continue }

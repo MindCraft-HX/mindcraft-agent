@@ -299,6 +299,32 @@ CodeX 刷新后，用户气泡显示 SDK 注入的完整系统上下文：`<INST
 | gpt-5.4 (Responses) | ❌ 0/3 | ⚠️ 1/3（非确定性） | ✅（none ~9s → medium ~15s → high ~42s） |
 | gpt-5.5 (Responses) | ❌ 0/6 | ❌ 0/6 | ✅（none ~19s → medium ~35s） |
 
+### 第四轮修复（2026-06-13）：qwen3.7-plus SSE 解析兼容
+
+**问题**：qwen3.7-plus 模型返回空响应（含图片和无图片均空）。
+
+**根因**：`claudeAgent.js` SSE 解析器检查 `startsWith('data: ')`（带空格），但 qwen3.7-plus 返回的 SSE 格式是 `data:{"type":...}`（无空格），所有事件被静默丢弃。
+
+**跨模型 SSE 格式差异**（api.mindcraft.com.cn）：
+
+| 模型 | SSE data 行格式 |
+|------|------|
+| deepseek-v4-pro | `data: {...}` (有空格) |
+| deepseek-v4-flash | `data: {...}` (有空格) |
+| **qwen3.7-plus** | **`data:{...}` (无空格)** ← Bug |
+| claude-sonnet-4 | `data: {...}` (有空格) |
+
+**修复**：`claudeAgent.js:1964` + `codexAgent.js:3420` 改为 `startsWith('data:')` + `trimmed.slice(5).trim()`，兼容两种格式。
+
+### 第五轮修复（2026-06-13）：上下文自动压缩 + UI 清理
+
+**新增**：`useChatStream.js`
+- 粗糙 token 估算（中文 ~1.5 chars/token），模型对应上下文窗口（claude 180K / qwen/deepseek 100K / gpt-5 200K）
+- 发送消息前自动检查：估算 token 超 70% 窗口时静默调用 `compressContext()` 压缩历史
+- API 返回 `context_length_exceeded` 类错误时，提示用户手动压缩
+
+**删除**：`ChatView.vue` 顶部右侧的 Claude/CodeX provider 标签（用户认为无意义）
+
 ### 定位
 
 不绑定文件夹的轻量对话。豆包风格界面，解决「选文件夹太重」的痛点。
