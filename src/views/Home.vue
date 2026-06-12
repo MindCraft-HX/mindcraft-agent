@@ -127,9 +127,6 @@
                 class="project-entry"
                 @click.stop="openChat(chat)"
               >
-                <span class="badge" :style="{ background: chat.provider === 'codex' ? '#10a37f' : '#c6613f' }">
-                  {{ chat.provider === 'codex' ? 'CodeX' : 'Claude' }}
-                </span>
                 <span class="project-entry-name">{{ chat.title || '新对话' }}</span>
                 <span class="project-entry-meta">{{ formatTime(chat.updatedAt) }}</span>
               </div>
