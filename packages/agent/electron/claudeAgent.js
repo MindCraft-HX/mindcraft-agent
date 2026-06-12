@@ -1882,6 +1882,7 @@ function setupClaudeHandlers() {
   /** 硬上限：防止第三方模型 thinking 模式输出失控拖垮主进程 */
   const MAX_STREAM_CHUNKS = 5000    // 最多处理 5000 个 SSE 事件
   const MAX_STREAM_CHARS = 100_000  // 累计文本最多 100K 字符
+  const MAX_THINKING_CHARS = 50_000 // thinking 内容上限 50K 字符（防止第三方 provider 发送过多 thinking）
 
   async function runClaudeChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, thinking, system }) {
     const rt = readChatRuntimeConfig()
@@ -1918,12 +1919,17 @@ function setupClaudeHandlers() {
     if (chatId) activeChatAborts.set(chatId, controller)
 
     let fullText = ''
+    let thinkingChars = 0
     const toolUseBlocks = []
     let stopReason = null
     let usage = null
     let chunkCount = 0
 
     try {
+      // 总体请求超时 60 秒（防止第三方 provider 无限挂起）
+      const timeoutSignal = AbortSignal.timeout(60_000)
+      const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal])
+
       const resp = await fetch(url, {
         method: 'POST',
         headers: {
@@ -1932,7 +1938,7 @@ function setupClaudeHandlers() {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: combinedSignal,
       })
 
       if (!resp.ok) {
@@ -1981,8 +1987,11 @@ function setupClaudeHandlers() {
               case 'content_block_delta': {
                 const delta = json.delta || {}
                 if (delta.thinking) {
-                  safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
-                  // thinking 不计入 fullText，不走 chars 上限
+                  // thinking 内容也需要上限，防止第三方 provider 发送过多 thinking 导致卡死
+                  if (thinkingChars < MAX_THINKING_CHARS) {
+                    thinkingChars += delta.thinking.length
+                    safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
+                  }
                 }
                 if (delta.text) {
                   if (fullText.length < MAX_STREAM_CHARS) {
@@ -2019,6 +2028,10 @@ function setupClaudeHandlers() {
     } catch (e) {
       if (controller.signal.aborted) {
         return { fullText, toolUseBlocks: [], stop_reason: 'aborted', usage: null }
+      }
+      // 处理超时错误（AbortSignal.timeout）
+      if (e?.name === 'TimeoutError' || e?.message?.includes('timeout') || e?.message?.includes('The operation was aborted')) {
+        return { fullText, toolUseBlocks: [], stop_reason: 'timeout', usage: null }
       }
       throw e
     } finally {
