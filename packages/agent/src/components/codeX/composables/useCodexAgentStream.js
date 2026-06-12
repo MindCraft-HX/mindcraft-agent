@@ -569,7 +569,7 @@ export function useCodexAgentStream({
     if (!tab) return
 
     const isWorking = msg.type === 'assistant' || msg.type === 'item.started' || msg.type === 'item.updated'
-    if (!tab.thinking && isWorking) tab.thinking = true
+    if (!tab.thinking && isWorking && tab._awaitingDone) tab.thinking = true
 
     if (msg.type === 'assistant') {
       const content = msg.message?.content
@@ -741,6 +741,13 @@ export function useCodexAgentStream({
         scrollBottom(tab.id)
         saveHistory()
         if (post > 0) onCompactBoundary(post)
+        return
+      }
+      if (msg.subtype === 'slow_notice') {
+        const text = msg.message?.content?.[0]?.text || 'Codex 响应较慢，请稍候…'
+        pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text })
+        scrollBottom(tab.id)
+        saveHistory()
         return
       }
       // 已知的 system subtype 已在上面处理，未知 subtype 仅打日志不渲染

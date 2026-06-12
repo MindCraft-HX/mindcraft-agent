@@ -1585,7 +1585,7 @@ function setupCodexSdkHandlers() {
     if (existing && !canStartCodexSessionRun(existing)) {
       if (!isCodexSessionRunTerminal(existing)) {
         console.warn('[codex] duplicate query ignored: session already running. sessionId=', sessionId, 'runId=', existing?.runId || '')
-        return 0
+        return { accepted: false, reason: 'session_already_running' }
       }
       console.warn('[codex] waiting for previous terminal session to close before starting next run. sessionId=', sessionId, 'runId=', existing?.runId || '')
       let closed = await waitForCodexSessionRunToClose(existing, 2500)
@@ -1598,7 +1598,7 @@ function setupCodexSdkHandlers() {
     const settledExisting = codexSessions.get(sessionId)
     if (settledExisting && !canStartCodexSessionRun(settledExisting)) {
       console.warn('[codex] duplicate query ignored after close wait: session still running. sessionId=', sessionId, 'runId=', settledExisting?.runId || '')
-      return 0
+      return { accepted: false, reason: 'session_close_timeout' }
     }
     const runId = nextCodexSessionRunId()
     if (settledExisting && settledExisting.thread) {
@@ -1639,7 +1639,7 @@ function setupCodexSdkHandlers() {
           const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
           safeSend(sender, 'codex-agent-message', {
             sessionId,
-            msg: { type: 'system', message: { content: [{ type: 'text', text: 'Codex 响应较慢，请稍候…' }] } },
+            msg: { type: 'system', subtype: 'slow_notice', message: { content: [{ type: 'text', text: 'Codex 响应较慢，请稍候…' }] } },
           })
         }
       }, 30000)
@@ -2007,7 +2007,10 @@ function setupCodexSdkHandlers() {
             }
 
             if (ev.type === 'thread.error' || ev.type === 'turn.failed') {
-              const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
+              resultReceived = true
+              const session = codexSessions.get(sessionId)
+              if (session?.runId === runId) session.resultReceived = true
+              const sender = session?.event?.sender || event.sender
               safeSend(sender, 'codex-agent-message', {
                 sessionId,
                 msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: `Codex 异常：${ev.message || ev.error?.message || ''}` }] } },

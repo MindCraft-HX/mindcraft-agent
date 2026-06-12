@@ -1828,18 +1828,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }
   trimMessages(tab, true)
   tab.messages.push(userMsg)
-  tab.thinking = true
+  // 飞行锁：设置 _awaitingDone 阻止 IPC 期间重复 send（thinking 在 IPC 确认后设置）
   tab._awaitingDone = true
-  tab._thinkingStart = Date.now()
-  // 保留上一轮有效指标（contextUsage/tokens 等），仅更新本轮运行状态
-  tab.metrics = {
-    ...(tab.metrics || {}),
-    sessionId: tab.sessionId,
-    model: tab.metrics?.model || metricsData.value.model || '',
-    thinking: true,
-    durationMs: 0,
-  }
-  if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
 
   const images = imageAttachments.map(({ dataUrl, mediaType, path, name, size }) => ({
     dataUrl,
@@ -1885,7 +1875,35 @@ async function sendMessage(textOverride = null, targetTab = null) {
     additionalDirectories: ownerProject?.additionalDirectories || [],
   }
   const payload = safeIpcPayload(rawPayload, 'codexAgentQuery')
-  await window.electronAPI.codexAgentQuery?.(payload)
+  let accepted = true
+  try {
+    const result = await window.electronAPI.codexAgentQuery?.(payload)
+    // result === 0：旧版静默拒绝；result?.accepted === false：新版结构化拒绝
+    accepted = result !== 0 && (!result || result.accepted !== false)
+  } catch (_) {
+    accepted = false
+  }
+  if (!accepted) {
+    // 回滚：移除刚 push 的用户消息
+    const idx = tab.messages.findIndex(m => m.id === userMsg.id)
+    if (idx >= 0) tab.messages.splice(idx, 1)
+    tab._awaitingDone = false
+    tab.thinking = false
+    ElMessage.warning('CodeX 正在处理上一轮请求，请稍后重试')
+    saveHistory()
+    return
+  }
+  // IPC 确认接受，设置 thinking 状态
+  tab.thinking = true
+  tab._thinkingStart = Date.now()
+  tab.metrics = {
+    ...(tab.metrics || {}),
+    sessionId: tab.sessionId,
+    model: tab.metrics?.model || metricsData.value.model || '',
+    thinking: true,
+    durationMs: 0,
+  }
+  if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
 }
 
 async function openModelPicker() {
@@ -1918,14 +1936,18 @@ function setSlashEffortLevel(level) {
   }
 }
 
-function abortSession() {
+async function abortSession() {
   const tab = activeTab.value
   if (!tab) return
+  if (tab._queuedInput) tab._queuedInput = ''
+  try {
+    await window.electronAPI.codexAgentAbort?.(tab.sessionId)
+  } catch (_) {
+    // abort 失败不阻塞状态清理
+  }
   tab.thinking = false
   tab._awaitingDone = false
   tab._thinkingStart = null
-  if (tab._queuedInput) tab._queuedInput = ''
-  window.electronAPI.codexAgentAbort?.(tab.sessionId)
   stopMetricsTimer()
   saveHistory()
 }
