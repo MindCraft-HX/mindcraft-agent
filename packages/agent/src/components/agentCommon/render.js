@@ -72,7 +72,8 @@ function isAbsoluteFilePath(value = '') {
   if (!candidate) return false
   if (/^file:\/\//i.test(candidate)) return true
   if (/^\/[a-zA-Z]:[\\/]/.test(candidate)) return true
-  return /^[a-zA-Z]:[\\/]/.test(candidate) || /^\\\\/.test(candidate)
+  // Windows 绝对路径 (D:\) / UNC (\\server) / Unix 绝对路径 (/home/...)
+  return /^[a-zA-Z]:[\\/]/.test(candidate) || /^\\\\/.test(candidate) || /^\/(?!\/)./.test(candidate)
 }
 
 function normalizeLocalPathHref(value = '') {
@@ -93,7 +94,11 @@ function isStrongLocalPathCandidate(text = '') {
   if (isAbsoluteFilePath(value)) return true
   const normalized = value.replace(/\\/g, '/')
   if (/^\.{1,2}\//.test(normalized)) return true
-  return /^(docs|src|electron|tests|build|packages|docs\/plan)\//.test(normalized)
+  // 已知工程目录前缀白名单
+  if (/^(docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)\//.test(normalized)) return true
+  // 通用兜底：≥3 字符目录名 + 常见源码扩展名的文件（如 foo/bar.ts）
+  // 最短目录名限制过滤掉 he/she.go 等英文短语假阳性
+  return /^[a-zA-Z_][\w.-]{2,}\/[^\s]+\.(?:tsx?|jsx?|cjs|mjs|vue|py|rb|java|go|rs|c|cc|cpp|h|hpp|css|scss|less|html?|xml|ya?ml|json|toml|ini|conf|env|sh|ps1|bat|cmd|sql|md|txt|log|svg|png|jpe?g|gif|ico)$/i.test(normalized)
 }
 
 function createPathCandidateAnchor(label, candidate) {
@@ -102,7 +107,8 @@ function createPathCandidateAnchor(label, candidate) {
 }
 
 function linkifyStrongLocalPaths(input = '') {
-  const candidatePattern = /(^|[\s(])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:(?:docs|src|electron|tests|build|packages)(?:[\\/][^\s<>"')\]]+)+)|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
+  // 匹配 Windows 绝对路径 | UNC | Unix 绝对路径 | 目录/文件 模式 | ./ 或 ../
+  const candidatePattern = /(^|[\s(])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
   return String(input || '').replace(candidatePattern, (match, prefix, candidate) => {
     if (!isStrongLocalPathCandidate(candidate)) return match
     return `${prefix}${createPathCandidateAnchor(candidate, candidate)}`

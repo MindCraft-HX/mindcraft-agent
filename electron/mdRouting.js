@@ -18,13 +18,11 @@ function openMdInMain(payload) {
   if (!mainWin || mainWin.isDestroyed()) return
 
   if (payload) {
-    if (mdViewerReady) {
-      mainWin.webContents.send('md-content', payload)
-    } else {
-      pendingPayloads.push(payload)
-      if (pendingPayloads.length > MAX_PENDING_PAYLOADS) {
-        pendingPayloads = pendingPayloads.slice(-MAX_PENDING_PAYLOADS)
-      }
+    // 始终排队到 pendingPayloads，由渲染端 onMounted 时通过 getPendingMdContent 统一拉取
+    // 避免 mdViewerReady=true 时直接 send('md-content') 在组件挂载前到达而丢失
+    pendingPayloads.push(payload)
+    if (pendingPayloads.length > MAX_PENDING_PAYLOADS) {
+      pendingPayloads = pendingPayloads.slice(-MAX_PENDING_PAYLOADS)
     }
   }
 

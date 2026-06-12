@@ -125,7 +125,10 @@ function upsertTab(nextTab) {
 async function ensurePayloadContent(payload = {}) {
   if (!payload?.filePath || payload.content || payload.data) return payload
   const file = await window.electronAPI?.readFileByPath?.(payload.filePath)
-  if (!file) return payload
+  if (!file) {
+    ElMessage.error('文件读取失败：' + (payload.filePath || '未知文件'))
+    return { ...payload, content: '', isLoading: false }
+  }
   return {
     ...payload,
     name: payload.name || file.name,

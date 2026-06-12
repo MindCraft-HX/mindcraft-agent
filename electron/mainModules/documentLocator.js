@@ -52,7 +52,8 @@ function normalizeCandidate(rawText = '') {
 
 function isAbsoluteFilePath(value = '') {
   const candidate = String(value || '')
-  return /^[a-zA-Z]:[\\/]/.test(candidate) || candidate.startsWith('\\\\')
+  // Windows 绝对路径 (D:\) / UNC (\\server) / Unix 绝对路径 (/home/...)
+  return /^[a-zA-Z]:[\\/]/.test(candidate) || candidate.startsWith('\\\\') || /^\/(?!\/)./.test(candidate)
 }
 
 function normalizeForSearch(value = '') {

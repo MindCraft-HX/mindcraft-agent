@@ -1776,67 +1776,58 @@ function setupClaudeHandlers() {
   // 从 mindcraft-electron 导入 Claude 配置（手动触发）
   ipcMain.handle('claude-import-legacy-config', (_, customPath) => {
     const imported = { providers: 0, tierModels: false }
-    const diag = { dir: null, file: null, fileSize: 0, keys: [] }
     try {
       const legacyDir = customPath || findLegacyUserData()
       if (!legacyDir) return { notFound: true }
-      diag.dir = legacyDir
 
-      // 读取 mindcraft-electron 的 claude-internal.json
+      // ① 优先从 mindcraft-electron 的 claude-internal.json 读取 Provider 列表
       const internalPath = path.join(legacyDir, 'claude-internal.json')
-      diag.file = internalPath
+      if (fs.existsSync(internalPath)) {
+        let legacy = {}
+        try { legacy = JSON.parse(fs.readFileSync(internalPath, 'utf8')) } catch {}
 
-      // 文件不存在 → 用户可能只用简单 Key 模式，没有创建过 Provider
-      if (!fs.existsSync(internalPath)) {
+        if (legacy.claudeProviders?.providers?.length) {
+          confSet('claudeProviders', legacy.claudeProviders)
+          imported.providers = legacy.claudeProviders.providers.length
+        }
+        if (legacy.tierModels && typeof legacy.tierModels === 'object') {
+          confSet('tierModels', legacy.tierModels)
+          imported.tierModels = true
+        }
+        if (typeof legacy.claudeModel === 'string' && legacy.claudeModel.trim()) {
+          internalConf.set('claudeModel', legacy.claudeModel.trim())
+        }
+        if (typeof legacy.claudeThinkingEnabled === 'boolean') {
+          internalConf.set('claudeThinkingEnabled', legacy.claudeThinkingEnabled)
+        }
+      }
+
+      // ② 没有 Provider 时，从共享的 ~/.claude/settings.json 用 Key 创建一个默认 Provider
+      if (!imported.providers) {
         const sj = readSystemSettingsJson() || {}
-        const sharedKey = sj.env?.ANTHROPIC_AUTH_TOKEN || sj.primaryApiKey || sj.apiKey || ''
-        return { success: true, imported, note: sharedKey ? 'keyAlreadyShared' : 'noProviders', diag }
+        const key = sj.env?.ANTHROPIC_AUTH_TOKEN || sj.primaryApiKey || sj.apiKey || ''
+        if (key) {
+          const url = sj.env?.ANTHROPIC_BASE_URL || sj.baseURL || sj.apiBaseUrl || ''
+          const defaultProvider = {
+            name: '从 MindCraft 导入',
+            key,
+            url,
+            config: sj,
+            tierModels: {
+              haiku: (sj.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').trim(),
+              sonnet: (sj.env?.ANTHROPIC_DEFAULT_SONNET_MODEL || '').trim(),
+              opus: (sj.env?.ANTHROPIC_DEFAULT_OPUS_MODEL || '').trim(),
+              reasoning: (sj.env?.ANTHROPIC_REASONING_MODEL || '').trim(),
+            },
+          }
+          confSet('claudeProviders', { providers: [defaultProvider], activeIdx: 0 })
+          imported.providers = 1
+        }
       }
 
-      let legacy = {}
-      try {
-        const raw = fs.readFileSync(internalPath, 'utf8')
-        diag.fileSize = raw.length
-        legacy = JSON.parse(raw)
-        diag.keys = Object.keys(legacy).filter(k => typeof legacy[k] !== 'undefined' && legacy[k] !== null)
-      } catch (e) {
-        diag.parseError = e?.message || String(e)
-        return { success: true, imported, note: 'emptyFile', diag }
-      }
-
-      // 导入 providers 列表
-      const provData = legacy.claudeProviders
-      if (provData?.providers?.length) {
-        confSet('claudeProviders', provData)
-        imported.providers = provData.providers.length
-        diag.providerNames = provData.providers.map(p => p?.name || '(未命名)')
-      } else if (provData && !provData.providers) {
-        diag.providersNote = 'claudeProviders exists but .providers is missing/empty'
-      } else if (provData === undefined) {
-        diag.providersNote = 'claudeProviders key not found in file'
-      } else {
-        diag.providersNote = 'claudeProviders.providers is empty or null'
-      }
-
-      // 导入 tier models
-      if (legacy.tierModels && typeof legacy.tierModels === 'object') {
-        confSet('tierModels', legacy.tierModels)
-        imported.tierModels = true
-      }
-
-      // 导入 model（真实模型 ID，存 internalConf）
-      if (typeof legacy.claudeModel === 'string' && legacy.claudeModel.trim()) {
-        internalConf.set('claudeModel', legacy.claudeModel.trim())
-      }
-
-      // 导入 thinking enabled
-      if (typeof legacy.claudeThinkingEnabled === 'boolean') {
-        internalConf.set('claudeThinkingEnabled', legacy.claudeThinkingEnabled)
-      }
-
-      return { success: true, imported, diag }
+      return { success: true, imported }
     } catch (e) {
-      return { success: false, error: e?.message || String(e), diag }
+      return { success: false, error: e?.message || String(e) }
     }
   })
 
