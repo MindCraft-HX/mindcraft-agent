@@ -101,7 +101,7 @@
     "productName": "MindCraft-Agent",
     "copyright": "Copyright © 2025 GENITOP",
     "releaseInfo": {
-      "releaseNotesFile": "release/release-1.0.0.md"
+      "releaseNotesFile": "release/release-1.0.1.md"
     },
     "extraMetadata": {
       "mode": "testing",
@@ -175,12 +175,12 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://download.mindcraft.com.cn/MindCraft/installer/win"
+        "url": "https://download.mindcraft.com.cn/MindCraft-Agent/installer/win"
       }
     ]
   },
   "overrides": {
     "canvas": "npm:browser-canvas@1.0.0"
   },
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
