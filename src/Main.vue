@@ -214,7 +214,7 @@ window.electronAPI?.openTabByName?.((progress) => {
     width: 44px;
     height: 44px;
     background-image: url(./assets/mindcraft_logo_svg.svg);
-    background-size: 125%;
+    background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
   }
