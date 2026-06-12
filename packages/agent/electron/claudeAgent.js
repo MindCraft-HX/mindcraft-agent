@@ -1899,11 +1899,18 @@ function setupClaudeHandlers() {
     if (system) body.system = system
     if (tools && tools.length > 0) body.tools = tools
     if (tool_choice) body.tool_choice = tool_choice
+    let thinkingRequested = false
     if (thinking) {
-      const budget = Math.max(512, Math.min(thinking.budget_tokens || 4096, 4096))
-      body.thinking = { type: 'enabled', budget_tokens: budget }
-      body.max_tokens = Math.max(body.max_tokens, budget + 512)
-      body.max_tokens = Math.min(body.max_tokens, 8192)
+      if (thinking.type === 'disabled') {
+        // 显式关闭思考（第三方 provider 可能不理会，已尽力）
+        body.thinking = { type: 'disabled' }
+      } else {
+        const budget = Math.max(512, Math.min(thinking.budget_tokens || 4096, 4096))
+        body.thinking = { type: 'enabled', budget_tokens: budget }
+        body.max_tokens = Math.max(body.max_tokens, budget + 512)
+        body.max_tokens = Math.min(body.max_tokens, 8192)
+        thinkingRequested = true
+      }
     }
     body.max_tokens = Math.min(body.max_tokens, 8192)
 
@@ -1974,7 +1981,10 @@ function setupClaudeHandlers() {
               case 'content_block_delta': {
                 const delta = json.delta || {}
                 if (delta.thinking) {
-                  safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
+                  // 思考开关关闭时，丢弃 thinking 事件（第三方 provider 可能忽略 thinking.type: 'disabled'）
+                  if (thinkingRequested) {
+                    safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
+                  }
                   // thinking 不计入 fullText，不走 chars 上限
                 }
                 if (delta.text) {

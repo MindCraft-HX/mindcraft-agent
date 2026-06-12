@@ -206,16 +206,24 @@ export function useChatStream(chatSession) {
     const tc = thinkingConf()
     // 简易对话 max_tokens 硬上限（防止第三方模型 thinking 模式产生过长输出导致 OOM）
     const MAX_RESPONSE_TOKENS = 8192
-    if (tc) {
-      if (provider === 'claude') {
+    if (provider === 'claude') {
+      if (tc) {
         payload.thinking = { type: 'enabled', budget_tokens: tc.budget }
         // max_tokens 必须 > budget_tokens，但 capped 防止 OOM
         payload.max_tokens = Math.min(Math.max(tc.budget + 1024, 4096), MAX_RESPONSE_TOKENS)
       } else {
-        payload.reasoning_effort = tc.effort
+        // 显式关闭思考（第三方 provider 可能忽略此参数，已尽力）
+        payload.thinking = { type: 'disabled' }
       }
+      if (!payload.max_tokens) payload.max_tokens = MAX_RESPONSE_TOKENS
+    } else {
+      // CodeX / Responses API：reasoning.effort 精确控制
+      // 'off' → 'none'（彻底关），其他 → 对应 effort 值
+      const effort = chatSession.currentSession.thinkingLevel === 'off'
+        ? 'none'
+        : (tc?.effort || 'medium')
+      payload.reasoning = { effort }
     }
-    if (provider === 'claude' && !payload.max_tokens) payload.max_tokens = MAX_RESPONSE_TOKENS
 
     // assistant 占位消息（流式渲染目标）
     const assistantMsg = {
@@ -240,6 +248,8 @@ export function useChatStream(chatSession) {
         if (textBlock) textBlock.text += text
       }
       const onThinking = (text) => {
+        // 思考开关关闭时，丢弃 thinking 事件（第三方 provider 可能忽略 thinking.type: 'disabled'）
+        if (!tc) return
         lastActivity = Date.now()
         const msg = chatSession.getLastAssistant?.()
         if (msg) {

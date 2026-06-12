@@ -3276,7 +3276,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  // ── 简易对话：CodeX (OpenAI Chat Completions) streaming ──
+  // ── 简易对话：CodeX (OpenAI Responses API) streaming ──
   // chatId -> AbortController（支持渲染进程主动中止）
   const activeChatAborts = new Map()
 
@@ -3284,22 +3284,110 @@ function setupCodexSdkHandlers() {
   const MAX_STREAM_CHUNKS = 5000
   const MAX_STREAM_CHARS = 100_000
 
-  async function runCodexChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, reasoning_effort }) {
+  /** 将 Chat Completions 格式消息转成 Responses API input 格式 */
+  function messagesToResponsesInput(messages) {
+    if (!Array.isArray(messages)) return []
+    const input = []
+    for (const m of messages) {
+      if (m.role === 'user') {
+        // 多模态：Responses API content 块格式与 Chat Completions 略有不同
+        if (Array.isArray(m.content)) {
+          const blocks = m.content.map(b => {
+            if (b.type === 'image_url' && b.image_url?.url) {
+              return { type: 'input_image', image_url: b.image_url.url }
+            }
+            if (b.type === 'text') {
+              return { type: 'input_text', text: b.text || '' }
+            }
+            return b
+          })
+          input.push({ role: 'user', content: blocks })
+        } else {
+          input.push({ role: 'user', content: m.content || '' })
+        }
+      } else if (m.role === 'system') {
+        input.push({ role: 'system', content: m.content || '' })
+      } else if (m.role === 'assistant') {
+        // assistant content 可能是纯文本或数组
+        let text = ''
+        if (typeof m.content === 'string') {
+          text = m.content
+        } else if (Array.isArray(m.content)) {
+          text = m.content.filter(c => c.type === 'text').map(c => c.text || '').join('')
+        }
+        input.push({ role: 'assistant', content: text })
+        // Chat Completions 的 assistant.tool_calls → Responses API 的 function_call items
+        if (Array.isArray(m.tool_calls)) {
+          for (const tc of m.tool_calls) {
+            if (!tc.id) continue
+            input.push({
+              type: 'function_call',
+              id: tc.id,
+              call_id: tc.id,
+              name: tc.function?.name || '',
+              arguments: tc.function?.arguments || '',
+            })
+          }
+        }
+      } else if (m.role === 'tool') {
+        input.push({
+          type: 'function_call_output',
+          call_id: m.tool_call_id || '',
+          output: m.content || '',
+        })
+      }
+    }
+    return input
+  }
+
+  async function runCodexChatStream(event, { chatId, messages, model, tools, max_tokens, reasoning }) {
     const rt = readRuntimeConfig()
     if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 CodeX Provider）')
 
     const baseURL = rt.baseURL || 'https://api.openai.com/v1'
-    const url = baseURL.replace(/\/+$/, '') + '/chat/completions'
+    // 只有官方 OpenAI API 支持 Responses API，第三方 API 回退到 Chat Completions
+    const isOfficialOpenAI = baseURL.includes('api.openai.com')
+    const endpoint = isOfficialOpenAI ? '/responses' : '/chat/completions'
+    const url = baseURL.replace(/\/+$/, '') + endpoint
+
+    const input = isOfficialOpenAI ? messagesToResponsesInput(messages) : messages
 
     const body = {
       model: model || rt.model || 'gpt-4o',
-      messages,
       stream: true,
     }
-    if (max_tokens) body.max_tokens = Math.min(max_tokens, 8192)
-    if (tools && tools.length > 0) { body.tools = tools }
-    if (tool_choice) { body.tool_choice = tool_choice }
-    if (reasoning_effort) { body.reasoning_effort = reasoning_effort }
+
+    if (isOfficialOpenAI) {
+      // Responses API 格式
+      body.input = input
+      if (max_tokens) body.max_output_tokens = Math.min(max_tokens, 8192)
+      if (reasoning) body.reasoning = reasoning
+      if (tools && tools.length > 0) {
+        // Chat Completions 工具定义（嵌套 function）→ Responses API 格式（扁平）
+        body.tools = tools.map(t => {
+          if (t.function) {
+            return {
+              type: t.type || 'function',
+              name: t.function.name || '',
+              description: t.function.description || '',
+              parameters: t.function.parameters || {},
+            }
+          }
+          return t
+        })
+      }
+    } else {
+      // Chat Completions 格式（兼容第三方 API）
+      body.messages = input
+      if (max_tokens) body.max_tokens = Math.min(max_tokens, 8192)
+      // reasoning.effort → Chat Completions 的 reasoning_effort（扁平）
+      if (reasoning?.effort && reasoning.effort !== 'none') {
+        body.reasoning_effort = reasoning.effort
+      }
+      if (tools && tools.length > 0) {
+        body.tools = tools
+      }
+    }
 
     const controller = new AbortController()
     if (chatId) activeChatAborts.set(chatId, controller)
@@ -3322,7 +3410,7 @@ function setupCodexSdkHandlers() {
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
-        throw new Error(`OpenAI API ${resp.status}: ${errText.slice(0, 300)}`)
+        throw new Error(`OpenAI Responses API ${resp.status}: ${errText.slice(0, 300)}`)
       }
 
       const reader = resp.body.getReader()
@@ -3354,29 +3442,81 @@ function setupCodexSdkHandlers() {
               break
             }
 
-            const choice = json.choices?.[0]
-            if (!choice) continue
-            if (choice.finish_reason) finishReason = choice.finish_reason
+            // Responses API 格式
+            if (isOfficialOpenAI) {
+              switch (json.type) {
+                case 'response.output_text.delta':
+                  if (fullText.length < MAX_STREAM_CHARS) {
+                    fullText += json.delta || ''
+                    safeSend(event.sender, 'codex-stream-chunk', { chatId, text: json.delta || '' })
+                  }
+                  break
 
-            const delta = choice.delta || {}
-            if (delta.reasoning_content) {
-              // 推理增量（部分 OpenAI 兼容服务）：只回传进度提示
-              safeSend(event.sender, 'codex-stream-thinking', { chatId, text: delta.reasoning_content })
-            }
-            if (delta.content) {
-              if (fullText.length < MAX_STREAM_CHARS) {
-                fullText += delta.content
-                safeSend(event.sender, 'codex-stream-chunk', { chatId, text: delta.content })
+                case 'response.reasoning_text.delta':
+                  // 思考开关关闭时，丢弃 thinking 事件
+                  if (reasoning?.effort && reasoning.effort !== 'none') {
+                    safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
+                  }
+                  break
+
+                case 'response.output_item.added':
+                  if (json.item?.type === 'function_call') {
+                    const item = json.item
+                    const idx = toolCalls.length
+                    toolCalls.push({
+                      id: item.id || '',
+                      type: 'function',
+                      function: { name: item.name || '', arguments: '' },
+                    })
+                    safeSend(event.sender, 'codex-stream-tool-delta', {
+                      chatId, index: idx, id: item.id || '', name: item.name || '', arguments: '',
+                    })
+                  }
+                  break
+
+                case 'response.output_item.done':
+                  if (json.item?.type === 'function_call') {
+                    const item = json.item
+                    const matchId = item.id || item.call_id || ''
+                    const idx = toolCalls.findIndex(tc => tc.id === matchId)
+                    if (idx >= 0) {
+                      toolCalls[idx].function.arguments = item.arguments || ''
+                    }
+                  }
+                  break
+
+                case 'response.completed':
+                  finishReason = json.response?.status || 'completed'
+                  break
               }
-            }
-            if (delta.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                const idx = tc.index || 0
-                while (toolCalls.length <= idx) toolCalls.push({ id: '', type: 'function', function: { name: '', arguments: '' } })
-                if (tc.id) toolCalls[idx].id = tc.id
-                if (tc.function?.name) toolCalls[idx].function.name += tc.function.name
-                if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments
-                safeSend(event.sender, 'codex-stream-tool-delta', { chatId, index: idx, id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments })
+            } else {
+              // Chat Completions 格式（兼容第三方 API）
+              const choice = json.choices?.[0]
+              if (!choice) continue
+              if (choice.finish_reason) finishReason = choice.finish_reason
+
+              const delta = choice.delta || {}
+              if (delta.reasoning_content) {
+                // 思考开关关闭时，丢弃 thinking 事件
+                if (reasoning?.effort && reasoning.effort !== 'none') {
+                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: delta.reasoning_content })
+                }
+              }
+              if (delta.content) {
+                if (fullText.length < MAX_STREAM_CHARS) {
+                  fullText += delta.content
+                  safeSend(event.sender, 'codex-stream-chunk', { chatId, text: delta.content })
+                }
+              }
+              if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index || 0
+                  while (toolCalls.length <= idx) toolCalls.push({ id: '', type: 'function', function: { name: '', arguments: '' } })
+                  if (tc.id) toolCalls[idx].id = tc.id
+                  if (tc.function?.name) toolCalls[idx].function.name += tc.function.name
+                  if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments
+                  safeSend(event.sender, 'codex-stream-tool-delta', { chatId, index: idx, id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments })
+                }
               }
             }
           }
