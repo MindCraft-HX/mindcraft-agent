@@ -24,6 +24,7 @@
                 v-for="proj in recentProject.projects.slice(0, 4)"
                 :key="proj.sessionId || proj.projectName + proj.chatName"
                 class="project-entry"
+                @click.stop="router.push({ path: '/main/codeHub', query: { agent: proj.agentType, projectId: proj.projectId } })"
               >
                 <span class="badge" :style="{ background: proj.agentColor }">
                   {{ proj.agentName }}

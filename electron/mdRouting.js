@@ -18,11 +18,16 @@ function openMdInMain(payload) {
   if (!mainWin || mainWin.isDestroyed()) return
 
   if (payload) {
-    // 始终排队到 pendingPayloads，由渲染端 onMounted 时通过 getPendingMdContent 统一拉取
-    // 避免 mdViewerReady=true 时直接 send('md-content') 在组件挂载前到达而丢失
+    // 入队兜底：保证刷新/首访等场景下 onMounted→getPendingMdContent 可拉到
     pendingPayloads.push(payload)
     if (pendingPayloads.length > MAX_PENDING_PAYLOADS) {
       pendingPayloads = pendingPayloads.slice(-MAX_PENDING_PAYLOADS)
+    }
+    // 直投路径：keep-alive 保留组件实例，onMounted 不会重新触发导致队列无人消费，
+    // 已就绪时必须直接投递给活跃的 onMdContent 监听器。
+    // did-start-loading 会在刷新前重置 mdViewerReady=false，不会误投到已销毁的组件。
+    if (mdViewerReady) {
+      mainWin.webContents.send('md-content', payload)
     }
   }
 

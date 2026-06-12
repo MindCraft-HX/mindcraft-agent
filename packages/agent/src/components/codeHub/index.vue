@@ -270,6 +270,18 @@ function restoreActiveTab() {
 
   const saved = localStorage.getItem('codehub_active_tab')
   const requestedAgent = normalizeRequestedAgent(route.query?.agent)
+  const requestedProjectId = route.query?.projectId || ''
+
+  // 优先匹配 query 指定的 projectId + agent 组合
+  if (requestedProjectId && requestedAgent) {
+    const exact = tabs.find(t => t.agentType === requestedAgent && String(t.projectId) === String(requestedProjectId))
+    if (exact) { activateTab(exact); return }
+  }
+  if (requestedProjectId) {
+    const byProject = tabs.find(t => String(t.projectId) === String(requestedProjectId))
+    if (byProject) { activateTab(byProject); return }
+  }
+
   const match = pickInitialCodeHubTab({
     tabs,
     savedTabId: saved,

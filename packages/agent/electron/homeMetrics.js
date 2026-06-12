@@ -353,6 +353,7 @@ function getRecentProject() {
       const projects = state?.projects || []
       for (const proj of projects) {
         const chats = proj?.chats || []
+        const derivedName = proj.cwd ? proj.cwd.split(/[\\/]/).pop() || '' : ''
         for (const chat of chats) {
           const ts = chat.updatedAt || chat.createdAt
           if (ts) {
@@ -360,9 +361,10 @@ function getRecentProject() {
               agentType: 'claudeCode',
               agentName: 'Claude Code',
               agentColor: '#D97757',
-              projectName: proj.name || '未命名项目',
+              projectName: derivedName || proj.name || '未命名项目',
               chatName: chat.name || '新对话',
               cwd: proj.cwd || '',
+              projectId: proj.id,
               sessionId: chat.cliSessionId || chat.sessionId || '',
               updatedAt: ts,
             })
@@ -381,6 +383,7 @@ function getRecentProject() {
       const projects = state?.projects || []
       for (const proj of projects) {
         const chats = proj?.chats || []
+        const derivedName = proj.cwd ? proj.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : ''
         for (const chat of chats) {
           const ts = chat.updatedAt || chat.createdAt
           if (ts) {
@@ -388,9 +391,10 @@ function getRecentProject() {
               agentType: 'codex',
               agentName: 'GPT Codex',
               agentColor: '#74AA9C',
-              projectName: proj.name || '未命名项目',
+              projectName: derivedName || proj.name || '未命名项目',
               chatName: chat.name || '新对话',
               cwd: proj.cwd || '',
+              projectId: proj.id,
               sessionId: chat.cliSessionId || chat.sessionId || '',
               updatedAt: ts,
             })
