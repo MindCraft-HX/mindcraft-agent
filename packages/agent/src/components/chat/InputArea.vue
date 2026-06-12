@@ -44,22 +44,20 @@
               <polyline points="2 3.5 5 6.5 8 3.5"/>
             </svg>
           </button>
-          <Teleport to="body">
-            <div v-if="modelDropdownOpen" class="model-popover" :style="popoverStyle" @click.stop>
-              <div class="model-popover-scroll">
-                <div
-                  v-for="m in modelOptions"
-                  :key="m.value"
-                  class="model-option"
-                  :class="{ selected: m.value === localModel }"
-                  @click="selectModel(m)"
-                >
-                  <span class="model-option-tier">{{ m.tier ? tierLabel(m.tier) : m.label.split(' · ')[0] }}</span>
-                  <span class="model-option-id">{{ m.value }}</span>
-                </div>
+          <div v-if="modelDropdownOpen" class="model-popover" :style="popoverStyle" @click.stop>
+            <div class="model-popover-scroll">
+              <div
+                v-for="m in modelOptions"
+                :key="m.value"
+                class="model-option"
+                :class="{ selected: m.value === localModel }"
+                @click="selectModel(m)"
+              >
+                <span class="model-option-tier">{{ m.tier ? tierLabel(m.tier) : m.label.split(' · ')[0] }}</span>
+                <span class="model-option-id">{{ m.value }}</span>
               </div>
             </div>
-          </Teleport>
+          </div>
         </div>
       </div>
 
@@ -160,7 +158,17 @@ const popoverStyle = computed(() => {
   const el = modelPickerRef.value
   if (!el) return { top: '0px', left: '0px' }
   const rect = el.getBoundingClientRect()
-  return { top: (rect.bottom + 4) + 'px', left: rect.left + 'px', minWidth: Math.max(rect.width, 220) + 'px' }
+  const minH = 250 // 预估 popover 最小高度
+  const spaceBelow = window.innerHeight - rect.bottom
+  const spaceAbove = rect.top
+  const style = { left: rect.left + 'px', minWidth: Math.max(rect.width, 220) + 'px' }
+  // 下方空间不足时向上弹出
+  if (spaceBelow < minH && spaceAbove > spaceBelow) {
+    style.bottom = (window.innerHeight - rect.top + 4) + 'px'
+  } else {
+    style.top = (rect.bottom + 4) + 'px'
+  }
+  return style
 })
 function closeModelDropdown(e) {
   if (modelDropdownOpen.value && modelPickerRef.value && !modelPickerRef.value.contains(e.target)) {

@@ -60,6 +60,37 @@ function genChatId() {
 }
 
 /**
+ * 大图压缩：超过 1024px 缩放到 1024px 并转 JPEG 0.8 质量
+ * 防止原始大图 base64（可达 10-15 MB）在工具循环中反复序列化导致 OOM
+ */
+async function compressLargeImage(data, mediaType) {
+  const MAX_DIM = 1024
+  const JPEG_QUALITY = 0.8
+
+  // 如果已经是小图或 JPEG，跳过
+  if (mediaType === 'image/jpeg') return { data, mediaType }
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      if (img.width <= MAX_DIM && img.height <= MAX_DIM) {
+        resolve({ data, mediaType })
+        return
+      }
+      const ratio = Math.min(MAX_DIM / img.width, MAX_DIM / img.height)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * ratio)
+      canvas.height = Math.round(img.height * ratio)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      const compressed = canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1]
+      resolve({ data: compressed, mediaType: 'image/jpeg' })
+    }
+    img.onerror = () => resolve({ data, mediaType })
+    img.src = `data:${mediaType};base64,${data}`
+  })
+}
+
+/**
  * 简易对话 - 流式管理 + Tool Loop
  *
  * 会话内消息使用统一的内部格式（与 provider 无关），发请求时按 provider 转换：
@@ -371,7 +402,9 @@ export function useChatStream(chatSession) {
       for (const img of (images || [])) {
         const data = img.data || img.base64 || (typeof img.dataUrl === 'string' ? img.dataUrl.split(',')[1] : '')
         if (!data) continue
-        userContent.push({ type: 'image', mediaType: img.mediaType || 'image/png', data })
+        // 压缩大图，防止 base64 过大导致 OOM
+        const { data: compressed, mediaType: compressedType } = await compressLargeImage(data, img.mediaType || 'image/png')
+        userContent.push({ type: 'image', mediaType: compressedType, data: compressed })
       }
       userContent.push({ type: 'text', text: text || '' })
       chatSession.addMessage({ role: 'user', content: userContent })
