@@ -80,7 +80,7 @@
           </div>
           <div class="stat-item">
             <span class="stat-label">缓存</span>
-            <span class="stat-value">{{ formatNumber(todayStats.combined.cacheReadTokens + todayStats.combined.cacheCreationTokens) }}</span>
+            <span class="stat-value">{{ formatNumber(todayStats.combined.cacheReadTokens) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">费用</span>

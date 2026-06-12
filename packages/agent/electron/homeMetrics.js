@@ -256,7 +256,7 @@ function getTokenTrend(days) {
   const claudeProjectsDir = path.join(os.homedir(), '.claude', 'projects')
   const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions')
 
-  // 聚合 Map: dateStr -> { claudeInput, claudeOutput, claudeCache, codexInput, codexOutput, codexCache }
+  // 聚合 Map: dateStr -> { claudeInput, claudeOutput, claudeCacheRead, codexInput, codexOutput, codexCacheRead }
   const dateAgg = new Map()
 
   // Claude
@@ -266,10 +266,10 @@ function getTokenTrend(days) {
       if (!lines.length) return
       const { dateMap } = parseClaudeLines(lines)
       for (const [date, vals] of dateMap) {
-        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCache: 0, codexInput: 0, codexOutput: 0, codexCache: 0 }
+        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0, codexInput: 0, codexOutput: 0, codexCacheRead: 0 }
         cur.claudeInput += vals.input
         cur.claudeOutput += vals.output
-        cur.claudeCache += (vals.cacheRead || 0) + (vals.cacheCreation || 0)
+        cur.claudeCacheRead += (vals.cacheRead || 0)
         dateAgg.set(date, cur)
       }
     })
@@ -282,10 +282,10 @@ function getTokenTrend(days) {
       if (!lines.length) return
       const { dateMap } = parseCodexLines(lines)
       for (const [date, vals] of dateMap) {
-        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCache: 0, codexInput: 0, codexOutput: 0, codexCache: 0 }
+        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0, codexInput: 0, codexOutput: 0, codexCacheRead: 0 }
         cur.codexInput += vals.input
         cur.codexOutput += vals.output
-        cur.codexCache += (vals.cacheRead || 0) + (vals.cacheCreation || 0)
+        cur.codexCacheRead += (vals.cacheRead || 0)
         dateAgg.set(date, cur)
       }
     })
@@ -307,20 +307,20 @@ function getTokenTrend(days) {
         dateFull: dateStr,
         claudeInput: agg.claudeInput,
         claudeOutput: agg.claudeOutput,
-        claudeCache: agg.claudeCache,
+        claudeCacheRead: agg.claudeCacheRead,
         codexInput: agg.codexInput,
         codexOutput: agg.codexOutput,
-        codexCache: agg.codexCache,
-        totalInput: agg.claudeInput + agg.codexInput,
+        codexCacheRead: agg.codexCacheRead,
+        totalInput: Math.max(0, agg.claudeInput - agg.claudeCacheRead) + Math.max(0, agg.codexInput - agg.codexCacheRead),
         totalOutput: agg.claudeOutput + agg.codexOutput,
-        totalCache: agg.claudeCache + agg.codexCache,
+        totalCache: agg.claudeCacheRead + agg.codexCacheRead,
       })
     } else {
       result.push({
         date: displayDate,
         dateFull: dateStr,
-        claudeInput: 0, claudeOutput: 0, claudeCache: 0,
-        codexInput: 0, codexOutput: 0, codexCache: 0,
+        claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0,
+        codexInput: 0, codexOutput: 0, codexCacheRead: 0,
         totalInput: 0, totalOutput: 0, totalCache: 0,
       })
     }
