@@ -939,9 +939,17 @@ function setupClaudeHandlers() {
   ipcMain.handle('plugins-get-state', async () => {
     const state = readPluginsState()
     const installed = await readInstalledPlugins()
-    const installedMap = new Map(installed.map(p => [p.id, p]))
+    // 双索引匹配：先精确 ID，失败则按插件名 fallback
+    // （不同 marketplace 目录名会导致 ID 后缀不同，如 anthropics-claude-plugins-official vs claude-plugins-official）
+    const installedById = new Map(installed.map(p => [p.id, p]))
+    const installedByName = new Map()
+    for (const p of installed) {
+      const name = (p.id || '').split('@')[0]
+      if (name && !installedByName.has(name)) installedByName.set(name, p)
+    }
     for (const p of state.plugins) {
-      const match = installedMap.get(p.id)
+      let match = installedById.get(p.id)
+      if (!match) match = installedByName.get((p.id || '').split('@')[0])
       p.installed = !!match
       p.enabled = match ? match.enabled : true
     }
@@ -2825,7 +2833,26 @@ function setupClaudeHandlers() {
 
   ipcMain.handle('skills-get-state', async (_, { cwd }) => {
     try {
-      const catalog = getSkillsCatalog()
+      let catalog = getSkillsCatalog()
+
+      // 运行时兜底：catalog 文件不存在时从 API 拉取（dev 模式 / 首次启动）
+      if (catalog.version === '0' && !catalog.skills.length) {
+        try {
+          const { fetchSkillsForCLI } = await import('agent-skills-cli')
+          const result = await fetchSkillsForCLI({ page: 1, limit: 100, sortBy: 'stars' })
+          const mapSkill = (s) => ({
+            name: s.name, displayName: s.name, description: s.description || '',
+            author: s.author || '', category: '', tags: [],
+            sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
+            gitUrl: s.githubUrl || '',
+            subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
+            installs: s.stars || 0,
+          })
+          catalog = { version: '1', skills: (result.skills || []).map(mapSkill) }
+          _skillsCatalogCache = catalog // session 级缓存，下次调用直接命中
+        } catch (_) { /* 网络不通静默回退到空 catalog */ }
+      }
+
       const systemDir = path.join(os.homedir(), '.claude', 'skills')
       const projectDir = path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills')
       const installed = scanSkillsDirs(systemDir, projectDir)

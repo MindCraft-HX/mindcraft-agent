@@ -2399,7 +2399,26 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-skills-get-state', async (_, { cwd }) => {
     try {
-      const catalog = codexGetSkillsCatalog()
+      let catalog = codexGetSkillsCatalog()
+
+      // 运行时兜底：catalog 文件不存在时从 API 拉取（dev 模式 / 首次启动）
+      if (catalog.version === '0' && !catalog.skills.length) {
+        try {
+          const { fetchSkillsForCLI } = await import('agent-skills-cli')
+          const result = await fetchSkillsForCLI({ page: 1, limit: 100, sortBy: 'stars' })
+          const mapSkill = (s) => ({
+            name: s.name, displayName: s.name, description: s.description || '',
+            author: s.author || '', category: '', tags: [],
+            sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
+            gitUrl: s.githubUrl || '',
+            subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
+            installs: s.stars || 0,
+          })
+          catalog = { version: '1', skills: (result.skills || []).map(mapSkill) }
+          _codexSkillsCatalogCache = catalog // session 级缓存，下次调用直接命中
+        } catch (_) { /* 网络不通静默回退到空 catalog */ }
+      }
+
       const systemDir = path.join(os.homedir(), '.codex', 'skills')
       const projectDir = path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills')
       const installed = codexScanSkillsDirs(systemDir, projectDir)
