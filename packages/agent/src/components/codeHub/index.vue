@@ -343,6 +343,20 @@ onUnmounted(() => {
   if (_initTimer) clearTimeout(_initTimer)
 })
 
+// ── 监听 route query 变化（keep-alive 下 onMounted 不会重新触发） ──
+watch(() => [route.query?.agent, route.query?.projectId], ([agent, projectId]) => {
+  if (!initDone.value) return
+  if (!agent && !projectId) return
+  const tab = unifiedTabs.value.find(t => {
+    if (agent && projectId) {
+      return t.agentType === normalizeRequestedAgent(agent) && String(t.projectId) === String(projectId)
+    }
+    if (projectId) return String(t.projectId) === String(projectId)
+    return false
+  })
+  if (tab && tab.id !== activeTabId.value) activateTab(tab)
+})
+
 // ── watch tabs 变化：自动 fallback（仅在初始化完成后） ──
 watch(() => unifiedTabs.value.length, (len) => {
   if (!initDone.value) return
