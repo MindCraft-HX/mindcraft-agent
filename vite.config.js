@@ -70,9 +70,6 @@ export default defineConfig({
             return 'vendor-markdown'
           }
 
-          if (id.includes('/pdfjs-dist/') || id.includes('/mammoth/')) {
-            return 'vendor-doc-preview'
-          }
         },
       },
     },
