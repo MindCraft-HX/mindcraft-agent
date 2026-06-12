@@ -5,30 +5,6 @@
     </div>
 
     <div class="home-cards">
-      <!-- 开始对话 -->
-      <div class="home-card home-card-chat" @click="router.push('/main/chat')">
-        <div class="card-head">
-          <div class="card-icon-wrap">
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 6h16a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H11l-6 5V10a4 4 0 0 1 4-4z"/>
-            </svg>
-          </div>
-          <span class="card-title">开始对话</span>
-        </div>
-
-        <div class="card-body">
-          <div class="feature-text">无需选择项目，快速问答、联网搜索与图片识别</div>
-          <div class="feature-text feature-text-sub">复用已配置的 API，开箱即用</div>
-        </div>
-
-        <div class="card-foot">
-          <span class="card-action">进入对话</span>
-          <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <polyline points="6 3 12 9 6 15"/>
-          </svg>
-        </div>
-      </div>
-
       <!-- 开始项目对话 -->
       <div class="home-card home-card-project" @click="router.push('/main/codeHub')">
         <div class="card-head">
@@ -125,6 +101,30 @@
 
         <div class="card-foot">
           <span class="card-action">浏览文档</span>
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="6 3 12 9 6 15"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- 开始对话 -->
+      <div class="home-card home-card-chat" @click="router.push('/main/chat')">
+        <div class="card-head">
+          <div class="card-icon-wrap">
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 6h16a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H11l-6 5V10a4 4 0 0 1 4-4z"/>
+            </svg>
+          </div>
+          <span class="card-title">开始对话</span>
+        </div>
+
+        <div class="card-body">
+          <div class="feature-text">无需选择项目，快速问答、联网搜索与图片识别</div>
+          <div class="feature-text feature-text-sub">复用已配置的 API，开箱即用</div>
+        </div>
+
+        <div class="card-foot">
+          <span class="card-action">进入对话</span>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <polyline points="6 3 12 9 6 15"/>
           </svg>

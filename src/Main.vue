@@ -13,20 +13,6 @@
           <div class="sidebar-nav">
             <div
               class="sidebar-item"
-              :class="{ active: activeIndex === '/main/chat' }"
-              @click="$router.push('/main/chat')"
-              title="对话"
-            >
-              <div class="sidebar-icon-wrapper">
-                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 4h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7l-4 3V6a2 2 0 0 1 2-2z"/>
-                </svg>
-              </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">对话</span>
-            </div>
-
-            <div
-              class="sidebar-item"
               :class="{ active: activeIndex === '/main/codeHub', 'has-notification': codehubHasNotification && activeIndex !== '/main/codeHub' }"
               @click="$router.push('/main/codeHub')"
               title="项目"
@@ -53,6 +39,20 @@
                 </svg>
               </div>
               <span v-show="!sidebarCollapsed" class="sidebar-label">文档</span>
+            </div>
+
+            <div
+              class="sidebar-item"
+              :class="{ active: activeIndex === '/main/chat' }"
+              @click="$router.push('/main/chat')"
+              title="对话"
+            >
+              <div class="sidebar-icon-wrapper">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 4h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7l-4 3V6a2 2 0 0 1 2-2z"/>
+                </svg>
+              </div>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">对话</span>
             </div>
           </div>
 

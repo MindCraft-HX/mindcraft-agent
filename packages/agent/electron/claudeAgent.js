@@ -1875,14 +1875,18 @@ function setupClaudeHandlers() {
   }
 
   // ── 简易对话：Claude streaming ──
-  async function runClaudeChatStream(event, { messages, model, tools, tool_choice, max_tokens, thinking, system }) {
+  // chatId -> AbortController（支持渲染进程主动中止主进程流）
+  const activeChatAborts = new Map()
+
+  async function runClaudeChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, thinking, system }) {
     const rt = readChatRuntimeConfig()
     if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 Claude Provider）')
 
     const Anthropic = require('@anthropic-ai/sdk')
-    const opts = { apiKey: rt.apiKey }
+    const Ctor = Anthropic.default || Anthropic
+    const opts = { apiKey: rt.apiKey, maxRetries: 0 }
     if (rt.baseURL) opts.baseURL = rt.baseURL
-    const client = new Anthropic.default(opts)
+    const client = new Ctor(opts)
 
     const params = {
       model: model || rt.model || 'claude-sonnet-4-20250514',
@@ -1893,41 +1897,57 @@ function setupClaudeHandlers() {
     if (tools && tools.length > 0) { params.tools = tools }
     if (tool_choice) { params.tool_choice = tool_choice }
     if (thinking) {
-      params.thinking = { type: 'enabled', budget_tokens: thinking.budget_tokens || 4000 }
+      const budget = Math.max(1024, thinking.budget_tokens || 4000)
+      params.thinking = { type: 'enabled', budget_tokens: budget }
+      // API 要求 max_tokens 必须大于 budget_tokens（思考 token 计入 max_tokens）
+      if (params.max_tokens <= budget) params.max_tokens = budget + 8096
     }
 
-    const stream = client.messages.stream(params)
+    const ab = new AbortController()
+    if (chatId) activeChatAborts.set(chatId, ab)
+
     let fullText = ''
     const toolUseBlocks = []
+    let finalMsg = null
 
-    for await (const chunk of stream) {
-      if (chunk.type === 'content_block_start') {
-        if (chunk.content_block?.type === 'tool_use') {
-          const block = { id: chunk.content_block.id, name: chunk.content_block.name, input: '' }
-          toolUseBlocks.push(block)
-          safeSend(event.sender, 'claude-stream-tool-start', { id: block.id, name: block.name })
+    try {
+      const stream = client.messages.stream(params, { signal: ab.signal })
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_start') {
+          if (chunk.content_block?.type === 'tool_use') {
+            const block = { id: chunk.content_block.id, name: chunk.content_block.name, input: '' }
+            toolUseBlocks.push(block)
+            safeSend(event.sender, 'claude-stream-tool-start', { chatId, id: block.id, name: block.name })
+          }
+        }
+        if (chunk.type === 'content_block_delta') {
+          if (chunk.delta?.thinking) {
+            // 思考增量：只回传进度提示，不入正文
+            safeSend(event.sender, 'claude-stream-thinking', { chatId, text: chunk.delta.thinking })
+          }
+          if (chunk.delta?.text) {
+            fullText += chunk.delta.text
+            safeSend(event.sender, 'claude-stream-chunk', { chatId, text: chunk.delta.text })
+          }
+          if (chunk.delta?.partial_json) {
+            const last = toolUseBlocks[toolUseBlocks.length - 1]
+            if (last) { last.input += chunk.delta.partial_json }
+            safeSend(event.sender, 'claude-stream-tool-input', { chatId, id: last?.id, partial: chunk.delta.partial_json })
+          }
         }
       }
-      if (chunk.type === 'content_block_delta') {
-        if (chunk.delta?.text) {
-          fullText += chunk.delta.text
-          safeSend(event.sender, 'claude-stream-chunk', chunk.delta.text)
-        }
-        if (chunk.delta?.partial_json) {
-          const last = toolUseBlocks[toolUseBlocks.length - 1]
-          if (last) { last.input += chunk.delta.partial_json }
-          safeSend(event.sender, 'claude-stream-tool-input', { id: last?.id, partial: chunk.delta.partial_json })
-        }
+
+      // finalMessage 是方法，返回 Promise（此前误当属性取，导致 stop_reason 恒为 null）
+      finalMsg = await stream.finalMessage().catch(() => null)
+    } catch (e) {
+      if (ab.signal.aborted) {
+        return { fullText, toolUseBlocks: [], stop_reason: 'aborted', usage: null }
       }
+      throw e
+    } finally {
+      if (chatId) activeChatAborts.delete(chatId)
     }
-
-    const finalMsg = stream.finalMessage || stream.currentMessage
-    safeSend(event.sender, 'claude-stream-done', {
-      fullText,
-      toolUseBlocks: toolUseBlocks.map(t => ({ id: t.id, name: t.name, input: t.input })),
-      stop_reason: finalMsg?.stop_reason || null,
-      usage: finalMsg?.usage || null,
-    })
 
     return {
       fullText,
@@ -1939,6 +1959,11 @@ function setupClaudeHandlers() {
 
   ipcMain.handle('claude-chat', async (event, payload) => runClaudeChatStream(event, payload))
   ipcMain.handle('claude-chat-continue', async (event, payload) => runClaudeChatStream(event, payload))
+  ipcMain.handle('claude-chat-abort', (_event, { chatId }) => {
+    const ab = activeChatAborts.get(chatId)
+    if (ab) { ab.abort(); activeChatAborts.delete(chatId); return true }
+    return false
+  })
 
   // ── 简易对话：会话持久化（JSON 文件）──
   const CHAT_SESSIONS_DIR = path.join(app.getPath('userData'), 'chat-sessions')

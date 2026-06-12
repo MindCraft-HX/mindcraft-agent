@@ -8,6 +8,7 @@
       @new-session="onNewSession"
       @switch="onSwitchSession"
       @delete="onDeleteSession"
+      @rename="onRenameSession"
       @toggle="sidebarCollapsed = !sidebarCollapsed"
     />
 
@@ -48,15 +49,14 @@
         ref="inputRef"
         :provider="currentSession.provider"
         :model="currentSession.model"
-        :thinking-enabled="currentSession.thinkingEnabled"
-        :thinking-budget="currentSession.thinkingBudget"
+        :thinking-level="currentSession.thinkingLevel"
         :web-search-enabled="currentSession.webSearchEnabled"
         :is-streaming="isStreaming"
         @update:provider="onProviderUpdate"
         @update:model="onModelUpdate"
-        @update:thinking-enabled="onThinkingEnabledUpdate"
-        @update:thinking-budget="onThinkingBudgetUpdate"
+        @update:thinking-level="onThinkingLevelUpdate"
         @update:web-search-enabled="onWebSearchUpdate"
+        @preview-image="previewImageUrl = $event"
         @send="onSend"
         @stop="onStop"
       />
@@ -104,6 +104,7 @@ const {
   switchSession,
   saveSession,
   deleteSession,
+  renameSession,
   addMessage,
   updateLastAssistant,
   getLastAssistant,
@@ -168,6 +169,10 @@ async function onDeleteSession(id) {
   }
 }
 
+async function onRenameSession(id, title) {
+  await renameSession(id, title)
+}
+
 // 设置更新
 function onProviderUpdate(v) {
   currentSession.provider = v
@@ -175,8 +180,7 @@ function onProviderUpdate(v) {
   // InputArea 会自动从配置加载
 }
 function onModelUpdate(v) { currentSession.model = v }
-function onThinkingEnabledUpdate(v) { currentSession.thinkingEnabled = v }
-function onThinkingBudgetUpdate(v) { currentSession.thinkingBudget = v }
+function onThinkingLevelUpdate(v) { currentSession.thinkingLevel = v }
 function onWebSearchUpdate(v) { currentSession.webSearchEnabled = v }
 
 // 上下文操作
@@ -203,10 +207,12 @@ function onStop() {
   stopStreaming()
 }
 
-// 图片预览
+// 图片预览（支持 dataUrl 字符串 / 内部格式 {mediaType, data} / {url}）
 function imgPreviewSrc(img) {
   if (!img) return ''
+  if (typeof img === 'string') return img
   if (img.url) return img.url
+  if (img.dataUrl) return img.dataUrl
   const data = img.base64 || img.data
   const type = img.mediaType || 'image/png'
   return data ? `data:${type};base64,${data}` : ''

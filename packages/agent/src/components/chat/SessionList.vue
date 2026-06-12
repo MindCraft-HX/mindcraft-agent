@@ -26,20 +26,34 @@
           </svg>
         </div>
         <div class="sl-item-body" v-if="!collapsed">
-          <span class="sl-item-title">{{ s.title || '新对话' }}</span>
-          <span class="sl-item-meta">{{ providerLabel(s.provider) }} · {{ timeLabel(s.updatedAt) }}</span>
+          <input
+            v-if="editingId === s.id"
+            ref="editInputRef"
+            v-model="editingTitle"
+            class="sl-rename-input"
+            @click.stop
+            @keydown.enter.prevent="commitRename"
+            @keydown.esc.prevent="cancelRename"
+            @blur="commitRename"
+          />
+          <template v-else>
+            <span class="sl-item-title" @dblclick.stop="startRename(s)">{{ s.title || '新对话' }}</span>
+            <span class="sl-item-meta">{{ providerLabel(s.provider) }} · {{ timeLabel(s.updatedAt) }}</span>
+          </template>
         </div>
-        <button
-          v-if="!collapsed"
-          class="sl-delete-btn"
-          @click.stop="$emit('delete', s.id)"
-          title="删除"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            <line x1="4" y1="4" x2="12" y2="12"/>
-            <line x1="12" y1="4" x2="4" y2="12"/>
-          </svg>
-        </button>
+        <div v-if="!collapsed && editingId !== s.id" class="sl-item-actions">
+          <button class="sl-action-btn" @click.stop="startRename(s)" title="重命名">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11.5 2.5l2 2L6 12l-2.7.7.7-2.7z"/>
+            </svg>
+          </button>
+          <button class="sl-action-btn sl-action-danger" @click.stop="$emit('delete', s.id)" title="删除">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <line x1="4" y1="4" x2="12" y2="12"/>
+              <line x1="12" y1="4" x2="4" y2="12"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div v-if="!sessions.length && !collapsed" class="sl-empty">
@@ -58,13 +72,43 @@
 </template>
 
 <script setup>
+import { ref, nextTick } from 'vue'
+
 defineProps({
   sessions: { type: Array, default: () => [] },
   currentId: { type: String, default: null },
   collapsed: { type: Boolean, default: false },
 })
 
-defineEmits(['new-session', 'switch', 'delete', 'toggle'])
+const emit = defineEmits(['new-session', 'switch', 'delete', 'toggle', 'rename'])
+
+// 重命名
+const editingId = ref(null)
+const editingTitle = ref('')
+const editInputRef = ref(null)
+
+function startRename(s) {
+  editingId.value = s.id
+  editingTitle.value = s.title || ''
+  nextTick(() => {
+    const el = Array.isArray(editInputRef.value) ? editInputRef.value[0] : editInputRef.value
+    el?.focus?.()
+    el?.select?.()
+  })
+}
+
+function commitRename() {
+  if (!editingId.value) return
+  const id = editingId.value
+  const title = editingTitle.value.trim()
+  editingId.value = null
+  if (title) emit('rename', id, title)
+}
+
+function cancelRename() {
+  editingId.value = null
+  editingTitle.value = ''
+}
 
 function providerLabel(p) {
   return p === 'codex' ? 'CodeX' : 'Claude'
@@ -200,11 +244,35 @@ function timeLabel(ts) {
   color: var(--cc-text-dim, #888);
 }
 
-.sl-delete-btn {
+.sl-rename-input {
+  width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--cc-primary, #c6613f);
+  background: var(--cc-bg, #1a1a1a);
+  color: var(--cc-text, #e0e0e0);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.sl-item-actions {
   position: absolute;
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
+  display: none;
+  align-items: center;
+  gap: 2px;
+  background: inherit;
+
+  .sl-item:hover & {
+    display: flex;
+  }
+}
+
+.sl-action-btn {
   width: 22px;
   height: 22px;
   border-radius: 4px;
@@ -212,15 +280,16 @@ function timeLabel(ts) {
   background: transparent;
   color: var(--cc-text-dim, #888);
   cursor: pointer;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
 
-  .sl-item:hover & {
-    display: flex;
+  &:hover {
+    background: var(--cc-bg-hover, rgba(255,255,255,0.1));
+    color: var(--cc-text, #e0e0e0);
   }
 
-  &:hover {
+  &.sl-action-danger:hover {
     background: rgba(220, 50, 50, 0.15);
     color: #f87171;
   }

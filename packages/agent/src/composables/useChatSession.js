@@ -4,22 +4,40 @@ import { ref, reactive, computed } from 'vue'
  * 简易对话 - 会话持久化
  * 会话数据存储在 {userData}/chat-sessions/ 目录下
  */
+
+const SESSION_DEFAULTS = {
+  id: null,
+  title: '',
+  createdAt: null,
+  updatedAt: null,
+  provider: 'claude',
+  model: '',
+  thinkingLevel: 'off', // off | low | medium | high
+  webSearchEnabled: false,
+  messages: [],
+  contextSummary: '', // 上下文压缩后的摘要
+}
+
+/** 旧版字段迁移：thinkingEnabled + thinkingBudget → thinkingLevel */
+function migrateSessionData(data) {
+  const d = { ...data }
+  if (!d.thinkingLevel) {
+    if (d.thinkingEnabled) {
+      const budget = d.thinkingBudget || 4000
+      d.thinkingLevel = budget >= 12000 ? 'high' : (budget >= 6000 ? 'medium' : 'low')
+    } else {
+      d.thinkingLevel = 'off'
+    }
+  }
+  delete d.thinkingEnabled
+  delete d.thinkingBudget
+  return d
+}
+
 export function useChatSession() {
   const sessionList = ref([])
   const currentSessionId = ref(null)
-  const currentSession = reactive({
-    id: null,
-    title: '',
-    createdAt: null,
-    updatedAt: null,
-    provider: 'claude',
-    model: '',
-    thinkingEnabled: false,
-    thinkingBudget: 4000,
-    webSearchEnabled: false,
-    messages: [],
-    contextSummary: '', // 上下文压缩后的摘要
-  })
+  const currentSession = reactive({ ...SESSION_DEFAULTS, messages: [] })
   const loading = ref(false)
 
   const api = () => window.electronAPI || {}
@@ -39,16 +57,12 @@ export function useChatSession() {
     const id = crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
     const now = Date.now()
     currentSessionId.value = id
-    Object.assign(currentSession, {
+    Object.assign(currentSession, { ...SESSION_DEFAULTS }, {
       id,
       title: '新对话',
       createdAt: now,
       updatedAt: now,
       provider,
-      model: '',
-      thinkingEnabled: false,
-      thinkingBudget: 4000,
-      webSearchEnabled: false,
       messages: [],
     })
     await saveSession()
@@ -69,7 +83,7 @@ export function useChatSession() {
       const data = await api().chatGetSession?.(id)
       if (data) {
         currentSessionId.value = id
-        Object.assign(currentSession, data)
+        Object.assign(currentSession, { ...SESSION_DEFAULTS, messages: [] }, migrateSessionData(data))
       }
     } catch (e) {
       console.warn('[useChatSession] switchSession failed:', e)
@@ -95,11 +109,7 @@ export function useChatSession() {
       await api().chatDeleteSession?.(id)
       if (id === currentSessionId.value) {
         currentSessionId.value = null
-        Object.assign(currentSession, {
-          id: null, title: '', createdAt: null, updatedAt: null,
-          provider: 'claude', model: '', thinkingEnabled: false,
-          thinkingBudget: 4000, webSearchEnabled: false, messages: [],
-        })
+        Object.assign(currentSession, { ...SESSION_DEFAULTS, messages: [] })
       }
       await loadList()
     } catch (e) {
@@ -107,12 +117,33 @@ export function useChatSession() {
     }
   }
 
+  /** 重命名会话（支持当前会话和列表中其他会话） */
+  async function renameSession(id, title) {
+    const t = (title || '').trim()
+    if (!id || !t) return
+    try {
+      if (id === currentSessionId.value) {
+        currentSession.title = t
+        await saveSession()
+      } else {
+        const data = await api().chatGetSession?.(id)
+        if (data) {
+          data.title = t
+          await api().chatSaveSession?.(id, data)
+        }
+      }
+      await loadList()
+    } catch (e) {
+      console.warn('[useChatSession] renameSession failed:', e)
+    }
+  }
+
   /** 添加消息到当前会话（仅内存，不立即持久化） */
   function addMessage(msg) {
     currentSession.messages.push(msg)
     currentSession.updatedAt = Date.now()
-    // 如果标题还是默认的，用第一条用户消息更新
-    if (currentSession.title === '新对话' && msg.role === 'user') {
+    // 如果标题还是默认的，用第一条用户消息更新（截取前 30 字）
+    if ((currentSession.title === '新对话' || !currentSession.title) && msg.role === 'user') {
       const text = extractText(msg)
       if (text) {
         currentSession.title = text.slice(0, 30)
@@ -150,6 +181,7 @@ export function useChatSession() {
         .filter(c => c.type === 'text')
         .map(c => c.text)
         .join(' ')
+        .trim()
     }
     return ''
   }
@@ -179,6 +211,7 @@ export function useChatSession() {
     switchSession,
     saveSession,
     deleteSession,
+    renameSession,
     addMessage,
     updateLastAssistant,
     getLastAssistant,

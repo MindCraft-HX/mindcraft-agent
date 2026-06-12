@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 
 const MAX_TOOL_ITERATIONS = 5
+/** 无任何流式活动超过该时长则自动中止（毫秒） */
+const STALL_TIMEOUT = 90_000
 
 const SYSTEM_PROMPT = `你是 MindCraft 智能助手，可以回答问题、进行联网搜索和识别图片。
 
@@ -45,112 +47,137 @@ const WEB_SEARCH_TOOL_OPENAI = {
   }
 }
 
+/** 思考档位 → Claude budget_tokens / OpenAI reasoning_effort */
+const THINKING_LEVELS = {
+  low: { budget: 2048, effort: 'low' },
+  medium: { budget: 8192, effort: 'medium' },
+  high: { budget: 16384, effort: 'high' },
+}
+
+function genChatId() {
+  return (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2, 10))
+}
+
 /**
  * 简易对话 - 流式管理 + Tool Loop
  *
- * @param {Object} chatSession - useChatSession 返回的 chatSession
- * @param {Ref} chatSession.currentSession - 当前会话 reactive
- * @param {Function} chatSession.addMessage - 添加消息
- * @param {Function} chatSession.updateLastAssistant - 更新最后一条 assistant 消息
- * @param {Function} chatSession.saveSession - 持久化保存
+ * 会话内消息使用统一的内部格式（与 provider 无关），发请求时按 provider 转换：
+ * - user:      { role:'user', content:[{type:'image', mediaType, data}..., {type:'text', text}] }
+ * - assistant: { role:'assistant', content:[{type:'text',text}, {type:'tool_use', id, name, input}] }
+ * - tool:      { role:'tool', toolUseId, toolName, query, resultCount, content }
  */
 export function useChatStream(chatSession) {
   const isStreaming = ref(false)
-  const abortController = ref(null)
-  /** 当前正在执行的工具调用信息 */
+  /** 当前正在执行的工具调用信息（UI 展示） */
   const activeToolCall = ref(null)
   /** 流式错误 */
   const streamError = ref(null)
 
+  let currentChatId = null
+  let userAborted = false
+
   const api = () => window.electronAPI || {}
 
-  function cleanup() {
-    abortController.value = null
-    activeToolCall.value = null
-    streamError.value = null
+  function thinkingConf() {
+    const level = chatSession.currentSession.thinkingLevel
+    if (!level || level === 'off') return null
+    return THINKING_LEVELS[level] || THINKING_LEVELS.medium
   }
 
-  /** 构建消息列表 */
-  function buildMessages(text, images) {
-    const messages = chatSession.currentSession.messages || []
+  // ── 内部格式 → provider wire 格式 ──
 
-    // 构建当前用户消息内容
-    const content = []
-    if (images?.length) {
-      for (const img of images) {
-        if (chatSession.currentSession.provider === 'claude') {
-          content.push({
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: img.mediaType || 'image/png',
-              data: img.base64 || img.data,
-            }
-          })
-        } else {
-          // OpenAI 格式
-          content.push({
-            type: 'image_url',
-            image_url: {
-              url: `data:${img.mediaType || 'image/png'};base64,${img.base64 || img.data}`,
-            }
-          })
-        }
-      }
+  function extractTextFromBlocks(content) {
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      return content.filter(c => c.type === 'text').map(c => c.text || '').join('')
     }
-    content.push({ type: 'text', text })
-
-    return [
-      { role: 'user', content: chatSession.currentSession.provider === 'claude' ? content : content },
-    ]
+    return ''
   }
 
-  /** 构建完整调用消息列表（system + 历史 + 新消息） */
-  function buildCallMessages(text, images) {
-    const provider = chatSession.currentSession.provider
+  /** 从会话消息重建 API 消息列表（单一数据源，自动净化） */
+  function buildApiMessages(provider) {
+    const out = []
+    for (const m of (chatSession.currentSession.messages || [])) {
+      if (m.role === 'user') {
+        const blocks = Array.isArray(m.content) ? m.content : [{ type: 'text', text: String(m.content || '') }]
+        const text = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('')
+        const images = blocks.filter(b => b.type === 'image' && (b.data || b.base64))
+        if (!text.trim() && !images.length) continue
 
-    // 历史消息
-    const msgList = [...(chatSession.currentSession.messages || [])]
-
-    // 当前用户消息内容
-    const content = []
-    if (images?.length) {
-      for (const img of images) {
         if (provider === 'claude') {
-          content.push({
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: img.mediaType || 'image/png',
-              data: img.base64 || img.data,
+          const content = []
+          for (const img of images) {
+            content.push({
+              type: 'image',
+              source: { type: 'base64', media_type: img.mediaType || 'image/png', data: img.data || img.base64 },
+            })
+          }
+          if (text.trim()) content.push({ type: 'text', text })
+          out.push({ role: 'user', content })
+        } else {
+          if (images.length) {
+            const content = []
+            if (text.trim()) content.push({ type: 'text', text })
+            for (const img of images) {
+              content.push({
+                type: 'image_url',
+                image_url: { url: `data:${img.mediaType || 'image/png'};base64,${img.data || img.base64}` },
+              })
             }
+            out.push({ role: 'user', content })
+          } else {
+            out.push({ role: 'user', content: text })
+          }
+        }
+      } else if (m.role === 'assistant') {
+        const blocks = Array.isArray(m.content) ? m.content : [{ type: 'text', text: String(m.content || '') }]
+        const text = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('')
+        const toolUses = blocks.filter(b => b.type === 'tool_use' && b.id)
+        // 净化：空的 assistant 消息（中止/出错残留）直接跳过
+        if (!text.trim() && !toolUses.length) continue
+
+        if (provider === 'claude') {
+          const content = []
+          if (text.trim()) content.push({ type: 'text', text })
+          for (const tu of toolUses) {
+            content.push({ type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} })
+          }
+          out.push({ role: 'assistant', content })
+        } else {
+          const msg = { role: 'assistant', content: text.trim() ? text : null }
+          if (toolUses.length) {
+            msg.tool_calls = toolUses.map(tu => ({
+              id: tu.id,
+              type: 'function',
+              function: { name: tu.name, arguments: JSON.stringify(tu.input || {}) },
+            }))
+          }
+          out.push(msg)
+        }
+      } else if (m.role === 'tool') {
+        if (!m.toolUseId) continue
+        if (provider === 'claude') {
+          out.push({
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: m.toolUseId, content: m.content || '' }],
           })
         } else {
-          content.push({
-            type: 'image_url',
-            image_url: {
-              url: `data:${img.mediaType || 'image/png'};base64,${img.base64 || img.data}`,
-              detail: 'auto',
-            }
-          })
+          out.push({ role: 'tool', tool_call_id: m.toolUseId, content: m.content || '' })
         }
       }
     }
-    content.push({ type: 'text', text: text })
-    msgList.push({ role: 'user', content: provider === 'claude' ? content : content })
-
-    return msgList
+    return out
   }
 
-  /** 执行一次 API 调用（流式 + 工具检测） */
-  async function doApiCall(messages, iteration = 0) {
+  /** 执行一次 API 调用（流式渲染 + 结果以 invoke 返回值为准） */
+  async function doApiCall(iteration = 0) {
     const provider = chatSession.currentSession.provider
-    const ac = new AbortController()
-    abortController.value = ac
+    const chatId = genChatId()
+    currentChatId = chatId
     streamError.value = null
 
     // 构建请求参数
-    const payload = { messages }
+    const payload = { chatId, messages: buildApiMessages(provider) }
 
     // system prompt（含上下文摘要）
     let systemText = SYSTEM_PROMPT
@@ -161,285 +188,250 @@ export function useChatStream(chatSession) {
     if (provider === 'claude') {
       payload.system = systemText
     } else {
-      // OpenAI: prepend system message
-      payload.messages = [{ role: 'system', content: systemText }, ...messages]
+      payload.messages = [{ role: 'system', content: systemText }, ...payload.messages]
     }
 
-    // model
     if (chatSession.currentSession.model) {
       payload.model = chatSession.currentSession.model
     }
 
-    // web search tool
     if (chatSession.currentSession.webSearchEnabled) {
-      payload.tools = provider === 'claude'
-        ? [WEB_SEARCH_TOOL_CLAUDE]
-        : [WEB_SEARCH_TOOL_OPENAI]
+      payload.tools = provider === 'claude' ? [WEB_SEARCH_TOOL_CLAUDE] : [WEB_SEARCH_TOOL_OPENAI]
     }
 
-    // thinking (Claude only)
-    if (provider === 'claude' && chatSession.currentSession.thinkingEnabled) {
-      payload.thinking = {
-        type: 'enabled',
-        budget_tokens: chatSession.currentSession.thinkingBudget || 4000,
+    // 思考档位
+    const tc = thinkingConf()
+    if (tc) {
+      if (provider === 'claude') {
+        payload.thinking = { type: 'enabled', budget_tokens: tc.budget }
+        payload.max_tokens = tc.budget + 8096 // 必须大于 budget_tokens
+      } else {
+        payload.reasoning_effort = tc.effort
       }
     }
+    if (provider === 'claude' && !payload.max_tokens) payload.max_tokens = 8096
 
-    // CodeX reasoning
-    if (provider === 'codex' && chatSession.currentSession.thinkingEnabled) {
-      payload.reasoning_effort = 'medium'
+    // assistant 占位消息（流式渲染目标）
+    const assistantMsg = {
+      role: 'assistant',
+      content: [{ type: 'text', text: '' }],
+      isStreaming: true,
+      thinkingChars: 0,
     }
+    chatSession.addMessage(assistantMsg)
 
-    payload.max_tokens = 8096
+    const disposers = []
+    let lastActivity = Date.now()
+    let stallTimer = null
 
     try {
-      // 添加 assistant 占位消息
-      const assistantMsg = {
-        role: 'assistant',
-        content: provider === 'claude'
-          ? [{ type: 'text', text: '' }]
-          : '',
-        isStreaming: true,
+      const appendText = (text) => {
+        lastActivity = Date.now()
+        const msg = chatSession.getLastAssistant?.()
+        if (!msg) return
+        const textBlock = Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text') : null
+        if (textBlock) textBlock.text += text
       }
-      chatSession.addMessage(assistantMsg)
+      const onThinking = (text) => {
+        lastActivity = Date.now()
+        const msg = chatSession.getLastAssistant?.()
+        if (msg) msg.thinkingChars = (msg.thinkingChars || 0) + (text?.length || 0)
+      }
 
-      // 监听流式事件
-      const disposers = []
-      let result = null
-
-      const resultPromise = new Promise((resolve, reject) => {
-        // chunk
-        const disposeChunk = provider === 'claude'
-          ? api().onClaudeStreamChunk?.((text) => {
-              const msg = chatSession.getLastAssistant?.()
-              if (msg) {
-                if (provider === 'claude') {
-                  const textBlock = msg.content?.find(c => c.type === 'text')
-                  if (textBlock) textBlock.text += text
-                } else {
-                  if (typeof msg.content === 'string') msg.content += text
-                  else msg.content = (msg.content || '') + text
-                }
-              }
-            })
-          : api().onCodexStreamChunk?.((text) => {
-              const msg = chatSession.getLastAssistant?.()
-              if (msg) {
-                if (typeof msg.content === 'string') msg.content += text
-                else msg.content = (msg.content || '') + text
-              }
-            })
-        if (disposeChunk) disposers.push(disposeChunk)
-
-        // tool events
-        if (provider === 'claude') {
-          const disposeToolStart = api().onClaudeStreamToolStart?.(({ id, name }) => {
-            activeToolCall.value = { id, name, input: '' }
-          })
-          if (disposeToolStart) disposers.push(disposeToolStart)
-
-          const disposeToolInput = api().onClaudeStreamToolInput?.(({ id, partial }) => {
-            if (activeToolCall.value?.id === id) {
-              activeToolCall.value.input += partial
-            }
-          })
-          if (disposeToolInput) disposers.push(disposeToolInput)
-        } else {
-          const disposeToolDelta = api().onCodexStreamToolDelta?.(({ index, id, name, arguments: args }) => {
-            if (!activeToolCall.value) {
-              activeToolCall.value = { id: id || '', name: '', input: '' }
-            }
-            if (id) activeToolCall.value.id = id
-            if (name) activeToolCall.value.name += name
-            if (args) activeToolCall.value.input += args
-          })
-          if (disposeToolDelta) disposers.push(disposeToolDelta)
-        }
-
-        // done
-        const disposeDone = provider === 'claude'
-          ? api().onClaudeStreamDone?.((data) => {
-              resolve(data)
-            })
-          : api().onCodexStreamDone?.((data) => {
-              resolve(data)
-            })
-        if (disposeDone) disposers.push(disposeDone)
-
-        // error handling: if aborted
-        ac.signal?.addEventListener?.('abort', () => {
-          reject(new Error('aborted'))
+      if (provider === 'claude') {
+        const d1 = api().onClaudeStreamChunk?.((ev) => { if (ev?.chatId === chatId) appendText(ev.text || '') })
+        const d2 = api().onClaudeStreamThinking?.((ev) => { if (ev?.chatId === chatId) onThinking(ev.text || '') })
+        const d3 = api().onClaudeStreamToolStart?.((ev) => {
+          if (ev?.chatId !== chatId) return
+          lastActivity = Date.now()
+          activeToolCall.value = { id: ev.id, name: ev.name, input: '' }
         })
-      })
+        const d4 = api().onClaudeStreamToolInput?.((ev) => {
+          if (ev?.chatId !== chatId) return
+          lastActivity = Date.now()
+          if (activeToolCall.value?.id === ev.id) activeToolCall.value.input += ev.partial || ''
+        })
+        disposers.push(d1, d2, d3, d4)
+      } else {
+        const d1 = api().onCodexStreamChunk?.((ev) => { if (ev?.chatId === chatId) appendText(ev.text || '') })
+        const d2 = api().onCodexStreamThinking?.((ev) => { if (ev?.chatId === chatId) onThinking(ev.text || '') })
+        const d3 = api().onCodexStreamToolDelta?.((ev) => {
+          if (ev?.chatId !== chatId) return
+          lastActivity = Date.now()
+          if (!activeToolCall.value) activeToolCall.value = { id: ev.id || '', name: '', input: '' }
+          if (ev.id) activeToolCall.value.id = ev.id
+          if (ev.name) activeToolCall.value.name += ev.name
+          if (ev.arguments) activeToolCall.value.input += ev.arguments
+        })
+        disposers.push(d1, d2, d3)
+      }
 
-      // 发起调用
-      const invokePromise = provider === 'claude'
-        ? (iteration === 0
-            ? api().claudeChat?.(payload)
-            : api().claudeChatContinue?.(payload))
-        : (iteration === 0
-            ? api().codexChat?.(payload)
-            : api().codexChatContinue?.(payload))
+      // 看门狗：长时间无活动自动中止（防止上游挂起导致永久转圈）
+      stallTimer = setInterval(() => {
+        if (Date.now() - lastActivity > STALL_TIMEOUT) {
+          streamError.value = '响应超时，已自动中止'
+          abortCurrent()
+        }
+      }, 5000)
 
-      // Race invoke promise against stream events — if invoke rejects before done event fires
-      const raceResult = await Promise.race([
-        resultPromise,
-        invokePromise.then(() => ({ _done: true })).catch(e => ({ _error: e?.message || '请求失败' })),
-      ])
-      if (raceResult?._error) streamError.value = raceResult._error
-      result = !raceResult?._error ? raceResult : (result || { stop_reason: 'error' })
+      // 发起调用，invoke 返回值即权威结果
+      const invoke = provider === 'claude'
+        ? (iteration === 0 ? api().claudeChat : api().claudeChatContinue)
+        : (iteration === 0 ? api().codexChat : api().codexChatContinue)
+      if (typeof invoke !== 'function') {
+        throw new Error('对话接口不可用（请重启应用后重试）')
+      }
 
-      // 清理监听器
-      disposers.forEach(d => typeof d === 'function' && d())
-
-      // 完成 assistant 消息
+      let result
+      try {
+        result = await invoke(payload)
+      } catch (e) {
+        if (userAborted) return { stop_reason: 'aborted' }
+        // Electron invoke 错误前缀清理
+        const msg = String(e?.message || '请求失败').replace(/^Error invoking remote method '[^']+':\s*/, '').replace(/^Error:\s*/, '')
+        streamError.value = msg
+        return { stop_reason: 'error' }
+      }
+      return result || { stop_reason: 'error' }
+    } finally {
+      if (stallTimer) clearInterval(stallTimer)
+      disposers.forEach(d => { if (typeof d === 'function') d() })
       const lastMsg = chatSession.getLastAssistant?.()
-      if (lastMsg) {
-        lastMsg.isStreaming = false
-      }
-
-      return result
-    } catch (e) {
-      if (e?.message === 'aborted') {
-        // 用户手动停止
-        const lastMsg = chatSession.getLastAssistant?.()
-        if (lastMsg) lastMsg.isStreaming = false
-        return { stop_reason: 'aborted' }
-      }
-      throw e
+      if (lastMsg) lastMsg.isStreaming = false
+      if (currentChatId === chatId) currentChatId = null
     }
   }
 
-  /** 执行工具调用 */
-  async function executeTool(toolBlock) {
-    const name = toolBlock.name || toolBlock.function?.name
-    if (name !== 'web_search') return null
+  /** 执行工具调用（统一格式 {id, name, inputStr}） */
+  async function executeTool(tb) {
+    if (tb.name !== 'web_search') return null
 
-    let input
+    let input = {}
     try {
-      input = typeof toolBlock.input === 'string'
-        ? JSON.parse(toolBlock.input)
-        : (toolBlock.input || toolBlock.function?.arguments
-            ? (typeof toolBlock.function.arguments === 'string'
-                ? JSON.parse(toolBlock.function.arguments)
-                : toolBlock.function.arguments)
-            : {})
-    } catch (_) {
-      input = {}
-    }
+      input = typeof tb.inputStr === 'string' && tb.inputStr.trim() ? JSON.parse(tb.inputStr) : {}
+    } catch (_) { input = {} }
 
     const query = input.query || ''
-    if (!query) return null
+    if (!query) return { input, result: { error: '缺少搜索关键词', results: [] } }
 
+    activeToolCall.value = { id: tb.id, name: tb.name, input: query }
     try {
       const result = await api().chatWebSearch?.({ query })
-      return { query, results: result?.results || [], error: result?.error }
+      return { input, result: { query, results: result?.results || [], error: result?.error } }
     } catch (e) {
-      return { query, results: [], error: e?.message || '搜索失败' }
+      return { input, result: { query, results: [], error: e?.message || '搜索失败' } }
+    } finally {
+      activeToolCall.value = null
     }
   }
 
-  /** 构建工具结果消息 */
-  function buildToolResultMessage(provider, toolBlock, execResult, toolUseId) {
-    const toolName = toolBlock.name || toolBlock.function?.name
-
+  /** 归一化工具调用块 → {id, name, inputStr} */
+  function normalizeToolBlocks(provider, result) {
     if (provider === 'claude') {
-      return {
-        role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: toolUseId || toolBlock.id,
-          content: JSON.stringify(execResult, null, 2),
-        }]
-      }
-    } else {
-      // OpenAI
-      return {
-        role: 'tool',
-        tool_call_id: toolUseId || toolBlock.id,
-        content: JSON.stringify(execResult, null, 2),
-      }
+      return (result?.toolUseBlocks || [])
+        .filter(t => t.id && t.name)
+        .map(t => ({ id: t.id, name: t.name, inputStr: t.input || '' }))
     }
+    return (result?.toolCalls || [])
+      .filter(t => t.id && t.function?.name)
+      .map(t => ({ id: t.id, name: t.function.name, inputStr: t.function.arguments || '' }))
   }
 
   /** 发送消息（主入口） */
   async function sendMessage(text, images) {
     if (isStreaming.value) return
+    if (!chatSession.currentSession.id) return
+
     isStreaming.value = true
-    cleanup()
+    streamError.value = null
+    activeToolCall.value = null
+    userAborted = false
 
     try {
       const provider = chatSession.currentSession.provider
-      let messages = buildCallMessages(text, images)
 
-      // 工具循环
+      // 1. 用户消息入会话（内部格式，provider 无关）→ 用户气泡立即可见
+      const userContent = []
+      for (const img of (images || [])) {
+        const data = img.data || img.base64 || (typeof img.dataUrl === 'string' ? img.dataUrl.split(',')[1] : '')
+        if (!data) continue
+        userContent.push({ type: 'image', mediaType: img.mediaType || 'image/png', data })
+      }
+      userContent.push({ type: 'text', text: text || '' })
+      chatSession.addMessage({ role: 'user', content: userContent })
+
+      // 2. 工具循环
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        if (abortController.value?.signal?.aborted) break
+        const result = await doApiCall(iter)
 
-        const result = await doApiCall(messages, iter)
-
-        if (result?.stop_reason === 'aborted') break
-
-        // 检查是否有工具调用
-        let toolBlocks = []
-        if (provider === 'claude') {
-          toolBlocks = result?.toolUseBlocks || []
-        } else {
-          toolBlocks = result?.toolCalls || []
-        }
-
-        if (!toolBlocks.length || result?.stop_reason === 'end_turn' || result?.stop_reason === 'stop') {
-          // 没有工具调用，对话完成
+        if (userAborted || result?.stop_reason === 'aborted' || result?.finish_reason === 'aborted') break
+        if (result?.stop_reason === 'error') {
+          // 错误时移除空的 assistant 占位气泡
+          const last = chatSession.currentSession.messages[chatSession.currentSession.messages.length - 1]
+          if (last?.role === 'assistant' && !extractTextFromBlocks(last.content).trim()
+              && !(Array.isArray(last.content) && last.content.some(c => c.type === 'tool_use'))) {
+            chatSession.currentSession.messages.pop()
+          }
           break
         }
 
-        // 执行工具
-        activeToolCall.value = null
+        const toolBlocks = normalizeToolBlocks(provider, result)
+        if (!toolBlocks.length) break
+
+        // 3. tool_use 附加到 assistant 消息（持久化 + 重建 API 消息时需要）
+        const lastMsg = chatSession.getLastAssistant?.()
         for (const tb of toolBlocks) {
-          const execResult = await executeTool(tb)
-          if (!execResult) continue
-
-          // 在历史中标记工具调用结果
-          const lastMsg = chatSession.getLastAssistant?.()
-          if (lastMsg && provider === 'claude') {
-            // 为 Claude 添加 tool_use 到 content
-            if (Array.isArray(lastMsg.content)) {
-              // 替换占位 text block 为实际内容 + tool_use
-              const toolUseBlock = {
-                type: 'tool_use',
-                id: tb.id,
-                name: tb.name,
-                input: typeof tb.input === 'string' ? JSON.parse(tb.input || '{}') : tb.input,
-              }
-              lastMsg.content.push(toolUseBlock)
-            }
+          let parsed = {}
+          try { parsed = tb.inputStr.trim() ? JSON.parse(tb.inputStr) : {} } catch (_) {}
+          if (lastMsg && Array.isArray(lastMsg.content)) {
+            lastMsg.content.push({ type: 'tool_use', id: tb.id, name: tb.name, input: parsed })
           }
-
-          // 构建 tool_result 消息
-          const trMsg = buildToolResultMessage(provider, tb, execResult, tb.id)
-          messages.push(trMsg)
         }
+
+        // 4. 执行工具，结果入会话（每个 tool_use 必须有对应 tool_result）
+        for (const tb of toolBlocks) {
+          const exec = await executeTool(tb)
+          const resultObj = exec?.result || { error: `不支持的工具：${tb.name}`, results: [] }
+          chatSession.addMessage({
+            role: 'tool',
+            toolUseId: tb.id,
+            toolName: tb.name,
+            query: exec?.input?.query || '',
+            resultCount: resultObj.results?.length || 0,
+            content: JSON.stringify(resultObj, null, 2),
+          })
+        }
+
+        if (userAborted) break
+        // 5. 继续循环：下一轮 doApiCall 会从会话重建完整消息（含 tool_use + tool_result）
       }
     } catch (e) {
       console.error('[useChatStream] error:', e)
       streamError.value = e?.message || '请求失败'
     } finally {
       isStreaming.value = false
-      cleanup()
-      // 保存会话
+      activeToolCall.value = null
+      userAborted = false
       try { await chatSession.saveSession?.() } catch (_) {}
     }
   }
 
-  /** 停止流式 */
-  function stopStreaming() {
-    if (abortController.value) {
-      abortController.value.abort?.()
-    }
-    isStreaming.value = false
+  /** 中止当前主进程流 */
+  function abortCurrent() {
+    const id = currentChatId
+    if (!id) return
+    const provider = chatSession.currentSession.provider
+    if (provider === 'claude') api().claudeChatAbort?.({ chatId: id })
+    else api().codexChatAbort?.({ chatId: id })
   }
 
-  /** 压缩上下文：用 LLM 将历史对话压缩为摘要 */
+  /** 停止流式（用户点击停止按钮） */
+  function stopStreaming() {
+    userAborted = true
+    abortCurrent()
+  }
+
+  /** 压缩上下文：用 LLM 将历史对话压缩为摘要（直调 IPC，不污染会话） */
   async function compressContext() {
     const provider = chatSession.currentSession.provider
     const history = chatSession.currentSession.messages || []
@@ -447,30 +439,29 @@ export function useChatStream(chatSession) {
 
     isStreaming.value = true
     streamError.value = null
+    userAborted = false
 
-    // 构建压缩提示词
     const compressPrompt = `请将以下对话内容压缩为一段简洁的摘要（200字以内），保留关键信息：\n- 用户的核心问题和需求\n- AI 提供的关键结论和发现\n- 重要的上下文信息\n\n仅输出摘要文本，不要加任何前缀。`
 
-    // 将历史转为文本格式
-    const historyText = history.map(m => {
-      const role = m.role === 'user' ? '用户' : '助手'
-      let text = ''
-      if (typeof m.content === 'string') {
-        text = m.content
-      } else if (Array.isArray(m.content)) {
-        text = m.content
-          .filter(c => c.type === 'text')
-          .map(c => c.text)
-          .join('\n')
-      }
-      return `[${role}] ${text}`
-    }).join('\n\n')
+    const historyText = history
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => {
+        const role = m.role === 'user' ? '用户' : '助手'
+        const text = extractTextFromBlocks(m.content)
+        return text.trim() ? `[${role}] ${text}` : ''
+      })
+      .filter(Boolean)
+      .join('\n\n')
 
     try {
+      const chatId = genChatId()
+      currentChatId = chatId
       const payload = {
+        chatId,
         messages: [{ role: 'user', content: `${compressPrompt}\n\n### 对话内容\n${historyText}` }],
         max_tokens: 1024,
       }
+      if (chatSession.currentSession.model) payload.model = chatSession.currentSession.model
 
       let summary = ''
       if (provider === 'claude') {
@@ -483,9 +474,9 @@ export function useChatStream(chatSession) {
         summary = result?.fullText || ''
       }
 
-      if (summary) {
+      if (summary && !userAborted) {
+        // 覆盖（而非叠加）旧摘要，压缩后清空消息
         chatSession.currentSession.contextSummary = summary.trim()
-        // 压缩后清空消息（摘要已注入 system prompt）
         chatSession.currentSession.messages = []
         await chatSession.saveSession?.()
       }
@@ -493,6 +484,7 @@ export function useChatStream(chatSession) {
       console.warn('[compressContext] failed:', e)
       streamError.value = '上下文压缩失败：' + (e?.message || '未知错误')
     } finally {
+      currentChatId = null
       isStreaming.value = false
     }
   }

@@ -19,39 +19,65 @@
       </div>
     </template>
 
+    <!-- 工具结果消息（web_search 等） -->
+    <template v-else-if="msg.role === 'tool'">
+      <div class="msg-body">
+        <div class="msg-tool-result" @click="toolExpanded = !toolExpanded">
+          <div class="tool-header">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="7" cy="7" r="4.5"/>
+              <line x1="10.5" y1="10.5" x2="14" y2="14"/>
+            </svg>
+            <span>已搜索「{{ msg.query || msg.toolName }}」，{{ msg.resultCount || 0 }} 条结果</span>
+            <svg class="tool-chevron" :class="{ open: toolExpanded }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <polyline points="3 4.5 6 7.5 9 4.5"/>
+            </svg>
+          </div>
+          <pre v-if="toolExpanded" class="tool-detail" @click.stop>{{ msg.content }}</pre>
+        </div>
+      </div>
+    </template>
+
     <!-- 助手消息 -->
     <template v-else>
       <div class="msg-body">
+        <!-- 等待指示：流式中且尚无文本 -->
+        <div v-if="msg.isStreaming && !assistantText.trim()" class="msg-waiting">
+          <span class="waiting-dots"><i></i><i></i><i></i></span>
+          <span v-if="msg.thinkingChars > 0">深度思考中…（{{ msg.thinkingChars }} 字）</span>
+          <span v-else>等待响应…</span>
+        </div>
+
         <!-- 内容块：遍历 content 数组 -->
         <template v-if="hasContentBlocks">
           <template v-for="(block, i) in contentBlocks" :key="i">
             <!-- 文本块：markdown 渲染 -->
-            <div v-if="block.type === 'text'" class="msg-text markdown-body" v-html="renderMd(block.text)"></div>
+            <div v-if="block.type === 'text' && block.text" class="msg-text markdown-body" v-html="renderMd(block.text)"></div>
             <!-- 工具使用块 -->
             <div v-else-if="block.type === 'tool_use'" class="msg-tool-block">
               <div class="tool-header">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <circle cx="8" cy="8" r="6"/>
-                  <path d="M8 5v6M5 8h6"/>
+                  <circle cx="7" cy="7" r="4.5"/>
+                  <line x1="10.5" y1="10.5" x2="14" y2="14"/>
                 </svg>
-                <span>搜索：{{ block.name === 'web_search' ? '联网搜索' : block.name }}</span>
+                <span>{{ block.name === 'web_search' ? '联网搜索' : block.name }}</span>
                 <span v-if="block.input?.query" class="tool-query">"{{ block.input.query }}"</span>
               </div>
             </div>
           </template>
         </template>
         <!-- 纯文本助手消息 -->
-        <div v-else class="msg-text markdown-body" v-html="renderMd(assistantText)"></div>
+        <div v-else-if="assistantText" class="msg-text markdown-body" v-html="renderMd(assistantText)"></div>
 
-        <!-- 流式中加载指示 -->
-        <span v-if="msg.isStreaming" class="streaming-cursor">▊</span>
+        <!-- 流式中加载指示（已有文本时显示光标） -->
+        <span v-if="msg.isStreaming && assistantText.trim()" class="streaming-cursor">▊</span>
       </div>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { renderContent } from '../agentCommon/render.js'
 
 const props = defineProps({
@@ -59,6 +85,8 @@ const props = defineProps({
 })
 
 defineEmits(['preview-image'])
+
+const toolExpanded = ref(false)
 
 const userImages = computed(() => {
   if (props.msg.role !== 'user') return []
@@ -134,6 +162,80 @@ function renderMd(text) {
   background: var(--cc-bg-elevated, #2a2a2a);
   color: var(--cc-text, #e0e0e0);
   border-bottom-left-radius: 4px;
+}
+
+.msg-tool {
+  align-self: flex-start;
+  background: transparent;
+  padding: 0 16px;
+  max-width: 85%;
+}
+
+.msg-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--cc-text-dim, #888);
+  padding: 2px 0;
+}
+
+.waiting-dots {
+  display: inline-flex;
+  gap: 3px;
+
+  i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--cc-primary, #c6613f);
+    animation: wait-bounce 1.2s ease-in-out infinite;
+
+    &:nth-child(2) { animation-delay: 0.15s; }
+    &:nth-child(3) { animation-delay: 0.3s; }
+  }
+}
+
+@keyframes wait-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.msg-tool-result {
+  border-radius: 8px;
+  background: var(--cc-bg-elevated, rgba(255,255,255,0.04));
+  border: 1px solid var(--cc-border, #3a3a3a);
+  padding: 7px 10px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    border-color: var(--cc-border-strong, #4a4a4a);
+  }
+}
+
+.tool-chevron {
+  margin-left: auto;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+
+  &.open { transform: rotate(180deg); }
+}
+
+.tool-detail {
+  margin: 8px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.25);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--cc-text-muted, #bbb);
+  cursor: text;
+  user-select: text;
 }
 
 .msg-body {

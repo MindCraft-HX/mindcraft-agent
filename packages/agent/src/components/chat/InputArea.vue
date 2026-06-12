@@ -1,16 +1,17 @@
 <template>
-  <div class="input-area">
-    <!-- 图片附件栏 -->
-    <div v-if="images.length" class="image-bar">
-      <div v-for="(img, i) in images" :key="i" class="image-bar-item">
-        <img :src="imgPreview(img)" alt="attachment" />
-        <button class="image-remove" @click="removeImage(i)" title="移除">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/>
-          </svg>
-        </button>
-      </div>
-    </div>
+  <div
+    class="input-area"
+    :class="{ dragging: dragging }"
+    @dragover.prevent="dragging = true"
+    @dragleave.prevent="dragging = false"
+    @drop.prevent="onDropFiles"
+  >
+    <!-- 图片附件栏（复用项目模式：粘贴/拖拽即显示，支持多图） -->
+    <ImageAttachmentBar
+      :images="pendingImages"
+      @preview="$emit('preview-image', $event)"
+      @remove="removeAt"
+    />
 
     <!-- 输入框 -->
     <div class="input-row">
@@ -22,55 +23,37 @@
         :rows="1"
         @input="autoResize"
         @keydown="onKeydown"
-        @paste="onPaste"
+        @paste="onPasteFiltered"
       ></textarea>
     </div>
 
     <!-- 底部控制栏 -->
     <div class="control-row">
-      <!-- 左侧：Provider / 模型 -->
+      <!-- 左侧：接口 / 模型 -->
       <div class="control-left">
-        <select v-model="localProvider" class="ctrl-select" @change="onProviderChange">
-          <option value="claude">Claude</option>
-          <option value="codex">CodeX</option>
+        <select v-model="localProvider" class="ctrl-select" title="API 接口类型">
+          <option value="claude">Anthropic 接口</option>
+          <option value="codex">OpenAI 接口</option>
         </select>
 
-        <input
-          v-model="localModel"
-          class="ctrl-model-input"
-          :placeholder="modelPlaceholder"
-          :list="'model-suggestions-' + localProvider"
-          @focus="onModelFocus"
-        />
-        <datalist :id="'model-suggestions-' + localProvider">
-          <option v-for="m in modelSuggestions" :key="m" :value="m"/>
-        </datalist>
+        <select v-model="localModel" class="ctrl-select ctrl-model-select" title="模型">
+          <option v-if="!modelOptions.length" value="" disabled>未配置模型</option>
+          <option v-for="m in modelOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
       </div>
 
-      <!-- 右侧：控制开关 + 发送 -->
+      <!-- 右侧：思考档位 + 搜索 + 发送 -->
       <div class="control-right">
-        <!-- 思考开关（Claude 专用） -->
-        <button
-          v-if="localProvider === 'claude'"
-          class="ctrl-toggle"
-          :class="{ active: localThinking }"
-          @click="localThinking = !localThinking"
-          title="深度思考"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="8" cy="8" r="5"/>
-            <path d="M8 4v4l3 2"/>
-          </svg>
-          <span>思考</span>
-        </button>
-
-        <!-- 思考预算（Claude 开启思考时显示） -->
-        <select v-if="localProvider === 'claude' && localThinking" v-model="localThinkingBudget" class="ctrl-select ctrl-select-sm">
-          <option :value="2000">2k</option>
-          <option :value="4000">4k</option>
-          <option :value="8000">8k</option>
-          <option :value="16000">16k</option>
-        </select>
+        <!-- 思考档位：关/低/中/高（Claude → budget，OpenAI → reasoning_effort） -->
+        <div class="think-seg" title="深度思考强度">
+          <span class="think-seg-label">思考</span>
+          <button
+            v-for="lv in thinkingLevels" :key="lv.value"
+            class="think-seg-btn"
+            :class="{ active: localThinkingLevel === lv.value, off: lv.value === 'off' && localThinkingLevel === 'off' }"
+            @click="localThinkingLevel = lv.value"
+          >{{ lv.label }}</button>
+        </div>
 
         <!-- 联网搜索 -->
         <button
@@ -86,16 +69,6 @@
           </svg>
           <span>搜索</span>
         </button>
-
-        <!-- 图片上传 -->
-        <button class="ctrl-icon-btn" @click="triggerImageUpload" title="上传图片">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>
-            <circle cx="5" cy="6" r="1"/>
-            <path d="M1.5 11l3-3 2 2 3-3 4.5 4.5"/>
-          </svg>
-        </button>
-        <input ref="fileInputRef" type="file" accept="image/*" multiple hidden @change="onFileChange" />
 
         <!-- 发送 / 停止 -->
         <button
@@ -113,7 +86,7 @@
           v-else
           class="ctrl-stop-btn"
           @click="$emit('stop')"
-          title="停止"
+          title="停止生成"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <rect x="3" y="3" width="10" height="10" rx="1"/>
@@ -121,124 +94,155 @@
         </button>
       </div>
     </div>
+
+    <!-- 拖拽提示遮罩 -->
+    <div v-if="dragging" class="drop-overlay">松开以添加图片</div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
+import { useImageAttachments } from '../agentCommon/composables/useImageAttachments.js'
 
 const props = defineProps({
   provider: { type: String, default: 'claude' },
   model: { type: String, default: '' },
-  thinkingEnabled: { type: Boolean, default: false },
-  thinkingBudget: { type: Number, default: 4000 },
+  thinkingLevel: { type: String, default: 'off' },
   webSearchEnabled: { type: Boolean, default: false },
   isStreaming: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
-  'update:provider', 'update:model',
-  'update:thinkingEnabled', 'update:thinkingBudget',
-  'update:webSearchEnabled',
-  'send', 'stop',
+  'update:provider', 'update:model', 'update:thinkingLevel', 'update:webSearchEnabled',
+  'send', 'stop', 'preview-image',
 ])
 
 const textareaRef = ref(null)
-const fileInputRef = ref(null)
 const inputText = ref('')
-const images = reactive([])
+
+// 图片附件（复用 agentCommon：粘贴/拖拽，多图，上限 10）
+const {
+  pendingImages, dragging, addImages, removeAt, onPaste, dispose,
+} = useImageAttachments({ getActiveTab: () => null })
+
+const thinkingLevels = [
+  { value: 'off', label: '关' },
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' },
+]
 
 // 本地状态（双向绑定到父组件）
 const localProvider = ref(props.provider)
 const localModel = ref(props.model)
-const localThinking = ref(props.thinkingEnabled)
-const localThinkingBudget = ref(props.thinkingBudget)
+const localThinkingLevel = ref(props.thinkingLevel)
 const localWebSearch = ref(props.webSearchEnabled)
 
-watch(localProvider, v => emit('update:provider', v))
+watch(localProvider, v => { emit('update:provider', v); refreshModelOptions(true) })
 watch(localModel, v => emit('update:model', v))
-watch(localThinking, v => emit('update:thinkingEnabled', v))
-watch(localThinkingBudget, v => emit('update:thinkingBudget', v))
+watch(localThinkingLevel, v => emit('update:thinkingLevel', v))
 watch(localWebSearch, v => emit('update:webSearchEnabled', v))
 
-// 同步回父组件
-watch(() => props.provider, v => { localProvider.value = v })
-watch(() => props.model, v => { localModel.value = v })
-watch(() => props.thinkingEnabled, v => { localThinking.value = v })
-watch(() => props.thinkingBudget, v => { localThinkingBudget.value = v })
+// 父组件同步回来（切换会话时）
+watch(() => props.provider, v => { if (v !== localProvider.value) { localProvider.value = v } })
+watch(() => props.model, v => { if (v !== localModel.value) localModel.value = v })
+watch(() => props.thinkingLevel, v => { localThinkingLevel.value = v })
 watch(() => props.webSearchEnabled, v => { localWebSearch.value = v })
 
-// provider 变更时尝试从配置读取模型
-const cachedProviders = ref({ claude: null, codex: null })
+// ── 模型选项：从已配置的 Provider 读取 ──
+const claudeProvidersState = ref(null)
+const codexProvidersState = ref(null)
+const modelOptions = ref([])
+
+const CLAUDE_TIER_LABELS = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', reasoning: 'Reasoning' }
+const CLAUDE_FALLBACK_MODELS = [
+  { label: 'Sonnet · claude-sonnet-4-20250514', value: 'claude-sonnet-4-20250514' },
+  { label: 'Opus · claude-opus-4-20250514', value: 'claude-opus-4-20250514' },
+  { label: 'Haiku · claude-3-5-haiku-20241022', value: 'claude-3-5-haiku-20241022' },
+]
+const CODEX_FALLBACK_MODELS = [
+  { label: 'gpt-4o', value: 'gpt-4o' },
+  { label: 'gpt-4o-mini', value: 'gpt-4o-mini' },
+  { label: 'o3-mini', value: 'o3-mini' },
+]
+
+function buildClaudeOptions() {
+  const state = claudeProvidersState.value
+  const providers = Array.isArray(state?.providers) ? state.providers : []
+  const activeIdx = Number.isInteger(state?.activeIdx) ? state.activeIdx : -1
+  const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
+  const tierModels = active?.tierModels || {}
+  const opts = []
+  const seen = new Set()
+  for (const tier of ['haiku', 'sonnet', 'opus', 'reasoning']) {
+    const m = String(tierModels[tier] || '').trim()
+    if (m && !seen.has(m)) {
+      seen.add(m)
+      opts.push({ label: `${CLAUDE_TIER_LABELS[tier]} · ${m}`, value: m, tier })
+    }
+  }
+  return opts.length ? opts : CLAUDE_FALLBACK_MODELS
+}
+
+function buildCodexOptions() {
+  const state = codexProvidersState.value
+  const providers = Array.isArray(state?.providers) ? state.providers : []
+  const opts = []
+  const seen = new Set()
+  for (const p of providers) {
+    const m = String(p?.model || '').trim()
+    if (m && !seen.has(m)) {
+      seen.add(m)
+      opts.push({ label: p.name ? `${m}（${p.name}）` : m, value: m })
+    }
+  }
+  return opts.length ? opts : CODEX_FALLBACK_MODELS
+}
+
+function refreshModelOptions(resetModel = false) {
+  modelOptions.value = localProvider.value === 'claude' ? buildClaudeOptions() : buildCodexOptions()
+  const values = modelOptions.value.map(o => o.value)
+  if (resetModel || !localModel.value || !values.includes(localModel.value)) {
+    localModel.value = defaultModel() || values[0] || ''
+  }
+}
+
+function defaultModel() {
+  if (localProvider.value === 'claude') {
+    const state = claudeProvidersState.value
+    const providers = Array.isArray(state?.providers) ? state.providers : []
+    const activeIdx = Number.isInteger(state?.activeIdx) ? state.activeIdx : -1
+    const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
+    const tier = active?.selectedTier || state?.selectedTier || 'sonnet'
+    return String(active?.tierModels?.[tier] || '').trim()
+  }
+  const state = codexProvidersState.value
+  const providers = Array.isArray(state?.providers) ? state.providers : []
+  const activeIdx = Number.isInteger(state?.activeIdx) ? state.activeIdx : -1
+  const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
+  return String(active?.model || '').trim()
+}
 
 onMounted(async () => {
   try {
-    const api = window.electronAPI || {}
-    const claudeP = await api.claudeGetProviders?.()
-    if (claudeP) cachedProviders.value.claude = claudeP
-    const codexP = await api.codexGetProviders?.()
-    if (codexP) cachedProviders.value.codex = codexP
+    const apiObj = window.electronAPI || {}
+    const [claudeP, codexP] = await Promise.all([
+      apiObj.claudeGetProviders?.().catch(() => null),
+      apiObj.codexGetProviders?.().catch(() => null),
+    ])
+    claudeProvidersState.value = claudeP || null
+    codexProvidersState.value = codexP || null
   } catch (_) {}
-
-  // 初始化模型
-  if (!localModel.value) {
-    tryLoadModel()
-  }
+  refreshModelOptions(!props.model)
 })
 
-function tryLoadModel() {
-  const p = localProvider.value
-  if (p === 'claude') {
-    const prov = cachedProviders.value.claude
-    if (prov?.providers?.length && prov.activeIdx >= 0) {
-      const active = prov.providers[prov.activeIdx]
-      const tier = active?.selectedTier || prov?.selectedTier || 'sonnet'
-      localModel.value = active?.tierModels?.[tier] || prov?.tierModels?.[tier] || ''
-    }
-  } else {
-    const prov = cachedProviders.value.codex
-    if (prov?.providers?.length && prov.activeIdx >= 0) {
-      localModel.value = prov.providers[prov.activeIdx]?.model || ''
-    }
-  }
-}
+onUnmounted(() => dispose?.())
 
-function onProviderChange() {
-  tryLoadModel()
-}
-
-function onModelFocus() {
-  if (!localModel.value) tryLoadModel()
-}
-
-const modelSuggestions = computed(() => {
-  if (localProvider.value === 'claude') {
-    return [
-      'claude-sonnet-4-20250514',
-      'claude-opus-4-20250514',
-      'claude-haiku-4-20250514',
-      'claude-3-5-sonnet-20241022',
-    ]
-  }
-  return [
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gpt-4-turbo',
-    'o1',
-    'o3-mini',
-  ]
-})
-
-const placeholder = computed(() => {
-  return localProvider.value === 'claude' ? '向 Claude 提问...' : '向 CodeX 提问...'
-})
-
-const modelPlaceholder = computed(() => {
-  return localProvider.value === 'claude' ? '模型名称' : '模型名称'
-})
+const placeholder = computed(() => '输入问题，Enter 发送，Shift+Enter 换行，可直接粘贴图片')
 
 const canSend = computed(() => {
-  return (inputText.value.trim() || images.length > 0) && !props.isStreaming
+  return (inputText.value.trim() || pendingImages.value.length > 0) && !props.isStreaming
 })
 
 function autoResize() {
@@ -249,132 +253,53 @@ function autoResize() {
 }
 
 function onKeydown(e) {
-  // Enter 发送、Shift+Enter 换行
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (canSend.value) doSend()
   }
 }
 
+/** 粘贴：仅接收图片（文本走默认行为） */
+function onPasteFiltered(e) {
+  onPaste(e)
+}
+
+/** 拖拽：过滤出图片文件 */
+function onDropFiles(e) {
+  dragging.value = false
+  const files = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith('image/'))
+  if (files.length) addImages(files)
+}
+
 function doSend() {
   if (!canSend.value) return
   const text = inputText.value.trim()
+  const images = pendingImages.value
+    .filter(img => img.isImage && img.dataUrl)
+    .map(img => ({ dataUrl: img.dataUrl, mediaType: img.mediaType || 'image/png' }))
   if (!text && !images.length) return
-  emit('send', text, [...images])
+  emit('send', text, images)
   inputText.value = ''
-  images.length = 0
+  pendingImages.value = []
   nextTick(() => {
     const el = textareaRef.value
     if (el) { el.style.height = 'auto' }
   })
 }
 
-function imgPreview(img) {
-  if (img.url) return img.url
-  if (img.base64 || img.data) {
-    return `data:${img.mediaType || 'image/png'};base64,${img.base64 || img.data}`
-  }
-  return ''
-}
-
-function removeImage(i) {
-  images.splice(i, 1)
-}
-
-function addImage(file) {
-  if (!file || !file.type.startsWith('image/')) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    const base64 = reader.result.split(',')[1]
-    images.push({
-      file,
-      base64,
-      mediaType: file.type,
-      name: file.name,
-    })
-  }
-  reader.readAsDataURL(file)
-}
-
-function onPaste(e) {
-  const items = e.clipboardData?.items
-  if (!items) return
-  for (const item of items) {
-    if (item.type.startsWith('image/')) {
-      e.preventDefault()
-      addImage(item.getAsFile())
-    }
-  }
-}
-
-function triggerImageUpload() {
-  fileInputRef.value?.click()
-}
-
-function onFileChange(e) {
-  const files = e.target?.files
-  if (!files) return
-  for (const file of files) addImage(file)
-  e.target.value = ''
-}
-
-// 暴露方法给父组件
 defineExpose({ focus: () => textareaRef.value?.focus() })
 </script>
 
 <style lang="scss" scoped>
 .input-area {
+  position: relative;
   border-top: 1px solid var(--cc-border, #2a2a2a);
   background: var(--cc-bg, #1a1a1a);
   padding: 8px 14px 10px;
 }
 
-.image-bar {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-.image-bar-item {
-  position: relative;
-  width: 56px;
-  height: 56px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--cc-border, #2a2a2a);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-}
-
-.image-remove {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s;
-
-  .image-bar-item:hover & {
-    opacity: 1;
-  }
-}
-
 .input-row {
-  margin-bottom: 6px;
+  margin: 6px 0;
 }
 
 .input-textarea {
@@ -406,18 +331,20 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .control-left {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .control-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ctrl-select {
@@ -430,33 +357,65 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
   font-size: 11px;
   cursor: pointer;
   outline: none;
+  max-width: 240px;
 
-  &:focus {
-    border-color: var(--cc-primary, #c6613f);
-  }
+  &:hover { border-color: var(--cc-border-strong, #444); }
+  &:focus { border-color: var(--cc-primary, #c6613f); }
 }
 
-.ctrl-select-sm {
-  width: 48px;
+.ctrl-model-select {
+  text-overflow: ellipsis;
 }
 
-.ctrl-model-input {
-  width: 130px;
+/* 思考档位（关/低/中/高） */
+.think-seg {
+  display: flex;
+  align-items: center;
+  gap: 0;
   height: 28px;
-  padding: 0 8px;
-  border-radius: 5px;
   border: 1px solid var(--cc-border, #2a2a2a);
+  border-radius: 6px;
   background: var(--cc-bg-elevated, #252525);
-  color: var(--cc-text, #e0e0e0);
-  font-size: 11px;
-  outline: none;
+  overflow: hidden;
+}
 
-  &:focus {
-    border-color: var(--cc-primary, #c6613f);
+.think-seg-label {
+  font-size: 11px;
+  color: var(--cc-text-dim, #888);
+  padding: 0 8px;
+  border-right: 1px solid var(--cc-border, #2a2a2a);
+  user-select: none;
+}
+
+.think-seg-btn {
+  height: 100%;
+  padding: 0 9px;
+  border: none;
+  background: transparent;
+  color: var(--cc-text-dim, #888);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s;
+
+  & + & {
+    border-left: 1px solid var(--cc-border, #2a2a2a);
   }
 
-  &::placeholder {
-    color: var(--cc-text-dim, #666);
+  &:hover:not(.active) {
+    color: var(--cc-text, #e0e0e0);
+    background: var(--cc-bg-hover, rgba(255,255,255,0.05));
+  }
+
+  &.active {
+    background: var(--cc-primary, #c6613f);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* "关"档位激活时用中性色，避免误以为开启了功能 */
+  &.active.off {
+    background: var(--cc-border-strong, #444);
+    color: var(--cc-text-muted, #bbb);
   }
 }
 
@@ -466,7 +425,7 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
   gap: 4px;
   height: 28px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: 6px;
   border: 1px solid var(--cc-border, #2a2a2a);
   background: var(--cc-bg-elevated, #252525);
   color: var(--cc-text-dim, #888);
@@ -482,27 +441,9 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
 
   &.active {
     border-color: var(--cc-primary, #c6613f);
-    background: var(--cc-primary-bg, rgba(198, 97, 63, 0.15));
-    color: var(--cc-primary, #c6613f);
-  }
-}
-
-.ctrl-icon-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-  border: 1px solid var(--cc-border, #2a2a2a);
-  background: var(--cc-bg-elevated, #252525);
-  color: var(--cc-text-dim, #888);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-
-  &:hover {
-    border-color: var(--cc-primary, #c6613f);
-    color: var(--cc-text, #e0e0e0);
+    background: var(--cc-primary, #c6613f);
+    color: #fff;
+    font-weight: 600;
   }
 }
 
@@ -541,9 +482,30 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
   align-items: center;
   justify-content: center;
   transition: background 0.15s;
+  animation: stop-pulse 1.6s ease-in-out infinite;
 
   &:hover {
     background: var(--cc-primary-bg, rgba(198, 97, 63, 0.15));
   }
+}
+
+@keyframes stop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(198, 97, 63, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(198, 97, 63, 0); }
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 13px;
+  border: 2px dashed var(--cc-primary, #c6613f);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 5;
 }
 </style>

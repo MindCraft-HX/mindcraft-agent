@@ -117,16 +117,17 @@ function createAgentBridge(ipcRenderer) {
   // 简易对话：Claude
   claudeChat: (payload) => ipcRenderer.invoke('claude-chat', payload),
   claudeChatContinue: (payload) => ipcRenderer.invoke('claude-chat-continue', payload),
+  claudeChatAbort: (payload) => ipcRenderer.invoke('claude-chat-abort', payload),
   chatWebSearch: (payload) => ipcRenderer.invoke('chat-web-search', payload),
   onClaudeStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
     ipcRenderer.on('claude-stream-chunk', handler)
     return () => ipcRenderer.removeListener('claude-stream-chunk', handler)
   },
-  onClaudeStreamDone: (callback) => {
+  onClaudeStreamThinking: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('claude-stream-done', handler)
-    return () => ipcRenderer.removeListener('claude-stream-done', handler)
+    ipcRenderer.on('claude-stream-thinking', handler)
+    return () => ipcRenderer.removeListener('claude-stream-thinking', handler)
   },
   onClaudeStreamToolStart: (callback) => {
     const handler = (_, data) => callback(data)
@@ -218,15 +219,16 @@ function createAgentBridge(ipcRenderer) {
   // 简易对话：CodeX
   codexChat: (payload) => ipcRenderer.invoke('codex-chat', payload),
   codexChatContinue: (payload) => ipcRenderer.invoke('codex-chat-continue', payload),
+  codexChatAbort: (payload) => ipcRenderer.invoke('codex-chat-abort', payload),
   onCodexStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
     ipcRenderer.on('codex-stream-chunk', handler)
     return () => ipcRenderer.removeListener('codex-stream-chunk', handler)
   },
-  onCodexStreamDone: (callback) => {
+  onCodexStreamThinking: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('codex-stream-done', handler)
-    return () => ipcRenderer.removeListener('codex-stream-done', handler)
+    ipcRenderer.on('codex-stream-thinking', handler)
+    return () => ipcRenderer.removeListener('codex-stream-thinking', handler)
   },
   onCodexStreamToolDelta: (callback) => {
     const handler = (_, data) => callback(data)
