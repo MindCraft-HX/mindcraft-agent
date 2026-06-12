@@ -36,10 +36,31 @@
           <option value="codex">OpenAI 接口</option>
         </select>
 
-        <select v-model="localModel" class="ctrl-select ctrl-model-select" title="模型">
-          <option v-if="!modelOptions.length" value="" disabled>未配置模型</option>
-          <option v-for="m in modelOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
-        </select>
+        <!-- 模型选择（自定义下拉） -->
+        <div class="model-picker" ref="modelPickerRef">
+          <button class="model-trigger" :class="{ open: modelDropdownOpen }" @click="modelDropdownOpen = !modelDropdownOpen" title="选择模型">
+            <span class="model-trigger-label">{{ selectedModelLabel || '选择模型' }}</span>
+            <svg class="model-trigger-chevron" :class="{ flipped: modelDropdownOpen }" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <polyline points="2 3.5 5 6.5 8 3.5"/>
+            </svg>
+          </button>
+          <Teleport to="body">
+            <div v-if="modelDropdownOpen" class="model-popover" :style="popoverStyle" @click.stop>
+              <div class="model-popover-scroll">
+                <div
+                  v-for="m in modelOptions"
+                  :key="m.value"
+                  class="model-option"
+                  :class="{ selected: m.value === localModel }"
+                  @click="selectModel(m)"
+                >
+                  <span class="model-option-tier">{{ m.tier ? tierLabel(m.tier) : m.label.split(' · ')[0] }}</span>
+                  <span class="model-option-id">{{ m.value }}</span>
+                </div>
+              </div>
+            </div>
+          </Teleport>
+        </div>
       </div>
 
       <!-- 右侧：思考档位 + 搜索 + 发送 -->
@@ -123,6 +144,34 @@ const emit = defineEmits([
 
 const textareaRef = ref(null)
 const inputText = ref('')
+const modelPickerRef = ref(null)
+
+// ── 模型自定义下拉 ──
+const modelDropdownOpen = ref(false)
+const selectedModelLabel = computed(() => {
+  const cur = modelOptions.value.find(m => m.value === localModel.value)
+  return cur?.label || localModel.value || ''
+})
+function selectModel(m) {
+  localModel.value = m.value
+  modelDropdownOpen.value = false
+}
+const popoverStyle = computed(() => {
+  const el = modelPickerRef.value
+  if (!el) return { top: '0px', left: '0px' }
+  const rect = el.getBoundingClientRect()
+  return { top: (rect.bottom + 4) + 'px', left: rect.left + 'px', minWidth: Math.max(rect.width, 220) + 'px' }
+})
+function closeModelDropdown(e) {
+  if (modelDropdownOpen.value && modelPickerRef.value && !modelPickerRef.value.contains(e.target)) {
+    modelDropdownOpen.value = false
+  }
+}
+// 点击外部关闭
+watch(modelDropdownOpen, (open) => {
+  if (open) document.addEventListener('pointerdown', closeModelDropdown, true)
+  else document.removeEventListener('pointerdown', closeModelDropdown, true)
+})
 
 // 图片附件（复用 agentCommon：粘贴/拖拽，多图，上限 10）
 const {
@@ -159,7 +208,11 @@ watch(localWebSearch, v => emit('update:webSearchEnabled', v))
 
 // 父组件同步回来（切换会话时）
 watch(() => props.provider, v => { if (v !== localProvider.value) { localProvider.value = v } })
-watch(() => props.model, v => { if (v !== localModel.value) localModel.value = v })
+watch(() => props.model, v => {
+  if (v && v !== localModel.value) localModel.value = v
+  // props 空值时不覆盖——等 refreshModelOptions 选出默认
+  if (!v && modelOptions.value.length && !localModel.value) localModel.value = modelOptions.value[0].value
+})
 watch(() => props.thinkingLevel, v => { localThinkingLevel.value = v })
 watch(() => props.webSearchEnabled, v => { localWebSearch.value = v })
 
@@ -169,6 +222,7 @@ const codexProvidersState = ref(null)
 const modelOptions = ref([])
 
 const CLAUDE_TIER_LABELS = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', reasoning: 'Reasoning' }
+function tierLabel(tier) { return CLAUDE_TIER_LABELS[tier] || tier }
 const CLAUDE_FALLBACK_MODELS = [
   { label: 'Sonnet · claude-sonnet-4-20250514', value: 'claude-sonnet-4-20250514' },
   { label: 'Opus · claude-opus-4-20250514', value: 'claude-opus-4-20250514' },
@@ -379,6 +433,91 @@ defineExpose({ focus: () => textareaRef.value?.focus() })
 
 .ctrl-model-select {
   text-overflow: ellipsis;
+}
+
+/* ── 模型自定义下拉 ── */
+.model-picker {
+  position: relative;
+}
+
+.model-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--cc-border, #2a2a2a);
+  background: var(--cc-bg-elevated, #252525);
+  color: var(--cc-text, #e0e0e0);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  transition: border-color 0.15s;
+
+  &:hover, &.open {
+    border-color: var(--cc-primary, #c6613f);
+  }
+}
+
+.model-trigger-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-trigger-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  opacity: 0.5;
+  &.flipped { transform: rotate(180deg); }
+}
+
+.model-popover {
+  position: fixed;
+  z-index: 10000;
+  background: var(--cc-bg-elevated, #252525);
+  border: 1px solid var(--cc-border-strong, #3a3a3a);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+.model-popover-scroll {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+
+  &:hover {
+    background: var(--cc-bg-hover, rgba(255,255,255,0.06));
+  }
+  &.selected {
+    background: var(--cc-primary-bg, rgba(198, 97, 63, 0.12));
+    .model-option-tier { color: var(--cc-primary, #c6613f); font-weight: 600; }
+  }
+}
+
+.model-option-tier {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cc-text-muted, #bbb);
+}
+
+.model-option-id {
+  font-size: 11px;
+  color: var(--cc-text-dim, #888);
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
 }
 
 /* 思考档位圆点（匹配项目 effort 4 点样式） */

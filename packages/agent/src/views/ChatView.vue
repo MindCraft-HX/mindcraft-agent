@@ -184,8 +184,7 @@ async function onRenameSession(id, title) {
 // 设置更新
 function onProviderUpdate(v) {
   currentSession.provider = v
-  currentSession.model = ''  // 重置模型
-  // InputArea 会自动从配置加载
+  // 不重置 model，让 InputArea 自动选出新 provider 的默认模型
 }
 function onModelUpdate(v) { currentSession.model = v }
 function onThinkingLevelUpdate(v) { currentSession.thinkingLevel = v }
