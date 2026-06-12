@@ -1617,15 +1617,39 @@ function newProject() {
   nextTick(() => inputEl.value?.focus())
 }
 
-async function switchProject(id) {
+// 根据首页/外部跳转指定的会话标识（sessionId 优先，chatId 兜底）查找目标会话
+function findPreferredChat(chats, preferred) {
+  if (!preferred || !chats?.length) return null
+  const { chatId, sessionId } = preferred
+  if (sessionId) {
+    const bySession = chats.find(c => c.cliSessionId === sessionId || c.sessionId === sessionId)
+    if (bySession) return bySession
+  }
+  if (chatId != null && chatId !== '') {
+    const byId = chats.find(c => String(c.id) === String(chatId))
+    if (byId) return byId
+  }
+  return null
+}
+
+async function switchProject(id, preferredChat = null) {
   // 顶部项目 Tab 始终可切换；首条回复等待中仍可能锁住侧栏/工具栏，但不把用户困在当前 Tab
   teardownHistoryTopObserver()
   activeProjectId.value = id
   const p = activeProject.value
   if (p) p.hasDoneNotification = false
+  const preferred = findPreferredChat(p?.chats, preferredChat)
   if (!p?.cwdLocked || !p?.cwd) {
-    const firstChatId = p?.chats?.[0]?.id || null
+    const firstChatId = preferred?.id || p?.chats?.[0]?.id || null
     if (firstChatId) switchChat(firstChatId)
+    return
+  }
+
+  // 外部显式指定了会话（如首页项目条目点击）：优先于运行中会话
+  if (preferred) {
+    switchChat(preferred.id)
+    saveHistory()
+    nextTick(() => inputEl.value?.focus())
     return
   }
 

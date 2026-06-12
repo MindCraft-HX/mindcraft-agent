@@ -365,6 +365,7 @@ function getRecentProject() {
               chatName: chat.name || '新对话',
               cwd: proj.cwd || '',
               projectId: proj.id,
+              chatId: chat.id ?? '',
               sessionId: chat.cliSessionId || chat.sessionId || '',
               updatedAt: ts,
             })
@@ -395,6 +396,7 @@ function getRecentProject() {
               chatName: chat.name || '新对话',
               cwd: proj.cwd || '',
               projectId: proj.id,
+              chatId: chat.id ?? '',
               sessionId: chat.cliSessionId || chat.sessionId || '',
               updatedAt: ts,
             })

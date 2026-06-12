@@ -24,7 +24,7 @@
                 v-for="proj in recentProject.projects.slice(0, 4)"
                 :key="proj.sessionId || proj.projectName + proj.chatName"
                 class="project-entry"
-                @click.stop="router.push({ path: '/main/codeHub', query: { agent: proj.agentType, projectId: proj.projectId } })"
+                @click.stop="openProjectEntry(proj)"
               >
                 <span class="badge" :style="{ background: proj.agentColor }">
                   {{ proj.agentName }}
@@ -178,6 +178,13 @@ const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
 const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeData()
+
+function openProjectEntry(proj) {
+  const query = { agent: proj.agentType, projectId: proj.projectId }
+  if (proj.chatId !== '' && proj.chatId != null) query.chatId = proj.chatId
+  if (proj.sessionId) query.sessionId = proj.sessionId
+  router.push({ path: '/main/codeHub', query })
+}
 
 function dirPath(filePath) {
   if (!filePath) return ''

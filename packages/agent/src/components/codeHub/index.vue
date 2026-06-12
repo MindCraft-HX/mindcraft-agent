@@ -237,27 +237,35 @@ const showEmptyOverlay = computed(() => {
 
 // ── 激活 Tab（核心：同步 activeTabId + 调用 switchProject）──
 let _tabActivationInit = true  // 首次恢复时不刷，避免初始 toast
-function activateTab(tab) {
+function activateTab(tab, preferredChat = null) {
   activeTabId.value = tab.id
   localStorage.setItem('codehub_active_tab', tab.id)
 
   // 如果 Agent 尚未挂载，先挂载，下一帧再切换
   if (!mountedMap[tab.agentType]) {
     mountedMap[tab.agentType] = true
-    nextTick(() => doSwitchProject(tab))
+    nextTick(() => doSwitchProject(tab, preferredChat))
     return
   }
-  doSwitchProject(tab)
+  doSwitchProject(tab, preferredChat)
 }
 
-function doSwitchProject(tab) {
+function doSwitchProject(tab, preferredChat = null) {
   const panel = getPanel(tab.agentType)
   if (!panel) return
-  panel.switchProject(tab.projectId)
+  panel.switchProject(tab.projectId, preferredChat)
   if (!_tabActivationInit) {
     nextTick(() => panel.refreshSessions?.())
   }
   _tabActivationInit = false
+}
+
+// 从 route query 提取期望激活的会话（来自首页项目条目点击）
+function preferredChatFromQuery() {
+  const chatId = route.query?.chatId
+  const sessionId = route.query?.sessionId
+  if (chatId == null && !sessionId) return null
+  return { chatId: chatId ?? null, sessionId: sessionId || null }
 }
 
 // ── 恢复上次激活的 Tab ──
@@ -275,11 +283,11 @@ function restoreActiveTab() {
   // 优先匹配 query 指定的 projectId + agent 组合
   if (requestedProjectId && requestedAgent) {
     const exact = tabs.find(t => t.agentType === requestedAgent && String(t.projectId) === String(requestedProjectId))
-    if (exact) { activateTab(exact); return }
+    if (exact) { activateTab(exact, preferredChatFromQuery()); return }
   }
   if (requestedProjectId) {
     const byProject = tabs.find(t => String(t.projectId) === String(requestedProjectId))
-    if (byProject) { activateTab(byProject); return }
+    if (byProject) { activateTab(byProject, preferredChatFromQuery()); return }
   }
 
   const match = pickInitialCodeHubTab({
@@ -344,7 +352,7 @@ onUnmounted(() => {
 })
 
 // ── 监听 route query 变化（keep-alive 下 onMounted 不会重新触发） ──
-watch(() => [route.query?.agent, route.query?.projectId], ([agent, projectId]) => {
+watch(() => [route.query?.agent, route.query?.projectId, route.query?.chatId, route.query?.sessionId], ([agent, projectId]) => {
   if (!initDone.value) return
   if (!agent && !projectId) return
   const tab = unifiedTabs.value.find(t => {
@@ -354,7 +362,14 @@ watch(() => [route.query?.agent, route.query?.projectId], ([agent, projectId]) =
     if (projectId) return String(t.projectId) === String(projectId)
     return false
   })
-  if (tab && tab.id !== activeTabId.value) activateTab(tab)
+  if (!tab) return
+  const preferredChat = preferredChatFromQuery()
+  if (tab.id !== activeTabId.value) {
+    activateTab(tab, preferredChat)
+  } else if (preferredChat) {
+    // Tab 已激活但 query 指定了具体会话：仍需切到该会话
+    doSwitchProject(tab, preferredChat)
+  }
 })
 
 // ── watch tabs 变化：自动 fallback（仅在初始化完成后） ──

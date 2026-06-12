@@ -1576,13 +1576,33 @@ function newProject() {
   nextTick(() => inputEl.value?.focus())
 }
 
-function switchProject(id) {
+// 根据首页/外部跳转指定的会话标识（sessionId 优先，chatId 兜底）查找目标会话
+function findPreferredChat(chats, preferred) {
+  if (!preferred || !chats?.length) return null
+  const { chatId, sessionId } = preferred
+  if (sessionId) {
+    const bySession = chats.find(c => c.cliSessionId === sessionId || c.sessionId === sessionId)
+    if (bySession) return bySession
+  }
+  if (chatId != null && chatId !== '') {
+    const byId = chats.find(c => String(c.id) === String(chatId))
+    if (byId) return byId
+  }
+  return null
+}
+
+function switchProject(id, preferredChat = null) {
   activeProjectId.value = id
   const p = activeProject.value
   if (p) p.hasDoneNotification = false
-  activeChatId.value = getLatestChatId(p?.chats || [])
-  void refreshMetricsForChat(p?.chats?.find(c => c.id === activeChatId.value) || null)
-  requestAnimationFrame(() => { smartScrollBottom() })
+  const preferred = findPreferredChat(p?.chats, preferredChat)
+  if (preferred) {
+    switchChat(preferred.id)
+  } else {
+    activeChatId.value = getLatestChatId(p?.chats || [])
+    void refreshMetricsForChat(p?.chats?.find(c => c.id === activeChatId.value) || null)
+    requestAnimationFrame(() => { smartScrollBottom() })
+  }
   if (p?.cwdLocked && p?.cwd) {
     if (!p._settingsLoaded) { p._settingsLoaded = true; loadProjectSettings(p) }
     void refreshProjectSessionsInBackground(p)
