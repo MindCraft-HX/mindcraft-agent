@@ -6,8 +6,15 @@ const defaultStats = () => ({
   combined: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0 },
 })
 
+function loadRecentDocs() {
+  try {
+    return JSON.parse(localStorage.getItem('mindcraft_agent_recent_docs') || '[]')
+  } catch (_) { return [] }
+}
+
 export function useHomeData() {
   const recentProject = ref({ hasRecent: false })
+  const recentDocs = ref(loadRecentDocs())
   const todayStats = ref(defaultStats())
   const trendData = ref([])
   const trendDays = ref(7)
@@ -61,6 +68,7 @@ export function useHomeData() {
 
   return {
     recentProject,
+    recentDocs,
     todayStats,
     trendData,
     trendDays,

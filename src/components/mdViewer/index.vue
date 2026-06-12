@@ -136,6 +136,24 @@ async function ensurePayloadContent(payload = {}) {
   }
 }
 
+function saveRecentDoc(payload = {}) {
+  if (!payload.filePath) return
+  try {
+    const key = 'mindcraft_agent_recent_docs'
+    const docs = JSON.parse(localStorage.getItem(key) || '[]')
+    const entry = {
+      name: payload.name || '',
+      filePath: payload.filePath,
+      ext: (payload.name || '').split('.').pop() || '',
+      openedAt: Date.now(),
+    }
+    // 去重 + 最大5条
+    const filtered = docs.filter(d => d.filePath !== entry.filePath)
+    filtered.unshift(entry)
+    localStorage.setItem(key, JSON.stringify(filtered.slice(0, 5)))
+  } catch (_) {}
+}
+
 async function addPayload(payload = {}) {
   const existing = findTabByFilePath(payload.filePath)
   const requiresRead = Boolean(payload?.filePath && !payload.content && !payload.data)
@@ -147,6 +165,7 @@ async function addPayload(payload = {}) {
     })
     upsertTab(readyTab)
     activeTabId.value = readyTab.id
+    saveRecentDoc(payload)
     return
   }
 
@@ -170,6 +189,7 @@ async function addPayload(payload = {}) {
     const completedTab = finalizeDocumentTab(pendingTab, ready)
     upsertTab(completedTab)
     activeTabId.value = completedTab.id
+    saveRecentDoc(payload)
   } catch (error) {
     upsertTab({
       ...pendingTab,
