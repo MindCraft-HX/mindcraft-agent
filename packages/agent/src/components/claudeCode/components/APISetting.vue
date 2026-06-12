@@ -786,9 +786,12 @@ async function importFromLegacy() {
       return
     }
     if (!result.success) { ElMessage.error('导入失败：' + (result.error || '未知错误')); return }
-    const { imported, note } = result
+    const { imported, note, diag } = result
     const parts = []
-    if (imported.providers > 0) parts.push(`${imported.providers} 个 Provider`)
+    if (imported.providers > 0) {
+      const names = diag?.providerNames?.length ? `（${diag.providerNames.join('、')}）` : ''
+      parts.push(`${imported.providers} 个 Provider${names}`)
+    }
     if (imported.tierModels) parts.push('Tier Models')
     await openSettings()
     if (parts.length) {
@@ -796,7 +799,15 @@ async function importFromLegacy() {
     } else if (note === 'keyAlreadyShared') {
       ElMessage.success('API Key 已通过共享配置文件互通，无需额外导入')
     } else {
-      ElMessage.warning('未在 MindCraft 中找到 Provider 配置（可能仅使用简单 Key 模式，已通过共享配置文件互通）')
+      // 显示诊断信息帮助排查
+      const diagMsg = []
+      if (diag?.dir) diagMsg.push(`源目录: ${diag.dir}`)
+      if (diag?.fileSize > 0) diagMsg.push(`文件大小: ${diag.fileSize}B`)
+      if (diag?.keys?.length) diagMsg.push(`文件键: ${diag.keys.join(', ')}`)
+      if (diag?.providersNote) diagMsg.push(diag.providersNote)
+      if (diag?.parseError) diagMsg.push(`解析错误: ${diag.parseError}`)
+      const detail = diagMsg.length ? `\n(${diagMsg.join(' | ')})` : ''
+      ElMessage.warning(`未在 MindCraft 中找到 Provider 配置${detail}`)
     }
   } catch (e) {
     ElMessage.error('导入失败：' + (e?.message || e))

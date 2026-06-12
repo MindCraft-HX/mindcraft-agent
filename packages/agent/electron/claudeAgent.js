@@ -1776,29 +1776,46 @@ function setupClaudeHandlers() {
   // 从 mindcraft-electron 导入 Claude 配置（手动触发）
   ipcMain.handle('claude-import-legacy-config', (_, customPath) => {
     const imported = { providers: 0, tierModels: false }
+    const diag = { dir: null, file: null, fileSize: 0, keys: [] }
     try {
       const legacyDir = customPath || findLegacyUserData()
       if (!legacyDir) return { notFound: true }
+      diag.dir = legacyDir
 
       // 读取 mindcraft-electron 的 claude-internal.json
       const internalPath = path.join(legacyDir, 'claude-internal.json')
+      diag.file = internalPath
 
       // 文件不存在 → 用户可能只用简单 Key 模式，没有创建过 Provider
       if (!fs.existsSync(internalPath)) {
         const sj = readSystemSettingsJson() || {}
         const sharedKey = sj.env?.ANTHROPIC_AUTH_TOKEN || sj.primaryApiKey || sj.apiKey || ''
-        return { success: true, imported, note: sharedKey ? 'keyAlreadyShared' : 'noProviders' }
+        return { success: true, imported, note: sharedKey ? 'keyAlreadyShared' : 'noProviders', diag }
       }
 
       let legacy = {}
-      try { legacy = JSON.parse(fs.readFileSync(internalPath, 'utf8')) } catch {
-        return { success: true, imported, note: 'emptyFile' }
+      try {
+        const raw = fs.readFileSync(internalPath, 'utf8')
+        diag.fileSize = raw.length
+        legacy = JSON.parse(raw)
+        diag.keys = Object.keys(legacy).filter(k => typeof legacy[k] !== 'undefined' && legacy[k] !== null)
+      } catch (e) {
+        diag.parseError = e?.message || String(e)
+        return { success: true, imported, note: 'emptyFile', diag }
       }
 
       // 导入 providers 列表
-      if (legacy.claudeProviders?.providers?.length) {
-        confSet('claudeProviders', legacy.claudeProviders)
-        imported.providers = legacy.claudeProviders.providers.length
+      const provData = legacy.claudeProviders
+      if (provData?.providers?.length) {
+        confSet('claudeProviders', provData)
+        imported.providers = provData.providers.length
+        diag.providerNames = provData.providers.map(p => p?.name || '(未命名)')
+      } else if (provData && !provData.providers) {
+        diag.providersNote = 'claudeProviders exists but .providers is missing/empty'
+      } else if (provData === undefined) {
+        diag.providersNote = 'claudeProviders key not found in file'
+      } else {
+        diag.providersNote = 'claudeProviders.providers is empty or null'
       }
 
       // 导入 tier models
@@ -1817,9 +1834,9 @@ function setupClaudeHandlers() {
         internalConf.set('claudeThinkingEnabled', legacy.claudeThinkingEnabled)
       }
 
-      return { success: true, imported }
+      return { success: true, imported, diag }
     } catch (e) {
-      return { success: false, error: e?.message || String(e) }
+      return { success: false, error: e?.message || String(e), diag }
     }
   })
 
