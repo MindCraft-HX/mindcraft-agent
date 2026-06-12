@@ -80,7 +80,10 @@
                 class="doc-entry"
               >
                 <span class="doc-ext-badge">{{ doc.ext || 'file' }}</span>
-                <span class="doc-name">{{ doc.name }}</span>
+                <div class="doc-info">
+                  <span class="doc-name">{{ doc.name || '未命名文件' }}</span>
+                  <span class="doc-path">{{ dirPath(doc.filePath) }}</span>
+                </div>
                 <span class="doc-time">{{ formatTime(doc.openedAt) }}</span>
               </div>
             </div>
@@ -151,6 +154,12 @@ const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
 const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeData()
+
+function dirPath(filePath) {
+  if (!filePath) return ''
+  const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  return lastSep > 0 ? filePath.slice(0, lastSep) : filePath
+}
 </script>
 
 <style lang="scss" scoped>
@@ -336,7 +345,7 @@ const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeD
 
 .doc-entry {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
@@ -358,12 +367,29 @@ const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeD
   letter-spacing: 0.5px;
   text-transform: uppercase;
   flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.doc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .doc-name {
-  flex: 1;
   font-size: 12px;
   color: var(--cc-text, #e0e0e0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.doc-path {
+  font-size: 10px;
+  color: var(--cc-text-dim, #888);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -373,6 +399,7 @@ const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeD
   font-size: 10px;
   color: var(--cc-text-dim, #888);
   flex-shrink: 0;
+  margin-top: 1px;
 }
 
 /* Initial state for docs */
