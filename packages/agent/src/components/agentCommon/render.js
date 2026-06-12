@@ -222,7 +222,7 @@ function parseTableAlignments(line) {
   if (!parts.length) return null
   const aligns = []
   for (const part of parts) {
-    if (!/^:?-{3,}:?$/.test(part.replace(/\s+/g, ''))) return null
+    if (!/^:?-{1,}:?$/.test(part.replace(/\s+/g, ''))) return null
     const compact = part.replace(/\s+/g, '')
     let align = ''
     if (compact.startsWith(':') && compact.endsWith(':')) align = 'center'
@@ -264,6 +264,11 @@ function renderList(items, ordered) {
   }).join('')
   const finalClass = items.some((item) => item.task) ? `${cls} md-task-list` : cls
   return `<${tag} class="${finalClass}"${start}>${body}</${tag}>`
+}
+
+function isTableLine(line) {
+  const cells = splitTableRow(line.trim())
+  return cells.length >= 2
 }
 
 function findNextNonEmptyLine(lines, startIdx) {
@@ -462,15 +467,18 @@ export function renderContent(text) {
       continue
     }
 
-    const next = lines[i + 1] || ''
-    if (/^\|.*\|$/.test(trimmed) && /^\|?.*\|?$/.test(next.trim())) {
-      const aligns = parseTableAlignments(next)
-      if (aligns) {
-        const headers = splitTableRow(trimmed)
+    const headerCells = splitTableRow(trimmed)
+    if (headerCells.length >= 2 && i + 1 < lines.length) {
+      const nextTrimmed = (lines[i + 1] || '').trim()
+      const aligns = parseTableAlignments(nextTrimmed)
+      if (aligns && aligns.length === headerCells.length) {
+        const headers = headerCells
         let j = i + 2
         const rows = []
-        while (j < lines.length && /^\|.*\|$/.test(lines[j].trim())) {
-          rows.push(splitTableRow(lines[j].trim()))
+        while (j < lines.length) {
+          const rowCells = splitTableRow(lines[j].trim())
+          if (rowCells.length !== headerCells.length) break
+          rows.push(rowCells)
           j += 1
         }
         out.push(renderTable(headers, aligns, rows))
@@ -523,7 +531,7 @@ export function renderContent(text) {
       if (!lookTrimmed) break
       if (
         /^```/.test(lookTrimmed) ||
-        /^\|.*\|$/.test(lookTrimmed) ||
+        isTableLine(lookTrimmed) ||
         /^(#{1,4})\s+/.test(lookTrimmed) ||
         isBulletListLine(lookahead) ||
         isOrderedListLine(lookahead) ||

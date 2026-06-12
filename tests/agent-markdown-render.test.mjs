@@ -110,4 +110,92 @@ assert.ok(
   'absolute local markdown links should not fall back to raw href navigation'
 )
 
+// --- 表格渲染测试 ---
+
+// A1: 全无管道格式（GFM 允许缺首尾管道）
+const noPipesTable = `Col1 | Col2\n---|---\na | b`
+const noPipesHtml = renderContent(noPipesTable)
+assert.ok(noPipesHtml.includes('<table class="md-table">'), 'A1: no-pipe table should render as table')
+assert.ok(noPipesHtml.includes('<td>a</td>') && noPipesHtml.includes('<td>b</td>'), 'A1: data cells should be present')
+
+// A2: 仅前导管道
+const leadingPipe = `| Col1 | Col2\n|---|---|\n| a | b |`
+const leadingPipeHtml = renderContent(leadingPipe)
+assert.ok(leadingPipeHtml.includes('<table'), 'A2: leading-pipe-only table should render')
+
+// A3: 仅尾部管道（缺前导管道）
+const trailingPipe = `Col1 | Col2 |\n---|--- |\na | b |`
+const trailingPipeHtml = renderContent(trailingPipe)
+assert.ok(trailingPipeHtml.includes('<table'), 'A3: trailing-pipe-only table should render')
+
+// A4: 2 连字符分隔行
+const twoHyphen = `Col1 | Col2\n:--|:--:\na | b`
+const twoHyphenHtml = renderContent(twoHyphen)
+assert.ok(twoHyphenHtml.includes('<table'), 'A4: 2-hyphen separator should render as table')
+assert.ok(twoHyphenHtml.includes('text-align:left') && twoHyphenHtml.includes('text-align:center'), 'A4: alignment should be preserved')
+
+// A5: 1 连字符分隔行（GFM 最小要求）
+const oneHyphen = `Col1 | Col2\n:-|:-:\na | b`
+const oneHyphenHtml = renderContent(oneHyphen)
+assert.ok(oneHyphenHtml.includes('<table'), 'A5: 1-hyphen separator should render as table')
+
+// --- 防误报测试 ---
+
+// B1: shell 管道命令不应渲染为表格
+const shellPipe = `ls -la | grep foo\nthe output shows results`
+const shellPipeHtml = renderContent(shellPipe)
+assert.ok(!shellPipeHtml.includes('<table'), 'B1: shell pipe command should NOT render as table')
+
+// B2: 文章中的管道字符不应当表格
+const proseWithPipe = `This is text | with a pipe character\nMore text here`
+const proseWithPipeHtml = renderContent(proseWithPipe)
+assert.ok(!proseWithPipeHtml.includes('<table'), 'B2: prose with pipe should NOT render as table')
+
+// B3: 伪表格无分隔行
+const pseudoTable = `A | B | C\nD | E | F`
+const pseudoTableHtml = renderContent(pseudoTable)
+assert.ok(!pseudoTableHtml.includes('<table'), 'B3: pseudo-table without separator should NOT render')
+
+// --- 表格 + 路径链接共存 ---
+
+// C1: 单元格含相对路径
+const relativePathTable = `File | Description\n---|---\ndocs/TODO.md | Task list`
+const relativePathHtml = renderContent(relativePathTable)
+assert.ok(relativePathHtml.includes('<table'), 'C1: table with relative path should render')
+assert.ok(relativePathHtml.includes('data-path-candidate="docs/TODO.md"'), 'C1: relative path inside cell should be clickable')
+
+// C2: 单元格含 Windows 绝对路径
+const absolutePathTable = `File | Description\n---|---\nD:\\repo\\main.js | Entry point`
+const absolutePathHtml = renderContent(absolutePathTable)
+assert.ok(absolutePathHtml.includes('<table'), 'C2: table with absolute path should render')
+assert.ok(absolutePathHtml.includes('data-path-candidate="D:\\repo\\main.js"'), 'C2: absolute path inside cell should be clickable')
+
+// --- 表格 + 其他块元素 ---
+
+// D1: 表格后接段落
+const tableThenParagraph = `A | B\n---|---\n1 | 2\n\nText after table.`
+const tableThenParagraphHtml = renderContent(tableThenParagraph)
+assert.ok(tableThenParagraphHtml.includes('<table'), 'D1: table before paragraph should render')
+assert.ok(tableThenParagraphHtml.includes('<p'), 'D1: paragraph after table should render')
+
+// D2: 标题后接表格
+const headingThenTable = `# Title\n\nA | B\n---|---\n1 | 2`
+const headingThenTableHtml = renderContent(headingThenTable)
+assert.ok(headingThenTableHtml.includes('<h1'), 'D2: heading before table should render')
+assert.ok(headingThenTableHtml.includes('<table'), 'D2: table after heading should render')
+
+// D3: 段落后接表格（无空行）
+const paragraphThenTable = `Some text\nA | B\n---|---\n1 | 2`
+const paragraphThenTableHtml = renderContent(paragraphThenTable)
+assert.ok(paragraphThenTableHtml.includes('<p'), 'D3: paragraph before table should render')
+assert.ok(paragraphThenTableHtml.includes('<table'), 'D3: table after paragraph (no blank line) should render')
+
+// D4: 表格内联 Markdown 格式
+const richTable = `Feature | Status\n---|---\n**Login** | \`done\`\n*Signup* | ~~pending~~`
+const richTableHtml = renderContent(richTable)
+assert.ok(richTableHtml.includes('<table'), 'D4: table with inline markdown should render')
+assert.ok(richTableHtml.includes('<strong>Login</strong>'), 'D4: bold in cell should work')
+assert.ok(richTableHtml.includes('<code class="inline-code">done</code>'), 'D4: code in cell should work')
+assert.ok(richTableHtml.includes('<del>pending</del>'), 'D4: strikethrough in cell should work')
+
 console.log('agent markdown render test passed')
