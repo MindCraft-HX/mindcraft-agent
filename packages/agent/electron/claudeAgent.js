@@ -1803,25 +1803,29 @@ function setupClaudeHandlers() {
       }
 
       // ② 没有 Provider 时，从共享的 ~/.claude/settings.json 用 Key 创建一个默认 Provider
+      //    仅当 mindcraft-agent 自身还没有任何 Provider 时才创建，避免重复导入
       if (!imported.providers) {
-        const sj = readSystemSettingsJson() || {}
-        const key = sj.env?.ANTHROPIC_AUTH_TOKEN || sj.primaryApiKey || sj.apiKey || ''
-        if (key) {
-          const url = sj.env?.ANTHROPIC_BASE_URL || sj.baseURL || sj.apiBaseUrl || ''
-          const defaultProvider = {
-            name: '从 MindCraft 导入',
-            key,
-            url,
-            config: sj,
-            tierModels: {
-              haiku: (sj.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').trim(),
-              sonnet: (sj.env?.ANTHROPIC_DEFAULT_SONNET_MODEL || '').trim(),
-              opus: (sj.env?.ANTHROPIC_DEFAULT_OPUS_MODEL || '').trim(),
-              reasoning: (sj.env?.ANTHROPIC_REASONING_MODEL || '').trim(),
-            },
+        const existing = internalConf.get('claudeProviders', null)
+        if (!existing?.providers?.length) {
+          const sj = readSystemSettingsJson() || {}
+          const key = sj.env?.ANTHROPIC_AUTH_TOKEN || sj.primaryApiKey || sj.apiKey || ''
+          if (key) {
+            const url = sj.env?.ANTHROPIC_BASE_URL || sj.baseURL || sj.apiBaseUrl || ''
+            const defaultProvider = {
+              name: '从 MindCraft 导入',
+              key,
+              url,
+              config: sj,
+              tierModels: {
+                haiku: (sj.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').trim(),
+                sonnet: (sj.env?.ANTHROPIC_DEFAULT_SONNET_MODEL || '').trim(),
+                opus: (sj.env?.ANTHROPIC_DEFAULT_OPUS_MODEL || '').trim(),
+                reasoning: (sj.env?.ANTHROPIC_REASONING_MODEL || '').trim(),
+              },
+            }
+            confSet('claudeProviders', { providers: [defaultProvider], activeIdx: 0 })
+            imported.providers = 1
           }
-          confSet('claudeProviders', { providers: [defaultProvider], activeIdx: 0 })
-          imported.providers = 1
         }
       }
 
