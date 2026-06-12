@@ -401,19 +401,27 @@ function getRecentProject() {
   } catch (_) {}
 
   if (candidates.length === 0) {
-    const result = { hasRecent: false }
+    const result = { hasRecent: false, projects: [] }
     _recentProjectCache = result
     _recentProjectCacheTime = now
     return result
   }
 
-  // 按 updatedAt 降序，取最新的
+  // 按 updatedAt 降序，取前 5 条（同一项目+对话去重）
   candidates.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-  const best = candidates[0]
+  const seen = new Set()
+  const top = []
+  for (const c of candidates) {
+    const key = `${c.agentType}|${c.projectName}|${c.chatName}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    top.push(c)
+    if (top.length >= 5) break
+  }
 
   const result = {
     hasRecent: true,
-    ...best,
+    projects: top,
   }
   _recentProjectCache = result
   _recentProjectCacheTime = now

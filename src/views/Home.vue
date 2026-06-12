@@ -19,14 +19,21 @@
 
         <div class="card-body">
           <template v-if="recentProject.hasRecent">
-            <span class="badge" :style="{ background: recentProject.agentColor }">
-              {{ recentProject.agentName }}
-            </span>
-            <p class="card-project-name">{{ recentProject.projectName }}</p>
-            <p class="card-path" v-if="recentProject.cwd">{{ recentProject.cwd }}</p>
-            <p class="card-meta" v-if="recentProject.chatName">
-              {{ recentProject.chatName }} · {{ formatTime(recentProject.updatedAt) }}
-            </p>
+            <div class="project-list">
+              <div
+                v-for="proj in recentProject.projects.slice(0, 4)"
+                :key="proj.sessionId || proj.projectName + proj.chatName"
+                class="project-entry"
+              >
+                <span class="badge" :style="{ background: proj.agentColor }">
+                  {{ proj.agentName }}
+                </span>
+                <span class="project-entry-name">{{ proj.projectName }}</span>
+                <span class="project-entry-meta" v-if="proj.chatName">
+                  {{ proj.chatName }} · {{ formatTime(proj.updatedAt) }}
+                </span>
+              </div>
+            </div>
           </template>
           <template v-else>
             <div class="empty-state">
@@ -242,48 +249,56 @@ const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeD
   min-height: 0;
 }
 
-/* Project card body */
+/* Project list */
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--cc-bg-secondary, #1e1e1e);
+  transition: background 0.12s;
+
+  &:hover {
+    background: var(--cc-panel-item-hover, #252525);
+  }
+}
+
 .badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   color: #fff;
-  padding: 2px 10px;
+  padding: 2px 7px;
   border-radius: 3px;
   letter-spacing: 0.3px;
-  align-self: flex-start;
-  margin-bottom: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.card-project-name {
-  font-size: 15px;
+.project-entry-name {
+  font-size: 12px;
   font-weight: 600;
   color: var(--cc-text, #e0e0e0);
-  margin: 0 0 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
-.card-path {
-  font-size: 11px;
+.project-entry-meta {
+  font-size: 10px;
   color: var(--cc-text-dim, #888);
-  margin: 0 0 6px;
-  font-family: 'Consolas', 'Menlo', monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
-}
-
-.card-meta {
-  font-size: 11px;
-  color: var(--cc-text-dim, #888);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 1;
 }
 
 /* Empty state */
