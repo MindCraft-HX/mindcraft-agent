@@ -3283,8 +3283,9 @@ function setupCodexSdkHandlers() {
   /** 硬上限：防止第三方模型输出失控拖垮主进程 */
   const MAX_STREAM_CHUNKS = 5000
   const MAX_STREAM_CHARS = 100_000
+  const MAX_THINKING_CHARS = 50_000 // thinking 内容上限 50K 字符（防止第三方 provider 发送过多 thinking）
 
-  /** 将 Chat Completions 格式消息转成 Responses API input 格式 */
+  /** 将会话消息转成 Responses API input 格式 */
   function messagesToResponsesInput(messages) {
     if (!Array.isArray(messages)) return []
     const input = []
@@ -3316,7 +3317,7 @@ function setupCodexSdkHandlers() {
           text = m.content.filter(c => c.type === 'text').map(c => c.text || '').join('')
         }
         input.push({ role: 'assistant', content: text })
-        // Chat Completions 的 assistant.tool_calls → Responses API 的 function_call items
+        // assistant.tool_calls → Responses API 的 function_call items
         if (Array.isArray(m.tool_calls)) {
           for (const tc of m.tool_calls) {
             if (!tc.id) continue
@@ -3345,54 +3346,42 @@ function setupCodexSdkHandlers() {
     if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 CodeX Provider）')
 
     const baseURL = rt.baseURL || 'https://api.openai.com/v1'
-    // 只有官方 OpenAI API 支持 Responses API，第三方 API 回退到 Chat Completions
-    const isOfficialOpenAI = baseURL.includes('api.openai.com')
-    const endpoint = isOfficialOpenAI ? '/responses' : '/chat/completions'
-    const url = baseURL.replace(/\/+$/, '') + endpoint
+    const url = baseURL.replace(/\/+$/, '') + '/responses'
 
-    const input = isOfficialOpenAI ? messagesToResponsesInput(messages) : messages
+    const input = messagesToResponsesInput(messages)
 
     const body = {
       model: model || rt.model || 'gpt-4o',
       stream: true,
+      input,
     }
 
-    if (isOfficialOpenAI) {
-      // Responses API 格式
-      body.input = input
-      if (max_tokens) body.max_output_tokens = Math.min(max_tokens, 8192)
-      if (reasoning) body.reasoning = reasoning
-      if (tools && tools.length > 0) {
-        // Chat Completions 工具定义（嵌套 function）→ Responses API 格式（扁平）
-        body.tools = tools.map(t => {
-          if (t.function) {
-            return {
-              type: t.type || 'function',
-              name: t.function.name || '',
-              description: t.function.description || '',
-              parameters: t.function.parameters || {},
-            }
+    if (max_tokens) body.max_output_tokens = Math.min(max_tokens, 8192)
+    if (reasoning) body.reasoning = reasoning
+    if (tools && tools.length > 0) {
+      // Chat Completions 工具定义（嵌套 function）→ Responses API 格式（扁平）
+      body.tools = tools.map(t => {
+        if (t.function) {
+          return {
+            type: t.type || 'function',
+            name: t.function.name || '',
+            description: t.function.description || '',
+            parameters: t.function.parameters || {},
           }
-          return t
-        })
-      }
-    } else {
-      // Chat Completions 格式（兼容第三方 API）
-      body.messages = input
-      if (max_tokens) body.max_tokens = Math.min(max_tokens, 8192)
-      // reasoning.effort → Chat Completions 的 reasoning_effort（扁平）
-      if (reasoning?.effort && reasoning.effort !== 'none') {
-        body.reasoning_effort = reasoning.effort
-      }
-      if (tools && tools.length > 0) {
-        body.tools = tools
-      }
+        }
+        return t
+      })
     }
 
     const controller = new AbortController()
     if (chatId) activeChatAborts.set(chatId, controller)
 
+    // 60s 整体超时（防止第三方 provider 挂起不返回）
+    const timeoutSignal = AbortSignal.timeout(60_000)
+    const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal])
+
     let fullText = ''
+    let thinkingChars = 0
     const toolCalls = []
     let finishReason = null
     let chunkCount = 0
@@ -3405,7 +3394,7 @@ function setupCodexSdkHandlers() {
           'Authorization': `Bearer ${rt.apiKey}`,
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: combinedSignal,
       })
 
       if (!resp.ok) {
@@ -3443,75 +3432,57 @@ function setupCodexSdkHandlers() {
             }
 
             // Responses API 格式
-            if (isOfficialOpenAI) {
-              switch (json.type) {
-                case 'response.output_text.delta':
-                  if (fullText.length < MAX_STREAM_CHARS) {
-                    fullText += json.delta || ''
-                    safeSend(event.sender, 'codex-stream-chunk', { chatId, text: json.delta || '' })
-                  }
-                  break
-
-                case 'response.reasoning_text.delta':
-                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
-                  break
-
-                case 'response.output_item.added':
-                  if (json.item?.type === 'function_call') {
-                    const item = json.item
-                    const idx = toolCalls.length
-                    toolCalls.push({
-                      id: item.id || '',
-                      type: 'function',
-                      function: { name: item.name || '', arguments: '' },
-                    })
-                    safeSend(event.sender, 'codex-stream-tool-delta', {
-                      chatId, index: idx, id: item.id || '', name: item.name || '', arguments: '',
-                    })
-                  }
-                  break
-
-                case 'response.output_item.done':
-                  if (json.item?.type === 'function_call') {
-                    const item = json.item
-                    const matchId = item.id || item.call_id || ''
-                    const idx = toolCalls.findIndex(tc => tc.id === matchId)
-                    if (idx >= 0) {
-                      toolCalls[idx].function.arguments = item.arguments || ''
-                    }
-                  }
-                  break
-
-                case 'response.completed':
-                  finishReason = json.response?.status || 'completed'
-                  break
-              }
-            } else {
-              // Chat Completions 格式（兼容第三方 API）
-              const choice = json.choices?.[0]
-              if (!choice) continue
-              if (choice.finish_reason) finishReason = choice.finish_reason
-
-              const delta = choice.delta || {}
-              if (delta.reasoning_content) {
-                safeSend(event.sender, 'codex-stream-thinking', { chatId, text: delta.reasoning_content })
-              }
-              if (delta.content) {
+            switch (json.type) {
+              case 'response.output_text.delta':
                 if (fullText.length < MAX_STREAM_CHARS) {
-                  fullText += delta.content
-                  safeSend(event.sender, 'codex-stream-chunk', { chatId, text: delta.content })
+                  fullText += json.delta || ''
+                  safeSend(event.sender, 'codex-stream-chunk', { chatId, text: json.delta || '' })
                 }
-              }
-              if (delta.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  const idx = tc.index || 0
-                  while (toolCalls.length <= idx) toolCalls.push({ id: '', type: 'function', function: { name: '', arguments: '' } })
-                  if (tc.id) toolCalls[idx].id = tc.id
-                  if (tc.function?.name) toolCalls[idx].function.name += tc.function.name
-                  if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments
-                  safeSend(event.sender, 'codex-stream-tool-delta', { chatId, index: idx, id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments })
+                break
+
+              case 'response.reasoning_text.delta':
+                if (thinkingChars < MAX_THINKING_CHARS) {
+                  thinkingChars += (json.delta || '').length
+                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
                 }
-              }
+                break
+
+              case 'response.reasoning_summary_text.delta':
+                if (thinkingChars < MAX_THINKING_CHARS) {
+                  thinkingChars += (json.delta || '').length
+                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
+                }
+                break
+
+              case 'response.output_item.added':
+                if (json.item?.type === 'function_call') {
+                  const item = json.item
+                  const idx = toolCalls.length
+                  toolCalls.push({
+                    id: item.id || '',
+                    type: 'function',
+                    function: { name: item.name || '', arguments: '' },
+                  })
+                  safeSend(event.sender, 'codex-stream-tool-delta', {
+                    chatId, index: idx, id: item.id || '', name: item.name || '', arguments: '',
+                  })
+                }
+                break
+
+              case 'response.output_item.done':
+                if (json.item?.type === 'function_call') {
+                  const item = json.item
+                  const matchId = item.id || item.call_id || ''
+                  const idx = toolCalls.findIndex(tc => tc.id === matchId)
+                  if (idx >= 0) {
+                    toolCalls[idx].function.arguments = item.arguments || ''
+                  }
+                }
+                break
+
+              case 'response.completed':
+                finishReason = json.response?.status || 'completed'
+                break
             }
           }
           if (chunkCount > MAX_STREAM_CHUNKS) break
@@ -3522,6 +3493,10 @@ function setupCodexSdkHandlers() {
     } catch (e) {
       if (controller.signal.aborted) {
         return { fullText, finish_reason: 'aborted', stop_reason: 'aborted', toolCalls: [] }
+      }
+      // 超时 → 返回已收到的部分内容
+      if (e?.name === 'TimeoutError' || e?.message?.includes('timeout') || e?.message?.includes('The operation was aborted')) {
+        return { fullText, finish_reason: 'timeout', stop_reason: 'timeout', toolCalls: [] }
       }
       throw e
     } finally {

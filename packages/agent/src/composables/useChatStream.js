@@ -35,16 +35,14 @@ const WEB_SEARCH_TOOL_CLAUDE = {
 
 const WEB_SEARCH_TOOL_OPENAI = {
   type: 'function',
-  function: {
-    name: 'web_search',
-    description: '搜索互联网获取最新信息。当需要查询实时信息、新闻、或用户明确要求搜索时使用。',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: '搜索关键词' }
-      },
-      required: ['query']
-    }
+  name: 'web_search',
+  description: '搜索互联网获取最新信息。当需要查询实时信息、新闻、或用户明确要求搜索时使用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: '搜索关键词' }
+    },
+    required: ['query']
   }
 }
 
@@ -383,6 +381,16 @@ export function useChatStream(chatSession) {
         const result = await doApiCall(iter)
 
         if (userAborted || result?.stop_reason === 'aborted' || result?.finish_reason === 'aborted') break
+        if (result?.stop_reason === 'timeout' || result?.finish_reason === 'timeout') {
+          streamError.value = '响应超时（60s），已自动中止'
+          // 移除空的 assistant 占位气泡
+          const last = chatSession.currentSession.messages[chatSession.currentSession.messages.length - 1]
+          if (last?.role === 'assistant' && !extractTextFromBlocks(last.content).trim()
+              && !(Array.isArray(last.content) && last.content.some(c => c.type === 'tool_use'))) {
+            chatSession.currentSession.messages.pop()
+          }
+          break
+        }
         if (result?.stop_reason === 'error') {
           // 错误时移除空的 assistant 占位气泡
           const last = chatSession.currentSession.messages[chatSession.currentSession.messages.length - 1]
