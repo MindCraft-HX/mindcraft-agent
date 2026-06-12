@@ -41,7 +41,9 @@ const routes = [
             ...agentRedirectRoutes,
             {
                 path: 'chat',
-                redirect: '/main/codeHub'
+                name: 'chat',
+                component: () => import('@mindcraft/agent').then(m => m.ChatView),
+                meta: { parent: '/main/chat' }
             },
             {
                 path: 'mdViewer',

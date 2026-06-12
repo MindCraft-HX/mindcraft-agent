@@ -114,6 +114,36 @@ function createAgentBridge(ipcRenderer) {
     ipcRenderer.removeAllListeners('claude-agent-metrics')
     ipcRenderer.removeAllListeners('claude-agent-early-cli-session')
   },
+  // 简易对话：Claude
+  claudeChat: (payload) => ipcRenderer.invoke('claude-chat', payload),
+  claudeChatContinue: (payload) => ipcRenderer.invoke('claude-chat-continue', payload),
+  chatWebSearch: (payload) => ipcRenderer.invoke('chat-web-search', payload),
+  onClaudeStreamChunk: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('claude-stream-chunk', handler)
+    return () => ipcRenderer.removeListener('claude-stream-chunk', handler)
+  },
+  onClaudeStreamDone: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('claude-stream-done', handler)
+    return () => ipcRenderer.removeListener('claude-stream-done', handler)
+  },
+  onClaudeStreamToolStart: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('claude-stream-tool-start', handler)
+    return () => ipcRenderer.removeListener('claude-stream-tool-start', handler)
+  },
+  onClaudeStreamToolInput: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('claude-stream-tool-input', handler)
+    return () => ipcRenderer.removeListener('claude-stream-tool-input', handler)
+  },
+  // 简易对话：会话管理
+  chatListSessions: () => ipcRenderer.invoke('chat-list-sessions'),
+  chatGetSession: (id) => ipcRenderer.invoke('chat-get-session', id),
+  chatSaveSession: (id, data) => ipcRenderer.invoke('chat-save-session', { id, data }),
+  chatDeleteSession: (id) => ipcRenderer.invoke('chat-delete-session', id),
+  chatGenerateTitle: (payload) => ipcRenderer.invoke('chat-generate-title', payload),
   // Codex Agent SDK
   codexAgentQuery: (payload) => ipcRenderer.invoke('codex-agent-query', payload),
   codexAgentAbort: (sessionId) => ipcRenderer.invoke('codex-agent-abort', sessionId),
@@ -184,6 +214,24 @@ function createAgentBridge(ipcRenderer) {
     const handler = (_, data) => callback(data)
     ipcRenderer.on('skills-install-progress', handler)
     return () => ipcRenderer.removeListener('skills-install-progress', handler)
+  },
+  // 简易对话：CodeX
+  codexChat: (payload) => ipcRenderer.invoke('codex-chat', payload),
+  codexChatContinue: (payload) => ipcRenderer.invoke('codex-chat-continue', payload),
+  onCodexStreamChunk: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('codex-stream-chunk', handler)
+    return () => ipcRenderer.removeListener('codex-stream-chunk', handler)
+  },
+  onCodexStreamDone: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('codex-stream-done', handler)
+    return () => ipcRenderer.removeListener('codex-stream-done', handler)
+  },
+  onCodexStreamToolDelta: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('codex-stream-tool-delta', handler)
+    return () => ipcRenderer.removeListener('codex-stream-tool-delta', handler)
   },
   // Home 页数据
   loadRecentProject: () => ipcRenderer.invoke('home-get-recent-project'),

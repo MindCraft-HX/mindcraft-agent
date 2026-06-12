@@ -1843,29 +1843,214 @@ function setupClaudeHandlers() {
     }
   })
 
-  // 普通流式对话（运行时只读 ~/.claude/settings.json）
-  ipcMain.handle('claude-chat', async (event, { messages, model }) => {
-    const runtime = readRuntimeConfigFromUserSettingsFile()
-    let apiKey = runtime.apiKey
-    if (!apiKey) throw new Error('未配置 API Key')
+  // ── 简易对话：读取运行时配置（合并 UI 配置 + settings.json）──
+  function readChatRuntimeConfig() {
+    const fromFile = readRuntimeConfigFromUserSettingsFile()
+
+    // 优先读 UI 中激活的 provider（internalConf），再兜底 settings.json
+    const providersState = confGet('claudeProviders', { providers: [], activeIdx: -1 })
+    const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
+    const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
+    const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
+    const selectedTier = confGet('claudeSelectedTier', 'sonnet')
+
+    const tierModels = {
+      haiku: String(active?.tierModels?.haiku ?? confGet('tierModels.haiku', '')).trim(),
+      sonnet: String(active?.tierModels?.sonnet ?? confGet('tierModels.sonnet', '')).trim(),
+      opus: String(active?.tierModels?.opus ?? confGet('tierModels.opus', '')).trim(),
+      reasoning: String(active?.tierModels?.reasoning ?? confGet('tierModels.reasoning', '')).trim(),
+    }
+
+    let apiKey = String(active?.key ?? confGet('claudeApiKey', '')).trim()
+    let baseURL = String(active?.url ?? confGet('claudeBaseURL', '')).trim()
+
+    // 兜底到 settings.json
+    if (!apiKey) apiKey = fromFile.apiKey
+    if (!baseURL) baseURL = fromFile.baseURL
+    if (baseURL && !baseURL.endsWith('/')) baseURL += '/'
+
+    let defaultModel = tierModels[selectedTier] || fromFile.model || null
+
+    return { apiKey, baseURL, model: defaultModel, tierModels, selectedTier }
+  }
+
+  // ── 简易对话：Claude streaming ──
+  async function runClaudeChatStream(event, { messages, model, tools, tool_choice, max_tokens, thinking, system }) {
+    const rt = readChatRuntimeConfig()
+    if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 Claude Provider）')
+
     const Anthropic = require('@anthropic-ai/sdk')
-    const opts = { apiKey }
-    if (runtime.baseURL) opts.baseURL = runtime.baseURL
+    const opts = { apiKey: rt.apiKey }
+    if (rt.baseURL) opts.baseURL = rt.baseURL
     const client = new Anthropic.default(opts)
-    const stream = client.messages.stream({
-      model: model || runtime.model || null,
-      max_tokens: 8096,
+
+    const params = {
+      model: model || rt.model || 'claude-sonnet-4-20250514',
+      max_tokens: max_tokens || 8096,
       messages,
-    })
+    }
+    if (system) { params.system = system }
+    if (tools && tools.length > 0) { params.tools = tools }
+    if (tool_choice) { params.tool_choice = tool_choice }
+    if (thinking) {
+      params.thinking = { type: 'enabled', budget_tokens: thinking.budget_tokens || 4000 }
+    }
+
+    const stream = client.messages.stream(params)
     let fullText = ''
+    const toolUseBlocks = []
+
     for await (const chunk of stream) {
-      if (chunk.type === 'content_block_delta' && chunk.delta?.text) {
-        fullText += chunk.delta.text
-        safeSend(event.sender,'claude-stream-chunk', chunk.delta.text)
+      if (chunk.type === 'content_block_start') {
+        if (chunk.content_block?.type === 'tool_use') {
+          const block = { id: chunk.content_block.id, name: chunk.content_block.name, input: '' }
+          toolUseBlocks.push(block)
+          safeSend(event.sender, 'claude-stream-tool-start', { id: block.id, name: block.name })
+        }
+      }
+      if (chunk.type === 'content_block_delta') {
+        if (chunk.delta?.text) {
+          fullText += chunk.delta.text
+          safeSend(event.sender, 'claude-stream-chunk', chunk.delta.text)
+        }
+        if (chunk.delta?.partial_json) {
+          const last = toolUseBlocks[toolUseBlocks.length - 1]
+          if (last) { last.input += chunk.delta.partial_json }
+          safeSend(event.sender, 'claude-stream-tool-input', { id: last?.id, partial: chunk.delta.partial_json })
+        }
       }
     }
-    safeSend(event.sender,'claude-stream-done')
-    return fullText
+
+    const finalMsg = stream.finalMessage || stream.currentMessage
+    safeSend(event.sender, 'claude-stream-done', {
+      fullText,
+      toolUseBlocks: toolUseBlocks.map(t => ({ id: t.id, name: t.name, input: t.input })),
+      stop_reason: finalMsg?.stop_reason || null,
+      usage: finalMsg?.usage || null,
+    })
+
+    return {
+      fullText,
+      toolUseBlocks: toolUseBlocks.map(t => ({ id: t.id, name: t.name, input: t.input })),
+      stop_reason: finalMsg?.stop_reason || null,
+      usage: finalMsg?.usage || null,
+    }
+  }
+
+  ipcMain.handle('claude-chat', async (event, payload) => runClaudeChatStream(event, payload))
+  ipcMain.handle('claude-chat-continue', async (event, payload) => runClaudeChatStream(event, payload))
+
+  // ── 简易对话：会话持久化（JSON 文件）──
+  const CHAT_SESSIONS_DIR = path.join(app.getPath('userData'), 'chat-sessions')
+  const CHAT_SESSIONS_INDEX = path.join(CHAT_SESSIONS_DIR, 'index.json')
+
+  function ensureChatSessionsDir() {
+    if (!fs.existsSync(CHAT_SESSIONS_DIR)) fs.mkdirSync(CHAT_SESSIONS_DIR, { recursive: true })
+  }
+  function readChatIndex() {
+    ensureChatSessionsDir()
+    try {
+      if (fs.existsSync(CHAT_SESSIONS_INDEX)) {
+        return JSON.parse(fs.readFileSync(CHAT_SESSIONS_INDEX, 'utf8'))
+      }
+    } catch (_) {}
+    return { sessions: [] }
+  }
+  function writeChatIndex(data) {
+    ensureChatSessionsDir()
+    const tmp = CHAT_SESSIONS_INDEX + '.tmp'
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+    fs.renameSync(tmp, CHAT_SESSIONS_INDEX)
+  }
+
+  ipcMain.handle('chat-list-sessions', () => readChatIndex())
+
+  ipcMain.handle('chat-get-session', (_, id) => {
+    const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
+    try {
+      if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch (_) {}
+    return null
+  })
+
+  ipcMain.handle('chat-save-session', (_, { id, data }) => {
+    ensureChatSessionsDir()
+    const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
+    const tmp = file + '.tmp'
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+    fs.renameSync(tmp, file)
+
+    // 更新 index
+    const idx = readChatIndex()
+    const existing = idx.sessions.findIndex(s => s.id === id)
+    const entry = {
+      id,
+      title: data.title || '',
+      createdAt: data.createdAt || Date.now(),
+      updatedAt: data.updatedAt || Date.now(),
+      provider: data.provider || '',
+      model: data.model || '',
+    }
+    if (existing >= 0) idx.sessions[existing] = entry
+    else idx.sessions.unshift(entry)
+    idx.sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+    writeChatIndex(idx)
+    return true
+  })
+
+  ipcMain.handle('chat-delete-session', (_, id) => {
+    const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
+    try { if (fs.existsSync(file)) fs.unlinkSync(file) } catch (_) {}
+    const idx = readChatIndex()
+    idx.sessions = idx.sessions.filter(s => s.id !== id)
+    writeChatIndex(idx)
+    return true
+  })
+
+  ipcMain.handle('chat-generate-title', async (_, { messages, provider, model }) => {
+    // 用首条用户消息的前 30 字符作为标题（fallback）
+    const firstUser = messages?.find(m => m.role === 'user')
+    const fallback = firstUser?.content
+      ? (typeof firstUser.content === 'string' ? firstUser.content : firstUser.content[0]?.text || '新对话').slice(0, 30)
+      : '新对话'
+    return fallback
+  })
+
+  // ── 简易对话：网页搜索 ──
+  ipcMain.handle('chat-web-search', async (_event, { query }) => {
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return { results: [] }
+    }
+    try {
+      const axios = require('axios')
+      const q = encodeURIComponent(query.trim())
+      // 使用 DuckDuckGo HTML 搜索（无需 API key）
+      const resp = await axios.get(`https://html.duckduckgo.com/html/?q=${q}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        timeout: 10000,
+      })
+      const html = typeof resp.data === 'string' ? resp.data : ''
+      // 简易解析：提取 result__snippet 和 result__url
+      const results = []
+      const snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
+      const urlRe = /class="result__url"[^>]*>([\s\S]*?)<\/a>/g
+      const titleRe = /class="result__a"[^>]*>([\s\S]*?)<\/a>/g
+
+      let m
+      const snippets = []; while ((m = snippetRe.exec(html)) !== null) snippets.push(m[1].replace(/<[^>]+>/g, '').trim())
+      const urls = []; while ((m = urlRe.exec(html)) !== null) urls.push(m[1].replace(/<[^>]+>/g, '').trim())
+      const titles = []; while ((m = titleRe.exec(html)) !== null) titles.push(m[1].replace(/<[^>]+>/g, '').trim())
+
+      const max = Math.min(5, snippets.length, urls.length)
+      for (let i = 0; i < max; i++) {
+        results.push({ title: titles[i] || '', url: urls[i] || '', snippet: snippets[i] || '' })
+      }
+
+      return { results }
+    } catch (e) {
+      console.warn('[chat-web-search] failed:', e?.message || e)
+      return { results: [], error: e?.message || '搜索失败' }
+    }
   })
 
   // Claude Agent SDK 会话管理

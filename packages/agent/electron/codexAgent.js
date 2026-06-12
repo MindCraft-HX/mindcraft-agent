@@ -3275,6 +3275,97 @@ function setupCodexSdkHandlers() {
       return { ok: false, error: errMsg }
     }
   })
+
+  // ── 简易对话：CodeX (OpenAI Chat Completions) streaming ──
+  async function runCodexChatStream(event, { messages, model, tools, tool_choice, max_tokens, reasoning_effort }) {
+    const rt = readRuntimeConfig()
+    if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 CodeX Provider）')
+
+    const baseURL = rt.baseURL || 'https://api.openai.com/v1'
+    const url = baseURL.replace(/\/+$/, '') + '/chat/completions'
+
+    const body = {
+      model: model || rt.model || 'gpt-4o',
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+    }
+    if (max_tokens) body.max_tokens = max_tokens
+    if (tools && tools.length > 0) { body.tools = tools }
+    if (tool_choice) { body.tool_choice = tool_choice }
+    if (reasoning_effort) { body.reasoning_effort = reasoning_effort }
+
+    const controller = new AbortController()
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${rt.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '')
+      throw new Error(`OpenAI API ${resp.status}: ${errText.slice(0, 300)}`)
+    }
+
+    let fullText = ''
+    const toolCalls = []
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const data = trimmed.slice(6)
+          if (data === '[DONE]') continue
+
+          let json
+          try { json = JSON.parse(data) } catch (_) { continue }
+
+          const choice = json.choices?.[0]
+          if (!choice) continue
+
+          const delta = choice.delta || {}
+          if (delta.content) {
+            fullText += delta.content
+            safeSend(event.sender, 'codex-stream-chunk', delta.content)
+          }
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index || 0
+              while (toolCalls.length <= idx) toolCalls.push({ id: '', type: 'function', function: { name: '', arguments: '' } })
+              if (tc.id) toolCalls[idx].id = tc.id
+              if (tc.function?.name) toolCalls[idx].function.name += tc.function.name
+              if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments
+              safeSend(event.sender, 'codex-stream-tool-delta', { index: idx, id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments })
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+
+    const finishReason = toolCalls.length > 0 ? 'tool_calls' : 'stop'
+    safeSend(event.sender, 'codex-stream-done', { fullText, finish_reason: finishReason, toolCalls })
+    return { fullText, finish_reason: finishReason, toolCalls }
+  }
+
+  ipcMain.handle('codex-chat', async (event, payload) => runCodexChatStream(event, payload))
+  ipcMain.handle('codex-chat-continue', async (event, payload) => runCodexChatStream(event, payload))
 }
 
 module.exports = {
