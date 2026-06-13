@@ -239,6 +239,9 @@ function createAgentBridge(ipcRenderer) {
   loadRecentProject: () => ipcRenderer.invoke('home-get-recent-project'),
   loadTodayStats: () => ipcRenderer.invoke('home-get-today-stats'),
   loadTokenTrend: (days) => ipcRenderer.invoke('home-get-token-trend', days),
+  // Locale
+  loadLocale: () => ipcRenderer.invoke('load-locale'),
+  saveLocale: (locale) => ipcRenderer.send('save-locale', locale),
   }
 }
 

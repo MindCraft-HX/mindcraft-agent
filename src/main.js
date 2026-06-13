@@ -5,6 +5,8 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import pinia from "./stores";
+import { i18n } from './i18n'
+import { useLocaleStore } from './stores/locale'
 
 import 'highlight.js/styles/androidstudio.css';
 import './styles/codeBlockStyles.scss';
@@ -46,6 +48,7 @@ window.addEventListener('mindcraft-toast', (event) => {
 })
 
 app.use(ElementPlus)
+app.use(i18n)
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
     app.component(key, component)
 }
@@ -55,4 +58,9 @@ window.VITE_NODE_PLATFORM = import.meta.env.VITE_NODE_PLATFORM
 
 app.use(pinia);
 app.use(router);
+
+// 同步 Electron 持久化的语言偏好
+const localeStore = useLocaleStore()
+localeStore.syncFromElectron()
+
 app.mount('#app')

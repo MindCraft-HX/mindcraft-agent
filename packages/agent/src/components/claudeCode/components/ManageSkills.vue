@@ -3,7 +3,7 @@
     <div class="mp-panel">
       <!-- 标题栏 -->
       <div class="mp-header">
-        <span class="mp-title">Skills</span>
+        <span class="mp-title">{{ $t('agent.skillsTitle') }}</span>
         <button class="mp-close" @click="close">×</button>
       </div>
 
@@ -13,12 +13,12 @@
           class="mp-tab"
           :class="{ active: activeTab === 'recommended' }"
           @click="activeTab = 'recommended'"
-        >推荐</button>
+        >{{ $t('agent.recommend') }}</button>
         <button
           class="mp-tab"
           :class="{ active: activeTab === 'community' }"
           @click="switchToCommunity"
-        >社区</button>
+        >{{ $t('agent.communityTab') }}</button>
       </div>
 
       <div class="mp-body">
@@ -28,7 +28,7 @@
             <input
               v-model="searchQuery"
               class="mp-search"
-              placeholder="搜索 Skills…"
+              :placeholder="$t('agent.searchSkills')"
               autofocus
             />
           </div>
@@ -38,9 +38,9 @@
             <div class="mp-progress-bar">
               <div class="mp-progress-fill" :style="{ width: (installProgress.percent || 0) + '%' }"></div>
             </div>
-            <span class="mp-progress-text">{{ installProgress.fallback ? '镜像失败，直连中… ' : '' }}{{ installProgress.percent || 0 }}%</span>
+            <span class="mp-progress-text">{{ installProgress.fallback ? $t('agent.mirrorFailedSpace') : '' }}{{ installProgress.percent || 0 }}%</span>
           </div>
-          <div v-if="loading" class="mp-empty">加载中…</div>
+          <div v-if="loading" class="mp-empty">{{ $t('chat.loading') }}</div>
           <template v-else>
             <!-- INSTALLED 分组 -->
             <div v-if="installedSkills.length" class="mp-group">
@@ -55,7 +55,7 @@
                       <div class="mp-item-name">
                         {{ skill.displayName || skill.name }}
                         <span v-if="skill.scope" class="mp-scope-badge" :class="skill.scope">
-                          {{ skill.scope === 'system' ? '用户' : '项目' }}
+                          {{ skill.scope === 'system' ? $t('agent.userScope') : $t('agent.projectScope') }}
                         </span>
                       </div>
                       <div class="mp-item-desc">{{ skill.description }}</div>
@@ -68,41 +68,41 @@
                       <button
                         class="mp-btn-link"
                         @click="toggleDetail(skill)"
-                        :title="expandedSkill === skill.name ? '收起详情' : '查看详情'"
-                      >{{ expandedSkill === skill.name ? '收起' : '详情' }}</button>
+                        :title="expandedSkill === skill.name ? $t('agent.collapseDetail') : $t('agent.expandDetail')"
+                      >{{ expandedSkill === skill.name ? $t('agent.collapse') : $t('agent.detail') }}</button>
                       <button
                         class="mp-btn mp-btn-uninstall"
                         :disabled="skill._busy"
                         @click="uninstallSkill(skill)"
-                        title="卸载"
-                      >{{ skill._busy ? '…' : '卸载' }}</button>
+                        :title="$t('agent.uninstall')"
+                      >{{ skill._busy ? '…' : $t('agent.uninstall') }}</button>
                     </div>
                   </div>
                   <!-- 内嵌详情面板 -->
                   <div v-if="expandedSkill === skill.name" class="mp-detail-panel">
                     <div class="mp-detail-content">
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">描述</div>
-                        <div class="mp-detail-text">{{ skill.description || '暂无描述' }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.description') }}</div>
+                        <div class="mp-detail-text">{{ skill.description || $t('agent.noDescription') }}</div>
                       </div>
                       <div class="mp-detail-row">
                         <div class="mp-detail-section">
-                          <div class="mp-detail-label">作者</div>
+                          <div class="mp-detail-label">{{ $t('agent.author') }}</div>
                           <div class="mp-detail-text">{{ skill.author }}</div>
                         </div>
                         <div class="mp-detail-section">
-                          <div class="mp-detail-label">分类</div>
-                          <div class="mp-detail-text">{{ skill.category !== 'unknown' ? skill.category : '未分类' }}</div>
+                          <div class="mp-detail-label">{{ $t('agent.category') }}</div>
+                          <div class="mp-detail-text">{{ skill.category !== 'unknown' ? skill.category : $t('agent.uncategorized') }}</div>
                         </div>
                       </div>
                       <div v-if="skill.tags && skill.tags.length" class="mp-detail-section">
-                        <div class="mp-detail-label">标签</div>
+                        <div class="mp-detail-label">{{ $t('agent.tags') }}</div>
                         <div class="mp-detail-tags">
                           <span v-for="tag in skill.tags" :key="tag" class="mp-detail-tag">{{ tag }}</span>
                         </div>
                       </div>
                       <div v-if="skill.sourceUrl" class="mp-detail-section">
-                        <div class="mp-detail-label">源地址</div>
+                        <div class="mp-detail-label">{{ $t('agent.sourceUrl') }}</div>
                         <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                       </div>
                       <div v-if="skill.gitUrl" class="mp-detail-section">
@@ -133,47 +133,47 @@
                       </div>
                     </div>
                     <div class="mp-item-actions">
-                      <select v-model="installScope" class="mp-scope-select" title="安装范围">
-                        <option value="system">用户</option>
-                        <option value="project">项目</option>
+                      <select v-model="installScope" class="mp-scope-select" :title="$t('agent.installScope')">
+                        <option value="system">{{ $t('agent.userScope') }}</option>
+                        <option value="project">{{ $t('agent.projectScope') }}</option>
                       </select>
                       <button
                         class="mp-btn-link"
                         @click="toggleDetail(skill)"
-                        :title="expandedSkill === skill.name ? '收起详情' : '查看详情'"
-                      >{{ expandedSkill === skill.name ? '收起' : '详情' }}</button>
+                        :title="expandedSkill === skill.name ? $t('agent.collapseDetail') : $t('agent.expandDetail')"
+                      >{{ expandedSkill === skill.name ? $t('agent.collapse') : $t('agent.detail') }}</button>
                       <button
                         class="mp-btn mp-btn-install"
                         :disabled="skill._busy"
                         @click="installSkill(skill)"
-                      >{{ skill._busy ? '…' : '安装' }}</button>
+                      >{{ skill._busy ? '…' : $t('agent.install') }}</button>
                     </div>
                   </div>
                   <!-- 内嵌详情面板 -->
                   <div v-if="expandedSkill === skill.name" class="mp-detail-panel">
                     <div class="mp-detail-content">
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">描述</div>
-                        <div class="mp-detail-text">{{ skill.description || '暂无描述' }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.description') }}</div>
+                        <div class="mp-detail-text">{{ skill.description || $t('agent.noDescription') }}</div>
                       </div>
                       <div class="mp-detail-row">
                         <div class="mp-detail-section">
-                          <div class="mp-detail-label">作者</div>
+                          <div class="mp-detail-label">{{ $t('agent.author') }}</div>
                           <div class="mp-detail-text">{{ skill.author }}</div>
                         </div>
                         <div class="mp-detail-section">
-                          <div class="mp-detail-label">分类</div>
-                          <div class="mp-detail-text">{{ skill.category !== 'unknown' ? skill.category : '未分类' }}</div>
+                          <div class="mp-detail-label">{{ $t('agent.category') }}</div>
+                          <div class="mp-detail-text">{{ skill.category !== 'unknown' ? skill.category : $t('agent.uncategorized') }}</div>
                         </div>
                       </div>
                       <div v-if="skill.tags && skill.tags.length" class="mp-detail-section">
-                        <div class="mp-detail-label">标签</div>
+                        <div class="mp-detail-label">{{ $t('agent.tags') }}</div>
                         <div class="mp-detail-tags">
                           <span v-for="tag in skill.tags" :key="tag" class="mp-detail-tag">{{ tag }}</span>
                         </div>
                       </div>
                       <div v-if="skill.sourceUrl" class="mp-detail-section">
-                        <div class="mp-detail-label">源地址</div>
+                        <div class="mp-detail-label">{{ $t('agent.sourceUrl') }}</div>
                         <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                       </div>
                       <div v-if="skill.gitUrl" class="mp-detail-section">
@@ -186,7 +186,7 @@
               </div>
             </div>
 
-            <div v-if="!installedSkills.length && !availableSkills.length" class="mp-empty">暂无匹配的 Skills</div>
+            <div v-if="!installedSkills.length && !availableSkills.length" class="mp-empty">{{ $t('agent.noMatchSkills') }}</div>
           </template>
         </template>
 
@@ -197,7 +197,7 @@
             <div class="mp-progress-bar">
               <div class="mp-progress-fill" :style="{ width: (installProgress.percent || 0) + '%' }"></div>
             </div>
-            <span class="mp-progress-text">{{ installProgress.fallback ? '镜像失败，直连中… ' : '' }}{{ installProgress.percent || 0 }}%</span>
+            <span class="mp-progress-text">{{ installProgress.fallback ? $t('agent.mirrorFailedSpace') : '' }}{{ installProgress.percent || 0 }}%</span>
           </div>
           <div class="mp-search-row">
             <input
@@ -206,25 +206,25 @@
               placeholder="搜索 Skills 市场…"
               @keyup.enter="searchMarket(true)"
             />
-            <select v-model="marketSort" class="mp-sort-select" title="排序方式">
-              <option value="installs-desc">按安装量 ↓</option>
-              <option value="name-asc">按名称 A-Z</option>
-              <option value="name-desc">按名称 Z-A</option>
+            <select v-model="marketSort" class="mp-sort-select" :title="$t('agent.sortMethod')">
+              <option value="installs-desc">{{ $t('agent.sortInstalls') }}</option>
+              <option value="name-asc">{{ $t('agent.sortName') }}</option>
+              <option value="name-desc">{{ $t('agent.sortNameRev') }}</option>
             </select>
             <button class="mp-btn mp-btn-install" :disabled="marketLoading" @click="searchMarket(true)">
-              {{ marketLoading ? '搜索中…' : '搜索' }}
+              {{ marketLoading ? $t('agent.searching') : $t('agent.search') }}
             </button>
           </div>
 
           <div v-if="marketError" class="mp-empty market-error">
             {{ marketError }}
-            <button class="mp-btn mp-btn-link" @click="searchMarket(true)">重试</button>
+            <button class="mp-btn mp-btn-link" @click="searchMarket(true)">{{ $t('common.retry') }}</button>
           </div>
 
-          <div v-if="marketLoading && !sortedMarketItems.length" class="mp-empty">搜索中…</div>
+          <div v-if="marketLoading && !sortedMarketItems.length" class="mp-empty">{{ $t('agent.searching') }}</div>
 
           <div v-if="sortedMarketItems.length" class="mp-group">
-            <div class="mp-group-label">{{ marketQuery.trim() ? '搜索结果' : '热门 Skills' }} ({{ marketTotal }} 个)</div>
+            <div class="mp-group-label">{{ marketQuery.trim() ? '搜索结果' : $t('agent.popularSkills') }} ({{ marketTotal }} 个)</div>
             <div class="mp-list">
               <template v-for="skill in sortedMarketItems" :key="skill.name">
                 <div
@@ -237,7 +237,7 @@
                   <div class="mp-item-info">
                     <div class="mp-item-name">
                       {{ skill.displayName || skill.name }}
-                      <span v-if="isMarketInstalled(skill)" class="mp-scope-badge system">已安装</span>
+                      <span v-if="isMarketInstalled(skill)" class="mp-scope-badge system">{{ $t('settings.installed') }}</span>
                     </div>
                     <div class="mp-item-desc">{{ skill.description || skill.author }}</div>
                     <div class="mp-item-meta">
@@ -247,21 +247,21 @@
                     </div>
                   </div>
                   <div class="mp-item-actions">
-                    <select v-model="marketInstallScope" class="mp-scope-select" title="安装范围">
-                      <option value="system">用户</option>
-                      <option value="project">项目</option>
+                    <select v-model="marketInstallScope" class="mp-scope-select" :title="$t('agent.installScope')">
+                      <option value="system">{{ $t('agent.userScope') }}</option>
+                      <option value="project">{{ $t('agent.projectScope') }}</option>
                     </select>
                     <button
                       class="mp-btn-link"
                       @click="toggleDetail(skill)"
-                      :title="expandedSkill === skill.name ? '收起详情' : '查看详情'"
-                    >{{ expandedSkill === skill.name ? '收起' : '详情' }}</button>
+                      :title="expandedSkill === skill.name ? $t('agent.collapseDetail') : $t('agent.expandDetail')"
+                    >{{ expandedSkill === skill.name ? $t('agent.collapse') : $t('agent.detail') }}</button>
                     <button
                       v-if="!isMarketInstalled(skill)"
                       class="mp-btn mp-btn-install"
                       :disabled="skill._busy"
                       @click="installMarketSkill(skill)"
-                    >{{ skill._busy ? '…' : '安装' }}</button>
+                    >{{ skill._busy ? '…' : $t('agent.install') }}</button>
                     <span v-else class="mp-installed-hint">✔</span>
                   </div>
                 </div>
@@ -269,31 +269,31 @@
                 <div v-if="expandedSkill === skill.name" class="mp-detail-panel">
                   <div class="mp-detail-content">
                     <div class="mp-detail-section">
-                      <div class="mp-detail-label">描述</div>
-                      <div class="mp-detail-text">{{ skill.description || '暂无描述' }}</div>
+                      <div class="mp-detail-label">{{ $t('agent.description') }}</div>
+                      <div class="mp-detail-text">{{ skill.description || $t('agent.noDescription') }}</div>
                     </div>
                     <div class="mp-detail-row">
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">作者</div>
+                        <div class="mp-detail-label">{{ $t('agent.author') }}</div>
                         <div class="mp-detail-text">{{ skill.author }}</div>
                       </div>
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">安装量</div>
-                        <div class="mp-detail-text">{{ skill.installs ? '📥 ' + formatInstalls(skill.installs) : '暂无数据' }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.installs') }}</div>
+                        <div class="mp-detail-text">{{ skill.installs ? '📥 ' + formatInstalls(skill.installs) : $t('agent.noData') }}</div>
                       </div>
                     </div>
                     <div v-if="skill.category" class="mp-detail-section">
-                      <div class="mp-detail-label">分类</div>
+                      <div class="mp-detail-label">{{ $t('agent.category') }}</div>
                       <div class="mp-detail-text">{{ skill.category }}</div>
                     </div>
                     <div v-if="skill.tags && skill.tags.length" class="mp-detail-section">
-                      <div class="mp-detail-label">标签</div>
+                      <div class="mp-detail-label">{{ $t('agent.tags') }}</div>
                       <div class="mp-detail-tags">
                         <span v-for="tag in skill.tags" :key="tag" class="mp-detail-tag">{{ tag }}</span>
                       </div>
                     </div>
                     <div v-if="skill.sourceUrl" class="mp-detail-section">
-                      <div class="mp-detail-label">源地址</div>
+                      <div class="mp-detail-label">{{ $t('agent.sourceUrl') }}</div>
                       <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                     </div>
                     <div v-if="skill.gitUrl" class="mp-detail-section">
@@ -311,31 +311,31 @@
                 class="mp-btn mp-btn-install"
                 :disabled="marketLoading"
                 @click="searchMarket(false)"
-              >{{ marketLoading ? '加载中…' : '加载更多' }}</button>
+              >{{ marketLoading ? $t('chat.loading') : $t('agent.loadMore') }}</button>
             </div>
           </div>
 
-          <div v-if="!marketLoading && !marketError && marketSearched && !sortedMarketItems.length" class="mp-empty">暂无结果</div>
+          <div v-if="!marketLoading && !marketError && marketSearched && !sortedMarketItems.length" class="mp-empty">{{ $t('agent.noResults') }}</div>
         </template>
       </div>
 
       <!-- 镜像设置 -->
       <div class="mp-mirror-row">
-        <span class="mp-mirror-label">Git 镜像</span>
+        <span class="mp-mirror-label">{{ $t('agent.gitMirror') }}</span>
         <select v-model="mirrorPreset" class="mp-mirror-select" @change="onMirrorPresetChange">
-          <option value="">不启用</option>
+          <option value="">{{ $t('agent.notEnabled') }}</option>
           <option value="https://gh-proxy.com/">gh-proxy.com</option>
-          <option value="__custom__">自定义…</option>
+          <option value="__custom__">{{ $t('agent.custom') }}</option>
         </select>
         <input
           v-if="mirrorPreset === '__custom__'"
           v-model="mirrorUrl"
           class="mp-mirror-input"
-          placeholder="输入镜像地址，如 https://gh-proxy.com/"
+          :placeholder="$t('agent.mirrorPlaceholder')"
           @keyup.enter="applyMirror"
           @blur="applyMirror"
         />
-        <button v-if="mirrorPreset === '__custom__'" class="mp-btn mp-btn-install" @click="applyMirror">应用</button>
+        <button v-if="mirrorPreset === '__custom__'" class="mp-btn mp-btn-install" @click="applyMirror">{{ $t('agent.apply') }}</button>
       </div>
     </div>
   </div>
@@ -362,9 +362,9 @@ const expandedSkill = ref(null)  // 当前展开详情的 skill name
 
 // ── 镜像 URL + 安装进度 ──
 const MIRROR_PRESETS = [
-  { label: '不启用', value: '' },
+  { label: t('agent.notEnabled'), value: '' },
   { label: 'gh-proxy.com（已验证）', value: 'https://gh-proxy.com/' },
-  { label: '自定义…', value: '__custom__' },
+  { label: t('agent.custom'), value: '__custom__' },
 ]
 const mirrorPreset = ref('')
 const mirrorUrl = ref('')
@@ -375,7 +375,7 @@ function applyMirror() {
   const url = mirrorPreset.value === '__custom__' ? mirrorUrl.value.trim() : mirrorPreset.value
   settingsApi()?.claudePatchSettingsJson?.({ gitMirrorUrl: url })
     .then(() => ElMessage.success(url ? '镜像已应用' : '已关闭镜像'))
-    .catch(() => ElMessage.error('保存失败'))
+    .catch(() => ElMessage.error(t('common.saveFailed')))
 }
 
 function onMirrorPresetChange() {
@@ -457,7 +457,7 @@ async function installSkill(skill) {
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
-      ElMessage.error(`安装失败: ${res.error || '未知错误'}`)
+      ElMessage.error(`安装失败: ${res.error || t('agent.unknownError')}`)
     } else {
       skill.installed = true
       skill.scope = installScope.value
@@ -479,7 +479,7 @@ async function uninstallSkill(skill) {
   try {
     const res = await api('Uninstall')?.({ skillName: skill.name, scope: skill.scope })
     if (res?.ok === false) {
-      ElMessage.error(`卸载失败: ${res.error || '未知错误'}`)
+      ElMessage.error(`卸载失败: ${res.error || t('agent.unknownError')}`)
     } else {
       skill.installed = false
       skill.scope = null
@@ -582,7 +582,7 @@ async function installMarketSkill(skill, scope) {
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
-      ElMessage.error(`安装失败: ${res.error || '未知错误'}`)
+      ElMessage.error(`安装失败: ${res.error || t('agent.unknownError')}`)
     } else {
       ElMessage.success(`已安装 ${name}`)
       emit('skills-changed')

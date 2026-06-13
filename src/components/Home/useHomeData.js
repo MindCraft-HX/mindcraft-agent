@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { ref, watch, onMounted } from 'vue'
 
 const defaultStats = () => ({
@@ -98,13 +99,13 @@ export function formatTime(isoStr) {
   const diffMs = now - d
   const diffMin = Math.floor(diffMs / 60000)
 
-  if (diffMin < 1) return '刚刚'
-  if (diffMin < 60) return diffMin + '分钟前'
+  if (diffMin < 1) return i18n.global.t('time.justNow')
+  if (diffMin < 60) return i18n.global.t('time.minAgo', { n: diffMin })
   const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return diffHr + '小时前'
+  if (diffHr < 24) return i18n.global.t('time.hourAgo', { n: diffHr })
   const diffDay = Math.floor(diffHr / 24)
-  if (diffDay === 1) return '昨天'
-  if (diffDay < 7) return diffDay + '天前'
+  if (diffDay === 1) return i18n.global.t('time.yesterday')
+  if (diffDay < 7) return i18n.global.t('time.dayAgo', { n: diffDay })
 
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')

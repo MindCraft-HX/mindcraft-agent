@@ -22,18 +22,18 @@
         @dragleave="onDragLeave"
         @dragend="onDragEnd($event)"
         @drop="onDrop($event, idx)"
-        :title="tab.cwd || '未选择文件夹'"
+        :title="tab.cwd || $t('codehub.noFolder')"
       >
         <span class="codehub-tab-agent-icon" :class="tab.iconClass" :style="tab.iconStyle"></span>
         <span class="codehub-tab-name">
-          <span v-if="tab.runningCount === 1" class="running-dot" title="运行中"></span>
-          <span v-else-if="tab.runningCount >= 2" class="running-badge" :title="`${tab.runningCount}个会话运行中`">{{ tab.runningCount }}</span>
-          <span v-else-if="tab.hasPendingTool" class="pending-dot" title="等待用户响应"></span>
+          <span v-if="tab.runningCount === 1" class="running-dot" :title="$t('codehub.running')"></span>
+          <span v-else-if="tab.runningCount >= 2" class="running-badge" :title="$t('codehub.sessionsRunning', { n: tab.runningCount })">{{ tab.runningCount }}</span>
+          <span v-else-if="tab.hasPendingTool" class="pending-dot" :title="$t('codehub.waitingUser')"></span>
           {{ tab.name }}
         </span>
-        <button class="codehub-tab-close" @click.stop="closeTab(tab)" title="关闭">×</button>
+        <button class="codehub-tab-close" @click.stop="closeTab(tab)" :title="$t('codehub.close')">×</button>
       </div>
-      <button class="codehub-tab-add" @click="showAgentPicker = true" title="新建标签">
+      <button class="codehub-tab-add" @click="showAgentPicker = true" :title="$t('codehub.newTab')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
       </button>
     </div>
@@ -45,10 +45,10 @@
       :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }"
     >
       <div class="codehub-ctx-item" @click="ctxCloseThis">
-        <span class="codehub-ctx-icon">✕</span> 关闭此标签
+        <span class="codehub-ctx-icon">✕</span> {{ $t('codehub.closeTab') }}
       </div>
       <div class="codehub-ctx-item" @click="ctxCloseAll">
-        <span class="codehub-ctx-icon">✖</span> 关闭所有标签
+        <span class="codehub-ctx-icon">✖</span> {{ $t('codehub.closeAllTabs') }}
       </div>
     </div>
 
@@ -67,9 +67,9 @@
       <div v-if="showEmptyOverlay" class="codehub-empty-overlay">
         <div class="codehub-empty">
           <div class="codehub-empty-icon mindcraft-flow-win-iconfont icon-mindcraft-claude1"></div>
-          <div class="codehub-empty-title">编程智能体</div>
-          <div class="codehub-empty-sub">点击下方按钮选择编程智能体</div>
-          <button class="codehub-empty-btn" @click="showAgentPicker = true">选择智能体</button>
+          <div class="codehub-empty-title">{{ $t('codehub.title') }}</div>
+          <div class="codehub-empty-sub">{{ $t('codehub.selectHint') }}</div>
+          <button class="codehub-empty-btn" @click="showAgentPicker = true">{{ $t('codehub.selectAgentBtn') }}</button>
         </div>
       </div>
     </div>
@@ -78,7 +78,7 @@
     <div v-if="showAgentPicker" class="codehub-picker-local" @click.self="showAgentPicker = false">
       <div class="codehub-picker-card" :class="themeClass" @click.stop>
         <div class="codehub-picker-head">
-          <div class="codehub-picker-title">选择编程智能体</div>
+          <div class="codehub-picker-title">{{ $t('codehub.selectAgent') }}</div>
           <button v-if="unifiedTabs.length > 0" class="codehub-picker-close" @click="showAgentPicker = false">×</button>
         </div>
         <div class="codehub-picker-list">
@@ -89,7 +89,7 @@
             </div>
             <div class="picker-option-info">
               <div class="picker-option-name">{{ agent.name }}</div>
-              <div class="picker-option-desc">{{ agent.description }}</div>
+              <div class="picker-option-desc">{{ $t(agent.descriptionKey) }}</div>
             </div>
             <svg class="picker-option-arrow" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
               <path d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/>

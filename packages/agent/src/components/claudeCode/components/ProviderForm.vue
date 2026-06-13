@@ -2,26 +2,25 @@
   <div v-if="visible" class="pf-overlay">
     <div class="pf-panel" @click.stop>
       <div class="pf-header">
-        <span class="pf-title">{{ isNew ? '新增配置' : '编辑配置' }}</span>
+        <span class="pf-title">{{ isNew ? $t('settings.addConfig') : $t('settings.editConfig') }}</span>
         <button class="pf-close" @click="onClose">×</button>
       </div>
       <div class="pf-body">
         <div class="setting-group">
           <div class="provider-name-row">
             <div class="provider-name-field">
-              <label class="setting-label">名称</label>
-              <input class="setting-input" v-model="form.name" placeholder="如:mindcraft" />
+              <label class="setting-label">{{ $t('settings.name') }}</label>
+              <input class="setting-input" v-model="form.name" :placeholder="$t('settings.namePlaceholder')" />
             </div>
             <div class="provider-name-field">
-              <label class="setting-label">备注</label>
-              <input class="setting-input" v-model="form.note" placeholder="可选备注" />
+              <label class="setting-label">{{ $t('settings.remark') }}</label>
+              <input class="setting-input" v-model="form.note" :placeholder="$t('settings.remarkOptional')" />
             </div>
           </div>
         </div>
         <div class="setting-group">
           <label class="setting-label">API Key</label>
-          <div class="setting-tip">用于身份认证，支持 Anthropic 官方 Key、第三方代理 Key 或自建 Key。
-            <a class="setting-link" @click="openKeyApply">申请 API Key →</a>
+          <div class="setting-tip">{{ $t('settings.apiKeyHintExtended') }}<a class="setting-link" @click="openKeyApply">{{ $t('settings.applyApiKey') }}</a>
           </div>
           <div class="setting-row">
             <input class="setting-input" :type="showKey ? 'text' : 'password'" v-model="form.key"
@@ -30,57 +29,57 @@
           </div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">Base URL <span class="setting-hint">(可选)</span></label>
+          <label class="setting-label">Base URL <span class="setting-hint">{{ $t('settings.optional') }}</span></label>
           <input class="setting-input" v-model="form.url" @change="syncFormToJson"
             placeholder="https://api.mindcraft.com.cn" />
-          <div class="setting-tip">Anthropic 兼容 API 地址，请勿添加 /v1 后缀。留空使用官方默认地址。</div>
+          <div class="setting-tip">{{ $t('settings.baseUrlHintExtended') }}</div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">官网链接 <span class="setting-hint">(可选)</span></label>
+          <label class="setting-label">{{ $t('settings.websiteUrl') }}<span class="setting-hint">{{ $t('settings.optional') }}</span></label>
           <input class="setting-input" v-model="form.website" placeholder="https://example.com" />
         </div>
         <div class="setting-group">
           <div class="tier-model-header">
-            <label class="setting-label">分级模型</label>
+            <label class="setting-label">{{ $t('settings.tierModel') }}</label>
           </div>
-          <div class="setting-tip" style="margin-bottom:8px">如果供应商原生提供 Claude 系列模型,通常无需配置。仅在需要将请求映射到不同模型名称时填写。</div>
+          <div class="setting-tip" style="margin-bottom:8px">{{ $t('settings.tierModelHintExtended') }}</div>
           <div class="tier-model-grid">
             <div class="tier-model-card">
-              <label class="tier-model-card-label">Haiku 默认模型</label>
+              <label class="tier-model-card-label">{{ $t('settings.tierHaikuModel') }}</label>
               <input class="tier-model-card-input" v-model="tier.haiku" @change="syncFormToJson"
-                placeholder="输入 Haiku 模型名称" />
+                :placeholder="$t('settings.haikuPlaceholder')" />
             </div>
             <div class="tier-model-card">
-              <label class="tier-model-card-label">Sonnet 默认模型</label>
+              <label class="tier-model-card-label">{{ $t('settings.tierSonnetModel') }}</label>
               <input class="tier-model-card-input" v-model="tier.sonnet" @change="syncFormToJson"
-                placeholder="输入 Sonnet 模型名称" />
+                :placeholder="$t('settings.sonnetPlaceholder')" />
             </div>
             <div class="tier-model-card">
-              <label class="tier-model-card-label">Opus 默认模型</label>
+              <label class="tier-model-card-label">{{ $t('settings.tierOpusModel') }}</label>
               <input class="tier-model-card-input" v-model="tier.opus" @change="syncFormToJson"
-                placeholder="输入 Opus 模型 ID" />
+                :placeholder="$t('settings.opusPlaceholder')" />
             </div>
             <div class="tier-model-card">
-              <label class="tier-model-card-label">推理模型 (Thinking)</label>
+              <label class="tier-model-card-label">{{ $t('settings.tierReasoningModel') }}</label>
               <input class="tier-model-card-input" v-model="tier.reasoning" @change="syncFormToJson"
-                placeholder="输入推理模型名称" />
+                :placeholder="$t('settings.reasoningPlaceholder')" />
             </div>
           </div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">主模型层级 <span class="setting-hint">(决定 model 字段写入哪个层级的模型)</span></label>
+          <label class="setting-label">{{ $t('settings.mainTier') }}<span class="setting-hint">(决定 model 字段写入哪个层级的模型)</span></label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="tierKey" @change="syncFormToJson">
-              <option value="haiku">Haiku(快速)</option>
-              <option value="sonnet">Sonnet(平衡)</option>
-              <option value="opus">Opus(强力)</option>
-              <option value="reasoning">Reasoning(推理)</option>
+              <option value="haiku">{{ $t('settings.tierHaiku') }}</option>
+              <option value="sonnet">{{ $t('settings.tierSonnet') }}</option>
+              <option value="opus">{{ $t('settings.tierOpus') }}</option>
+              <option value="reasoning">{{ $t('settings.tierReasoning') }}</option>
             </select>
             <span class="setting-select-arrow">▾</span>
           </div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">权限策略</label>
+          <label class="setting-label">{{ $t('settings.permissionPolicy') }}</label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="policy" @change="syncFormToJson">
               <option value="ask">默认询问(推荐)</option>
@@ -89,13 +88,13 @@
             </select>
             <span class="setting-select-arrow">▾</span>
           </div>
-          <div class="setting-tip">控制 Claude 工具调用权限:写文件与执行命令等敏感操作。</div>
+          <div class="setting-tip">{{ $t('settings.permissionHint') }}</div>
         </div>
         <div class="setting-group">
           <label class="setting-label">默认语言</label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="lang" @change="syncFormToJson">
-              <option value="zh-CN">简体中文</option>
+              <option value="zh-CN">{{ $t('settings.simplifiedChinese') }}</option>
               <option value="en-US">English</option>
             </select>
             <span class="setting-select-arrow">▾</span>
@@ -115,37 +114,37 @@
         </div>
         <div class="setting-group">
           <div class="config-json-header">
-            <label class="setting-label">配置 JSON</label>
-            <button class="config-json-fmt-btn" @click="formatJson">格式化</button>
+            <label class="setting-label">{{ $t('settings.configJson') }}</label>
+            <button class="config-json-fmt-btn" @click="formatJson">{{ $t('settings.format') }}</button>
           </div>
           <div class="config-json-toggles">
             <label class="config-json-toggle-label">
               <input type="checkbox" :checked="toggleHideAttribution"
                 @change="handleToggle('hideAttribution', $event.target.checked)" class="config-json-toggle" />
-              <span>隐藏 AI 署名</span>
+              <span>{{ $t('settings.hideAiSignature') }}</span>
             </label>
             <label class="config-json-toggle-label">
               <input type="checkbox" :checked="toggleTeammates"
                 @change="handleToggle('teammates', $event.target.checked)" class="config-json-toggle" />
-              <span>Teammates 模式</span>
+              <span>{{ $t('settings.teammatesMode') }}</span>
             </label>
             <label class="config-json-toggle-label">
               <input type="checkbox" :checked="toggleToolSearch"
                 @change="handleToggle('toolSearch', $event.target.checked)" class="config-json-toggle" />
-              <span>启用 Tool Search</span>
+              <span>{{ $t('settings.enableToolSearch') }}</span>
             </label>
             <label class="config-json-toggle-label">
               <input type="checkbox" :checked="toggleDisableAutoUpgrade"
                 @change="handleToggle('disableAutoUpgrade', $event.target.checked)" class="config-json-toggle" />
-              <span>禁用自动升级</span>
+              <span>{{ $t('settings.disableAutoUpgrade') }}</span>
             </label>
           </div>
           <textarea class="config-json-editor" v-model="jsonText" spellcheck="false"></textarea>
         </div>
       </div>
       <div class="pf-footer">
-        <button class="settings-btn cancel" @click="onClose">取消</button>
-        <button class="settings-btn primary" @click="onSave">保存</button>
+        <button class="settings-btn cancel" @click="onClose">{{ $t('common.cancel') }}</button>
+        <button class="settings-btn primary" @click="onSave">{{ $t('common.save') }}</button>
       </div>
     </div>
   </div>

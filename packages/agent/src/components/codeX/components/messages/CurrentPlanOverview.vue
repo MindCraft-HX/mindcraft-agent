@@ -1,39 +1,37 @@
 <template>
-  <section class="plan-overview" aria-label="当前计划总览">
+  <section class="plan-overview" :aria-label="$t('agent.planOverview')">
     <div class="plan-overview-head">
       <div class="plan-overview-title-wrap">
         <div class="plan-overview-kicker">PLAN SNAPSHOT</div>
-        <div class="plan-overview-title">当前计划</div>
+        <div class="plan-overview-title">{{ $t('agent.currentPlan') }}</div>
       </div>
       <div class="plan-overview-actions">
         <button
           type="button"
           class="plan-overview-dismiss"
-          title="关闭本轮当前计划"
+          :title="$t('agent.closePlan')"
           @click="emit('dismiss', overview.sourceMessageId)"
         >
           ×
         </button>
-        <button type="button" class="plan-overview-jump" @click="emit('jumpToMessage', overview.sourceMessageId)">
-          定位到原消息
-        </button>
+        <button type="button" class="plan-overview-jump" @click="emit('jumpToMessage', overview.sourceMessageId)">{{ $t('agent.locateOriginalMsg') }}</button>
         <button
           type="button"
           class="plan-overview-toggle"
           :aria-expanded="String(!isCollapsed)"
-          :title="isCollapsed ? '展开当前计划' : '收起当前计划'"
+          :title="isCollapsed ? $t('agent.expandPlan') : $t('agent.collapsePlan')"
           @click="isCollapsed = !isCollapsed"
         >
-          {{ isCollapsed ? '展开' : '收起' }}
+          {{ isCollapsed ? $t('agent.expand') : $t('agent.collapse') }}
         </button>
       </div>
     </div>
 
     <div v-if="isCollapsed" class="plan-overview-collapsed-summary">
-      <span class="plan-overview-collapsed-label">当前计划</span>
+      <span class="plan-overview-collapsed-label">{{ $t('agent.currentPlan') }}</span>
       <span class="plan-overview-collapsed-pill">{{ progressText }}</span>
       <span v-if="overview.currentStep" class="plan-overview-collapsed-text">{{ overview.currentStep.step }}</span>
-      <span v-else-if="lastCompletedStep" class="plan-overview-collapsed-text">最近完成: {{ lastCompletedStep.step }}</span>
+      <span v-else-if="lastCompletedStep" class="plan-overview-collapsed-text">{{ $t('agent.lastCompleted') }} {{ lastCompletedStep.step }}</span>
       <span v-else-if="overview.explanation" class="plan-overview-collapsed-text">{{ overview.explanation }}</span>
     </div>
 
@@ -54,17 +52,17 @@
 
       <div class="plan-overview-focus-grid">
         <div v-if="overview.currentStep" class="plan-overview-focus">
-          <div class="plan-overview-label">当前聚焦</div>
+          <div class="plan-overview-label">{{ $t('agent.currentFocus') }}</div>
           <div class="plan-overview-step">{{ overview.currentStep.step }}</div>
         </div>
 
         <div v-if="lastCompletedStep" class="plan-overview-focus is-completed">
-          <div class="plan-overview-label">最近完成</div>
+          <div class="plan-overview-label">{{ $t('agent.lastCompletedSection') }}</div>
           <div class="plan-overview-step">{{ lastCompletedStep.step }}</div>
         </div>
 
         <div v-if="!overview.currentStep && !lastCompletedStep && overview.explanation" class="plan-overview-focus">
-          <div class="plan-overview-label">说明</div>
+          <div class="plan-overview-label">{{ $t('agent.explanation') }}</div>
           <div class="plan-overview-step">{{ overview.explanation }}</div>
         </div>
       </div>
@@ -103,7 +101,7 @@ const progressPercent = computed(() => {
 
 const progressText = computed(() => {
   const total = props.overview?.summary?.total || 0
-  if (!total) return '仅同步说明'
+  if (!total) return t('agent.syncExplanation')
   return `${props.overview.summary.completed}/${total} 已完成`
 })
 

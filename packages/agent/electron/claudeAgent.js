@@ -8,6 +8,7 @@ const claudeMemory = require('./claudeMemory')
 const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { findLegacyUserData } = require('./findLegacyUserData')
+const { t: lt } = require('./localeHelper')
 
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
 
@@ -1034,15 +1035,15 @@ function setupClaudeHandlers() {
     } catch (e) {
       const status = e.status || e.statusCode
       const msg = (e?.message || '').toLowerCase()
-      if (status === 401) return { valid: false, error: 'API Key 无效，请检查是否填写正确' }
+      if (status === 401) return { valid: false, error: lt('api.invalidKey') }
       if (status === 429 || msg.includes('quota') || msg.includes('rate')) {
-        return { valid: false, error: '额度不足或请求过于频繁，请检查账号额度/限流配置' }
+        return { valid: false, error: lt('api.quotaExceeded') }
       }
       if (status === 404 || status === 400 || msg.includes('model') || msg.includes('not found')) {
-        return { valid: false, error: '当前 Base URL 不支持所选模型，请更换模型或渠道' }
+        return { valid: false, error: lt('api.unsupportedModel') }
       }
-      if (status >= 500) return { valid: false, error: '服务端暂时不可用，请稍后重试' }
-      return { valid: false, error: e?.message || '验证失败，请检查 Base URL、网络代理与模型配置' }
+      if (status >= 500) return { valid: false, error: lt('api.serverUnavailable') }
+      return { valid: false, error: e?.message || lt('api.verifyFailed') }
     }
   })
 
@@ -1276,7 +1277,7 @@ function setupClaudeHandlers() {
   })
   ipcMain.handle('claude-browse-executable', async () => {
     const result = await dialog.showOpenDialog({
-      title: '选择 Claude Code 可执行文件',
+      title: lt('dialog.selectExe'),
       filters: process.platform === 'win32'
         ? [{ name: 'Executable', extensions: ['exe'] }]
         : [{ name: 'All Files', extensions: ['*'] }],
@@ -1362,15 +1363,15 @@ function setupClaudeHandlers() {
       const msg = (e?.stderr || e?.message || String(e)).toLowerCase()
       let hint = ''
       if (msg.includes('eacces') || msg.includes('eperm') || msg.includes('check permissions')) {
-        hint = '权限不足，请以管理员身份运行终端或使用 cmd 右键以管理员身份运行"'
+        hint = lt('install.perm')
       } else if (msg.includes('enoent') || msg.includes('not found')) {
-        hint = '未检测到 npm，请先安装 Node.js（https://nodejs.org）'
+        hint = lt('install.noNpm')
       } else if (msg.includes('etimedout') || msg.includes('enotfound') || msg.includes('econnrefused')) {
-        hint = '网络连接失败，请检查网络或设置 npm 代理（npm config set proxy）'
+        hint = lt('install.netErr')
       } else if (msg.includes('enospc')) {
-        hint = '磁盘空间不足，请清理后重试'
+        hint = lt('install.disk')
       } else if (msg.includes('ebusy') || msg.includes('elock')) {
-        hint = '文件被占用，请关闭其他使用 Claude 的程序后重试'
+        hint = lt('install.locked')
       } else {
         hint = e?.message || String(e)
       }
@@ -1886,7 +1887,7 @@ function setupClaudeHandlers() {
 
   async function runClaudeChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, thinking, system }) {
     const rt = readChatRuntimeConfig()
-    if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 Claude Provider）')
+    if (!rt.apiKey) throw new Error(lt('api.noKey', { provider: 'Claude' }))
 
     const baseURL = (rt.baseURL || 'https://api.anthropic.com').replace(/\/+$/, '')
     const url = baseURL + '/v1/messages'
@@ -2125,8 +2126,8 @@ function setupClaudeHandlers() {
     // 用首条用户消息的前 30 字符作为标题（fallback）
     const firstUser = messages?.find(m => m.role === 'user')
     const fallback = firstUser?.content
-      ? (typeof firstUser.content === 'string' ? firstUser.content : firstUser.content[0]?.text || '新对话').slice(0, 30)
-      : '新对话'
+      ? (typeof firstUser.content === 'string' ? firstUser.content : firstUser.content[0]?.text || lt('claude.sessionTitle')).slice(0, 30)
+      : lt('claude.sessionTitle')
     return fallback
   })
 
@@ -2163,7 +2164,7 @@ function setupClaudeHandlers() {
       return { results }
     } catch (e) {
       console.warn('[chat-web-search] failed:', e?.message || e)
-      return { results: [], error: e?.message || '搜索失败' }
+      return { results: [], error: e?.message || lt('search.failed') }
     }
   })
 
@@ -2251,7 +2252,7 @@ function setupClaudeHandlers() {
             sessionId,
             msg: {
               type: 'system',
-              message: { content: [{ type: 'text', text: `发送失败：${err?.message || err}` }] },
+              message: { content: [{ type: 'text', text: lt('send.failed', { error: err?.message || err }) }] },
             },
           })
         }
@@ -2291,7 +2292,7 @@ function setupClaudeHandlers() {
             msg: {
               type: 'system',
               message: {
-                content: [{ type: 'text', text: 'Claude 响应较慢（可能在加载上下文或等待网络），请稍候…' }],
+                content: [{ type: 'text', text: lt('claude.slow') }],
               },
             },
           })
@@ -2317,7 +2318,7 @@ function setupClaudeHandlers() {
           }
           const systemClaudePath = await findSystemClaude()
           if (!systemClaudePath) {
-            return { error: '未检测到系统安装的 Claude Code，请先执行安装', details: '请使用顶部"设置"按钮打开设置面板，点击"一键安装 Claude Code"' }
+            return { error: lt('claude.notInstalled'), details: lt('claude.notInstalledHint') }
           }
           // SDK 只从 settings.json 读取 autoCompactWindow（settingSources: ['user']）
           // query() 的 Options 类型不含此字段，显式传参被静默忽略。
@@ -2428,7 +2429,7 @@ function setupClaudeHandlers() {
                   })
                   // action: { type: 'accept' | 'reject' | 'feedback', feedback?: string }
                   if (!action || action.type === 'reject') {
-                    return { behavior: 'deny', message: '用户拒绝了计划' }
+                    return { behavior: 'deny', message: lt('plan.rejected') }
                   }
                   const updatedInput = { ...input, planAction: action.type }
                   if (action.type === 'feedback' && action.feedback) {
@@ -2443,7 +2444,7 @@ function setupClaudeHandlers() {
                   return { behavior: 'allow', updatedInput: input }
                 }
                 if (permissionPolicy === 'read_only') {
-                  return { behavior: 'deny', message: '当前权限策略为只读模式，已拒绝写入或执行类工具。' }
+                  return { behavior: 'deny', message: lt('perm.readonly') }
                 }
                 const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
                 const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
@@ -2466,7 +2467,7 @@ function setupClaudeHandlers() {
                 })
                 return allowed
                   ? { behavior: 'allow', updatedInput: input }
-                  : { behavior: 'deny', message: '用户拒绝了本次工具权限请求' }
+                  : { behavior: 'deny', message: lt('perm.denied') }
               },
               hooks: {
                 PostCompact: [{
@@ -2634,7 +2635,7 @@ function setupClaudeHandlers() {
               msg: {
                 type: 'system',
                 subtype: 'error',
-                message: { content: [{ type: 'text', text: '本轮对话已达到最大执行步数，已自动结束。请发送新消息继续对话（上下文将自动延续）。' }] },
+                message: { content: [{ type: 'text', text: lt('maxSteps') }] },
               },
             })
           } else {

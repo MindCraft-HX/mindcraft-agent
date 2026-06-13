@@ -3,6 +3,7 @@ import { ElMessage, ElMessageBox, ElLoading } from "element-plus";
 import router from "@/router";
 import { ref } from 'vue';
 import { useMitt } from "@/utils/mitt.js";
+import { i18n } from '@/i18n'
 const mitt = useMitt();
 
 
@@ -48,7 +49,7 @@ service.interceptors.request.use(
     // config.method.toLowerCase() === 'get' && config.url === filterRequest
     // !(config.method.toLowerCase() === 'get' && config.url.includes(filterGetRequest))
     if (!filterRequest.includes(config.url) && !(config.method.toLowerCase() === 'get' && !getCanLoading) && !data?.noLoading) {
-      loadingInstance = ElLoading.service({ fullscreen: true, text: '加载中...', }); // 显示全屏 Loading background: 'rgba(0, 0, 0, 0.7)',
+      loadingInstance = ElLoading.service({ fullscreen: true, text: i18n.global.t('common.loading'), }); // 显示全屏 Loading background: 'rgba(0, 0, 0, 0.7)',
     };
 
     const globalParams = {
@@ -112,7 +113,7 @@ service.interceptors.response.use(
       } catch (refreshError) {
         console.log(refreshError);
         // 获取新令牌失败，清除旧令牌并刷新
-        ElMessage.error("登录已过期，请重新登录");
+        ElMessage.error(i18n.global.t('error.loginExpired'));
         console.log("刷新令牌失效");
         window.location.reload();
       }
@@ -120,7 +121,7 @@ service.interceptors.response.use(
       // 对于非401错误，显示错误信息
       console.error(error);
       if (error.response && ( error.response.status === 406)) {
-        ElMessage.error("请求失败：积分不足");
+        ElMessage.error(i18n.global.t('error.quotaExceeded'));
       }
     }
 
@@ -153,7 +154,7 @@ const getAccessToken = async () => {
 export const cancelRequest = () => {
   // 取消请求
   if (cancel) {
-    cancel('检测到您切换房间，已取消了上一个房间的问答');
+    cancel(i18n.global.t('error.roomSwitched'));
   }
   //关闭loading
   if (loadingInstance) {

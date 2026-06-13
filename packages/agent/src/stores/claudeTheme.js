@@ -10,6 +10,13 @@ const THEME_LABELS = {
   brown: '棕色',
 }
 
+const THEME_LABEL_KEYS = {
+  dark: 'theme.dark',
+  light: 'theme.light',
+  blue: 'theme.blue',
+  brown: 'theme.brown',
+}
+
 function readPersistedTheme() {
   // 1. IPC 文件存储（主进程 userData 目录，跨启动可靠）
   try {
@@ -62,7 +69,11 @@ export const useClaudeThemeStore = defineStore('claudeTheme', () => {
     return THEME_LABELS[name] || name
   }
 
-  return { theme, themes, setTheme, nextTheme, themeLabel }
+  function themeLabelKey(name) {
+    return THEME_LABEL_KEYS[name] || name
+  }
+
+  return { theme, themes, setTheme, nextTheme, themeLabel, themeLabelKey }
 }, {
   persist: {
     key: 'claudeTheme',

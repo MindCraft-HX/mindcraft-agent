@@ -1,5 +1,6 @@
 import { ElMessage } from "element-plus";
 import wsResult from "./result";
+import { i18n } from '@/i18n'
 
 const NODE_ENV = window.VITE_NODE_ENV || import.meta.env.VITE_NODE_ENV;
 
@@ -81,7 +82,7 @@ class GTWebSocket {
         this.reconnectTime += 500;
       }
     } else {
-      ElMessage.error('当前网络不佳')
+      ElMessage.error(i18n.global.t('error.poorNetwork'))
     }
   }
   // 开启成功 

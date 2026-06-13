@@ -37,8 +37,8 @@
       <div class="message-title">
         <!-- <div style="font-size: 22px;" class="mindcraft-flow-win-logo-icon" v-if="!replyInfo?.is_stop"></div> -->
         <el-image style="width: 31px;height: 31px;border: 1px solid #636161;padding: 5px;border-radius: 50%;margin-right: 12px;" :src="modelInfo.image_url" />
-        <div class="title-text">{{ realModel || "请选择模型" }}</div>
-        <div class="title-text" v-if="pageType == 0">这里是{{ {explain:"我的解释", translate:'我的翻译', quote_ask:'引用内容'}[functionType] }}</div>
+        <div class="title-text">{{ realModel || $t('float.selectModel') }}</div>
+        <div class="title-text" v-if="pageType == 0">{{ $t('float.here') }}{{ typeLabels[functionType] }}</div>
         <div style="flex: 1;"></div>
         <el-button style="margin-left: 18px;" circle type="danger" size="small" icon="CloseBold" @click="closeFloat()" v-if="pageType == 1"></el-button>
         <div style="color: #409EFF;font-size: 22px;" class="title-btn-item mindcraft-flow-win-iconfont"
@@ -51,13 +51,13 @@
       </div>
       <div class="operation-content">
         <div class="translate-content" v-if="functionType === 'translate'">
-          <div class="auto-content">自动检测</div>
+          <div class="auto-content">{{ $t('float.autoDetect') }}</div>
           <el-icon style="font-size: 19px;color: #000;"><Right /></el-icon>
-          <el-select class="lang-select" popper-class="lang-select-options" v-model="chooseLang" placeholder="请选择语言" size="small">
+          <el-select class="lang-select" popper-class="lang-select-options" v-model="chooseLang" :placeholder="$t('float.selectLang')" size="small">
             <el-option v-for="item in langList" :key="item.value" :label="item.name" :value="item.value" />
           </el-select>
         </div>
-        <el-input class="user-input" clearable v-model="userMessage" placeholder="请输入询问内容"
+        <el-input class="user-input" clearable v-model="userMessage" :placeholder="$t('float.inputQuestion')"
           @keyup.enter="quoteMessageSure" @mousedown.stop
           v-if="['quote_ask', 'simple_answer', 'chat_with_image'].includes(functionType)">
           <template #append>
@@ -79,7 +79,7 @@
               @click="rebuildReply"></div>
           </div>
           <div class="continue-btn" @mousedown.stop @click="continueAsk" v-if="replyInfo.is_stop">
-            继续提问
+            {{ $t('float.continueAsk') }}
             <div style="color: #409EFF;font-size: 22px;" class="mindcraft-flow-win-iconfont icon-mindcraft-huiche"></div>
           </div>
         </template>
@@ -91,6 +91,7 @@
 
 <script setup>
 import { ref, nextTick, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { Close, Location, LocationFilled, Check, Setting, FullScreen } from '@element-plus/icons-vue'
 import setting from "./components/setting.vue"
 import { getPlainContent } from "@/utils/filterTool";
@@ -339,6 +340,28 @@ const llmModel = ref('')
 const picLlmModel = ref('')
 const realModel = computed(() => pageType.value == 2 ? picLlmModel.value : llmModel.value)
 const functionType = ref('') // explain:解释模式 translate:翻译模式 quote_ask:追问模式 chat_with_image:图片聊天模式 image_to_text:图片转文案模式 image_to_table:图片转表格模式 image_to_json:图片转JSON模式 image_to_html:HTML代码复现图片 simple_answer:简单对话模式
+const { t } = useI18n()
+const typeLabels = computed(() => ({
+  explain: t('float.myExplain'),
+  translate: t('float.myTranslate'),
+  quote_ask: t('float.quoteContent'),
+}))
+
+// CSS content v-bind 需要 computed 属性
+const cssFloatExplain = computed(() => t('float.explain'))
+const cssFloatTranslate = computed(() => t('float.translate'))
+const cssFloatQuote = computed(() => t('float.quote'))
+const cssFloatCopySelect = computed(() => t('float.copySelect'))
+const cssFloatCopied = computed(() => t('float.copied'))
+const cssFloatToText = computed(() => t('float.toText'))
+const cssFloatImageChat = computed(() => t('float.imageChat'))
+const cssFloatToTable = computed(() => t('float.toTable'))
+const cssFloatToJson = computed(() => t('float.toJson'))
+const cssFloatPageReproduce = computed(() => t('float.pageReproduce'))
+const cssFloatReadAloud = computed(() => t('float.readAloud'))
+const cssFloatReading = computed(() => t('float.reading'))
+const cssFloatCopyAnswer = computed(() => t('float.copyAnswer'))
+const cssFloatRegenerate = computed(() => t('float.regenerate'))
 const modelInfo = ref({})
 const replyMessage = ref('')
 const replyInfo = ref({})
@@ -387,7 +410,7 @@ const sendMessage = async () => {
     if(err?.response?.data) {
       try {
         const data = JSON.parse(err?.response?.data)
-        replyMessage.value = data?.message || '请求失败'
+        replyMessage.value = data?.message || t('error.requestFailed')
       } catch (error) {
         console.log(error)
       }
@@ -549,59 +572,59 @@ const continueAsk = async () => {
 
 .title-btn-item.icon-mindcraft-jieshi:hover:after {
   white-space: nowrap;
-  content: "解释";
+  content: v-bind(cssFloatExplain);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-fanyi:hover:after {
   white-space: nowrap;
-  content: "翻译";
+  content: v-bind(cssFloatTranslate);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-yinyong:hover:after {
   white-space: nowrap;
-  content: "引用";
+  content: v-bind(cssFloatQuote);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-fuzhi:hover:after {
   white-space: nowrap;
-  content: "复制划词";
+  content: v-bind(cssFloatCopySelect);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-fuzhi-suc:hover:after {
-  content: "复制成功";
+  content: v-bind(cssFloatCopied);
 }
 
 .title-btn-item.icon-mindcraft-tupianzhuanwenzi:hover:after {
   white-space: nowrap;
-  content: "转文字";
+  content: v-bind(cssFloatToText);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-yutupianduihua:hover:after {
   white-space: nowrap;
-  content: "图片对话";
+  content: v-bind(cssFloatImageChat);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-tupianzhuanbiaoge:hover:after {
   white-space: nowrap;
-  content: "转表格";
+  content: v-bind(cssFloatToTable);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-tupianzhuanJSON:hover:after {
   white-space: nowrap;
-  content: "转JSON";
+  content: v-bind(cssFloatToJson);
   margin-left: 6px;
 }
 
 .title-btn-item.icon-mindcraft-a-HTMLdaimafuxiantupian:hover:after {
   white-space: nowrap;
-  content: "页面复现";
+  content: v-bind(cssFloatPageReproduce);
   margin-left: 6px;
 }
 
@@ -721,27 +744,27 @@ const continueAsk = async () => {
 }
 
 .btn-list-item.icon-mindcraft-langdu:after {
-  content: "朗读";
+  content: v-bind(cssFloatReadAloud);
   margin-left: 12px;
 }
 .btn-list-item.icon-mindcraft-langduzhong:after {
-  content: "朗读中";
+  content: v-bind(cssFloatReading);
   margin-left: 12px;
   color: #409EFF;
 }
 
 .btn-list-item.icon-mindcraft-fuzhi-reply-suc:after {
-  content: "复制成功";
+  content: v-bind(cssFloatCopied);
   margin-left: 12px;
 }
 
 .btn-list-item.icon-mindcraft-fuzhi-reply:after {
-  content: "复制回答";
+  content: v-bind(cssFloatCopyAnswer);
   margin-left: 12px;
 }
 
 .btn-list-item.icon-mindcraft-zhongxinshengcheng:after {
-  content: "重新生成";
+  content: v-bind(cssFloatRegenerate);
   margin-left: 12px;
 }
 

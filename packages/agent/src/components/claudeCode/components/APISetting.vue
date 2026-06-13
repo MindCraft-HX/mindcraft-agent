@@ -17,38 +17,38 @@
     <div v-if="embedded || showSettings" class="settings-overlay" :class="{ 'settings-overlay--embedded': embedded }">
       <div class="settings-panel">
         <div v-if="!embedded" class="settings-header">
-          <span>设置</span>
+          <span>{{ $t('nav.settings') }}</span>
           <button class="settings-close" @click="closeSettings">×</button>
         </div>
 
         <!-- WebFetch 预检 -->
         <div class="theme-row">
-          <span class="theme-label">WebFetch 预检</span>
+          <span class="theme-label">{{ $t('settings.webFetch') }}</span>
           <div class="theme-options">
             <button type="button" class="mini-toggle"
               :class="{ active: settingsSkipWebFetchPreflight }"
               @click="toggleSkipWebFetchPreflight()"
-              :title="settingsSkipWebFetchPreflight ? '跳过域名安全验证（国内网络推荐开启）' : '执行域名安全验证'">
+              :title="settingsSkipWebFetchPreflight ? $t('settings.skipVerifyHint') : $t('settings.execVerifyHint')">
               <span class="mini-toggle-knob"></span>
             </button>
-            <span class="toggle-hint">{{ settingsSkipWebFetchPreflight ? '跳过验证' : '执行验证' }}</span>
+            <span class="toggle-hint">{{ settingsSkipWebFetchPreflight ? $t('settings.skipVerify') : $t('settings.execVerify') }}</span>
           </div>
         </div>
 
         <!-- 自动压缩窗口（仅 Claude Code，全局设置） -->
         <div class="theme-row">
-          <span class="theme-label">自动压缩窗口</span>
+          <span class="theme-label">{{ $t('settings.autoCompact') }}</span>
           <div class="theme-options">
             <input type="number"
               class="compact-window-input"
               v-model="compactWindowLocal"
-              placeholder="默认（SDK 自动）"
+              :placeholder="$t('settings.defaultSdk')"
               :min="compactWindowMin" :max="compactWindowMax" step="1000"
-              title="Token 阈值：当上下文超过此值触发自动压缩。留空使用 SDK 默认值" />
+              :title="$t('settings.compactThresholdHint')" />
             <button type="button" class="compact-save-btn"
-              @click="saveCompactWindow" title="保存阈值">保存</button>
+              @click="saveCompactWindow" :title="$t('settings.saveThreshold')">{{ $t('common.save') }}</button>
             <button type="button" class="compact-reset-btn"
-              @click="resetCompactWindow" title="恢复 SDK 默认值">重置</button>
+              @click="resetCompactWindow" :title="$t('settings.restoreDefault')">{{ $t('settings.reset') }}</button>
           </div>
         </div>
 
@@ -56,73 +56,69 @@
         <div class="env-status-bar">
           <template v-if="envChecking">
             <div class="env-row env-row-loading">
-              <span class="env-item checking"><span class="env-spinner"></span>Node 检测中…</span>
-              <span class="env-item checking"><span class="env-spinner"></span>Claude Code 检测中…</span>
+              <span class="env-item checking"><span class="env-spinner"></span>{{ $t('settings.nodeCheck') }}</span>
+              <span class="env-item checking"><span class="env-spinner"></span>{{ $t('settings.claudeCheck') }}</span>
             </div>
           </template>
           <template v-else-if="envStatus">
             <div class="env-row">
               <span class="env-item" :class="envStatus.node?.compatible ? 'ok' : 'warn'">
                 <span class="env-dot"></span>
-                Node {{ envStatus.node?.installed ? envStatus.node.version : '未安装' }}
-                <span v-if="envStatus.node?.installed && !envStatus.node?.compatible" class="env-tip">需要 ≥ v18</span>
+                Node {{ envStatus.node?.installed ? envStatus.node.version : $t('settings.notInstalled') }}
+                <span v-if="envStatus.node?.installed && !envStatus.node?.compatible" class="env-tip">{{ $t('settings.needNode') }}</span>
               </span>
               <span v-if="!envStatus.node?.installed || !envStatus.node?.compatible" class="env-divider">|</span>
               <a v-if="!envStatus.node?.installed || !envStatus.node?.compatible"
-                class="env-node-link" @click="openNodeJsDownload">下载 Node.js</a>
+                class="env-node-link" @click="openNodeJsDownload">{{ $t('settings.downloadNode') }}</a>
               <span class="env-item" :class="envStatus.claude?.installed ? 'ok' : 'err'">
                 <span class="env-dot"></span>
-                Claude Code {{ envStatus.claude?.installed ? (envStatus.claude.version ? `v${envStatus.claude.version.split(/\s/)[0].replace(/^v/, '')}` : '已安装') : '未安装' }}
+                Claude Code {{ envStatus.claude?.installed ? (envStatus.claude.version ? `v${envStatus.claude.version.split(/\s/)[0].replace(/^v/, '')}` : $t('settings.installed')) : $t('settings.notInstalled') }}
               </span>
               <button v-if="envStatus.claude?.installed"
                 class="env-update-btn" :class="{ updating: envCheckingUpdate }"
                 @click="checkForUpdate"
-                title="检查更新">{{ envCheckingUpdate ? '检查中…' : envUpdateAvailable ? `更新至 v${envLatestVersion}` : '检查更新' }}</button>
-              <span v-if="envUpdateAvailable" class="env-update-badge">有新版本</span>
+                :title="$t('settings.checkUpdate')">{{ envCheckingUpdate ? $t('settings.checking') : envUpdateAvailable ? `${$t('settings.updateTo')} v${envLatestVersion}` : $t('settings.checkUpdate') }}</button>
+              <span v-if="envUpdateAvailable" class="env-update-badge">{{ $t('settings.newVersion') }}</span>
               <button v-if="!envStatus.claude?.installed"
                 class="env-install-btn"
                 :disabled="envInstalling || !envStatus.npm?.installed || !envStatus.node?.compatible"
                 @click="installClaudeCode"
-                :title="!envStatus.node?.compatible ? '需要 Node.js >= 18' : !envStatus.npm?.installed ? '需要 npm' : ''"
-              >{{ envInstalling ? '安装中…' : '一键安装' }}</button>
+                :title="!envStatus.node?.compatible ? $t('settings.needNodeHint') : !envStatus.npm?.installed ? $t('settings.needNpmHint') : ''"
+              >{{ envInstalling ? $t('settings.installing') : $t('settings.oneClickInstall') }}</button>
               <button v-if="envStatus.claude?.installed && !envStatus.claude?.path"
                 class="env-config-btn" @click="showExePath = !showExePath"
-                title="配置 Claude 路径">配置路径</button>
-              <button class="env-refresh-btn" @click="checkEnvironment" title="重新检测">↻</button>
+                :title="$t('settings.configClaudePath')">{{ $t('settings.configPath') }}</button>
+              <button class="env-refresh-btn" @click="checkEnvironment" :title="$t('settings.redetect')">↻</button>
             </div>
 
             <div v-if="!envStatus.claude?.installed" class="env-path-row">
               <input class="env-path-input" v-model="customExePath"
-                placeholder="手动输入 claude 路径"
+                :placeholder="$t('settings.manualPath')"
                 @keyup.enter="saveExecutablePath" />
-              <button class="env-path-btn" @click="browseExecutable" title="浏览">浏览</button>
-              <button class="env-path-btn save" @click="saveExecutablePath" title="保存">保存</button>
+              <button class="env-path-btn" @click="browseExecutable" :title="$t('settings.browse')">{{ $t('settings.browse') }}</button>
+              <button class="env-path-btn save" @click="saveExecutablePath" :title="$t('common.save')">{{ $t('common.save') }}</button>
             </div>
           </template>
           <template v-else>
-            <span class="env-item err">检测失败,点击重试</span>
-            <button class="env-refresh-btn" @click="checkEnvironment" title="重新检测">↻</button>
+            <span class="env-item err">{{ $t('settings.detectFailed') }}</span>
+            <button class="env-refresh-btn" @click="checkEnvironment" :title="$t('settings.redetect')">↻</button>
           </template>
         </div>
 
         <div class="exe-path-bar" v-if="showExePath">
-          <span class="exe-path-label">Claude 路径</span>
+          <span class="exe-path-label">{{ $t('settings.claudePath') }}</span>
           <input class="exe-path-input" v-model="customExePath"
-            :placeholder="envStatus?.claude?.path || '手动指定 claude 路径'"
+            :placeholder="envStatus?.claude?.path || $t('settings.manualPath')"
             :title="envStatus?.claude?.path || ''"
             @keyup.enter="saveExecutablePath" />
-          <button class="exe-path-btn" @click="browseExecutable" title="浏览">浏览</button>
-          <button class="exe-path-btn save" @click="saveExecutablePath" title="保存">保存</button>
+          <button class="exe-path-btn" @click="browseExecutable" :title="$t('settings.browse')">{{ $t('settings.browse') }}</button>
+          <button class="exe-path-btn save" @click="saveExecutablePath" :title="$t('common.save')">{{ $t('common.save') }}</button>
         </div>
 
         <div class="settings-main">
           <div class="sp-left">
-            <div class="sp-list-header">
-                配置列表
-                <button class="import-legacy-btn" @click="importFromLegacy" title="从 MindCraft 导入 API 配置">
-                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                  从 MindCraft 导入
-                </button>
+            <div class="sp-list-header">{{ $t('settings.configList') }}<button class="import-legacy-btn" @click="importFromLegacy" :title="$t('settings.importFromMindCraftHint')">
+                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.importFromMindCraft') }}</button>
               </div>
             <div class="sp-list">
               <div v-for="(p, i) in settingsForm.providers" :key="i"
@@ -131,39 +127,29 @@
                 <div class="sp-item-avatar">{{ providerAvatar(p) }}</div>
                 <div class="sp-item-info">
                   <div class="sp-item-name">{{ p.name || providerDefaultName(p) }}</div>
-                  <div class="sp-item-url">{{ p.url || '默认地址' }}</div>
+                  <div class="sp-item-url">{{ p.url || $t('settings.defaultAddress') }}</div>
                 </div>
                 <div class="sp-item-actions">
-                  <span v-if="settingsForm.activeIdx === i" class="sp-inuse-badge" title="当前使用中">使用中</span>
-                  <button v-else class="sp-item-btn use" @click.stop="activateProviderByIdx(i)" title="使用此配置">
-                    <svg width="10" height="10" viewBox="0 0 12 12"><polygon points="3,2 10,6 3,10" fill="currentColor"/></svg>
-                    启用
-                  </button>
-                  <button class="sp-item-btn edit" @click.stop="editProviderByIdx(i)" title="编辑">
-                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 10 L2 8 L8 2 L10 4 L4 10 Z" stroke="currentColor" stroke-width="1" fill="none"/></svg>
-                    编辑
-                  </button>
-                  <button class="sp-item-btn copy" @click.stop="copyProvider(i)" title="复制">
-                    <svg width="10" height="10" viewBox="0 0 12 12"><rect x="4" y="4" width="6" height="6" stroke="currentColor" stroke-width="1" fill="none" rx="1"/><path d="M2 8 L2 2 L8 2" stroke="currentColor" stroke-width="1" fill="none"/></svg>
-                    复制
-                  </button>
-                  <button class="sp-item-btn import" @click.stop="importFromFile(i)" title="用配置文件覆盖此条配置">
-                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                    导入
-                  </button>
-                  <button class="sp-item-btn validate" @click.stop="validateProviderByIdx(i)" :disabled="validatingIdx === i" title="验证 Key">
+                  <span v-if="settingsForm.activeIdx === i" class="sp-inuse-badge" :title="$t('settings.currentInUse')">{{ $t('settings.inUse') }}</span>
+                  <button v-else class="sp-item-btn use" @click.stop="activateProviderByIdx(i)" :title="$t('settings.useThisConfig')">
+                    <svg width="10" height="10" viewBox="0 0 12 12"><polygon points="3,2 10,6 3,10" fill="currentColor"/></svg>{{ $t('settings.enable') }}</button>
+                  <button class="sp-item-btn edit" @click.stop="editProviderByIdx(i)" :title="$t('settings.edit')">
+                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 10 L2 8 L8 2 L10 4 L4 10 Z" stroke="currentColor" stroke-width="1" fill="none"/></svg>{{ $t('settings.edit') }}</button>
+                  <button class="sp-item-btn copy" @click.stop="copyProvider(i)" :title="$t('settings.copy')">
+                    <svg width="10" height="10" viewBox="0 0 12 12"><rect x="4" y="4" width="6" height="6" stroke="currentColor" stroke-width="1" fill="none" rx="1"/><path d="M2 8 L2 2 L8 2" stroke="currentColor" stroke-width="1" fill="none"/></svg>{{ $t('settings.copy') }}</button>
+                  <button class="sp-item-btn import" @click.stop="importFromFile(i)" :title="$t('settings.overwriteWithFile')">
+                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.import') }}</button>
+                  <button class="sp-item-btn validate" @click.stop="validateProviderByIdx(i)" :disabled="validatingIdx === i" :title="$t('settings.validateKey')">
                     <svg v-if="validatingIdx !== i" width="10" height="10" viewBox="0 0 12 12"><path d="M2 6 L5 9 L10 3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
                     <span v-else class="sp-validating-dot"></span>
-                    {{ validatingIdx === i ? '验证中' : '验证' }}
+                    {{ validatingIdx === i ? $t('settings.validating') : $t('settings.validate') }}
                   </button>
-                  <button class="sp-item-btn del" @click.stop="removeProvider(i)" title="删除">
-                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M3 3 L9 9 M9 3 L3 9" stroke="currentColor" stroke-width="1.5"/></svg>
-                    删除
-                  </button>
+                  <button class="sp-item-btn del" @click.stop="removeProvider(i)" :title="$t('settings.delete')">
+                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M3 3 L9 9 M9 3 L3 9" stroke="currentColor" stroke-width="1.5"/></svg>{{ $t('settings.delete') }}</button>
                 </div>
               </div>
             </div>
-            <button class="sp-add-btn" @click="addProvider">+ 添加</button>
+            <button class="sp-add-btn" @click="addProvider">{{ $t('agent.addProvider') }}</button>
           </div>
         </div>
       </div>
@@ -337,7 +323,7 @@ async function checkForUpdate() {
           envUpdateAvailable.value = false
           envLatestVersion.value = ''
         } else {
-          ElMessage.error('更新失败: ' + (result?.message || '未知错误'))
+          ElMessage.error('更新失败: ' + (result?.message || t('agent.unknownError')))
         }
       }
     }
@@ -551,7 +537,7 @@ async function applyAndActivate(activeIdx, opts = {}) {
     return true
   } catch (e) {
     console.warn('[APISetting] applyAndActivate failed:', e?.message || e)
-    ElMessage.error('保存失败:' + (e?.message || '未知错误'))
+    ElMessage.error('保存失败:' + (e?.message || t('agent.unknownError')))
     return false
   }
 }
@@ -623,7 +609,7 @@ async function toggleSkipWebFetchPreflight() {
     await window.electronAPI?.claudeSetSkipWebFetchPreflight?.(settingsSkipWebFetchPreflight.value)
     ElMessage.success(settingsSkipWebFetchPreflight.value ? '已开启：WebFetch 跳过域名验证' : '已关闭：WebFetch 将执行域名安全验证')
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(t('common.saveFailed'))
     settingsSkipWebFetchPreflight.value = !settingsSkipWebFetchPreflight.value
   }
 }
@@ -648,7 +634,7 @@ async function saveCompactWindow() {
     if (res?.ok) {
       ElMessage.success(`自动压缩阈值已设为 ${clamped} tokens`)
     } else {
-      ElMessage.error('保存失败：' + (res?.message || '未知错误'))
+      ElMessage.error('保存失败：' + (res?.message || t('agent.unknownError')))
     }
   } catch (e) {
     ElMessage.error('保存失败：' + (e?.message || e))
@@ -663,7 +649,7 @@ async function resetCompactWindow() {
     if (res?.ok) {
       ElMessage.success('已恢复为 SDK 默认压缩阈值')
     } else {
-      ElMessage.error('重置失败：' + (res?.message || '未知错误'))
+      ElMessage.error('重置失败：' + (res?.message || t('agent.unknownError')))
     }
   } catch (e) {
     ElMessage.error('重置失败：' + (e?.message || e))
@@ -717,7 +703,7 @@ function providerAvatar(p) {
 }
 
 function providerDefaultName(p) {
-  if (!p?.name && !p?.url) return '默认 Provider'
+  if (!p?.name && !p?.url) return t('settings.defaultProvider')
   if (!p?.name && p?.url) {
     try {
       const host = new URL(p.url).hostname.replace(/^api\./, '')
@@ -785,7 +771,7 @@ async function importFromLegacy() {
       ElMessage.warning('未找到 MindCraft 的用户数据目录，请确认 mindcraft-electron 已安装并至少运行过一次')
       return
     }
-    if (!result.success) { ElMessage.error('导入失败：' + (result.error || '未知错误')); return }
+    if (!result.success) { ElMessage.error('导入失败：' + (result.error || t('agent.unknownError'))); return }
     const { imported } = result
     const parts = []
     if (imported.providers > 0) parts.push(`${imported.providers} 个 Provider`)

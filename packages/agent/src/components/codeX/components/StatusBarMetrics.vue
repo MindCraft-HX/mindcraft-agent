@@ -40,13 +40,13 @@
           />
         </svg>
         <span v-if="!compacting" class="sb-val">{{ contextPct }}%</span>
-        <span v-else class="sb-val sb-compacting-text">压缩中</span>
+        <span v-else class="sb-val sb-compacting-text">{{ $t('agent.compactTitle') }}</span>
         <span class="sb-tooltip">
           <template v-if="!compacting">
-            <span class="sb-tooltip-title">上下文已用 {{ contextPct }}%（{{ fmtK(m.contextUsage) }} / {{ fmtK(m.contextWindow) }} tokens）</span>
-            <span class="sb-tooltip-sub">CodeX 根据自动压缩阈值自动管理上下文。</span>
+            <span class="sb-tooltip-title">{{ $t('agent.contextUsed') }} {{ contextPct }}%（{{ fmtK(m.contextUsage) }} / {{ fmtK(m.contextWindow) }} tokens）</span>
+            <span class="sb-tooltip-sub">{{ $t('agent.codexAutoCompactDesc') }}</span>
           </template>
-          <span v-else class="sb-tooltip-title">CodeX 正在自动压缩上下文…</span>
+          <span v-else class="sb-tooltip-title">{{ $t('agent.codexAutoCompacting') }}</span>
         </span>
       </span>
     </div>

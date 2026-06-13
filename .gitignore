@@ -48,4 +48,5 @@ docs/
 CLAUDE.md
 AGENTS.md
 
+__pycache__/
 _test/

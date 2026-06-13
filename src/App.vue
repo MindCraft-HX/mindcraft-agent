@@ -1,14 +1,21 @@
 <template>
-  <div class="common-layout">
-    <router-view :router="router" />
-  </div>
+  <el-config-provider :locale="elLocale">
+    <div class="common-layout">
+      <router-view :router="router" />
+    </div>
+  </el-config-provider>
 </template>
 
 <script setup>
-import { ref, onMounted, onUpdated } from "vue";
+import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from 'vue-i18n'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import en from 'element-plus/es/locale/lang/en'
 
 const router = useRouter();
+const { locale } = useI18n()
+const elLocale = computed(() => locale.value === 'zh' ? zhCn : en)
 </script>
 
 <style lang="scss">

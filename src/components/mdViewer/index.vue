@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 <template>
   <div
     class="doc-viewer"
@@ -8,7 +9,7 @@
   >
     <div class="doc-toolbar">
       <div class="doc-toolbar-left">
-        <el-button :icon="FolderOpened" type="primary" size="small" @click="openFile">打开文件</el-button>
+        <el-button :icon="FolderOpened" type="primary" size="small" @click="openFile">{{ $t('doc.openFile') }}</el-button>
       </div>
       <div class="doc-toolbar-right" v-if="currentTab">
         <span class="doc-type">{{ currentTab.ext ? `.${currentTab.ext}` : 'file' }}</span>
@@ -55,7 +56,7 @@
 
     <el-empty
       v-else
-      description="打开或拖入一个本地文件，开始文档浏览"
+      :description="$t('doc.emptyHint')"
       class="doc-empty"
     />
   </div>
@@ -126,7 +127,7 @@ async function ensurePayloadContent(payload = {}) {
   if (!payload?.filePath || payload.content || payload.data) return payload
   const file = await window.electronAPI?.readFileByPath?.(payload.filePath)
   if (!file) {
-    ElMessage.error('文件读取失败：' + (payload.filePath || '未知文件'))
+    ElMessage.error(i18n.global.t('error.fileReadMsg', { path: payload.filePath || i18n.global.t('home.unnamedFile') }))
     return { ...payload, content: '', isLoading: false }
   }
   return {
@@ -198,7 +199,7 @@ async function addPayload(payload = {}) {
       ...pendingTab,
       isLoading: false,
     })
-    ElMessage.error(error?.message || '读取文件失败')
+    ElMessage.error(error?.message || i18n.global.t('error.fileRead'))
   }
 }
 
@@ -252,10 +253,10 @@ async function confirmOpenExternal(tab) {
   try {
     await ElMessageBox.confirm(
       `暂不支持预览该文件类型。是否使用系统默认程序打开？\n${tab.filePath}`,
-      '文档浏览',
+      i18n.global.t('home.browseDocs'),
       {
-        confirmButtonText: '打开',
-        cancelButtonText: '取消',
+        confirmButtonText: i18n.global.t('common.ok'),
+        cancelButtonText: i18n.global.t('common.cancel'),
         type: 'warning',
       }
     )

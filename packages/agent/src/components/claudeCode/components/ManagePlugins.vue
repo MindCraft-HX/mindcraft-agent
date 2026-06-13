@@ -3,7 +3,7 @@
     <div class="mp-panel">
       <!-- 标题栏 -->
       <div class="mp-header">
-        <span class="mp-title">插件</span>
+        <span class="mp-title">{{ $t('agent.plugins') }}</span>
         <button class="mp-close" @click="close">×</button>
       </div>
 
@@ -22,12 +22,12 @@
           <input
             v-model="searchQuery"
             class="mp-search"
-            placeholder="搜索插件…"
+            :placeholder="$t('agent.searchPlugins')"
             autofocus
           />
         </div>
 
-        <div v-if="loading" class="mp-empty">加载中…</div>
+        <div v-if="loading" class="mp-empty">{{ $t('chat.loading') }}</div>
         <template v-else>
           <!-- INSTALLED 分组 -->
           <div v-if="installedPlugins.length" class="mp-group">
@@ -51,12 +51,12 @@
                     <button
                       class="mp-btn-link"
                       @click="togglePluginDetail(plugin)"
-                      :title="expandedPlugin === plugin.id ? '收起详情' : '查看详情'"
-                    >{{ expandedPlugin === plugin.id ? '收起' : '详情' }}</button>
+                      :title="expandedPlugin === plugin.id ? $t('agent.collapseDetail') : $t('agent.expandDetail')"
+                    >{{ expandedPlugin === plugin.id ? $t('agent.collapse') : $t('agent.detail') }}</button>
                     <div
                       class="mp-toggle" :class="{ on: plugin.enabled !== false }"
                       @click="togglePlugin(plugin)"
-                      :title="plugin.enabled !== false ? '已启用，点击禁用' : '已禁用，点击启用'"
+                      :title="plugin.enabled !== false ? $t('agent.enabledClickDisable') : $t('agent.disabledClickEnable')"
                     >
                       <div class="mp-toggle-knob"></div>
                     </div>
@@ -64,34 +64,34 @@
                       class="mp-btn mp-btn-uninstall"
                       :disabled="plugin._busy"
                       @click="uninstallPlugin(plugin)"
-                      title="卸载"
-                    >{{ plugin._busy ? '…' : '卸载' }}</button>
+                      :title="$t('agent.uninstall')"
+                    >{{ plugin._busy ? '…' : $t('agent.uninstall') }}</button>
                   </div>
                 </div>
                 <!-- 内嵌详情面板 -->
                 <div v-if="expandedPlugin === plugin.id" class="mp-detail-panel">
                   <div class="mp-detail-content">
                     <div class="mp-detail-section">
-                      <div class="mp-detail-label">描述</div>
-                      <div class="mp-detail-text">{{ plugin.description || '暂无描述' }}</div>
+                      <div class="mp-detail-label">{{ $t('agent.description') }}</div>
+                      <div class="mp-detail-text">{{ plugin.description || $t('agent.noDescription') }}</div>
                     </div>
                     <div class="mp-detail-row">
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">作者</div>
+                        <div class="mp-detail-label">{{ $t('agent.author') }}</div>
                         <div class="mp-detail-text">{{ plugin.author }}</div>
                       </div>
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">状态</div>
-                        <div class="mp-detail-text">{{ plugin.enabled !== false ? '已启用' : '已禁用' }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.status') }}</div>
+                        <div class="mp-detail-text">{{ plugin.enabled !== false ? $t('agent.enabled') : $t('agent.disabled') }}</div>
                       </div>
                     </div>
                     <div class="mp-detail-row">
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">市场源</div>
-                        <div class="mp-detail-text">{{ plugin.market || '未知' }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.marketSource') }}</div>
+                        <div class="mp-detail-text">{{ plugin.market || $t('agent.unknown') }}</div>
                       </div>
                       <div v-if="plugin.installs" class="mp-detail-section">
-                        <div class="mp-detail-label">安装量</div>
+                        <div class="mp-detail-label">{{ $t('agent.installs') }}</div>
                         <div class="mp-detail-text">↓ {{ formatInstalls(plugin.installs) }}</div>
                       </div>
                     </div>
@@ -123,34 +123,34 @@
                     <button
                       class="mp-btn-link"
                       @click="togglePluginDetail(plugin)"
-                      :title="expandedPlugin === plugin.id ? '收起详情' : '查看详情'"
-                    >{{ expandedPlugin === plugin.id ? '收起' : '详情' }}</button>
+                      :title="expandedPlugin === plugin.id ? $t('agent.collapseDetail') : $t('agent.expandDetail')"
+                    >{{ expandedPlugin === plugin.id ? $t('agent.collapse') : $t('agent.detail') }}</button>
                     <button
                       class="mp-btn mp-btn-install"
                       :disabled="plugin._busy"
                       @click="installPlugin(plugin)"
-                    >{{ plugin._busy ? '…' : '安装' }}</button>
+                    >{{ plugin._busy ? '…' : $t('agent.install') }}</button>
                   </div>
                 </div>
                 <!-- 内嵌详情面板 -->
                 <div v-if="expandedPlugin === plugin.id" class="mp-detail-panel">
                   <div class="mp-detail-content">
                     <div class="mp-detail-section">
-                      <div class="mp-detail-label">描述</div>
-                      <div class="mp-detail-text">{{ plugin.description || '暂无描述' }}</div>
+                      <div class="mp-detail-label">{{ $t('agent.description') }}</div>
+                      <div class="mp-detail-text">{{ plugin.description || $t('agent.noDescription') }}</div>
                     </div>
                     <div class="mp-detail-row">
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">作者</div>
+                        <div class="mp-detail-label">{{ $t('agent.author') }}</div>
                         <div class="mp-detail-text">{{ plugin.author }}</div>
                       </div>
                       <div class="mp-detail-section">
-                        <div class="mp-detail-label">市场源</div>
-                        <div class="mp-detail-text">{{ plugin.market || '未知' }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.marketSource') }}</div>
+                        <div class="mp-detail-text">{{ plugin.market || $t('agent.unknown') }}</div>
                       </div>
                     </div>
                     <div v-if="plugin.installs" class="mp-detail-section">
-                      <div class="mp-detail-label">安装量</div>
+                      <div class="mp-detail-label">{{ $t('agent.installs') }}</div>
                       <div class="mp-detail-text">↓ {{ formatInstalls(plugin.installs) }}</div>
                     </div>
                   </div>
@@ -159,17 +159,17 @@
             </div>
           </div>
 
-          <div v-if="!installedPlugins.length && !availablePlugins.length" class="mp-empty">暂无匹配的插件</div>
+          <div v-if="!installedPlugins.length && !availablePlugins.length" class="mp-empty">{{ $t('agent.noMatchPlugins') }}</div>
         </template>
       </div>
 
       <!-- Tab: Marketplaces -->
       <div v-if="activeTab === 'marketplaces'" class="mp-body">
-        <div class="mp-section-label">已配置的插件市场源（来自 ~/.claude/plugins/known_marketplaces.json）</div>
+        <div class="mp-section-label">{{ $t('agent.marketplaceSources') }}</div>
         <div class="mp-list">
           <div v-if="!marketplaces.length" class="mp-empty">
-            <div>暂无市场源</div>
-            <div class="mp-empty-hint">请在终端运行 <code>claude plugin add-marketplace &lt;url&gt;</code> 添加市场源，<br/>或在命令行使用 <code>claude plugin search</code> 搜索插件。</div>
+            <div>{{ $t('agent.noMarketplace') }}</div>
+            <div class="mp-empty-hint">{{ $t('agent.marketplaceSetupHint') }}</div>
           </div>
           <div
             v-for="(m, idx) in marketplaces" :key="idx"
@@ -205,8 +205,8 @@ const searchQuery = ref('')
 const loading = ref(false)
 
 const tabs = [
-  { key: 'plugins', label: '插件' },
-  { key: 'marketplaces', label: '市场源' },
+  { key: 'plugins', label: t('agent.plugins') },
+  { key: 'marketplaces', label: t('agent.marketSource') },
 ]
 
 const expandedPlugin = ref(null)  // 当前展开详情的 plugin id
@@ -251,7 +251,7 @@ async function installPlugin(plugin) {
   try {
     const res = await api('Install')?.(plugin.id)
     if (res?.ok === false) {
-      ElMessage.error(`安装失败: ${res.error || '未知错误'}`)
+      ElMessage.error(`安装失败: ${res.error || t('agent.unknownError')}`)
     } else {
       plugin.installed = true
       plugin.enabled = true
@@ -270,7 +270,7 @@ async function uninstallPlugin(plugin) {
   try {
     const res = await api('Uninstall')?.(plugin.id)
     if (res?.ok === false) {
-      ElMessage.error(`卸载失败: ${res.error || '未知错误'}`)
+      ElMessage.error(`卸载失败: ${res.error || t('agent.unknownError')}`)
     } else {
       plugin.installed = false
       plugin.enabled = true

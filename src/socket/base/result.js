@@ -1,5 +1,6 @@
 import { ElMessage, ElMessageBox } from "element-plus"
 import { useMitt } from "@/utils/mitt.js";
+import { i18n } from '@/i18n'
 const mitt = useMitt();
 
 
@@ -72,9 +73,9 @@ const disposeFun = {
 	},
 	3002: (data) => {
 		// 余额不足
-    ElMessageBox.confirm('积分不足', '提示', {
-      confirmButtonText: '去充值',
-      cancelButtonText: '取消',
+    ElMessageBox.confirm(i18n.global.t('error.quotaExceeded'), i18n.global.t('common.tip'), {
+      confirmButtonText: i18n.global.t('common.ok'),
+      cancelButtonText: i18n.global.t('common.cancel'),
       type: 'warning'
     }).then(() => {
       mitt.emit("clickDrawer", "pointRecharge")

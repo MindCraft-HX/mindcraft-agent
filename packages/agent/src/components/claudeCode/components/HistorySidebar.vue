@@ -7,9 +7,7 @@
         :disabled="refreshing"
         @click="emit('refresh')"
         title="刷新列表"
-      >
-        历史对话
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" :class="{ 'spinning': refreshing }">
+      >{{ $t('chat.history') }}<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" :class="{ 'spinning': refreshing }">
           <path d="M8 3a5 5 0 104.546 2.914.5.5 0 11.908-.418A6 6 0 118 2v1z"/>
           <path d="M8 1a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 1z"/>
           <path d="M8 5.5L5.5 3H10.5L8 5.5z"/>
@@ -21,7 +19,7 @@
           class="sidebar-toggle"
           type="button"
           @click="emit('update:sidebarOpen', !sidebarOpen)"
-          :title="sidebarOpen ? '收起' : '展开'"
+          :title="sidebarOpen ? $t('agent.collapse') : $t('agent.expand')"
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
             <path v-if="sidebarOpen" d="M11.354 1.646a.5.5 0 010 .708L5.707 8l5.647 5.646a.5.5 0 01-.708.708l-6-6a.5.5 0 010-.708l6-6a.5.5 0 01.708 0z"/>
@@ -36,7 +34,7 @@
       type="button"
       class="sidebar-new-chat"
       :disabled="newChatDisabled"
-      :title="newChatDisabled ? '请先选择并锁定工作文件夹' : '新建对话'"
+      :title="newChatDisabled ? $t('chat.selectFolderHint') : $t('chat.newChat')"
       @click="emit('newChat')"
     >
       <span class="new-chat-icon">
@@ -44,7 +42,7 @@
           <path d="M8 4a.5.5 0 01.5.5v3h3a.5.5 0 010 1h-3v3a.5.5 0 01-1 0v-3h-3a.5.5 0 010-1h3v-3A.5.5 0 018 4z"/>
         </svg>
       </span>
-      <span>新建对话</span>
+      <span>{{ $t('chat.newChat') }}</span>
     </button>
 
     <!-- 搜索框 -->
@@ -55,7 +53,7 @@
       <input
         type="text"
         v-model="searchQuery"
-        placeholder="搜索历史对话"
+        :placeholder="$t('chat.searchHistory')"
         class="search-input"
       />
     </div>
@@ -64,7 +62,7 @@
       <div class="sidebar-list" @scroll="onScroll">
         <div v-if="loading" class="loading-state">
           <div class="loading-dot"></div>
-          <span>加载中…</span>
+          <span>{{ $t('chat.loading') }}</span>
         </div>
 
         <div
@@ -102,7 +100,7 @@
               </span>
               <div class="sidebar-item-actions">
                 <button class="sib-btn edit" type="button" @click.stop="startRename(session)" title="重命名">✎</button>
-                <button class="sib-btn del" type="button" @click.stop="emit('requestDelete', session)" title="删除">×</button>
+                <button class="sib-btn del" type="button" @click.stop="emit('requestDelete', session)" :title="$t('settings.delete')">×</button>
               </div>
             </template>
           </div>
@@ -121,7 +119,7 @@
             <path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 1a6 6 0 100 12A6 6 0 008 2z"/>
             <path d="M8 4a.5.5 0 01.5.5v3h3a.5.5 0 010 1h-3v3a.5.5 0 01-1 0v-3h-3a.5.5 0 010-1h3v-3A.5.5 0 018 4z"/>
           </svg>
-          <span>{{ searchQuery ? '未找到匹配的对话' : '暂无历史对话' }}</span>
+          <span>{{ searchQuery ? $t('chat.noMatch') : $t('chat.noHistory') }}</span>
         </div>
       </div>
     </template>
@@ -176,10 +174,10 @@ const emit = defineEmits([
 ])
 
 // 当前日期标签
-const todayLabel = ref('今天')
-const yesterdayLabel = ref('昨天')
-const pastWeekLabel = ref('过去一周')
-const olderLabel = ref('更早之前')
+const todayLabel = ref(t('dateGroup.today'))
+const yesterdayLabel = ref(t('dateGroup.yesterday'))
+const pastWeekLabel = ref(t('dateGroup.pastWeek'))
+const olderLabel = ref(t('dateGroup.older'))
 
 // 搜索
 const searchQuery = ref('')

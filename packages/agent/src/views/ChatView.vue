@@ -16,23 +16,23 @@
     <div class="chat-main">
       <!-- 顶部栏 -->
       <div class="chat-topbar">
-        <span class="chat-title">{{ currentSession.title || '新对话' }}</span>
+        <span class="chat-title">{{ currentSession.title || $t('chat.newChat') }}</span>
         <div class="chat-topbar-actions">
-          <span v-if="currentSession.contextSummary" class="chat-summary-indicator" title="已压缩上下文">
+          <span v-if="currentSession.contextSummary" class="chat-summary-indicator" :title="$t('chat.compressed')">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2h8l3 4v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/></svg>
           </span>
           <button
             class="topbar-btn"
             :disabled="isStreaming || !currentSession.messages.length"
             @click="clearContext"
-            title="清空上下文"
-          >清空</button>
+            :title="$t('chat.clearContext')"
+          >{{ $t('chat.clearShort') }}</button>
           <button
             class="topbar-btn"
             :disabled="isStreaming || currentSession.messages.length < 2"
             @click="onCompress"
-            title="压缩上下文（AI 摘要）"
-          >压缩</button>
+            :title="$t('chat.compress')"
+          >{{ $t('chat.compressShort') }}</button>
         </div>
       </div>
 

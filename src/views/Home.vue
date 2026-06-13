@@ -1,7 +1,7 @@
 <template>
   <div class="home-page" :class="themeClass">
     <div class="home-hero">
-      <h1 class="hero-title">欢迎使用 MindCraft</h1>
+      <h1 class="hero-title">{{ $t('home.welcome') }}</h1>
     </div>
 
     <div class="home-cards">
@@ -14,7 +14,7 @@
               <polyline points="21 8 27 16 21 24"/>
             </svg>
           </div>
-          <span class="card-title">开始项目对话</span>
+          <span class="card-title">{{ $t('home.startProject') }}</span>
         </div>
 
         <div class="card-body">
@@ -45,14 +45,14 @@
                   <path d="M12 26h12"/>
                 </svg>
               </div>
-              <p class="empty-text">暂无最近项目</p>
-              <p class="empty-hint">点击开始第一个对话</p>
+              <p class="empty-text">{{ $t('home.noRecentProjects') }}</p>
+              <p class="empty-hint">{{ $t('home.clickToStart') }}</p>
             </div>
           </template>
         </div>
 
         <div class="card-foot">
-          <span class="card-action">进入项目</span>
+          <span class="card-action">{{ $t('home.enterProject') }}</span>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <polyline points="6 3 12 9 6 15"/>
           </svg>
@@ -68,7 +68,7 @@
               <polyline points="18 4 18 12 26 12"/>
             </svg>
           </div>
-          <span class="card-title">浏览文档</span>
+          <span class="card-title">{{ $t('home.browseDocs') }}</span>
         </div>
 
         <div class="card-body">
@@ -81,7 +81,7 @@
               >
                 <span class="doc-ext-badge">{{ doc.ext || 'file' }}</span>
                 <div class="doc-info">
-                  <span class="doc-name">{{ doc.name || '未命名文件' }}</span>
+                  <span class="doc-name">{{ doc.name || $t('home.unnamedFile') }}</span>
                   <span class="doc-path">{{ dirPath(doc.filePath) }}</span>
                 </div>
                 <span class="doc-time">{{ formatTime(doc.openedAt) }}</span>
@@ -95,12 +95,12 @@
               <span class="fmt-badge">DOCX</span>
               <span class="fmt-badge">XLSX</span>
             </div>
-            <p class="feature-text">打开本地文件夹，浏览和编辑 Markdown、PDF、Office 等文档</p>
+            <p class="feature-text">{{ $t('home.openLocalFolder') }}</p>
           </template>
         </div>
 
         <div class="card-foot">
-          <span class="card-action">浏览文档</span>
+          <span class="card-action">{{ $t('home.browseDocs') }}</span>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <polyline points="6 3 12 9 6 15"/>
           </svg>
@@ -115,7 +115,7 @@
               <path d="M5 6h16a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H11l-6 5V10a4 4 0 0 1 4-4z"/>
             </svg>
           </div>
-          <span class="card-title">开始对话</span>
+          <span class="card-title">{{ $t('home.startChat') }}</span>
         </div>
 
         <div class="card-body">
@@ -127,19 +127,19 @@
                 class="project-entry"
                 @click.stop="openChat(chat)"
               >
-                <span class="project-entry-name">{{ chat.title || '新对话' }}</span>
+                <span class="project-entry-name">{{ chat.title || $t('home.newChat') }}</span>
                 <span class="project-entry-meta">{{ formatTime(chat.updatedAt) }}</span>
               </div>
             </div>
           </template>
           <template v-else>
-            <div class="feature-text">无需选择项目，快速问答、联网搜索与图片识别</div>
-            <div class="feature-text feature-text-sub">复用已配置的 API，开箱即用</div>
+            <div class="feature-text">{{ $t('home.noProjectChat') }}</div>
+            <div class="feature-text feature-text-sub">{{ $t('home.reuseApi') }}</div>
           </template>
         </div>
 
         <div class="card-foot" @click="router.push('/main/chat')">
-          <span class="card-action">进入对话</span>
+          <span class="card-action">{{ $t('home.enterChat') }}</span>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <polyline points="6 3 12 9 6 15"/>
           </svg>
@@ -150,31 +150,31 @@
     <!-- 用量统计 -->
     <div class="home-stats">
       <div class="stats-header">
-        <h2 class="stats-title">用量统计</h2>
+        <h2 class="stats-title">{{ $t('home.stats') }}</h2>
         <div class="trend-toggle">
-          <button :class="{ active: trendDays === 7 }" @click="trendDays = 7">7天</button>
-          <button :class="{ active: trendDays === 30 }" @click="trendDays = 30">30天</button>
+          <button :class="{ active: trendDays === 7 }" @click="trendDays = 7">{{ $t('home.days7') }}</button>
+          <button :class="{ active: trendDays === 30 }" @click="trendDays = 30">{{ $t('home.days30') }}</button>
         </div>
       </div>
 
       <div class="stats-body">
         <div class="stats-today">
           <div class="stat-item">
-            <span class="stat-label">输入</span>
+            <span class="stat-label">{{ $t('home.input') }}</span>
             <span class="stat-value">{{ formatNumber(todayStats.combined.inputTokens) }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">输出</span>
+            <span class="stat-label">{{ $t('home.output') }}</span>
             <span class="stat-value">{{ formatNumber(todayStats.combined.outputTokens) }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">缓存</span>
+            <span class="stat-label">{{ $t('home.cache') }}</span>
             <span class="stat-value">{{ formatNumber(todayStats.combined.cacheReadTokens) }}</span>
           </div>
         </div>
         <div class="stats-chart">
           <TokenChart v-if="trendData.length" :data="trendData" />
-          <div v-else class="chart-empty">暂无用量数据</div>
+          <div v-else class="chart-empty">{{ $t('home.noTrendData') }}</div>
         </div>
       </div>
     </div>

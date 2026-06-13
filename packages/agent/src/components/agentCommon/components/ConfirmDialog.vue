@@ -12,18 +12,20 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const visible = ref(false)
 const message = ref('')
-const okText = ref('确定')
-const cancelText = ref('取消')
+const okText = ref(t('common.confirm'))
+const cancelText = ref(t('common.cancel'))
 let resolver = null
 
 function open(opts = {}) {
   return new Promise((resolve) => {
     message.value = opts.message || ''
-    okText.value = opts.okText || '确定'
-    cancelText.value = opts.cancelText || '取消'
+    okText.value = opts.okText || t('common.confirm')
+    cancelText.value = opts.cancelText || t('common.cancel')
     resolver = resolve
     visible.value = true
   })

@@ -29,7 +29,7 @@
               class="sidebar-item"
               :class="{ active: activeIndex === '/main/codeHub', 'has-notification': codehubHasNotification && activeIndex !== '/main/codeHub' }"
               @click="$router.push('/main/codeHub')"
-              title="项目"
+              :title="$t('nav.project')"
             >
               <div class="sidebar-icon-wrapper">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -37,14 +37,14 @@
                   <polyline points="13 5.5 16.5 10 13 14.5"/>
                 </svg>
               </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">项目</span>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.project') }}</span>
             </div>
 
             <div
               class="sidebar-item"
               :class="{ active: activeIndex === '/main/mdViewer' }"
               @click="openMdBrowser"
-              title="文档浏览"
+              :title="$t('nav.docs')"
             >
               <div class="sidebar-icon-wrapper">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -52,21 +52,21 @@
                   <polyline points="11 2.5 11 7 16 7"/>
                 </svg>
               </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">文档</span>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.docsShort') }}</span>
             </div>
 
             <div
               class="sidebar-item"
               :class="{ active: activeIndex === '/main/chat' }"
               @click="$router.push('/main/chat')"
-              title="对话"
+              :title="$t('nav.chat')"
             >
               <div class="sidebar-icon-wrapper">
                 <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 4h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7l-4 3V6a2 2 0 0 1 2-2z"/>
                 </svg>
               </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">对话</span>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.chat') }}</span>
             </div>
           </div>
 
@@ -83,14 +83,14 @@
               <template #reference>
                 <div
                   class="sidebar-item"
-                  :title="'主题：' + claudeTheme.themeLabel(claudeTheme.theme)"
+                  :title="$t('nav.theme') + '：' + $t(claudeTheme.themeLabelKey(claudeTheme.theme))"
                 >
                   <div class="sidebar-icon-wrapper">
                     <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
                       <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1.5 8a6.5 6.5 0 0 1 13 0 6.5 6.5 0 0 0-6.5-6.5v13A6.5 6.5 0 0 1 1.5 8z"/>
                     </svg>
                   </div>
-                  <span v-show="!sidebarCollapsed" class="sidebar-label">主题</span>
+                  <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.theme') }}</span>
                 </div>
               </template>
               <div class="theme-picker">
@@ -102,20 +102,45 @@
                   @click="claudeTheme.setTheme(t)"
                 >
                   <span class="theme-dot" :class="`theme-dot-${t}`"></span>
-                  <span class="theme-name">{{ claudeTheme.themeLabel(t) }}</span>
+                  <span class="theme-name">{{ $t(claudeTheme.themeLabelKey(t)) }}</span>
                   <el-icon v-if="claudeTheme.theme === t" class="theme-check"><Check /></el-icon>
                 </div>
               </div>
             </el-popover>
+
+            <!-- Locale Switcher -->
+            <el-popover
+              placement="right-start"
+              :width="150"
+              trigger="click"
+              :teleported="false"
+              :popper-options="{ strategy: 'fixed' }"
+              popper-class="locale-picker-popover"
+            >
+              <template #reference>
+                <div class="sidebar-item" :title="$t('nav.language')">
+                  <div class="sidebar-icon-wrapper">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="2" y1="12" x2="22" y2="12"/>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                  </div>
+                  <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.language') }}</span>
+                </div>
+              </template>
+              <LocaleSwitcher />
+            </el-popover>
+
             <div
               class="sidebar-item"
               @click="openSettings"
-              title="设置"
+              :title="$t('nav.settings')"
             >
               <div class="sidebar-icon-wrapper">
                 <el-icon :size="20"><Setting /></el-icon>
               </div>
-              <span v-show="!sidebarCollapsed" class="sidebar-label">设置</span>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.settings') }}</span>
             </div>
           </div>
         </div>
@@ -141,6 +166,7 @@ import { provide, ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Setting, Check } from '@element-plus/icons-vue';
 import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
+import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
 
 const settingsDrawer = ref(false);
 const activeSetting = ref(null);

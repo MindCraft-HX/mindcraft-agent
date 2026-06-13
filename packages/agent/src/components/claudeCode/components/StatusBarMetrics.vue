@@ -40,13 +40,13 @@
           />
         </svg>
         <span v-if="!compacting" class="sb-val">{{ contextPct }}%</span>
-        <span v-else class="sb-val sb-compacting-text">压缩中</span>
+        <span v-else class="sb-val sb-compacting-text">{{ $t('agent.compactTitle') }}</span>
         <span class="sb-tooltip">
           <template v-if="!compacting">
-            <span class="sb-tooltip-title">上下文已用 {{ contextPct }}%（{{ fmtK(m.contextUsage) }} / {{ fmtK(m.contextWindow) }} tokens）</span>
-            <span class="sb-tooltip-sub">约 80% 时系统自动压缩，点击可立即压缩。</span>
+            <span class="sb-tooltip-title">{{ $t('agent.contextUsed') }} {{ contextPct }}%（{{ fmtK(m.contextUsage) }} / {{ fmtK(m.contextWindow) }} tokens）</span>
+            <span class="sb-tooltip-sub">{{ $t('agent.compactHint') }}</span>
           </template>
-          <span v-else class="sb-tooltip-title">正在压缩上下文…</span>
+          <span v-else class="sb-tooltip-title">{{ $t('agent.compacting') }}</span>
         </span>
       </span>
     </div>

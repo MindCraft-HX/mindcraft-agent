@@ -9,6 +9,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { findLegacyUserData } = require('./findLegacyUserData')
+const { t: lt } = require('./localeHelper')
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
   try {
@@ -1639,7 +1640,7 @@ function setupCodexSdkHandlers() {
           const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
           safeSend(sender, 'codex-agent-message', {
             sessionId,
-            msg: { type: 'system', subtype: 'slow_notice', message: { content: [{ type: 'text', text: 'Codex 响应较慢，请稍候…' }] } },
+            msg: { type: 'system', subtype: 'slow_notice', message: { content: [{ type: 'text', text: lt('codex.slow') }] } },
           })
         }
       }, 30000)
@@ -1663,7 +1664,7 @@ function setupCodexSdkHandlers() {
           const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
           safeSend(sender, 'codex-agent-message', {
             sessionId,
-            msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: 'Codex 执行超时（10 分钟无响应），已自动中断。请重试。' }] } },
+            msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.timeout') }] } },
           })
         }, TURN_TIMEOUT_MS)
         // 存到 session 对象上，方便碰撞/abort 时从外部清除
@@ -2013,7 +2014,7 @@ function setupCodexSdkHandlers() {
               const sender = session?.event?.sender || event.sender
               safeSend(sender, 'codex-agent-message', {
                 sessionId,
-                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: `Codex 异常：${ev.message || ev.error?.message || ''}` }] } },
+                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: ev.message || ev.error?.message || '' }) }] } },
               })
             }
 
@@ -2027,7 +2028,7 @@ function setupCodexSdkHandlers() {
                 msg: {
                   type: 'system',
                   subtype: 'compact_started',
-                  message: { content: [{ type: 'text', text: '正在进行上下文压缩...' }] },
+                  message: { content: [{ type: 'text', text: lt('compacting') }] },
                 },
               })
             }
@@ -2092,7 +2093,7 @@ function setupCodexSdkHandlers() {
             if (canEmitTerminalSignals) {
               safeSend(event.sender, 'codex-agent-message', {
                 sessionId,
-                msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: '已中断' }] } },
+                msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: lt('aborted') }] } },
               })
               const session = codexSessions.get(sessionId)
               sendMetrics(event.sender, {
@@ -2109,7 +2110,7 @@ function setupCodexSdkHandlers() {
             if (!resultReceived && canEmitTerminalSignals) {
               safeSend(event.sender, 'codex-agent-message', {
                 sessionId,
-                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: `未检测到 Codex，请执行: npm install -g @openai/codex` }] } },
+                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('noCodex') }] } },
               })
             }
           }
@@ -2117,7 +2118,7 @@ function setupCodexSdkHandlers() {
             doneReason = resolveCodexDoneReasonFromError(err)
             safeSend(event.sender, 'codex-agent-message', {
               sessionId,
-              msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: `Codex 异常：${errMsg}` }] } },
+              msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: errMsg }) }] } },
             })
           }
         } finally {
@@ -2159,7 +2160,7 @@ function setupCodexSdkHandlers() {
             if (finalized.shouldSendSilentFailureMessage) {
               safeSend(event.sender, 'codex-agent-message', {
                 sessionId,
-                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: 'Codex 会话异常结束：未收到完成事件，请重试。' }] } },
+                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.ended') }] } },
               })
             }
             const session = codexSessions.get(sessionId)
@@ -2210,7 +2211,7 @@ function setupCodexSdkHandlers() {
       // 发送 abort 系统消息，让前端显示"已中断"并立即停止 thinking 状态
       safeSend(s.event?.sender, 'codex-agent-message', {
         sessionId,
-        msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: '已中断' }] } },
+        msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: lt('aborted') }] } },
       })
       safeSend(s.event?.sender, 'codex-agent-done', buildCodexAgentDonePayload({
         sessionId,
@@ -2531,7 +2532,7 @@ function setupCodexSdkHandlers() {
       } catch (directErr) {
         const mirrorMsg = mirrorErr?.message?.replace(/\n/g, ' ').slice(0, 200) || '未知错误'
         const directMsg = directErr?.message?.replace(/\n/g, ' ').slice(0, 200) || '未知错误'
-        throw new Error(`镜像和直连均失败。\n镜像 (${cloneUrl.slice(0, 60)}…): ${mirrorMsg}\n直连: ${directMsg}`)
+        throw new Error(lt('skill.mirrorFail', { mirror: `${cloneUrl.slice(0, 60)}…: ${mirrorMsg}`, direct: directMsg }))
       }
     }
   }
@@ -2540,8 +2541,8 @@ function setupCodexSdkHandlers() {
     try {
       const catalog = codexGetSkillsCatalog()
       const skill = (catalog.skills || []).find(s => s.name === skillName)
-      if (!skill) return { ok: false, error: `未找到 skill: ${skillName}` }
-      if (!skill.gitUrl) return { ok: false, error: '该 skill 无安装源' }
+      if (!skill) return { ok: false, error: lt('skill.notFound', { name: skillName }) }
+      if (!skill.gitUrl) return { ok: false, error: lt('skill.noSource') }
 
       const targetDir = scope === 'system'
         ? path.join(os.homedir(), '.codex', 'skills', skillName)
@@ -2553,7 +2554,7 @@ function setupCodexSdkHandlers() {
         await cloneWithFallback(skill.gitUrl, tmpDir, sender)
         const sourceDir = skill.subPath ? path.join(tmpDir, skill.subPath) : tmpDir
         if (!fs.existsSync(sourceDir)) {
-          return { ok: false, error: `源目录不存在: ${skill.subPath || '/'}` }
+          return { ok: false, error: lt('skill.noSourceDir', { path: skill.subPath || '/' }) }
         }
         fs.mkdirSync(path.dirname(targetDir), { recursive: true })
         fs.cpSync(sourceDir, targetDir, { recursive: true })
@@ -2566,7 +2567,7 @@ function setupCodexSdkHandlers() {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
         const msg = e?.stderr ? String(e.stderr).slice(0, 300) : (e?.message || String(e))
         if (msg.includes('command not found') || msg.includes('not recognized') || msg.includes('ENOENT')) {
-          return { ok: false, error: '未检测到 git，请先安装 git 后再安装 Skill' }
+          return { ok: false, error: lt('skill.noGit') }
         }
         return { ok: false, error: msg }
       }
@@ -2628,7 +2629,7 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
     try {
-      if (!gitUrl) return { ok: false, error: '该 skill 无安装源（GitHub URL）' }
+      if (!gitUrl) return { ok: false, error: lt('skill.noSource') }
       const skillsDir = scope === 'system'
         ? path.join(os.homedir(), '.codex', 'skills')
         : path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills')
@@ -2669,7 +2670,7 @@ function setupCodexSdkHandlers() {
     } catch (e) {
       const msg = e?.message || String(e)
       if (msg.includes('command not found') || msg.includes('not recognized') || msg.includes('ENOENT') || msg.includes('git')) {
-        return { ok: false, error: '未检测到 git，请先安装 git 后再安装 Skill' }
+        return { ok: false, error: lt('skill.noGit') }
       }
       return { ok: false, error: msg }
     }
@@ -2853,7 +2854,7 @@ function setupCodexSdkHandlers() {
               const json = JSON.parse(data)
               resolve({ ok: true, version: json.version || null })
             } catch {
-              resolve({ ok: false, error: '解析失败' })
+              resolve({ ok: false, error: lt('claude.parseFailed') })
             }
           })
         }).on('error', (e) => {
@@ -3023,7 +3024,7 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-list-available-models', async () => {
     try {
       const rt = readRuntimeConfig()
-      if (!rt.apiKey || !rt.baseURL) return { models: [], error: '未配置 API Key 或 Base URL' }
+      if (!rt.apiKey || !rt.baseURL) return { models: [], error: lt('noApiKey') }
       const fetchUrl = `${rt.baseURL.replace(/\/$/, '')}/models`
       const res = await fetch(fetchUrl, {
         method: 'GET',
@@ -3343,7 +3344,7 @@ function setupCodexSdkHandlers() {
 
   async function runCodexChatStream(event, { chatId, messages, model, tools, max_tokens, reasoning }) {
     const rt = readRuntimeConfig()
-    if (!rt.apiKey) throw new Error('未配置 API Key（请在设置中配置 CodeX Provider）')
+    if (!rt.apiKey) throw new Error(lt('noApiKey'))
 
     const baseURL = rt.baseURL || 'https://api.openai.com/v1'
     const url = baseURL.replace(/\/+$/, '') + '/responses'

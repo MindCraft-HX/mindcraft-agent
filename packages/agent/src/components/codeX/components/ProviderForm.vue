@@ -2,7 +2,7 @@
   <div v-if="visible" class="pf-overlay">
     <div class="pf-panel" @click.stop>
       <div class="pf-header">
-        <span class="pf-title">{{ isNew ? '新增供应商' : '编辑供应商' }}</span>
+        <span class="pf-title">{{ isNew ? $t('settings.addProvider') : $t('settings.editProvider') }}</span>
         <button class="pf-close" @click="onClose">×</button>
       </div>
       <div class="pf-body">
@@ -11,15 +11,13 @@
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">供应商名称</label>
+          <label class="setting-label">{{ $t('settings.providerName') }}</label>
           <input class="setting-input" v-model="form.name" placeholder="default" />
         </div>
 
         <div class="setting-group">
           <label class="setting-label">API Key</label>
-          <div class="setting-tip">
-            用于身份认证，支持 OpenAI 官方 Key、第三方代理 Key 或自建 Key。
-            <a class="setting-link" @click="openKeyApply">申请 API Key</a>
+          <div class="setting-tip">{{ $t('settings.apiKeyHintOpenAI') }}<a class="setting-link" @click="openKeyApply">{{ $t('settings.applyApiKeyShort') }}</a>
           </div>
           <div class="setting-row">
             <input
@@ -28,18 +26,18 @@
               v-model="form.key"
               placeholder="sk-..."
             />
-            <button class="setting-eye" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
+            <button class="setting-eye" @click="showKey = !showKey">{{ showKey ? $t('common.hide') : $t('common.show') }}</button>
           </div>
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">API 请求地址</label>
+          <label class="setting-label">{{ $t('settings.apiUrl') }}</label>
           <input class="setting-input" v-model="form.url" placeholder="https://api.mindcraft.com.cn/v1" />
         </div>
 
         <div class="setting-group">
-          <label class="setting-label">模型名称</label>
-          <input class="setting-input" v-model="form.model" placeholder="请输入模型名称" />
+          <label class="setting-label">{{ $t('settings.modelName') }}</label>
+          <input class="setting-input" v-model="form.model" :placeholder="$t('settings.modelNamePlaceholder')" />
         </div>
 
         <div class="setting-group">
@@ -55,21 +53,19 @@
         <div class="setting-group">
           <label class="setting-label">auth.json <span class="required">*</span></label>
           <textarea class="json-editor" v-model="authJsonText" spellcheck="false"></textarea>
-          <button class="fmt-btn" @click="formatAuthJson">格式化</button>
+          <button class="fmt-btn" @click="formatAuthJson">{{ $t('settings.format') }}</button>
         </div>
 
         <div class="setting-group">
           <label class="setting-label">config.toml</label>
-          <div class="setting-tip">
-            这里展示当前配置文件内容。模型相关区块由上方表单统一维护，其他区块会保留。
-          </div>
+          <div class="setting-tip">{{ $t('settings.configPreviewHint') }}</div>
           <textarea class="json-editor toml-editor" v-model="tomlText" spellcheck="false"></textarea>
-          <button class="fmt-btn" @click="formatToml">格式化</button>
+          <button class="fmt-btn" @click="formatToml">{{ $t('settings.format') }}</button>
         </div>
       </div>
       <div class="pf-footer">
-        <button class="settings-btn cancel" @click="onClose">取消</button>
-        <button class="settings-btn primary" @click="onSave">保存</button>
+        <button class="settings-btn cancel" @click="onClose">{{ $t('common.cancel') }}</button>
+        <button class="settings-btn primary" @click="onSave">{{ $t('common.save') }}</button>
       </div>
     </div>
   </div>

@@ -2,8 +2,8 @@
   <Teleport to="body">
     <div v-if="visible" class="agent-picker-overlay" @click.self="close">
       <div class="agent-picker" :class="themeClass">
-        <div class="agent-picker-title">选择编程智能体</div>
-        <div class="agent-picker-sub">选择后将直接进入，后续可随时切换</div>
+        <div class="agent-picker-title">{{ $t('codehub.selectAgent') }}</div>
+        <div class="agent-picker-sub">{{ $t('codehub.selectDirect') }}</div>
 
         <div class="agent-picker-list">
           <div v-for="agent in agentList" :key="agent.key"
@@ -13,7 +13,7 @@
             </div>
             <div class="agent-card-info">
               <div class="agent-card-name">{{ agent.name }}</div>
-              <div class="agent-card-desc">{{ agent.description }}</div>
+              <div class="agent-card-desc">{{ $t(agent.descriptionKey) }}</div>
             </div>
             <svg class="agent-card-arrow" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
               <path d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/>
