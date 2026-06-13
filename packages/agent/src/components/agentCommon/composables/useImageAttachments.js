@@ -53,10 +53,23 @@ export function useImageAttachments({ getActiveTab }) {
     const items = e.clipboardData?.items
     if (!items) return
     const files = []
+    let hasHtmlImage = false
     for (const item of items) {
-      if (item.kind === 'file') { const f = item.getAsFile(); if (f) files.push(f) }
+      if (item.kind === 'file') {
+        const f = item.getAsFile()
+        if (f) files.push(f)
+      } else if (item.kind === 'string' && (item.type === 'text/html' || item.type === 'application/x-moz-nativehtml')) {
+        // 某些来源的截图不在 File 中，而是 HTML 内嵌 <img>（如 Claude.ai 的图片引用）
+        // 此时纯文本为空，但浏览器默认行为会将 HTML/alt 文本插入 textarea
+        if (!hasHtmlImage) {
+          try {
+            hasHtmlImage = /<img\b/i.test(e.clipboardData.getData(item.type))
+          } catch (_) {}
+        }
+      }
     }
     if (files.length) { e.preventDefault(); addImages(files) }
+    else if (hasHtmlImage) { e.preventDefault() }
   }
 
   async function getFilesText() {
