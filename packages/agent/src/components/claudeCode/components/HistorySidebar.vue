@@ -109,7 +109,7 @@
         <!-- 加载更多 -->
         <div v-if="hasMore && !loading" class="load-more">
           <button @click="loadMore" :disabled="loadingMore">
-            {{ loadingMore ? '加载中…' : `加载更多 (${loadedCount} / ${totalFiltered})` }}
+            {{ loadingMore ? $t('chat.loading') : $t('chat.loadMore', { current: loadedCount, total: totalFiltered }) }}
           </button>
         </div>
 
@@ -320,7 +320,7 @@ function formatSessionTitle(session) {
   }
   const idPrefix = `会话 ${session.id.slice(0, 8)}`
   if (shouldDeferClaudeSessionMessageTitle(session)) {
-    return session.name || '新对话'
+    return session.name || t('chat.newChat')
   }
   if (session.messages && session.messages.length > 0) {
     const firstUserMsg = session.messages.find(m => m.role === 'user')
