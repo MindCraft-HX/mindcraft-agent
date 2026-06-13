@@ -73,8 +73,7 @@ const getModelList = async () => {
   }).filter(item => item.model_list.length > 0)
   // console.log(realModel.value, modelList.value.every(item => item.model_list.every(model => model.model_name != realModel.value)))
   if(!realModel.value || modelList.value.every(item => item.model_list.every(model => model.model_name != realModel.value))) {
-    const conf = new Conf()
-    const modelName = await conf.get(props.pageType == 2 ? "picDeafultModel" : "publicDefaultModel") || ""
+    const modelName = await window.electronAPI?.getSetting?.(props.pageType == 2 ? "picDeafultModel" : "publicDefaultModel") || ""
     const modelInfo = modelList.value.find(item => item.model_list.some(model => model.model_name == modelName))
     if(modelInfo) {
       emit(props.pageType == 2 ? 'update:picLlmModel' : 'update:llmModel', modelName)
@@ -91,12 +90,10 @@ const changeModel = (model, list) => {
   emit('update:modelInfo', model)
   refreshWinSize(465, 300)
 }
-import { Conf } from 'electron-conf/renderer'
 const disableInAll = async () => {
   window.electronAPI.setFloatInfo({canOpenFloatWin: false})
   // 将应用内配置写入全局配置
-  const conf = new Conf()
-  await conf.set('canOpenFloatWin', false)  
+  await window.electronAPI?.setSetting?.('canOpenFloatWin', false)
 }
 </script>
 

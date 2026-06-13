@@ -18,16 +18,41 @@ const MARKETPLACE_URL = 'https://download.mindcraft.com.cn/MindCraft-Agent/plugi
 // ─── 状态 ─────────────────────────────────────────────
 let pluginRegistry = {}  // { [pluginId]: { id, name, version, installed, enabled, installPath, installedAt, devMode } }
 
-// ─── Electron-conf 懒加载 ────────────────────────────
-/** @type {import('electron-conf').Conf|null} */
-let pluginDataConf = null
-const Conf = require('electron-conf')
+// ─── 插件数据存储（原生 JSON 文件，替代 electron-conf）──
+const PLUGIN_DATA_FILE = path.join(app.getPath('userData'), 'plugin-data.json')
+
+function _readPluginData() {
+  try {
+    if (fs.existsSync(PLUGIN_DATA_FILE)) {
+      return JSON.parse(fs.readFileSync(PLUGIN_DATA_FILE, 'utf-8'))
+    }
+  } catch (_) { /* ignore */ }
+  return {}
+}
+
+function _writePluginData(data) {
+  try {
+    fs.writeFileSync(PLUGIN_DATA_FILE, JSON.stringify(data, null, 2), 'utf-8')
+  } catch (_) { /* ignore */ }
+}
 
 function getPluginDataConf() {
-  if (!pluginDataConf) {
-    pluginDataConf = new Conf({ name: 'plugin-data' })
+  return {
+    get(pluginId, defaultValue) {
+      const all = _readPluginData()
+      return all[pluginId] !== undefined ? all[pluginId] : defaultValue
+    },
+    set(pluginId, value) {
+      const all = _readPluginData()
+      all[pluginId] = value
+      _writePluginData(all)
+    },
+    delete(pluginId) {
+      const all = _readPluginData()
+      delete all[pluginId]
+      _writePluginData(all)
+    },
   }
-  return pluginDataConf
 }
 
 // ─── 文件系统工具 ──────────────────────────────────────
@@ -348,7 +373,7 @@ function readPluginAsset(pluginId, relativePath) {
   return `file://${resolved.replace(/\\/g, '/')}`
 }
 
-// ─── 插件数据存取（基于 electron-conf，按 pluginId 隔离）─
+// ─── 插件数据存取（JSON 文件，按 pluginId 隔离）─
 function getPluginData(pluginId, key) {
   const conf = getPluginDataConf()
   const allData = conf.get(pluginId, {})

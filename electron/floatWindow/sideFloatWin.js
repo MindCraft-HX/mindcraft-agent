@@ -1,6 +1,6 @@
 const { app, globalShortcut, ipcMain, screen, BrowserWindow, clipboard, Menu } = require("electron");
 const path = require("path");
-const { Conf } = require('electron-conf')
+const { getSetting, setSetting } = require('../mainModules/settingsStore')
 const { AzCustomWindowMove } = require("./AzCustomWindowMove");
 
 class SideFloatWin {
@@ -39,8 +39,7 @@ class SideFloatWin {
     this.mainWin = mainWin;
     this.platform = platform
 
-    const conf = new Conf();
-    const canOpenSideFloatWin = conf.get("canOpenSideFloatWin");
+    const canOpenSideFloatWin = getSetting("canOpenSideFloatWin");
     if (Object.prototype.toString.call(canOpenSideFloatWin) === "[object Boolean]"){
       this.canOpenSideFloatWin = canOpenSideFloatWin
     }
@@ -245,18 +244,17 @@ class SideFloatWin {
   }
   // 创建菜单
   createMenu() {
-    const conf = new Conf();
     const menuList = [
       { label: '打开', click: () => this.mainWin.show() },
       { label: '开机启动', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: () => {
         app.setLoginItemSettings({ openAtLogin: !app.getLoginItemSettings().openAtLogin })
       }},
-      // { label: `划词功能（${openShortcutFloatWin}）`, type: 'checkbox', checked: conf.get("canOpenFloatWin") != undefined ? conf.get("canOpenFloatWin") : true, click: () => {
-      //   conf.set("canOpenFloatWin", !conf.get("canOpenFloatWin"))
+      // { label: `划词功能（${openShortcutFloatWin}）`, type: 'checkbox', checked: getSetting("canOpenFloatWin") != undefined ? getSetting("canOpenFloatWin") : true, click: () => {
+      //   setSetting("canOpenFloatWin", !getSetting("canOpenFloatWin"))
       // }},
-      { label: '浮窗功能', type: 'checkbox', checked: conf.get("canOpenSideFloatWin") != undefined ? conf.get("canOpenSideFloatWin") : true, click: () => {
-        this.canOpenSideFloatWin = !conf.get("canOpenSideFloatWin")
-        conf.set("canOpenSideFloatWin", this.canOpenSideFloatWin)
+      { label: '浮窗功能', type: 'checkbox', checked: getSetting("canOpenSideFloatWin") != undefined ? getSetting("canOpenSideFloatWin") : true, click: () => {
+        this.canOpenSideFloatWin = !getSetting("canOpenSideFloatWin")
+        setSetting("canOpenSideFloatWin", this.canOpenSideFloatWin)
         if(this.canOpenSideFloatWin) {
           this.openWin()
         } else {

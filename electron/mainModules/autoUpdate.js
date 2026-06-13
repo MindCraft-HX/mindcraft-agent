@@ -2,7 +2,7 @@ const { autoUpdater } = require("electron-updater");
 const { app,dialog, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 
-const { Conf } = require('electron-conf')
+const { getSetting, setSetting } = require('./settingsStore')
 
 // 缓存当前更新状态，供 renderer 按需查询
 let currentStatus = { state: 'idle' }
@@ -53,8 +53,7 @@ function setupAutoUpdater(env, win) {
     console.log("发现可用更新");
     console.log("版本号：", info.version);
     console.log("更新内容：", info.releaseNotes);
-    const conf = new Conf();
-    conf.set("isUpdateAvailable", true);
+    setSetting("isUpdateAvailable", true);
     win.webContents.send("client-update-info-data", true)
     sendStatus(win, { state: 'available', version: info.version, releaseNotes: info.releaseNotes })
     // 有可用更新时的处理逻辑
@@ -67,7 +66,7 @@ function setupAutoUpdater(env, win) {
     });
     if (response === 0) {
       autoUpdater.downloadUpdate(); // 下载更新
-      conf.set("isUpdateAvailable", false);
+      setSetting("isUpdateAvailable", false);
       win.webContents.send("client-update-info-data", false)
       sendStatus(win, { state: 'downloading', progress: 0 })
     }else if(response === 1) {
@@ -82,8 +81,7 @@ function setupAutoUpdater(env, win) {
     clearUpdateTimeout()
     // 没有可用更新时的处理逻辑
     console.log("没有可用更新");
-    const conf = new Conf();
-    conf.set("isUpdateAvailable", false);
+    setSetting("isUpdateAvailable", false);
     win.webContents.send("client-update-info-data", false)
     sendStatus(win, { state: 'not-available' })
   });
@@ -155,8 +153,7 @@ function setupAutoUpdater(env, win) {
     checkForUpdatesSafe()
   })
   ipcMain.on("get-update-info-data", (event) => {
-    const conf = new Conf();
-    const isUpdateAvailable = conf.get("isUpdateAvailable");
+    const isUpdateAvailable = getSetting("isUpdateAvailable");
     win.webContents.send("client-update-info-data", isUpdateAvailable);
   })
   ipcMain.handle('get-app-update-status', () => currentStatus)

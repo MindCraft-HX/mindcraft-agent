@@ -111,7 +111,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     });
   },
 
-  // 设置
+  // 设置（原生 JSON 存储，替代 electron-conf）
+  getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+  setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
+
+  // 旧接口兼容
   getLoginItemSettings: () => ipcRenderer.invoke('get-login-item-settings'),
   setLoginItemSettings: (settings) => ipcRenderer.invoke('set-login-item-settings', settings),
   openTabByName: (callback) => {

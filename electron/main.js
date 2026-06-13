@@ -21,7 +21,7 @@ const path = require("path");
 const { exec } = require('child_process');
 const { setupIpcHandlers } = require("./mainModules/ipcHandlers");
 const { setupAutoUpdater } = require("./mainModules/autoUpdate");
-const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers } = require("./mainModules/pluginManager");
+const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers, getInstalledPlugins } = require("./mainModules/pluginManager");
 
 const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
 const { openClaudeWin } = require("./claudeWindow/index.js");
@@ -289,11 +289,18 @@ function createTray(platform) {
   });
 }
 
-const { Conf, useConf } = require('electron-conf')
+// ─── 应用设置/主题存储（原生 JSON 文件，替代 electron-conf）──
+const { getSetting, setSetting } = require('./mainModules/settingsStore')
+
+// 暴露给渲染进程：通过 IPC 读写设置
+ipcMain.handle('get-setting', (_e, key) => getSetting(key))
+ipcMain.handle('set-setting', (_e, key, value) => setSetting(key, value))
+
 function createStore() {
-  const conf = new Conf()
-  conf.registerRendererListener()
-  useConf()
+  // 设置存储就绪（异步信号给渲染进程）
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) w.webContents.send('settings-store-ready')
+  })
 }
 
 //打开邮箱
@@ -339,11 +346,19 @@ app.whenReady().then(async () => {
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件
   setupAutoUpdater(NODE_ENV, win); //更新文件
 
-  // 插件系统：启动时加载注册表 + 扫描校验 + 开发模式扫描
+  // 插件系统：IPC handlers + 注册表立即加载（轻量），目录扫描延迟执行
   loadRegistry()
-  scanAndValidate()
-  scanDevPlugins()
   registerPluginHandlers()
+  // 延迟扫描：不阻塞首屏渲染，扫描完成后广播更新
+  setImmediate(() => {
+    scanAndValidate()
+    scanDevPlugins()
+    // 通知渲染进程插件列表已就绪
+    const plugins = getInstalledPlugins()
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) w.webContents.send('plugin-registry-ready', plugins)
+    })
+  })
 
   registerAgentIPCs(ipcMain);
   ipcMain.handle('open-claude-win', () => openClaudeWin({ initUrl, env: NODE_ENV }));
