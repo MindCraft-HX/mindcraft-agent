@@ -18,11 +18,11 @@ function getCtx() {
   return _ctx
 }
 
-export function playAskSound() {
+export async function playAskSound() {
   try {
     const ctx = getCtx()
     if (ctx.state === 'suspended') {
-      ctx.resume()
+      await ctx.resume()
     }
 
     const now = ctx.currentTime

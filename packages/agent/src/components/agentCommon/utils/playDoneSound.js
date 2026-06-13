@@ -15,12 +15,12 @@ function getCtx() {
   return _ctx
 }
 
-export function playDoneSound() {
+export async function playDoneSound() {
   try {
     const ctx = getCtx()
     // 显式唤醒：规避 AudioContext 被自动播放策略挂起
     if (ctx.state === 'suspended') {
-      ctx.resume()
+      await ctx.resume()
     }
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
