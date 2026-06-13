@@ -106,7 +106,7 @@
                         <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                       </div>
                       <div v-if="skill.gitUrl" class="mp-detail-section">
-                        <div class="mp-detail-label">GitHub</div>
+                        <div class="mp-detail-label">{{ $t('common.github') }}</div>
                         <a :href="skill.gitUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.gitUrl }}</a>
                       </div>
                     </div>
@@ -177,7 +177,7 @@
                         <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                       </div>
                       <div v-if="skill.gitUrl" class="mp-detail-section">
-                        <div class="mp-detail-label">GitHub</div>
+                        <div class="mp-detail-label">{{ $t('common.github') }}</div>
                         <a :href="skill.gitUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.gitUrl }}</a>
                       </div>
                     </div>
@@ -297,7 +297,7 @@
                       <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                     </div>
                     <div v-if="skill.gitUrl" class="mp-detail-section">
-                      <div class="mp-detail-label">GitHub</div>
+                      <div class="mp-detail-label">{{ $t('common.github') }}</div>
                       <a :href="skill.gitUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.gitUrl }}</a>
                     </div>
                   </div>
@@ -377,7 +377,7 @@ let _unsubProgress = null
 function applyMirror() {
   const url = mirrorPreset.value === '__custom__' ? mirrorUrl.value.trim() : mirrorPreset.value
   settingsApi()?.claudePatchSettingsJson?.({ gitMirrorUrl: url })
-    .then(() => ElMessage.success(url ? '镜像已应用' : '已关闭镜像'))
+    .then(() => ElMessage.success(url ? t('agent.mirrorApplied') : t('agent.mirrorClosed')))
     .catch(() => ElMessage.error(t('common.saveFailed')))
 }
 
@@ -454,24 +454,24 @@ async function installSkill(skill) {
   skill._busy = true
   const name = skill.displayName || skill.name
   startInstallProgress()
-  const loadingMsg = ElMessage({ message: `正在安装 ${name}，请稍候…`, type: 'info', duration: 0 })
+  const loadingMsg = ElMessage({ message: t('agent.installingSkill', { name }), type: 'info', duration: 0 })
   try {
     const res = await api('Install')?.({ skillName: skill.name, scope: installScope.value })
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
-      ElMessage.error(`安装失败: ${res.error || t('agent.unknownError')}`)
+      ElMessage.error(t('agent.installError', { message: res.error || t('agent.unknownError') }))
     } else {
       skill.installed = true
       skill.scope = installScope.value
       skill.installPath = res?.path || ''
-      ElMessage.success(`已安装 ${name}`)
+      ElMessage.success(t('agent.installedSkill', { name }))
       emit('skills-changed')
     }
   } catch (e) {
     loadingMsg.close()
     clearInstallProgress()
-    ElMessage.error(`安装失败: ${e?.message || e}`)
+    ElMessage.error(t('agent.installError', { message: e?.message || e }))
   } finally {
     skill._busy = false
   }
@@ -482,16 +482,16 @@ async function uninstallSkill(skill) {
   try {
     const res = await api('Uninstall')?.({ skillName: skill.name, scope: skill.scope })
     if (res?.ok === false) {
-      ElMessage.error(`卸载失败: ${res.error || t('agent.unknownError')}`)
+      ElMessage.error(t('agent.uninstallError', { message: res.error || t('agent.unknownError') }))
     } else {
       skill.installed = false
       skill.scope = null
       skill.installPath = null
-      ElMessage.success(`已卸载 ${skill.displayName || skill.name}`)
+      ElMessage.success(t('agent.uninstalledSkill', { name: skill.displayName || skill.name }))
       emit('skills-changed')
     }
   } catch (e) {
-    ElMessage.error(`卸载失败: ${e?.message || e}`)
+    ElMessage.error(t('agent.uninstallError', { message: e?.message || e }))
   } finally {
     skill._busy = false
   }
@@ -551,7 +551,7 @@ async function searchMarket(reset) {
     marketSearched.value = true
     if (res?.error) {
       marketError.value = res.error === 'fetch failed'
-        ? '无法连接到 skills.sh，请检查网络'
+        ? t('agent.marketConnectFailed')
         : res.error
       return
     }
@@ -565,7 +565,7 @@ async function searchMarket(reset) {
     marketHasMore.value = res?.hasMore ?? (marketItems.value.length < marketTotal.value)
     if (newItems.length) marketPage.value++
   } catch (e) {
-    marketError.value = '搜索失败: ' + (e?.message || '网络错误')
+    marketError.value = t('agent.searchMarketFailed', { message: e?.message || t('agent.netErrorFallback') })
   } finally {
     marketLoading.value = false
   }
@@ -575,7 +575,7 @@ async function installMarketSkill(skill, scope) {
   skill._busy = true
   const name = skill.displayName || skill.name
   startInstallProgress()
-  const loadingMsg = ElMessage({ message: `正在安装 ${name}，请稍候…`, type: 'info', duration: 0 })
+  const loadingMsg = ElMessage({ message: t('agent.installingSkill', { name }), type: 'info', duration: 0 })
   try {
     const res = await api('MarketInstall')?.({
       skillName: skill.name,
@@ -585,16 +585,16 @@ async function installMarketSkill(skill, scope) {
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
-      ElMessage.error(`安装失败: ${res.error || t('agent.unknownError')}`)
+      ElMessage.error(t('agent.installError', { message: res.error || t('agent.unknownError') }))
     } else {
-      ElMessage.success(`已安装 ${name}`)
+      ElMessage.success(t('agent.installedSkill', { name }))
       emit('skills-changed')
       await loadState()
     }
   } catch (e) {
     loadingMsg.close()
     clearInstallProgress()
-    ElMessage.error(`安装失败: ${e?.message || e}`)
+    ElMessage.error(t('agent.installError', { message: e?.message || e }))
   } finally {
     skill._busy = false
   }
