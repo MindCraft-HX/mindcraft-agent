@@ -350,6 +350,7 @@
     "items": "items",
     "object": "object",
     "unnamedTask": "Unnamed Task",
+    "taskStatus": "Task #{id} {status}",
     "completed": "Completed",
     "cancelled": "Cancelled",
     "deleted": "Deleted",

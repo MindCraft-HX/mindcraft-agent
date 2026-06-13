@@ -4,7 +4,7 @@
     <div v-if="todoList.length" class="todo-list">
       <div v-for="(t, i) in todoList" :key="`${t.id || i}-${t.content || ''}`" class="todo-row">
         <span class="todo-status" :class="`s-${t.status || 'pending'}`">{{ statusLabel(t.status) }}</span>
-        <span class="todo-text">{{ t.content || t.id || '未命名任务' }}</span>
+        <span class="todo-text">{{ t.content || t.id || $t('agent.unnamedTask') }}</span>
       </div>
     </div>
     <!-- 单条操作结果（TaskUpdate / TaskDelete） -->
@@ -22,6 +22,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   msg: { type: Object, required: true },
@@ -47,9 +50,11 @@ const singleAction = computed(() => {
   const raw = parsed.value
   if (raw?.todos) return null
   if (raw?.status && (raw?.taskId !== undefined || raw?.task_id !== undefined)) {
+    const st = raw.status
+    const statusText = st === 'completed' ? t('agent.completed') : st === 'cancelled' ? t('agent.cancelled') : st === 'deleted' ? t('agent.deleted') : st === 'in_progress' ? t('agent.inProgress') : st
     return {
       status: raw.status,
-      label: `任务 #${raw.taskId ?? raw.task_id} ${raw.status === 'completed' ? '已完成' : raw.status === 'cancelled' ? '已取消' : raw.status === 'deleted' ? '已删除' : raw.status === 'in_progress' ? '进行中' : raw.status}`,
+      label: t('agent.taskStatus', { id: raw.taskId ?? raw.task_id, status: statusText }),
     }
   }
   return null
@@ -61,7 +66,7 @@ const taskCreate = computed(() => {
   if (raw?.description || raw?.subject || raw?.activeForm || raw?.task) {
     return {
       status: raw?.status || 'pending',
-      label: raw?.activeForm || raw?.subject || raw?.description || raw?.task || '新任务',
+      label: raw?.activeForm || raw?.subject || raw?.description || raw?.task || t('agent.newTask'),
     }
   }
   return null
@@ -69,10 +74,10 @@ const taskCreate = computed(() => {
 
 function statusLabel(status) {
   const s = String(status || 'pending')
-  if (s === 'completed') return '已完成'
-  if (s === 'in_progress') return '进行中'
-  if (s === 'cancelled' || s === 'deleted') return '已取消'
-  return '待处理'
+  if (s === 'completed') return t('agent.completed')
+  if (s === 'in_progress') return t('agent.inProgress')
+  if (s === 'cancelled' || s === 'deleted') return t('agent.cancelled')
+  return t('agent.pending')
 }
 </script>
 

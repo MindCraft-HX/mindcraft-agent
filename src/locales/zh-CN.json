@@ -355,6 +355,7 @@
     "items": "项",
     "object": "对象",
     "unnamedTask": "未命名任务",
+    "taskStatus": "任务 #{id} {status}",
     "completed": "已完成",
     "cancelled": "已取消",
     "deleted": "已删除",
