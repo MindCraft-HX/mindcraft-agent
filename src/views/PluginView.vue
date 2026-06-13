@@ -68,7 +68,7 @@ const pluginApi = computed(() => ({
 }))
 
 function goMarket() {
-  router.push('/main/home')  // 回到首页，用户可从导航栏进市场
+  router.push('/main/pluginMarket')
 }
 
 async function loadPlugin() {
