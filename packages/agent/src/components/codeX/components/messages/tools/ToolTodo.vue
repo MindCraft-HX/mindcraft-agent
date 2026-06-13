@@ -10,11 +10,11 @@
       </div>
 
       <div class="todo-meta">
-        <span class="todo-meta-chip">总计 {{ parsed.summary.total }}</span>
-        <span class="todo-meta-chip is-active">进行中 {{ parsed.summary.inProgress }}</span>
-        <span class="todo-meta-chip is-done">已完成 {{ parsed.summary.completed }}</span>
-        <span class="todo-meta-chip">待处理 {{ parsed.summary.pending }}</span>
-        <span v-if="parsed.summary.cancelled" class="todo-meta-chip is-cancelled">已取消 {{ parsed.summary.cancelled }}</span>
+        <span class="todo-meta-chip">{{ $t('agent.totalN', { n: parsed.summary.total }) }}</span>
+        <span class="todo-meta-chip is-active">{{ $t('agent.inProgressN', { n: parsed.summary.inProgress }) }}</span>
+        <span class="todo-meta-chip is-done">{{ $t('agent.completedN', { n: parsed.summary.completed }) }}</span>
+        <span class="todo-meta-chip">{{ $t('agent.pendingN', { n: parsed.summary.pending }) }}</span>
+        <span v-if="parsed.summary.cancelled" class="todo-meta-chip is-cancelled">{{ $t('agent.cancelledN', { n: parsed.summary.cancelled }) }}</span>
       </div>
     </div>
 
@@ -37,7 +37,10 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { parseTodoListPayload } from './todoList.mjs'
+
+const { t } = useI18n()
 
 const props = defineProps({
   msg: { type: Object, required: true },
@@ -46,16 +49,16 @@ const props = defineProps({
 const parsed = computed(() => parseTodoListPayload(props.msg?.text || ''))
 const progressText = computed(() => {
   const total = parsed.value.summary.total
-  if (!total) return '无待办'
-  return `${parsed.value.summary.completed}/${total} 已完成`
+  if (!total) return t('agent.noTodo')
+  return t('agent.completedFraction', { completed: parsed.value.summary.completed, total })
 })
 
 function statusLabel(status) {
   const s = String(status || 'pending')
-  if (s === 'completed') return '已完成'
-  if (s === 'in_progress') return '进行中'
-  if (s === 'cancelled') return '已取消'
-  return '待处理'
+  if (s === 'completed') return t('agent.completed')
+  if (s === 'in_progress') return t('agent.inProgress')
+  if (s === 'cancelled') return t('agent.cancelled')
+  return t('agent.pending')
 }
 </script>
 

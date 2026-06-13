@@ -375,6 +375,8 @@
     "completedN": "Completed {n}",
     "pendingN": "Pending {n}",
     "cancelledN": "Cancelled {n}",
+    "noTodo": "No todos",
+    "completedFraction": "{completed}/{total} completed",
     "currentFocus": "Current Focus",
     "description": "Description",
     "syncDesc": "Sync description only",

@@ -380,6 +380,8 @@
     "completedN": "已完成 {n}",
     "pendingN": "待处理 {n}",
     "cancelledN": "已取消 {n}",
+    "noTodo": "无待办",
+    "completedFraction": "{completed}/{total} 已完成",
     "currentFocus": "当前聚焦",
     "description": "说明",
     "syncDesc": "仅同步说明",
