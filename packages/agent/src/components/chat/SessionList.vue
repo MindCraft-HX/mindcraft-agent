@@ -2,8 +2,8 @@
   <div class="session-list" :class="{ collapsed: collapsed }">
     <!-- 头部 -->
     <div class="sl-header">
-      <span v-if="!collapsed" class="sl-title">对话列表</span>
-      <button class="sl-new-btn" @click="$emit('new-session')" title="新建对话">
+      <span v-if="!collapsed" class="sl-title">{{ $t('chat.sessionList') }}</span>
+      <button class="sl-new-btn" @click="$emit('new-session')" :title="$t('chat.newChat')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <line x1="8" y1="3" x2="8" y2="13"/>
           <line x1="3" y1="8" x2="13" y2="8"/>
@@ -37,17 +37,17 @@
             @blur="commitRename"
           />
           <template v-else>
-            <span class="sl-item-title" @dblclick.stop="startRename(s)">{{ s.title || '新对话' }}</span>
+            <span class="sl-item-title" @dblclick.stop="startRename(s)">{{ s.title || $t('chat.newChat') }}</span>
             <span class="sl-item-meta">{{ providerLabel(s.provider) }} · {{ timeLabel(s.updatedAt) }}</span>
           </template>
         </div>
         <div v-if="!collapsed && editingId !== s.id" class="sl-item-actions">
-          <button class="sl-action-btn" @click.stop="startRename(s)" title="重命名">
+          <button class="sl-action-btn" @click.stop="startRename(s)" :title="$t('chat.rename')">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11.5 2.5l2 2L6 12l-2.7.7.7-2.7z"/>
             </svg>
           </button>
-          <button class="sl-action-btn sl-action-danger" @click.stop="$emit('delete', s.id)" title="删除">
+          <button class="sl-action-btn sl-action-danger" @click.stop="$emit('delete', s.id)" :title="$t('common.delete')">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
               <line x1="4" y1="4" x2="12" y2="12"/>
               <line x1="12" y1="4" x2="4" y2="12"/>

@@ -40,8 +40,8 @@
       <div v-if="initializing" class="cc-init-overlay">
         <div class="cc-init-card">
           <div class="cc-init-spinner"></div>
-          <div class="cc-init-title">正在恢复 Claude Code 会话</div>
-          <div class="cc-init-sub">只读取项目与标题元信息，不扫描全文消息，请稍候。</div>
+          <div class="cc-init-title">{{ $t('agent.restoringSession') }}</div>
+          <div class="cc-init-sub">{{ $t('agent.restoringSessionHint') }}</div>
         </div>
       </div>
 
@@ -114,8 +114,8 @@
           <div class="cc-messages-placeholder-inner">
             <div class="cc-ph-icon mindcraft-flow-win-iconfont icon-mindcraft-claude1"></div>
             <div class="cc-ph-title">Claude Code</div>
-            <p v-if="!activeProject?.cwdLocked" class="cc-ph-sub">请先选择工作目录，再新建或选择对话</p>
-            <p v-else class="cc-ph-sub">请新建对话或从侧栏选择会话</p>
+            <p v-if="!activeProject?.cwdLocked" class="cc-ph-sub">{{ $t('agent.selectFirst') }}</p>
+            <p v-else class="cc-ph-sub">{{ $t('agent.selectOrNew') }}</p>
             <button
               v-if="!activeProject?.cwdLocked"
               class="cc-browse-btn"
@@ -170,7 +170,7 @@
             ref="inputEl"
             v-model="inputText"
             class="cc-textarea"
-            :placeholder="!activeProject?.cwdLocked ? '请先选择文件夹后再对话' : (!activeTab ? '请新建对话或从侧栏选择会话…' : (activeTab.thinking ? '排队下一条消息… (将在当前回复结束后发送)' : '给 Claude 发消息… (Enter 发送，Shift+Enter 换行)'))"
+            :placeholder="!activeProject?.cwdLocked ? $t('agent.selectFolderFirst') : (!activeTab ? $t('agent.selectOrNewChat') : (activeTab.thinking ? $t('agent.queueMsg') : $t('agent.sendMsgClaude')))"
             :disabled="!activeProject?.cwdLocked || !activeTab"
             @keydown="onKeydown"
             @compositionstart="onCompositionStart"
@@ -185,7 +185,7 @@
                 <path d="M5 3.5h6A1.5 1.5 0 0112.5 5v6a1.5 1.5 0 01-1.5 1.5H5A1.5 1.5 0 013.5 11V5A1.5 1.5 0 015 3.5z"/>
               </svg>
             </button>
-            <button class="send-btn" :disabled="!canSend" :title="activeTab?.thinking ? '排队此条消息（将在当前回复后发送）' : '发送'" @click="sendMessage">
+            <button class="send-btn" :disabled="!canSend" :title="activeTab?.thinking ? $t('agent.queueSend') : $t('chat.sendShort')" @click="sendMessage">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M15.964.686a.5.5 0 00-.65-.65L.767 5.855H.766l-.452.18a.5.5 0 00-.082.887l.41.26.001.002 4.995 3.178 3.178 4.995.002.002.26.41a.5.5 0 00.886-.083l6-15Zm-1.833 1.89L6.637 10.07l-.215-.338a.5.5 0 00-.154-.154l-.338-.215 7.494-7.494 1.178-.471-.47 1.178z"/>
               </svg>

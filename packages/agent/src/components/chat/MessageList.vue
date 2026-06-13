@@ -7,9 +7,9 @@
           <path d="M8 10h24a6 6 0 0 1 6 6v16a6 6 0 0 1-6 6H18l-10 8V16a6 6 0 0 1 6-6z"/>
         </svg>
       </div>
-      <p class="welcome-title">开始对话</p>
-      <p class="welcome-hint">你可以问我任何问题，也可以上传图片让我识别</p>
-      <p class="welcome-hint">开启联网搜索后，我还能帮你查询最新信息</p>
+      <p class="welcome-title">{{ $t('chat.welcomeTitle') }}</p>
+      <p class="welcome-hint">{{ $t('chat.welcomeText') }}</p>
+      <p class="welcome-hint">{{ $t('chat.welcomeSearch') }}</p>
     </div>
 
     <!-- 消息列表 -->

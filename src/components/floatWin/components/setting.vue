@@ -7,7 +7,7 @@
             <div :class="[pageType == 1 ? 'in-message-content' : '']" class="setting-btn mindcraft-flow-win-iconfont icon-mindcraft-shezhi"></div>
           </template>
           <el-sub-menu index="1-1" style="max-height: 200px;">
-            <template #title><div style="color: #409EFF;margin-right: 12px;margin-left: 6px;font-size: 22px;" class="mindcraft-flow-win-iconfont icon-mindcraft-moxingxuanze"></div>模型</template>
+            <template #title><div style="color: #409EFF;margin-right: 12px;margin-left: 6px;font-size: 22px;" class="mindcraft-flow-win-iconfont icon-mindcraft-moxingxuanze"></div>{{ $t('float.model') }}</template>
             <el-scrollbar max-height="80vh" max-width="40vw">
               <el-sub-menu popper-class="model-list" :index="`1-2-${index}`" v-for="model, index in modelList" :key="index" :teleported="true">
                 <template #title><el-image style="width: 22px; height: 22px; display: flex;margin-right: 12px;" fit="contain" :src="model.image_url"></el-image>{{ model.model_brand }}</template>
@@ -29,8 +29,8 @@
             </el-scrollbar>
           </el-sub-menu>
           <el-sub-menu index="1-2" v-if="pageType != 1">
-            <template #title><div style="margin-right: 12px;margin-left: 6px;font-size: 22px;" class="mindcraft-flow-win-iconfont icon-mindcraft-jinyong"></div>禁用</template>
-            <el-menu-item index="1-2-1" @click="disableInAll"><el-icon><CircleClose /></el-icon>全局禁用</el-menu-item>
+            <template #title><div style="margin-right: 12px;margin-left: 6px;font-size: 22px;" class="mindcraft-flow-win-iconfont icon-mindcraft-jinyong"></div>{{ $t('float.disable') }}</template>
+            <el-menu-item index="1-2-1" @click="disableInAll"><el-icon><CircleClose /></el-icon>{{ $t('float.globalDisable') }}</el-menu-item>
           </el-sub-menu>
         </el-sub-menu>
       </el-menu>

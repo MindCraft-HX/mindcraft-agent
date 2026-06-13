@@ -31,15 +31,15 @@
     <div class="control-row">
       <!-- 左侧：接口 / 模型 -->
       <div class="control-left">
-        <select v-model="localProvider" class="ctrl-select" title="API 接口类型">
-          <option value="claude">Anthropic 接口</option>
-          <option value="codex">OpenAI 接口</option>
+        <select v-model="localProvider" class="ctrl-select" :title="$t('agent.apiType')">
+          <option value="claude">{{ $t('agent.anthropicApi') }}</option>
+          <option value="codex">{{ $t('agent.openaiApi') }}</option>
         </select>
 
         <!-- 模型选择（自定义下拉） -->
         <div class="model-picker" ref="modelPickerRef">
-          <button class="model-trigger" :class="{ open: modelDropdownOpen }" @click="modelDropdownOpen = !modelDropdownOpen" title="选择模型">
-            <span class="model-trigger-label">{{ selectedModelLabel || '选择模型' }}</span>
+          <button class="model-trigger" :class="{ open: modelDropdownOpen }" @click="modelDropdownOpen = !modelDropdownOpen" :title="$t('agent.selectModel')">
+            <span class="model-trigger-label">{{ selectedModelLabel || $t('agent.selectModel') }}</span>
             <svg class="model-trigger-chevron" :class="{ flipped: modelDropdownOpen }" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
               <polyline points="2 3.5 5 6.5 8 3.5"/>
             </svg>
@@ -64,8 +64,8 @@
       <!-- 右侧：思考档位 + 搜索 + 发送 -->
       <div class="control-right">
         <!-- 思考档位：4 点指示器（关/低/中/高，匹配项目面板 effort 样式） -->
-        <div class="think-dots" title="深度思考强度">
-          <span class="think-dots-label">思考</span>
+        <div class="think-dots" :title="$t('chat.thinking')">
+          <span class="think-dots-label">{{ $t('chat.thinkShort') }}</span>
           <div class="think-dots-group">
             <button
               v-for="(lv, idx) in thinkingLevels" :key="lv.value"
@@ -82,14 +82,14 @@
           class="ctrl-toggle"
           :class="{ active: localWebSearch }"
           @click="localWebSearch = !localWebSearch"
-          title="联网搜索"
+          :title="$t('chat.webSearch')"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="8" cy="8" r="6"/>
             <ellipse cx="8" cy="8" rx="3" ry="6"/>
             <line x1="2" y1="8" x2="14" y2="8"/>
           </svg>
-          <span>搜索</span>
+          <span>{{ $t('chat.search') }}</span>
         </button>
 
         <!-- 发送 / 停止 -->
@@ -98,7 +98,7 @@
           class="ctrl-send-btn"
           :disabled="!canSend"
           @click="doSend"
-          title="发送 (Enter)"
+          :title="$t('chat.send')"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M1.5 2l13 6-13 6 3-6-3-6z"/>
@@ -108,7 +108,7 @@
           v-else
           class="ctrl-stop-btn"
           @click="$emit('stop')"
-          title="停止生成"
+          :title="$t('chat.stop')"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <rect x="3" y="3" width="10" height="10" rx="1"/>
@@ -118,7 +118,7 @@
     </div>
 
     <!-- 拖拽提示遮罩 -->
-    <div v-if="dragging" class="drop-overlay">松开以添加图片</div>
+    <div v-if="dragging" class="drop-overlay">{{ $t('chat.dropImage') }}</div>
   </div>
 </template>
 

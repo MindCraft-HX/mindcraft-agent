@@ -82,12 +82,12 @@
           <div v-if="isActiveTabHistoryDeferred" class="cc-messages cc-messages-placeholder">
             <div class="cc-messages-placeholder-inner">
               <div class="cc-ph-icon mindcraft-flow-win-iconfont icon-mindcraft-codex1"></div>
-              <div class="cc-ph-title">安全模式</div>
-              <p class="cc-ph-sub">该会话尾部包含超长工具输出，已暂缓自动恢复历史，避免进入编程智能体时卡死。</p>
+              <div class="cc-ph-title">{{ $t('agent.safeMode') }}</div>
+              <p class="cc-ph-sub">{{ $t('agent.safeModeHint') }}</p>
               <p class="cc-ph-sub cc-ph-sub-quiet">{{ deferredHistoryHint }}</p>
               <div class="cc-ph-actions">
                 <button class="cc-browse-btn" type="button" @click="loadDeferredHistory(activeTab)">
-                  加载历史
+                  {{ $t('agent.loadHistory') }}
                 </button>
                 <button class="cc-secondary-btn" type="button" @click="newChat">
                   新建对话
@@ -100,8 +100,8 @@
             <div class="cc-messages-placeholder-inner">
               <div class="cc-ph-icon mindcraft-flow-win-iconfont icon-mindcraft-codex1"></div>
               <div class="cc-ph-title">Codex</div>
-              <p v-if="!activeProject?.cwdLocked" class="cc-ph-sub">请先选择工作目录，再新建或选择对话</p>
-              <p v-else class="cc-ph-sub">请新建对话或从侧栏选择会话</p>
+              <p v-if="!activeProject?.cwdLocked" class="cc-ph-sub">{{ $t('agent.selectFirst') }}</p>
+              <p v-else class="cc-ph-sub">{{ $t('agent.selectOrNew') }}</p>
               <button
                 v-if="!activeProject?.cwdLocked"
                 class="cc-browse-btn"
@@ -145,7 +145,7 @@
               ref="inputEl"
               v-model="inputText"
               class="cc-textarea"
-              :placeholder="!activeProject?.cwdLocked ? '请先选择文件夹后再对话' : (!activeTab ? '请新建对话或从侧栏选择会话…' : (activeTab.thinking ? '排队下一条消息…' : '给 Codex 发消息… (Enter 发送，Shift+Enter 换行)'))"
+              :placeholder="!activeProject?.cwdLocked ? $t('agent.selectFolderFirst') : (!activeTab ? $t('agent.selectOrNewChat') : (activeTab.thinking ? $t('agent.queueMsg') : $t('agent.sendMsgCodex')))"
               :disabled="!activeProject?.cwdLocked || !activeTab || isActiveTabHistoryDeferred"
               @keydown="onKeydown"
               @compositionstart="onCompositionStart"
@@ -178,7 +178,7 @@
           <input ref="fileInputRef" type="file" multiple style="display:none" @change="onFileSelect" />
         </div>
 
-        <div v-if="dragging" class="drop-mask">拖入文件或图片</div>
+        <div v-if="dragging" class="drop-mask">{{ $t('agent.dragFile') }}</div>
         <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
         <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" />
         <ConfirmDialog ref="confirmDialogRef" />

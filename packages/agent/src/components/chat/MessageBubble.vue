@@ -28,7 +28,7 @@
               <circle cx="7" cy="7" r="4.5"/>
               <line x1="10.5" y1="10.5" x2="14" y2="14"/>
             </svg>
-            <span>已搜索「{{ msg.query || msg.toolName }}」，{{ msg.resultCount || 0 }} 条结果</span>
+            <span>{{ $t('chat.searchedResults', { q: msg.query || msg.toolName, n: msg.resultCount || 0 }) }}</span>
             <svg class="tool-chevron" :class="{ open: toolExpanded }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
               <polyline points="3 4.5 6 7.5 9 4.5"/>
             </svg>
@@ -44,8 +44,8 @@
         <!-- 等待指示：流式中且尚无文本 -->
         <div v-if="msg.isStreaming && !assistantText.trim()" class="msg-waiting">
           <span class="waiting-dots"><i></i><i></i><i></i></span>
-          <span v-if="msg.thinkingChars > 0">深度思考中…（{{ msg.thinkingChars }} 字）</span>
-          <span v-else>等待响应…</span>
+          <span v-if="msg.thinkingChars > 0">{{ $t('chat.deepThinking', { n: msg.thinkingChars }) }}</span>
+          <span v-else>{{ $t('chat.waiting') }}</span>
         </div>
 
         <!-- 思考过程（可折叠块） -->
@@ -55,7 +55,7 @@
               <circle cx="8" cy="8" r="5"/>
               <path d="M8 5v3M8 10.5v0.5"/>
             </svg>
-            <span class="thinking-label">思考过程（{{ msg.thinkingChars || 0 }} 字）</span>
+            <span class="thinking-label">{{ $t('chat.thinkingProcess', { n: msg.thinkingChars || 0 }) }}</span>
             <svg class="thinking-chevron" :class="{ open: thinkingExpanded }" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
               <polyline points="2 3.5 5 6.5 8 3.5"/>
             </svg>
@@ -75,7 +75,7 @@
                   <circle cx="7" cy="7" r="4.5"/>
                   <line x1="10.5" y1="10.5" x2="14" y2="14"/>
                 </svg>
-                <span>{{ block.name === 'web_search' ? '联网搜索' : block.name }}</span>
+                <span>{{ block.name === 'web_search' ? $t('chat.webSearch') : block.name }}</span>
                 <span v-if="block.input?.query" class="tool-query">"{{ block.input.query }}"</span>
               </div>
             </div>
