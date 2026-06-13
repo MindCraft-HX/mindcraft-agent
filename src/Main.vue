@@ -1,11 +1,25 @@
 <template>
   <div class="main-layout" :class="themeClass">
+    <!-- 窗口控制按钮（无边框模式） -->
+    <div class="win-controls">
+      <button class="wc-btn" @click="minimize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button class="wc-btn" @click="maximize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button class="wc-btn wc-close" @click="closeWin">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+    </div>
+
     <el-container style="height: 100%">
       <!-- 左侧边栏 -->
       <el-aside class="sidebar" :class="{ collapsed: sidebarCollapsed }" :width="sidebarCollapsed ? '48px' : '64px'">
         <div class="sidebar-inner">
+          <div class="sidebar-drag-handle"></div>
           <!-- Logo -->
-          <div class="sidebar-logo" @click="$router.push('/main/codeHub')" title="MindCraft-Agent">
+          <div class="sidebar-logo" @click="$router.push('/main/home')">
             <div class="logo-icon"></div>
           </div>
 
@@ -143,6 +157,12 @@ provide("codehubHasNotification", codehubHasNotification);
 function openSettings() {
   sharedSettingsRef.value?.open()
 }
+
+// 窗口控制（无边框模式）
+const minimize = () => { console.log('[win] minimize'); window.electronAPI?.minimize() }
+const maximize = () => { console.log('[win] maximize'); window.electronAPI?.maximize() }
+const closeWin = () => { console.log('[win] close'); window.electronAPI?.close() }
+
 const route = useRoute();
 const router = useRouter();
 
@@ -175,6 +195,45 @@ window.electronAPI?.openTabByName?.((progress) => {
   height: 100%;
 }
 
+/* === 内容区顶部拖拽区（::before 伪元素，无独立背景，渐变由 content-layout 统一控制） === */
+.content-layout::before {
+  content: '';
+  display: block;
+  height: 18px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+/* === 窗口控制按钮（无边框模式） === */
+.win-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+}
+.wc-btn {
+  width: 30px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  -webkit-app-region: no-drag;
+  color: var(--cc-text-dim, #8b949e);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+  &:hover {
+    background: var(--cc-bg-hover, rgba(255,255,255,0.1));
+    color: var(--cc-text, #e0e5e9);
+  }
+}
+.wc-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
 /* === 侧边栏 === */
 .sidebar {
   background: var(--cc-bg-deepest, #0d1117);
@@ -183,12 +242,13 @@ window.electronAPI?.openTabByName?.((progress) => {
   flex-direction: column;
   overflow: hidden;
   transition: width 0.2s ease;
+  -webkit-app-region: drag;
 
   &.collapsed {
     .sidebar-logo {
       width: 32px;
       height: 32px;
-      margin: 8px 8px 16px;
+      margin: 4px 8px 16px;
       .logo-icon {
         width: 30px;
         height: 30px;
@@ -207,11 +267,18 @@ window.electronAPI?.openTabByName?.((progress) => {
   align-items: center;
 }
 
+.sidebar-drag-handle {
+  width: 100%;
+  height: 28px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
 /* Logo */
 .sidebar-logo {
   width: 48px;
   height: 48px;
-  margin: 12px 8px 24px;
+  margin: 4px 8px 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -219,6 +286,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   border-radius: 12px;
   transition: background 0.2s;
   flex-shrink: 0;
+  -webkit-app-region: no-drag;
 
   &:hover {
     background: var(--cc-bg-hover, rgba(255, 255, 255, 0.06));
@@ -256,6 +324,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   cursor: pointer;
   color: var(--cc-text-muted, #8b949e);
   transition: all 0.15s;
+  -webkit-app-region: no-drag;
   gap: 2px;
   position: relative;
 
@@ -407,7 +476,9 @@ window.electronAPI?.openTabByName?.((progress) => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: var(--cc-bg-secondary, #f0f2f5);
+  background: linear-gradient(to bottom, rgba(0,0,0,0.08), transparent 100px), var(--cc-bg-secondary, #f0f2f5);
+  display: flex;
+  flex-direction: column;
 
   :deep(> router-view) {
     flex: 1;
@@ -415,4 +486,5 @@ window.electronAPI?.openTabByName?.((progress) => {
     min-height: 0;
   }
 }
+
 </style>

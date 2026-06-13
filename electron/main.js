@@ -85,6 +85,8 @@ function createWindow() {
     minWidth: 920,
     minHeight: 600,
     show: false,
+    frame: false,               // 无边框窗口（Edge 风格）
+    titleBarStyle: 'hidden',    // macOS 隐藏标题栏
     title: "MindCraft-Agent", // 设置窗口标题
     webPreferences: {
       preload: path.join(__dirname, "preload.js"), //引进preload
@@ -105,6 +107,16 @@ function createWindow() {
   win.center();
   //隐藏菜单栏
   win.setMenu(null);
+
+  // 窗口控制 IPC（无边框模式）
+  ipcMain.on('window-minimize', () => win?.minimize());
+  ipcMain.on('window-maximize', () => {
+    if (win?.isMaximized()) win.unmaximize();
+    else win?.maximize();
+  });
+  ipcMain.on('window-close', () => win?.close());
+  ipcMain.handle('window-is-maximized', () => win?.isMaximized() ?? false);
+
   // 开发模式从 dev server 加载（支持 HMR），生产模式从 dist 文件加载
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(initUrl);

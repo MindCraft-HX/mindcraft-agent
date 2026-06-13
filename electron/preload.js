@@ -142,4 +142,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // 任务栏
   flashTaskbar: () => ipcRenderer.invoke('flash-taskbar'),
   appendTaskLog: (line) => ipcRenderer.invoke('append-task-log', line),
+
+  // 窗口控制（无边框模式）
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
+  isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
 });
