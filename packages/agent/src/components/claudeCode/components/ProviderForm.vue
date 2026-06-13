@@ -67,7 +67,7 @@
           </div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">{{ $t('settings.mainTier') }}<span class="setting-hint">(决定 model 字段写入哪个层级的模型)</span></label>
+          <label class="setting-label">{{ $t('settings.mainTier') }}<span class="setting-hint">{{ $t('settings.mainTierHint') }}</span></label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="tierKey" @change="syncFormToJson">
               <option value="haiku">{{ $t('settings.tierHaiku') }}</option>
@@ -82,16 +82,16 @@
           <label class="setting-label">{{ $t('settings.permissionPolicy') }}</label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="policy" @change="syncFormToJson">
-              <option value="ask">默认询问(推荐)</option>
-              <option value="allow_all">自动允许(高风险)</option>
-              <option value="read_only">只读模式(禁写入/命令)</option>
+              <option value="ask">{{ $t('settings.permAsk') }}</option>
+              <option value="allow_all">{{ $t('settings.permAllow') }}</option>
+              <option value="read_only">{{ $t('settings.permReadonly') }}</option>
             </select>
             <span class="setting-select-arrow">▾</span>
           </div>
           <div class="setting-tip">{{ $t('settings.permissionHint') }}</div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">默认语言</label>
+          <label class="setting-label">{{ $t('settings.defaultLang') }}</label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="lang" @change="syncFormToJson">
               <option value="zh-CN">{{ $t('settings.simplifiedChinese') }}</option>
@@ -101,13 +101,13 @@
           </div>
         </div>
         <div class="setting-group">
-          <label class="setting-label">推理强度 <span class="setting-tip">(控制模型推理强度偏好)</span></label>
+          <label class="setting-label">{{ $t('settings.reasoningEffort') }} <span class="setting-tip">{{ $t('settings.reasoningEffortHint') }}</span></label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="effort" @change="syncFormToJson">
-              <option value="low">低(更快)</option>
-              <option value="medium">中(平衡)</option>
-              <option value="high">高(更深思考)</option>
-              <option value="max">最大(极限推理)</option>
+              <option value="low">{{ $t('settings.reasoningLow') }}</option>
+              <option value="medium">{{ $t('settings.reasoningMid') }}</option>
+              <option value="high">{{ $t('settings.reasoningHigh') }}</option>
+              <option value="max">{{ $t('settings.reasoningMax') }}</option>
             </select>
             <span class="setting-select-arrow">▾</span>
           </div>
@@ -152,7 +152,10 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -325,7 +328,7 @@ function formatJson() {
     jsonText.value = JSON.stringify(parsed, null, 2)
     applyJsonToForm()
   } catch (_) {
-    ElMessage.error('JSON 格式错误,请检查后重试')
+    ElMessage.error(t('settings.jsonFormatError'))
   }
 }
 
@@ -405,16 +408,16 @@ function onSave() {
   const isOfficial = keyTrim ? isOfficialKey(keyTrim) : false
 
   if (!keyTrim) {
-    ElMessage.error('请设置 API Key')
+    ElMessage.error(t('settings.pleaseSetApiKey'))
     return
   }
   if (!isOfficial) {
     if (!nameTrim) {
-      ElMessage.error('请设置名称')
+      ElMessage.error(t('settings.pleaseSetName'))
       return
     }
     if (!urlTrim) {
-      ElMessage.error('请设置 Base URL')
+      ElMessage.error(t('settings.pleaseSetBaseUrl'))
       return
     }
   }
@@ -423,7 +426,7 @@ function onSave() {
   try {
     configObj = JSON.parse(jsonText.value || '{}')
   } catch (e) {
-    ElMessage.error('配置 JSON 格式错误: ' + (e?.message || ''))
+    ElMessage.error(t('settings.configJsonFormatError') + (e?.message || ''))
     return
   }
 
