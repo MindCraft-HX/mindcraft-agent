@@ -11,16 +11,16 @@
       >
         <span class="claude-task-bar__badge" :class="`is-${phaseClass}`">{{ phaseLabel }}</span>
         <div class="claude-task-bar__meta">
-          <strong>任务进度</strong>
-          <span v-if="planItems.length">{{ completedPlanCount }}/{{ planItems.length }} 已完成</span>
+          <strong>{{ $t('agent.taskProgress') }}</strong>
+          <span v-if="planItems.length">{{ $t('agent.nComplete', { n: completedPlanCount, total: planItems.length }) }}</span>
         </div>
       </div>
       <div class="claude-task-bar__actions">
         <button type="button" class="claude-task-bar__action" @click.stop="$emit('toggle-collapsed')">
-          {{ collapsed ? '展开' : '收起' }}
+          {{ collapsed ? $t('agent.expand') : $t('agent.collapse') }}
         </button>
         <button type="button" class="claude-task-bar__action is-close" @click.stop="$emit('close')">
-          关闭
+          {{ $t('common.close') }}
         </button>
       </div>
     </header>
@@ -28,7 +28,7 @@
     <div v-if="!collapsed" class="claude-task-bar__body">
       <section v-if="planItems.length" class="claude-task-bar__section">
         <div class="claude-task-bar__section-head">
-          <span class="claude-task-bar__section-title">当前任务</span>
+          <span class="claude-task-bar__section-title">{{ $t('agent.currentTask') }}</span>
           <span class="claude-task-bar__section-count">{{ planItems.length }}</span>
         </div>
         <div class="claude-task-bar__list">
@@ -46,7 +46,7 @@
 
       <section v-else-if="fallbackExecutionItems.length" class="claude-task-bar__section is-subtle">
         <div class="claude-task-bar__section-head">
-          <span class="claude-task-bar__section-title">执行中</span>
+          <span class="claude-task-bar__section-title">{{ $t('agent.executingSection') }}</span>
           <span class="claude-task-bar__section-count">{{ executionItems.length }}</span>
         </div>
         <div class="claude-task-bar__list">
@@ -67,6 +67,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const MAX_FALLBACK_EXECUTION_ITEMS = 3
 
@@ -91,11 +94,11 @@ function normalizeStatus(status) {
 
 function statusLabel(status) {
   const value = normalizeStatus(status)
-  if (value === 'failed') return '失败'
-  if (value === 'completed') return '已完成'
-  if (value === 'running') return '进行中'
-  if (value === 'muted') return '已结束'
-  return '等待中'
+  if (value === 'failed') return t('agent.failed')
+  if (value === 'completed') return t('agent.completed')
+  if (value === 'running') return t('agent.inProgress')
+  if (value === 'muted') return t('agent.ended')
+  return t('agent.waitingStatus')
 }
 
 const completedPlanCount = computed(() =>
@@ -113,9 +116,9 @@ const phaseClass = computed(() => {
 })
 
 const phaseLabel = computed(() => {
-  if (props.phase === 'done') return '已完成'
-  if (props.phase === 'running') return '执行中'
-  return '空闲'
+  if (props.phase === 'done') return t('agent.completed')
+  if (props.phase === 'running') return t('agent.executingSection')
+  return t('agent.idle')
 })
 </script>
 
