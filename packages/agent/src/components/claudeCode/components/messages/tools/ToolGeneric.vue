@@ -13,7 +13,7 @@
       <div v-for="(line, i) in summaryLines" :key="i" class="tool-summary-line">{{ line }}</div>
     </div>
     <details v-if="msg.text" class="tool-raw-details">
-      <summary>原始参数</summary>
+      <summary>{{ $t('agent.rawParams') }}</summary>
       <pre class="tool-raw">{{ msg.text }}</pre>
     </details>
   </div>
@@ -21,6 +21,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   msg: { type: Object, required: true },
@@ -49,22 +52,22 @@ const summaryLines = computed(() => {
 
   if (name === 'grep') {
     const lines = []
-    if (obj.pattern) lines.push(`搜索：${obj.pattern}`)
-    if (obj.path) lines.push(`路径：${obj.path}`)
+    if (obj.pattern) lines.push(t('agent.searchFor') + obj.pattern)
+    if (obj.path) lines.push(t('agent.path') + obj.path)
     return lines
   }
   if (name === 'glob') {
     const lines = []
-    if (obj.pattern) lines.push(`匹配：${obj.pattern}`)
-    if (obj.path) lines.push(`路径：${obj.path}`)
+    if (obj.pattern) lines.push(t('agent.matched') + obj.pattern)
+    if (obj.path) lines.push(t('agent.path') + obj.path)
     return lines
   }
 
   const lines = []
   for (const [k, v] of Object.entries(obj).slice(0, 6)) {
     if (v == null) continue
-    if (Array.isArray(v)) lines.push(`${k}: [${v.length}项]`)
-    else if (typeof v === 'object') lines.push(`${k}: {对象}`)
+    if (Array.isArray(v)) lines.push(`${k}: [${v.length}${t('agent.items')}]`)
+    else if (typeof v === 'object') lines.push(`${k}: {${t('agent.object')}}`)
     else lines.push(`${k}: ${String(v)}`)
   }
   return lines
