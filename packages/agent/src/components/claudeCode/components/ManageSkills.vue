@@ -44,7 +44,7 @@
           <template v-else>
             <!-- INSTALLED 分组 -->
             <div v-if="installedSkills.length" class="mp-group">
-              <div class="mp-group-label">已安装 ({{ installedSkills.length }})</div>
+              <div class="mp-group-label">{{ $t('agent.installedN', { n: installedSkills.length }) }}</div>
               <div class="mp-list">
                 <template v-for="skill in installedSkills" :key="skill.name">
                   <div class="mp-item installed">
@@ -117,7 +117,7 @@
 
             <!-- AVAILABLE 分组 -->
             <div v-if="availableSkills.length" class="mp-group">
-              <div class="mp-group-label">市场 ({{ availableSkills.length }})</div>
+              <div class="mp-group-label">{{ $t('agent.marketplaceN', { n: availableSkills.length }) }}</div>
               <div class="mp-list">
                 <template v-for="skill in availableSkills" :key="skill.name">
                   <div class="mp-item">
@@ -203,7 +203,7 @@
             <input
               v-model="marketQuery"
               class="mp-search"
-              placeholder="搜索 Skills 市场…"
+              :placeholder="$t('agent.searchSkills')"
               @keyup.enter="searchMarket(true)"
             />
             <select v-model="marketSort" class="mp-sort-select" :title="$t('agent.sortMethod')">
@@ -224,7 +224,7 @@
           <div v-if="marketLoading && !sortedMarketItems.length" class="mp-empty">{{ $t('agent.searching') }}</div>
 
           <div v-if="sortedMarketItems.length" class="mp-group">
-            <div class="mp-group-label">{{ marketQuery.trim() ? '搜索结果' : $t('agent.popularSkills') }} ({{ marketTotal }} 个)</div>
+            <div class="mp-group-label">{{ marketQuery.trim() ? $t('agent.searchResults') : $t('agent.popularSkills') }} {{ $t('agent.hotSkills', { n: marketTotal }) }}</div>
             <div class="mp-list">
               <template v-for="skill in sortedMarketItems" :key="skill.name">
                 <div

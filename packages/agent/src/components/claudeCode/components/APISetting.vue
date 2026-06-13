@@ -206,7 +206,7 @@ const settingsForm = ref({ providers: [], selectedIdx: -1, activeIdx: -1 })
 const currentProvider = ref(null)
 const settingsTierModels = ref({ haiku: '', sonnet: '', opus: '', reasoning: '' })
 const settingsSelectedTierKey = ref('sonnet')
-const settingsPermissionPolicy = ref('allow_all')
+const settingsPermissionPolicy = ref('ask')
 const settingsSkipWebFetchPreflight = ref(true)
 const settingsAutoCompactWindow = ref(null)
 const compactWindowLocal = ref(null)
@@ -364,8 +364,8 @@ async function openSettings() {
 
   try {
     const policy = await window.electronAPI?.claudeGetPermissionPolicy?.()
-    settingsPermissionPolicy.value = ['ask', 'allow_all', 'read_only'].includes(policy) ? policy : 'allow_all'
-  } catch (e) { settingsPermissionPolicy.value = 'allow_all' }
+    settingsPermissionPolicy.value = ['ask', 'allow_all', 'read_only'].includes(policy) ? policy : 'ask'
+  } catch (e) { settingsPermissionPolicy.value = 'ask' }
 
   try {
     const language = await window.electronAPI?.claudeGetLanguage?.()

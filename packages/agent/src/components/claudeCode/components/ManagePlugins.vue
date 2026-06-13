@@ -31,7 +31,7 @@
         <template v-else>
           <!-- INSTALLED 分组 -->
           <div v-if="installedPlugins.length" class="mp-group">
-            <div class="mp-group-label">已安装 ({{ installedPlugins.length }})</div>
+            <div class="mp-group-label">{{ $t('agent.installedN', { n: installedPlugins.length }) }}</div>
             <div class="mp-list">
               <template v-for="plugin in installedPlugins" :key="plugin.id">
                 <div class="mp-item installed">
@@ -103,7 +103,7 @@
 
           <!-- AVAILABLE 分组 -->
           <div v-if="availablePlugins.length" class="mp-group">
-            <div class="mp-group-label">市场 ({{ availablePlugins.length }})</div>
+            <div class="mp-group-label">{{ $t('agent.marketplaceN', { n: availablePlugins.length }) }}</div>
             <div class="mp-list">
               <template v-for="plugin in availablePlugins" :key="plugin.id">
                 <div class="mp-item">
