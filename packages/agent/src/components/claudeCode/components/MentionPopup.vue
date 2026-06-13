@@ -6,10 +6,10 @@
         type="button"
         class="mention-flat-toggle"
         :class="{ active: flatMode }"
-        :title="flatMode ? '切换为逐级模式' : '切换为平铺模式'"
+        :title="flatMode ? $t('agent.switchToHierarchy') : $t('agent.switchToFlat')"
         @mousedown.prevent="$emit('toggleFlatMode')"
       >
-        {{ flatMode ? '📂 平铺' : '📁 逐级' }}
+        {{ flatMode ? $t('agent.flatMode') : $t('agent.hierarchyMode') }}
       </button>
     </div>
     <div
