@@ -822,6 +822,22 @@
     "pluginDisabled": "插件 \"{name}\" 已禁用",
     "goMarket": "前往插件市场",
     "installPath": "安装路径",
-    "remove": "移除"
+    "remove": "移除",
+    "installSuccess": "\"{name}\" 安装成功",
+    "installFailed": "安装失败：{error}",
+    "uninstallConfirm": "卸载后将删除插件及其数据，确定继续？",
+    "confirmUninstall": "确认卸载",
+    "uninstalled": "已卸载",
+    "uninstallFailed": "卸载失败：{error}",
+    "removeDevConfirm": "将从注册表中移除此开发插件（不会删除 dev-plugins/ 中的文件）。确定继续？",
+    "confirmRemoveDev": "移除开发插件",
+    "removedDev": "已移除（文件保留在 dev-plugins/ 中）",
+    "fetchFailed": "获取失败",
+    "operationFailed": "操作失败：{error}",
+    "entryEmpty": "插件入口文件为空",
+    "loadFailed": "插件加载失败",
+    "devPluginDesc": "本地开发插件",
+    "count": "{n} 个",
+    "devInProgress": "开发中"
   }
 }

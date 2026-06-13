@@ -20,7 +20,7 @@
             class="market-search"
           />
           <span class="market-count" v-if="!loading && !errorMsg">
-            {{ filteredPlugins.length }} 个
+            {{ $t('pluginMarket.count', { n: filteredPlugins.length }) }}
           </span>
         </div>
 
@@ -53,12 +53,13 @@
                   <span class="plugin-card-version">v{{ plugin.version }}</span>
                 </div>
                 <div class="plugin-card-author" v-if="plugin.author">{{ plugin.author }}</div>
-                <div class="plugin-card-desc" v-if="plugin.description">{{ plugin.description }}</div>
+                <div class="plugin-card-desc" v-if="plugin._dev">{{ $t('pluginMarket.devPluginDesc') }}</div>
+                <div class="plugin-card-desc" v-else-if="plugin.description">{{ plugin.description }}</div>
               </div>
             </div>
             <div class="plugin-card-actions">
               <template v-if="plugin._dev">
-                <el-tag size="small" type="warning" effect="dark">开发中</el-tag>
+                <el-tag size="small" type="warning" effect="dark">{{ $t('pluginMarket.devInProgress') }}</el-tag>
               </template>
               <template v-else-if="!pluginStore.isInstalled(plugin.id)">
                 <el-button type="primary" :loading="installingId === plugin.id" @click="handleInstall(plugin)">
@@ -138,8 +139,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { Search, Loading } from '@element-plus/icons-vue'
 import { usePluginStore } from '@/stores/pluginStore'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const { t } = useI18n()
 const pluginStore = usePluginStore()
 
 const activeTab = ref('browse')
@@ -158,7 +161,7 @@ const browsePlugins = computed(() => {
         id: p.id,
         name: p.name,
         version: p.version,
-        description: '本地开发插件',
+        description: '',
         _dev: true,
         _source: 'dev'
       }))
@@ -186,7 +189,7 @@ async function loadMarketplace() {
   try {
     await pluginStore.fetchMarketplaceListing()
   } catch (e) {
-    errorMsg.value = e.message || '获取失败'
+    errorMsg.value = e.message || t('pluginMarket.fetchFailed')
   } finally {
     loading.value = false
   }
@@ -196,9 +199,9 @@ async function handleInstall(plugin) {
   installingId.value = plugin.id
   try {
     await pluginStore.installPlugin(plugin)
-    ElMessage.success(`"${plugin.name}" 安装成功`)
+    ElMessage.success(t('pluginMarket.installSuccess', { name: plugin.name }))
   } catch (e) {
-    ElMessage.error(`安装失败：${e.message || '未知错误'}`)
+    ElMessage.error(t('pluginMarket.installFailed', { error: e.message || '' }))
   } finally {
     installingId.value = null
   }
@@ -206,41 +209,40 @@ async function handleInstall(plugin) {
 
 async function handleUninstall(pluginId) {
   try {
-    await ElMessageBox.confirm('卸载后将删除插件及其数据，确定继续？', '确认卸载', {
-      confirmButtonText: '卸载', cancelButtonText: '取消', type: 'warning'
+    await ElMessageBox.confirm(t('pluginMarket.uninstallConfirm'), t('pluginMarket.confirmUninstall'), {
+      confirmButtonText: t('pluginMarket.uninstall'), cancelButtonText: t('common.cancel'), type: 'warning'
     })
   } catch { return }
   try {
     await pluginStore.uninstallPlugin(pluginId)
-    ElMessage.success('已卸载')
+    ElMessage.success(t('pluginMarket.uninstalled'))
   } catch (e) {
-    ElMessage.error(`卸载失败：${e.message || '未知错误'}`)
+    ElMessage.error(t('pluginMarket.uninstallFailed', { error: e.message || '' }))
   }
 }
 
 // 删除/移除插件（包括 dev 插件）
 async function handleRemove(plugin) {
   if (plugin.devMode) {
-    // dev 插件：从注册表中移除（不删文件，让用户手动管理 dev-plugins/）
     try {
       await ElMessageBox.confirm(
-        '将从注册表中移除此开发插件（不会删除 dev-plugins/ 中的文件）。确定继续？',
-        '移除开发插件',
-        { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' }
+        t('pluginMarket.removeDevConfirm'),
+        t('pluginMarket.confirmRemoveDev'),
+        { confirmButtonText: t('pluginMarket.remove'), cancelButtonText: t('common.cancel'), type: 'warning' }
       )
     } catch { return }
   } else {
     try {
-      await ElMessageBox.confirm('卸载后将删除插件及其数据，确定继续？', '确认卸载', {
-        confirmButtonText: '卸载', cancelButtonText: '取消', type: 'warning'
+      await ElMessageBox.confirm(t('pluginMarket.uninstallConfirm'), t('pluginMarket.confirmUninstall'), {
+        confirmButtonText: t('pluginMarket.uninstall'), cancelButtonText: t('common.cancel'), type: 'warning'
       })
     } catch { return }
   }
   try {
     await pluginStore.uninstallPlugin(plugin.id)
-    ElMessage.success(plugin.devMode ? '已移除（文件保留在 dev-plugins/）' : '已卸载')
+    ElMessage.success(plugin.devMode ? t('pluginMarket.removedDev') : t('pluginMarket.uninstalled'))
   } catch (e) {
-    ElMessage.error(`操作失败：${e.message || '未知错误'}`)
+    ElMessage.error(t('pluginMarket.operationFailed', { error: e.message || '' }))
   }
 }
 
@@ -248,7 +250,7 @@ async function handleToggle(pluginId, enabled) {
   try {
     await pluginStore.togglePlugin(pluginId, enabled)
   } catch (e) {
-    ElMessage.error(`操作失败：${e.message || '未知错误'}`)
+    ElMessage.error(t('pluginMarket.operationFailed', { error: e.message || '' }))
   }
 }
 

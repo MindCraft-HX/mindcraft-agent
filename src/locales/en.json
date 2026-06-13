@@ -822,6 +822,22 @@
     "pluginDisabled": "Plugin \"{name}\" is disabled",
     "goMarket": "Go to Marketplace",
     "installPath": "Install Path",
-    "remove": "Remove"
+    "remove": "Remove",
+    "installSuccess": "\"{name}\" installed successfully",
+    "installFailed": "Install failed: {error}",
+    "uninstallConfirm": "Uninstalling will delete the plugin and its data. Continue?",
+    "confirmUninstall": "Confirm Uninstall",
+    "uninstalled": "Uninstalled",
+    "uninstallFailed": "Uninstall failed: {error}",
+    "removeDevConfirm": "This will remove the dev plugin from registry (files in dev-plugins/ will be kept). Continue?",
+    "confirmRemoveDev": "Remove Dev Plugin",
+    "removedDev": "Removed (files kept in dev-plugins/)",
+    "fetchFailed": "Failed to fetch",
+    "operationFailed": "Operation failed: {error}",
+    "entryEmpty": "Plugin entry file is empty",
+    "loadFailed": "Failed to load plugin",
+    "devPluginDesc": "Local dev plugin",
+    "count": "{n} plugins",
+    "devInProgress": "In Dev"
   }
 }

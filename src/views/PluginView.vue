@@ -41,7 +41,10 @@
 import { ref, computed, onMounted, watch, onUnmounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePluginStore } from '@/stores/pluginStore'
+import { useI18n } from 'vue-i18n'
 import { Loading } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -94,7 +97,7 @@ async function loadPlugin() {
     // 从主进程读取插件入口代码
     const entryCode = await window.electronAPI?.pluginReadEntry?.(pluginId.value)
     if (!entryCode) {
-      throw new Error('插件入口文件为空')
+      throw new Error(t('pluginMarket.entryEmpty'))
     }
 
     // 注入 Vue h 函数到全局作用域，供插件渲染函数使用
@@ -111,7 +114,7 @@ async function loadPlugin() {
       URL.revokeObjectURL(url)
     }
   } catch (e) {
-    error.value = `${e.message || '插件加载失败'}`
+    error.value = e.message || t('pluginMarket.loadFailed')
   } finally {
     loading.value = false
   }
