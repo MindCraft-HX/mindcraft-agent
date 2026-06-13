@@ -1,6 +1,6 @@
 <template>
   <div class="settings">
-    <el-drawer title="设置" v-model="settingsDrawer" direction="rtl" size="50%" @open="onDrawerOpen">
+    <el-drawer :title="$t('nav.settings')" v-model="settingsDrawer" direction="rtl" size="50%" @open="onDrawerOpen">
       <div class="settings-tabs">
         <button
           v-for="t in tabs"
