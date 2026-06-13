@@ -425,6 +425,7 @@ ipcMain.handle('get-login-item-settings', () => {
 ipcMain.handle('set-login-item-settings', (event, openAtLogin) => {
   app.setLoginItemSettings({ openAtLogin })
 });
+ipcMain.handle('get-app-version', () => app.getVersion());
 
 // 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）
 const themeFilePath = path.join(app.getPath('userData'), 'theme.json')

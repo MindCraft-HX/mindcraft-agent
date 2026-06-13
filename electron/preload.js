@@ -126,6 +126,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     });
   },
   getClientUpdateInfoData: () => ipcRenderer.send('get-update-info-data'),
+  onAppUpdateStatus: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('app-update-status', handler)
+    return () => ipcRenderer.removeListener('app-update-status', handler)
+  },
+  getAppUpdateStatus: () => ipcRenderer.invoke('get-app-update-status'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Clipboard
   clipboard: () => clipboard,
