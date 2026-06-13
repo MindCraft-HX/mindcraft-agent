@@ -23,7 +23,7 @@
     <div v-if="tab.messages.length === 0" class="cc-empty">
       <div class="empty-icon mindcraft-flow-win-iconfont icon-mindcraft-codex1"></div>
       <div class="empty-title">Codex</div>
-      <div class="empty-sub">在下方输入指令开始对话</div>
+      <div class="empty-sub">{{ $t('agent.startChatHint') }}</div>
     </div>
 
     <div v-for="msg in tab.messages" :key="msg.id" class="msg-row" :data-msg-id="msg.id" :class="msg.role">
@@ -43,7 +43,7 @@
       <div class="assistant-avatar gpt-avatar icon iconfont icon-ChatGPT"></div>
       <div class="thinking-wrap">
         <div class="thinking-dots"><span></span><span></span><span></span></div>
-        <span class="thinking-label" :class="{ 'first-awaiting': firstAwaitingAssistant }">{{ firstAwaitingAssistant ? '首次请求，连接环境中…' : '正在响应…' }}</span>
+        <span class="thinking-label" :class="{ 'first-awaiting': firstAwaitingAssistant }">{{ firstAwaitingAssistant ? $t('agent.firstRequest') : $t('agent.responding') }}</span>
       </div>
     </div>
 

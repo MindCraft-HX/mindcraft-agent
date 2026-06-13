@@ -2,8 +2,8 @@
   <div v-if="visible" class="model-cmd-overlay" @click.self="cancel">
     <div class="model-cmd-palette" tabindex="0" ref="panelRef" @keydown="onKeydown">
       <div class="model-cmd-header">
-        <span>切换模型</span>
-        <span class="model-cmd-hint">↑↓ 导航  ↵ 确认  Esc 取消</span>
+        <span>{{ $t('agent.switchModel') }}</span>
+        <span class="model-cmd-hint">{{ $t('agent.modelNav') }}</span>
       </div>
       <div class="model-cmd-list">
         <div
@@ -34,7 +34,7 @@
         </div>
       </div>
       <div class="model-cmd-effort">
-        <span class="model-effort-label">推理强度</span>
+        <span class="model-effort-label">{{ $t('agent.thinkingEffort') }}</span>
         <div class="effort-dots">
           <button
             v-for="(e, i) in efforts"

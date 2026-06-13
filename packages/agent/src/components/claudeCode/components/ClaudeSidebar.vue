@@ -1,14 +1,14 @@
 <template>
   <div class="cc-sidebar" :class="{ collapsed: !sidebarOpen }">
     <div class="sidebar-header">
-      <span v-if="sidebarOpen" class="sidebar-title">对话</span>
+      <span v-if="sidebarOpen" class="sidebar-title">{{ $t('nav.chat') }}</span>
       <div class="sidebar-header-actions">
         <button
           v-if="sidebarOpen"
           class="sidebar-icon-btn"
           :disabled="locked"
           @click="emit('openSettings')"
-          title="设置"
+          :title="$t('nav.settings')"
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
             <path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/>
@@ -54,8 +54,8 @@
           <template v-else>
             <span class="sidebar-item-name" :title="tab.name">{{ tab.name }}</span>
             <div class="sidebar-item-actions">
-              <button class="sib-btn" type="button" :disabled="locked" @click.stop="emit('startRename', tab)" title="重命名">✎</button>
-              <button class="sib-btn del" type="button" :disabled="locked" @click.stop="emit('requestDelete', tab)" title="删除对话">×</button>
+              <button class="sib-btn" type="button" :disabled="locked" @click.stop="emit('startRename', tab)" :title="$t('chat.rename')">✎</button>
+              <button class="sib-btn del" type="button" :disabled="locked" @click.stop="emit('requestDelete', tab)" :title="$t('common.delete')">×</button>
             </div>
           </template>
         </div>

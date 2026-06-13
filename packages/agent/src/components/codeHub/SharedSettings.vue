@@ -12,7 +12,7 @@
           <span :class="t.iconClass" :style="t.iconStyle"></span>
           <span class="shared-settings-tab-label">{{ t.label }}</span>
         </button>
-        <button class="shared-settings-close" @click="close" title="关闭">✕</button>
+        <button class="shared-settings-close" @click="close" :title="$t('common.close')">✕</button>
       </div>
       <div class="shared-settings-body">
         <template v-for="t in tabs" :key="t.key">

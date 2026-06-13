@@ -6,7 +6,7 @@
     </div>
     <pre class="bash-cmd">$ {{ msg.bashCmd }}</pre>
     <details v-if="msg.bashOutput" class="bash-output-details">
-      <summary class="bash-output-summary">输出</summary>
+      <summary class="bash-output-summary">{{ $t('agent.output') }}</summary>
       <pre class="bash-output">{{ msg.bashOutput }}</pre>
     </details>
   </div>

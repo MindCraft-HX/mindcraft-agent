@@ -6,7 +6,7 @@
       :src="objectUrl"
       title="pdf-preview"
     />
-    <div v-else class="pdf-empty">PDF 内容不可用。</div>
+    <div v-else class="pdf-empty">{{ $t('doc.pdfEmpty') }}</div>
   </div>
 </template>
 

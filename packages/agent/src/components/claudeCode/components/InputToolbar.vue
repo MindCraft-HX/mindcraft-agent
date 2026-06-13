@@ -5,7 +5,7 @@
         type="button"
         class="toolbar-btn"
         :disabled="disabled"
-        title="选择或拖入本地文件"
+        :title="$t('agent.selectFile')"
         @click="$emit('addFile')"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -16,7 +16,7 @@
         type="button"
         class="toolbar-btn"
         :disabled="disabled"
-        title="引用文件 @"
+        :title="$t('agent.refFile')"
         @click="$emit('triggerMention')"
       >
         <span class="toolbar-char">@</span>
@@ -25,7 +25,7 @@
         type="button"
         class="toolbar-btn"
         :disabled="disabled"
-        title="命令 /"
+        :title="$t('agent.command')"
         @click="$emit('triggerSlash')"
       >
         <span class="toolbar-char">/</span>
@@ -34,7 +34,7 @@
         type="button"
         class="toolbar-btn plugins-btn"
         :disabled="disabled"
-        title="插件管理"
+        :title="$t('agent.plugins')"
         @click="$emit('openPlugins')"
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -48,7 +48,7 @@
         type="button"
         class="toolbar-btn skills-btn"
         :disabled="disabled"
-        title="技能管理"
+        :title="$t('agent.skills')"
         @click="$emit('openSkills')"
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -59,7 +59,7 @@
     <select
       :value="runMode"
       class="mode-select"
-      title="执行模式"
+      :title="$t('agent.execMode')"
       @change="$emit('update:runMode', $event.target.value)"
     >
       <option value="ask_before_edits">Ask before edits</option>

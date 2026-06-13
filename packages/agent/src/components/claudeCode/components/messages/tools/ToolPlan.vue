@@ -5,7 +5,7 @@
     </div>
     <div v-if="data.plan" class="exit-plan-markdown" v-html="renderContent(data.plan)"></div>
     <div v-if="data.planFilePath" class="exit-plan-path-wrap">
-      <span class="exit-plan-path-label">计划文件：</span>
+      <span class="exit-plan-path-label">{{ $t('agent.planFile') }}</span>
       <span class="exit-plan-path">{{ data.planFilePath }}</span>
     </div>
   </div>

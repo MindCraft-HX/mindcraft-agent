@@ -4,9 +4,9 @@
       <path d="M1 3.5A1.5 1.5 0 012.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0115 5.5v7a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z"/>
     </svg>
     <span class="cwd-text" :class="{ placeholder: !cwd }" :title="cwd" @click="cwd ? null : onSelectDir()">
-      {{ cwd || '点击选择工作目录' }}
+      {{ cwd || $t('agent.clickSelectFolder') }}
     </span>
-    <button v-if="!embedded" class="tb-btn switch-agent-btn" type="button" @click="emit('switchAgent')" title="切换到 GPT Codex">
+    <button v-if="!embedded" class="tb-btn switch-agent-btn" type="button" @click="emit('switchAgent')" :title="$t('agent.switchToCodex')">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
         <path d="M8 1a.5.5 0 01.5.5v1.5h2a1.5 1.5 0 011.5 1.5v2a.5.5 0 01-1 0v-2a.5.5 0 00-.5-.5H9V9.5a.5.5 0 01-1 0V4H4.5a.5.5 0 00-.5.5v2a.5.5 0 01-1 0v-2A1.5 1.5 0 014.5 3h2V1.5A.5.5 0 018 1zM8 15a.5.5 0 01-.5-.5v-1.5h-2a1.5 1.5 0 01-1.5-1.5v-2a.5.5 0 011 0v2a.5.5 0 00.5.5H7V6.5a.5.5 0 011 0V12h3.5a.5.5 0 00.5-.5v-2a.5.5 0 011 0v2A1.5 1.5 0 0111.5 13H9.5v1.5A.5.5 0 018 15z"/>
       </svg>

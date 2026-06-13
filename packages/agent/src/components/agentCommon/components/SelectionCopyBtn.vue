@@ -11,7 +11,7 @@
       >
         <el-icon v-if="!copied" :size="15"><CopyDocument /></el-icon>
         <el-icon v-else :size="15"><CircleCheckFilled /></el-icon>
-        <span v-if="copied" class="copy-tooltip">已复制</span>
+        <span v-if="copied" class="copy-tooltip">{{ $t('agent.copied') }}</span>
       </div>
     </Transition>
   </Teleport>

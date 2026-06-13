@@ -60,7 +60,7 @@
       <!-- 网络访问开关 -->
       <label class="toggle-row" title="允许 Codex 访问网络">
         <span class="toggle-label">🌐</span>
-        <span class="toggle-text">网络</span>
+        <span class="toggle-text">{{ $t('agent.networkAccess') }}</span>
         <button
           type="button"
           class="mini-toggle"
@@ -79,9 +79,9 @@
         :disabled="disabled"
         @change="$emit('update:webSearch', $event.target.value)"
       >
-        <option value="disabled">禁用搜索</option>
-        <option value="cached">缓存搜索</option>
-        <option value="live">实时搜索</option>
+        <option value="disabled">{{ $t('settings.disable') }}</option>
+        <option value="cached">{{ $t('settings.cacheSearch') }}</option>
+        <option value="live">{{ $t('settings.liveSearch') }}</option>
       </select>
     </div>
   </div>

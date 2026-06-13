@@ -8,7 +8,7 @@
       aria-label="图片预览"
       @click="emit('close')"
     >
-      <button type="button" class="cc-img-lightbox-close" aria-label="关闭" @click.stop="emit('close')">×</button>
+      <button type="button" class="cc-img-lightbox-close" :aria-label="$t('common.close')" @click.stop="emit('close')">×</button>
       <img :src="src" class="cc-img-lightbox-img" alt="预览" @click.stop />
     </div>
   </Teleport>

@@ -3,12 +3,12 @@
     <span class="cc-busy-spinner" aria-hidden="true"></span>
     <div class="cc-busy-lines">
       <template v-if="firstAwaitingAssistant">
-        <span class="cc-busy-title">首次连接中</span>
-        <span class="cc-busy-sub">正在加载 Agent / SDK 与连接模型，可能需要数十秒；此期间界面可能暂时无响应，属正常现象。请勿切换对话或工作目录，可点输入栏右侧「中断」停止。</span>
+        <span class="cc-busy-title">{{ $t('agent.connecting') }}</span>
+        <span class="cc-busy-sub">{{ $t('agent.connectingDesc') }}</span>
       </template>
       <template v-else>
-        <span class="cc-busy-title">正在执行</span>
-        <span class="cc-busy-sub">模型或工具处理中，若稍慢请耐心等待；需要时可点「中断」。</span>
+        <span class="cc-busy-title">{{ $t('agent.executing') }}</span>
+        <span class="cc-busy-sub">{{ $t('agent.executingDesc') }}</span>
       </template>
     </div>
   </div>

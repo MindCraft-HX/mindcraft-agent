@@ -48,8 +48,8 @@ import { i18n } from '@/i18n'
       <div v-if="currentTab.isLoading" class="doc-loading-mask">
         <div class="doc-loading-card">
           <el-icon class="doc-loading-icon"><Loading /></el-icon>
-          <div class="doc-loading-title">正在打开文档</div>
-          <div class="doc-loading-desc">先建立文档框架，再继续读取和渲染内容。</div>
+          <div class="doc-loading-title">{{ $t('doc.opening') }}</div>
+          <div class="doc-loading-desc">{{ $t('doc.openingDesc') }}</div>
         </div>
       </div>
     </div>

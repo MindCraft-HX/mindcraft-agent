@@ -25,17 +25,20 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   status: { type: String, default: 'done' },
 })
 
+const { t } = useI18n()
+
 const labels = {
-  running: '运行中',
-  pending: '待确认',
-  done: '完成',
-  denied: '已拒绝',
-  error: '失败',
+  running: t('tool.running'),
+  pending: t('tool.pending'),
+  done: t('tool.done'),
+  denied: t('tool.denied'),
+  error: t('tool.error'),
 }
 
 const label = computed(() => labels[props.status] || props.status)

@@ -4,7 +4,7 @@
       v-if="show"
       class="scroll-prev-btn"
       circle
-      title="滚动到上一个问题"
+      :title="$t('agent.scrollToPrev')"
       @click="$emit('scroll-prev')"
     >
       <el-icon><ArrowUp /></el-icon>

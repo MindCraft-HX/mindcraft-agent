@@ -124,8 +124,11 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
 import { useImageAttachments } from '../agentCommon/composables/useImageAttachments.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
   provider: { type: String, default: 'claude' },
@@ -186,15 +189,15 @@ const {
   pendingImages, dragging, addImages, removeAt, onPaste, dispose,
 } = useImageAttachments({ getActiveTab: () => null })
 
-const thinkingLevels = [
-  { value: 'low', label: '低' },
-  { value: 'medium', label: '中' },
-  { value: 'high', label: '高' },
-]
+const thinkingLevels = computed(() => [
+  { value: 'low', label: t('chat.low') },
+  { value: 'medium', label: t('chat.medium') },
+  { value: 'high', label: t('chat.high') },
+])
 
 function levelIndex(level) {
   if (!level || level === 'off') return 0
-  const idx = thinkingLevels.findIndex(l => l.value === level)
+  const idx = thinkingLevels.value.findIndex(l => l.value === level)
   return idx >= 0 ? idx + 1 : 0
 }
 
@@ -315,7 +318,7 @@ onMounted(async () => {
 
 onUnmounted(() => dispose?.())
 
-const placeholder = computed(() => '输入问题，Enter 发送，Shift+Enter 换行，可直接粘贴图片')
+const placeholder = computed(() => t('chat.placeholder'))
 
 const canSend = computed(() => {
   return (inputText.value.trim() || pendingImages.value.length > 0) && !props.isStreaming

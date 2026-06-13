@@ -1,14 +1,14 @@
 <template>
   <div v-if="msg._isCompact" class="compact-card">
     <div class="compact-head" @click="msg.expanded = !msg.expanded">
-      <span class="compact-title">{{ msg.compactTitle || '上下文已压缩' }}</span>
+      <span class="compact-title">{{ msg.compactTitle || $t('agent.contextCompacted') }}</span>
       <svg class="compact-chevron" :class="{ expanded: msg.expanded }" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
         <path d="M7.646 4.646a.5.5 0 01.708 0l6 6a.5.5 0 01-.708.708L8 5.707l-5.646 5.647a.5.5 0 01-.708-.708l6-6z"/>
       </svg>
     </div>
     <div v-if="msg.expanded" class="compact-body">
       <div v-if="msg.compactSummary" v-html="renderContent(msg.compactSummary)"></div>
-      <div v-else class="compact-loading">摘要加载中…</div>
+      <div v-else class="compact-loading">{{ $t('agent.summaryLoading') }}</div>
     </div>
   </div>
   <div

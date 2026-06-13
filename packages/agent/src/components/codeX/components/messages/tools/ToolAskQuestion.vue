@@ -1,12 +1,12 @@
 <template>
   <div class="ask-panel">
     <div v-if="msg.askAnswered && msg.askAnswerText" class="ask-answered">
-      <span class="ask-answered-label">已选择：</span>
+      <span class="ask-answered-label">{{ $t('agent.selected') }}</span>
       <span class="ask-answered-text">{{ msg.askAnswerText }}</span>
     </div>
     <div v-else-if="!msg.askAnswered" class="ask-waiting">
       <span>等待回答中…</span>
-      <button class="ask-reopen-btn" @click.stop="handleReopen">回答</button>
+      <button class="ask-reopen-btn" @click.stop="handleReopen">{{ $t('agent.answer') }}</button>
     </div>
   </div>
 </template>

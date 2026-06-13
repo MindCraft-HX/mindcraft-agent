@@ -22,15 +22,15 @@
 
     <div v-if="msg.expanded" class="tool-detail">
       <details v-if="msg.status === 'error' && msg.toolError" class="tool-error-details">
-        <summary class="tool-error-summary">错误信息</summary>
+        <summary class="tool-error-summary">{{ $t('agent.errorInfo') }}</summary>
         <pre class="tool-error-output">{{ msg.toolError }}</pre>
       </details>
 
       <div v-if="msg.status === 'pending'" class="tool-permission">
         <div class="perm-desc">{{ msg.permDesc }}</div>
         <div class="perm-actions">
-          <button class="perm-btn allow-once" @click.stop="emit('respondPermission', msg, true)">允许</button>
-          <button class="perm-btn deny" @click.stop="emit('respondPermission', msg, false)">拒绝</button>
+          <button class="perm-btn allow-once" @click.stop="emit('respondPermission', msg, true)">{{ $t('agent.allow') }}</button>
+          <button class="perm-btn deny" @click.stop="emit('respondPermission', msg, false)">{{ $t('agent.deny') }}</button>
         </div>
       </div>
 

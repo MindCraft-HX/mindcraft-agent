@@ -6,7 +6,7 @@
         class="sidebar-refresh-btn"
         :disabled="refreshing"
         @click="emit('refresh')"
-        title="刷新列表"
+        :title="$t('common.refresh')"
       >{{ $t('chat.history') }}<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" :class="{ 'spinning': refreshing }">
           <path d="M8 3a5 5 0 104.546 2.914.5.5 0 11.908-.418A6 6 0 118 2v1z"/>
           <path d="M8 1a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 1z"/>
@@ -99,7 +99,7 @@
                 {{ formatSessionTime(session.updatedAt) }} · {{ formatFileSize(session.fileSize) }}
               </span>
               <div class="sidebar-item-actions">
-                <button class="sib-btn edit" type="button" @click.stop="startRename(session)" title="重命名">✎</button>
+                <button class="sib-btn edit" type="button" @click.stop="startRename(session)" :title="$t('chat.rename')">✎</button>
                 <button class="sib-btn del" type="button" @click.stop="emit('requestDelete', session)" :title="$t('settings.delete')">×</button>
               </div>
             </template>

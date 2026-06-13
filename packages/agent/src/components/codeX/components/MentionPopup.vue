@@ -1,7 +1,7 @@
 <template>
   <div class="mention-popup">
     <div class="mention-header">
-      <span class="mention-hint">{{ flatMode ? `匹配 ${suggestions.length} 个文件` : '逐级选择' }}</span>
+      <span class="mention-hint">{{ flatMode ? $t('agent.matchFiles', { n: suggestions.length }) : $t('agent.selectByLevel') }}</span>
       <button
         type="button"
         class="mention-flat-toggle"

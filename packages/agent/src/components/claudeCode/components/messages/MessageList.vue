@@ -19,14 +19,14 @@
       <div class="loading-dots">
         <span></span><span></span><span></span>
       </div>
-      <div class="empty-sub">加载历史消息…</div>
+      <div class="empty-sub">{{ $t('agent.loadingHistory') }}</div>
     </div>
 
     <!-- 无消息：显示空状态 -->
     <div v-if="!tab._loadingMessages && tab.messages.length === 0" class="cc-empty">
       <div class="empty-icon mindcraft-flow-win-iconfont  icon-mindcraft-claude1"></div>
       <div class="empty-title">Claude Code</div>
-      <div class="empty-sub">在下方输入指令开始对话</div>
+      <div class="empty-sub">{{ $t('agent.startChatHint') }}</div>
     </div>
 
     <div
@@ -54,7 +54,7 @@
       <div class="assistant-avatar mindcraft-flow-win-iconfont  icon-mindcraft-claude1"></div>
       <div class="thinking-wrap">
         <div class="thinking-dots"><span></span><span></span><span></span></div>
-        <span class="thinking-label" :class="{ 'first-awaiting': firstAwaitingAssistant }">{{ firstAwaitingAssistant ? '首次请求，连接环境…' : '正在响应…' }}</span>
+        <span class="thinking-label" :class="{ 'first-awaiting': firstAwaitingAssistant }">{{ firstAwaitingAssistant ? $t('agent.firstRequest') : $t('agent.responding') }}</span>
       </div>
     </div>
 

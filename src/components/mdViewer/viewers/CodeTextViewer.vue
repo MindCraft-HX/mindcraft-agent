@@ -9,27 +9,27 @@
       </div>
       <div class="code-actions">
         <button class="code-action-btn" type="button" @click="toggleWrap">
-          {{ wrapLines ? '关闭换行' : '自动换行' }}
+          {{ wrapLines ? $t('doc.closeWrap') : $t('doc.autoWrap') }}
         </button>
         <button class="code-action-btn" type="button" @click="copyAll">
-          复制全文
+          {{ $t('doc.copyFull') }}
         </button>
       </div>
     </div>
 
     <div v-if="isLoading" class="code-loading-panel">
       <div class="code-loading-spinner"></div>
-      <div class="code-loading-text">正在读取文档内容…</div>
-      <div class="code-loading-subtext">首屏先建立代码框架，再补全高亮细节。</div>
+      <div class="code-loading-text">{{ $t('doc.loadingCode') }}</div>
+      <div class="code-loading-subtext">{{ $t('doc.loadingCodeHint') }}</div>
     </div>
 
     <div v-else class="code-surface" :class="{ 'wrap-lines': wrapLines }">
       <div class="code-surface-toolbar">
         <div class="code-surface-hints">
-          <span v-if="pendingHighlight" class="code-hint is-busy">高亮优化中</span>
-          <span v-if="enableVirtualization" class="code-hint is-warn">虚拟滚动</span>
-          <span v-else-if="viewModel.isLargeFile" class="code-hint is-warn">大文件模式</span>
-          <span v-if="foldRanges.length" class="code-hint">可折叠</span>
+          <span v-if="pendingHighlight" class="code-hint is-busy">{{ $t('doc.highlightBusy') }}</span>
+          <span v-if="enableVirtualization" class="code-hint is-warn">{{ $t('doc.virtualScroll') }}</span>
+          <span v-else-if="viewModel.isLargeFile" class="code-hint is-warn">{{ $t('doc.largeFile') }}</span>
+          <span v-if="foldRanges.length" class="code-hint">{{ $t('doc.foldable') }}</span>
         </div>
         <div class="code-surface-summary">
           <span>{{ viewModel.charCount }} chars</span>
@@ -41,16 +41,16 @@
           v-model.trim="searchQuery"
           class="code-input search-input"
           type="text"
-          placeholder="搜索代码内容"
+          :placeholder="$t('doc.searchCode')"
         >
         <span class="code-match-summary">
           {{ matches.length ? `${currentMatchDisplay}/${matches.length}` : '0 matches' }}
         </span>
         <button class="code-action-btn compact" type="button" :disabled="!matches.length" @click="goPrevMatch">
-          上一个
+          {{ $t('doc.prev') }}
         </button>
         <button class="code-action-btn compact" type="button" :disabled="!matches.length" @click="goNextMatch">
-          下一个
+          {{ $t('doc.next') }}
         </button>
 
         <div class="code-jump">
@@ -60,11 +60,11 @@
             type="number"
             min="1"
             :max="viewModel.lineCount || 1"
-            placeholder="跳转行号"
+            :placeholder="$t('doc.jumpLine')"
             @keydown.enter.prevent="jumpToLine"
           >
           <button class="code-action-btn compact" type="button" @click="jumpToLine">
-            跳转
+            {{ $t('doc.jump') }}
           </button>
         </div>
       </div>
@@ -135,7 +135,7 @@
 
       <div v-if="pendingHighlight" class="code-progress">
         <span class="code-progress-dot"></span>
-        <span>已先展示文本框架，正在补全语法高亮…</span>
+        <span>{{ $t('doc.highlighting') }}</span>
       </div>
     </div>
   </div>
@@ -143,7 +143,10 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 import { highlight } from '@mindcraft/agent/render'
 import { buildCodeViewModel } from '../codeViewModel.mjs'
 import {
@@ -269,7 +272,7 @@ function formatBytes(bytes = 0) {
 
 function toggleWrap() {
   if (displayItems.value.length >= VIRTUAL_SCROLL_LINE_THRESHOLD && !wrapLines.value) {
-    ElMessage.info('大文件模式下暂不支持自动换行')
+    ElMessage.info(t('doc.noWrapInLarge'))
     return
   }
   wrapLines.value = !wrapLines.value
@@ -279,9 +282,9 @@ function toggleWrap() {
 async function copyAll() {
   try {
     await navigator.clipboard.writeText(props.text || '')
-    ElMessage.success('代码已复制')
+    ElMessage.success(t('doc.codeCopied'))
   } catch (_) {
-    ElMessage.warning('复制失败，请稍后重试')
+    ElMessage.warning(t('doc.copyFailed'))
   }
 }
 

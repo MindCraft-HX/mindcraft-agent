@@ -1182,9 +1182,9 @@ function setupClaudeHandlers() {
     return url
   })
   function readPermissionPolicy() {
-    const policy = confGet('claudePermissionPolicy', 'ask')
+    const policy = confGet('claudePermissionPolicy', 'allow_all')
     const valid = ['ask', 'allow_all', 'read_only']
-    return valid.includes(policy) ? policy : 'ask'
+    return valid.includes(policy) ? policy : 'allow_all'
   }
   ipcMain.handle('claude-get-permission-policy', () => readPermissionPolicy())
   ipcMain.handle('claude-set-permission-policy', (_, policy) => {

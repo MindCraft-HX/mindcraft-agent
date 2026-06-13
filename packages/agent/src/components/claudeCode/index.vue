@@ -125,7 +125,7 @@
               <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M1 3.5A1.5 1.5 0 012.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0115 5.5v7a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z"/>
               </svg>
-              选择文件夹
+              {{ $t('agent.selectFolder') }}
             </button>
           </div>
         </div>
@@ -180,7 +180,7 @@
             rows="1"
           ></textarea>
           <div class="input-actions">
-            <button v-if="activeTab?.thinking" type="button" class="abort-btn" @click="abortSession" title="中断当前请求">
+            <button v-if="activeTab?.thinking" type="button" class="abort-btn" @click="abortSession" :title="$t('agent.abort')">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M5 3.5h6A1.5 1.5 0 0112.5 5v6a1.5 1.5 0 01-1.5 1.5H5A1.5 1.5 0 013.5 11V5A1.5 1.5 0 015 3.5z"/>
               </svg>
@@ -205,7 +205,7 @@
         <input ref="fileInputRef" type="file" multiple style="display:none" @change="onFileSelect" />
       </div>
 
-      <div v-if="dragging" class="drop-mask">拖入文件或图片</div>
+      <div v-if="dragging" class="drop-mask">{{ $t('agent.dragFile') }}</div>
 
       <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
 

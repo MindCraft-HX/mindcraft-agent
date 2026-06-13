@@ -1,7 +1,7 @@
 <template>
   <div class="viewer-unsupported">
     <div class="unsupported-card">
-      <div class="unsupported-title">暂不支持预览此文件类型</div>
+      <div class="unsupported-title">{{ $t('doc.unsupported') }}</div>
       <div class="unsupported-desc">
         {{ fileLabel }} 当前无法在“文档浏览”内渲染。
       </div>
@@ -11,7 +11,7 @@
         type="button"
         @click="$emit('openExternal')"
       >
-        使用系统默认程序打开
+        {{ $t('doc.openExternal') }}
       </button>
     </div>
   </div>

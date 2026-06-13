@@ -56,11 +56,11 @@
       <!-- 运行中指示 -->
       <span v-if="m.thinking" class="sb-group sb-thinking">
         <span class="sb-dot"></span>
-        <span class="sb-val">运行中 {{ formatDuration(displayDurationMs) }}</span>
+        <span class="sb-val">{{ $t('agent.runningDuration', { time: formatDuration(displayDurationMs) }) }}</span>
       </span>
       <!-- 已完成显示总时长 -->
       <span v-else-if="displayDurationMs > 0" class="sb-group">
-        <span class="sb-val">用时 {{ formatDuration(displayDurationMs) }}</span>
+        <span class="sb-val">{{ $t('agent.duration', { time: formatDuration(displayDurationMs) }) }}</span>
       </span>
 
       <!-- 速度 -->

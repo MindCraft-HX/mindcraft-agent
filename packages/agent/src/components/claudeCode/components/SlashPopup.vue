@@ -36,7 +36,7 @@
     </div>
     <div v-if="loadingRemote" class="slash-loading-bar">
       <span class="slash-loading-dot"></span>
-      <span class="slash-loading-text">正在加载 skills / commands…</span>
+      <span class="slash-loading-text">{{ $t('agent.loadingSlash') }}</span>
     </div>
   </div>
 </template>

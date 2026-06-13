@@ -160,7 +160,7 @@ const props = defineProps({
   isNew: { type: Boolean, default: false },
   selectedTier: { type: String, default: 'sonnet' },
   tierModels: { type: Object, default: () => ({ haiku: '', sonnet: '', opus: '', reasoning: '' }) },
-  permissionPolicy: { type: String, default: 'ask' },
+  permissionPolicy: { type: String, default: 'allow_all' },
   language: { type: String, default: 'zh-CN' },
   effortLevel: { type: String, default: 'medium' },
   configJson: { type: [Object, String], default: null },
@@ -197,7 +197,7 @@ function initFromProps() {
   tier.reasoning = (pt.reasoning || '').toString()
 
   tierKey.value = props.selectedTier || 'sonnet'
-  policy.value = props.permissionPolicy || 'ask'
+  policy.value = props.permissionPolicy || 'allow_all'
   lang.value = props.language || 'zh-CN'
   effort.value = props.effortLevel || 'medium'
 

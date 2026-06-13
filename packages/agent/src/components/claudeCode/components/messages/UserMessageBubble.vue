@@ -20,7 +20,7 @@
 
       <div v-for="(f, i) in fileBlocks" :key="'file-'+i" class="extra-card file-card">
         <span class="file-icon">📄</span>
-        <span class="file-name">{{ f.source?.filename || '文件' }}</span>
+        <span class="file-name">{{ f.source?.filename || $t('agent.file') }}</span>
       </div>
     </div>
 

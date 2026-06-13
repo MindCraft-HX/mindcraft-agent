@@ -4,7 +4,7 @@
       <div class="todo-hero-top">
         <div class="todo-title-wrap">
           <div class="todo-kicker">TASK SNAPSHOT</div>
-          <div class="todo-title">计划清单</div>
+          <div class="todo-title">{{ $t('agent.todoTitle') }}</div>
         </div>
         <div v-if="parsed.summary.total" class="todo-progress-pill">{{ progressText }}</div>
       </div>
@@ -19,7 +19,7 @@
     </div>
 
     <div v-if="parsed.currentItem" class="todo-focus-card">
-      <div class="todo-section-label">当前聚焦</div>
+      <div class="todo-section-label">{{ $t('agent.currentFocus') }}</div>
       <div class="todo-focus-text">{{ parsed.currentItem.content }}</div>
     </div>
 

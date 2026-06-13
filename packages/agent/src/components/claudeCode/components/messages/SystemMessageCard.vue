@@ -17,7 +17,7 @@
     </div>
     <div v-if="msg.expanded" class="compact-body">
       <div v-if="msg.compactSummary" v-html="renderContent(msg.compactSummary)"></div>
-      <div v-else class="compact-loading">摘要加载中…</div>
+      <div v-else class="compact-loading">{{ $t('agent.summaryLoading') }}</div>
     </div>
   </div>
   <div

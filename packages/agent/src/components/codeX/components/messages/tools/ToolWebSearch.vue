@@ -1,12 +1,12 @@
 <template>
   <div class="web-search-panel">
     <div class="search-query" v-if="query">
-      <span class="label">搜索：</span>
+      <span class="label">{{ $t('agent.searchFor') }}</span>
       <span class="value">{{ query }}</span>
     </div>
-    <div v-else class="search-empty">网页搜索</div>
+    <div v-else class="search-empty">{{ $t('agent.webSearchTool') }}</div>
     <details v-if="rawText" class="tool-raw-details">
-      <summary>原始参数</summary>
+      <summary>{{ $t('agent.rawParams') }}</summary>
       <pre class="tool-raw">{{ rawText }}</pre>
     </details>
   </div>

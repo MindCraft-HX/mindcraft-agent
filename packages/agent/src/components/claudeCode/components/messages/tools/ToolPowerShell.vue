@@ -10,7 +10,7 @@
       <span v-if="data.env" class="ps-tag">env</span>
     </div>
     <details v-if="data.output || data.stderr" class="ps-output">
-      <summary>输出</summary>
+      <summary>{{ $t('agent.output') }}</summary>
       <pre class="ps-output-text">{{ data.output || data.stderr }}</pre>
     </details>
   </div>

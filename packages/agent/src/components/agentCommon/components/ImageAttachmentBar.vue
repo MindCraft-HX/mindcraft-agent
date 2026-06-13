@@ -6,7 +6,7 @@
         <img
           :src="img.dataUrl"
           class="img-thumb"
-          title="点击查看大图"
+          :title="$t('agent.clickViewLarge')"
           @click="emit('preview', img.dataUrl)"
         />
         <button class="img-rm" type="button" @click.stop="emit('remove', i)">×</button>

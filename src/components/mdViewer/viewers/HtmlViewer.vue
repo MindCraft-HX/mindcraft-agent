@@ -10,11 +10,16 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
 const props = defineProps({
   text: { type: String, default: '' },
 })
 
-const fallbackHtml = '<!doctype html><html><body><p>HTML 内容为空。</p></body></html>'
+const { t } = useI18n()
+
+const fallbackHtml = computed(() => `<!doctype html><html><body><p>${t('doc.htmlEmpty')}</p></body></html>`)
 </script>
 
 <style scoped>

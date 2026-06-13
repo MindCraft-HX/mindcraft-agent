@@ -4,7 +4,7 @@
       v-if="show"
       class="scroll-bottom-btn"
       circle
-      :title="newMsgCount > 0 ? `${newMsgCount} 条新消息` : '滚动到底部'"
+      :title="newMsgCount > 0 ? $t('agent.nNewMessages', { n: newMsgCount }) : $t('agent.scrollToBottom')"
       @click="$emit('scroll')"
     >
       <span v-if="newMsgCount > 0" class="scroll-bottom-badge">{{ newMsgCount > 99 ? '99+' : newMsgCount }}</span>

@@ -21,28 +21,28 @@
         @dragleave="onDragLeave"
         @dragend="onDragEnd($event)"
         @drop="onDrop($event, idx)"
-        :title="p.cwdLocked ? p.cwd : '未选择文件夹'"
+        :title="p.cwdLocked ? p.cwd : $t('codehub.noFolder')"
       >
         <span class="project-tab-title">
-          <span v-if="p.hasPendingTool" class="pending-dot" title="等待用户响应"></span>
-          <span v-else-if="p.runningCount === 1" class="running-dot" title="运行中"></span>
-          <span v-else-if="p.runningCount >= 2" class="running-badge" :title="`${p.runningCount}个会话运行中`">{{ p.runningCount }}</span>
-          {{ p.cwdLocked ? (p.cwd.split(/[\\/]/).pop() || '文件夹') : '未选择文件夹' }}
+          <span v-if="p.hasPendingTool" class="pending-dot" :title="$t('codehub.waitingUser')"></span>
+          <span v-else-if="p.runningCount === 1" class="running-dot" :title="$t('codehub.running')"></span>
+          <span v-else-if="p.runningCount >= 2" class="running-badge" :title="$t('codehub.sessionsRunning', { n: p.runningCount })">{{ p.runningCount }}</span>
+          {{ p.cwdLocked ? (p.cwd.split(/[\\/]/).pop() || $t('codehub.folder')) : $t('codehub.noFolder') }}
         </span>
         <button class="project-tab-close" type="button" @click.stop="$emit('deleteProject', p)">×</button>
       </div>
     </div>
-    <button class="add-project-btn" @click="$emit('newProject')" title="新建 Tab（项目）">
+    <button class="add-project-btn" @click="$emit('newProject')" :title="$t('codehub.newTab')">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
     </button>
 
     <!-- 右键菜单 -->
     <div v-if="contextMenuVisible" class="context-menu" :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }">
       <div class="menu-item" @click="handleCloseThis">
-        <span class="menu-icon">✕</span> 关闭此标签
+        <span class="menu-icon">✕</span> {{ $t('codehub.closeTab') }}
       </div>
       <div class="menu-item" @click="handleCloseAll">
-        <span class="menu-icon">✖</span> 关闭所有标签
+        <span class="menu-icon">✖</span> {{ $t('codehub.closeAllTabs') }}
       </div>
     </div>
   </div>
