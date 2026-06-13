@@ -6,7 +6,8 @@
     "chat": "Chat",
     "theme": "Theme",
     "settings": "Settings",
-    "language": "Language"
+    "language": "Language",
+    "addPlugin": "Plugin"
   },
   "home": {
     "welcome": "Welcome to MindCraft",
@@ -387,6 +388,10 @@
     "accept": "✅ Accept",
     "reject": "❌ Reject",
     "send": "Send",
+    "installedN": "Installed ({n})",
+    "marketplaceN": "Market ({n})",
+    "todoTitle": "To-do List",
+    "executingSection": "Executing",
     "file": "File",
     "github": "GitHub",
     "toolLabel": "Tool",
@@ -443,7 +448,6 @@
     "webSearchTool": "Web Search",
     "searchQuery": "Search: ",
     "planTodo": "Plan Checklist",
-    "noTodo": "No tasks",
     "selectFile": "Select or drag local files",
     "addFile": "Add local files or images",
     "refFile": "Reference File @",
@@ -799,5 +803,24 @@
     "hide": "Hide",
     "remove": "Remove",
     "show": "Show"
+  },
+  "pluginMarket": {
+    "title": "Plugin Marketplace",
+    "browse": "Browse",
+    "installed": "Installed",
+    "searchPlaceholder": "Search plugins...",
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "installedTag": "Installed",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "installs": "{n} installs",
+    "noResults": "No matching plugins found",
+    "noInstalled": "No plugins installed yet, check out the browse page",
+    "loading": "Loading...",
+    "notInstalled": "Plugin \"{id}\" is not installed",
+    "pluginDisabled": "Plugin \"{name}\" is disabled",
+    "goMarket": "Go to Marketplace",
+    "installPath": "Install Path"
   }
 }
