@@ -592,8 +592,14 @@
     "textFrameShown": "Text frame displayed, code highlighting in progress…",
     "codeCopied": "Code copied",
     "htmlEmpty": "HTML content is empty.",
-    "pdfUnavailable": "PDF content unavailable.",
-    "noWrapInLarge": "Auto wrap is not supported in large file mode"
+    "pdfEmpty": "PDF content unavailable.",
+    "noWrapInLarge": "Auto wrap is not supported in large file mode",
+    "openingDesc": "Building document framework first, then rendering content.",
+    "loadingCode": "Reading document content…",
+    "loadingCodeHint": "Building code framework first, then applying syntax highlighting.",
+    "highlightBusy": "Highlighting…",
+    "foldable": "Foldable",
+    "highlighting": "Text framework displayed, applying syntax highlighting…"
   },
   "float": {
     "selectModel": "Select Model",
@@ -626,20 +632,6 @@
     "disable": "Disable",
     "globalDisable": "Disable Globally",
     "model": "Model"
-  },
-  "doc": {
-    "opening": "Opening document",
-    "openingDesc": "Building document framework first, then rendering content.",
-    "loadingCode": "Reading document content…",
-    "loadingCodeHint": "Building code framework first, then applying syntax highlighting.",
-    "highlightBusy": "Highlighting…",
-    "virtualScroll": "Virtual Scroll",
-    "largeFile": "Large File",
-    "foldable": "Foldable",
-    "highlighting": "Text framework displayed, applying syntax highlighting…",
-    "unsupported": "File type not supported for preview",
-    "pdfEmpty": "PDF content unavailable.",
-    "htmlEmpty": "HTML content is empty."
   },
   "common": {
     "ok": "OK",

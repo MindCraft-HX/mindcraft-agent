@@ -598,8 +598,14 @@
     "textFrameShown": "已先展示文本框架，代码高亮处理中……",
     "codeCopied": "代码已复制",
     "htmlEmpty": "HTML 内容为空。",
-    "pdfUnavailable": "PDF 内容不可用。",
-    "noWrapInLarge": "大文件模式下暂不支持自动换行"
+    "pdfEmpty": "PDF 内容不可用。",
+    "noWrapInLarge": "大文件模式下暂不支持自动换行",
+    "openingDesc": "先建立文档框架，再继续读取和渲染内容。",
+    "loadingCode": "正在读取文档内容…",
+    "loadingCodeHint": "首屏先建立代码框架，再补全高亮细节。",
+    "highlightBusy": "高亮优化中",
+    "foldable": "可折叠",
+    "highlighting": "已先展示文本框架，正在补全语法高亮…"
   },
   "float": {
     "selectModel": "请选择模型",
@@ -632,20 +638,6 @@
     "disable": "禁用",
     "globalDisable": "全局禁用",
     "model": "模型"
-  },
-  "doc": {
-    "opening": "正在打开文档",
-    "openingDesc": "先建立文档框架，再继续读取和渲染内容。",
-    "loadingCode": "正在读取文档内容…",
-    "loadingCodeHint": "首屏先建立代码框架，再补全高亮细节。",
-    "highlightBusy": "高亮优化中",
-    "virtualScroll": "虚拟滚动",
-    "largeFile": "大文件模式",
-    "foldable": "可折叠",
-    "highlighting": "已先展示文本框架，正在补全语法高亮…",
-    "unsupported": "暂不支持预览此文件类型",
-    "pdfEmpty": "PDF 内容不可用。",
-    "htmlEmpty": "HTML 内容为空。"
   },
   "common": {
     "ok": "确定",
