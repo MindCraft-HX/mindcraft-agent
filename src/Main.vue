@@ -91,10 +91,11 @@
               <span v-show="!sidebarCollapsed" class="sidebar-label">{{ plugin.name }}</span>
             </div>
 
-            <!-- "+" 按钮：打开插件市场 -->
+            <!-- "+" 按钮：进入插件市场 -->
             <div
               class="sidebar-item sidebar-item--add"
-              @click="showMarketplace = true"
+              :class="{ active: activeIndex === '/main/pluginMarket' }"
+              @click="$router.push('/main/pluginMarket')"
               :title="$t('nav.addPlugin')"
             >
               <div class="sidebar-icon-wrapper">
@@ -196,8 +197,6 @@
     <!-- 设置弹窗（SharedSettings modal） -->
     <SharedSettings ref="sharedSettingsRef" />
 
-    <!-- 插件市场弹窗 -->
-    <PluginMarket v-model:visible="showMarketplace" />
   </div>
 </template>
 
@@ -207,7 +206,6 @@ import { useRoute, useRouter } from "vue-router";
 import { Setting, Check } from '@element-plus/icons-vue';
 import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
-import PluginMarket from '@/views/PluginMarket.vue';
 import { usePluginStore } from '@/stores/pluginStore';
 
 const settingsDrawer = ref(false);
@@ -216,7 +214,6 @@ const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
 // 任务完成通知状态：由 codeHub 更新，用于侧边栏"项目"图标提醒
 const codehubHasNotification = ref(false);
-const showMarketplace = ref(false);
 const pluginStore = usePluginStore();
 const { enabledPlugins } = pluginStore;
 const claudeTheme = useClaudeThemeStore();

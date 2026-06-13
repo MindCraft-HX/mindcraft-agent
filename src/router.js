@@ -52,6 +52,12 @@ const routes = [
                 meta: { parent: '/main/mdViewer' }
             },
             {
+                path: 'pluginMarket',
+                name: 'pluginMarket',
+                component: () => import('@/views/PluginMarket.vue'),
+                meta: { parent: '/main/pluginMarket' }
+            },
+            {
                 path: 'plugin/:pluginId',
                 name: 'pluginView',
                 component: () => import('@/views/PluginView.vue'),

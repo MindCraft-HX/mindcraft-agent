@@ -148,13 +148,21 @@ async function fetchMarketplaceListing() {
   try {
     const res = await axios.get(MARKETPLACE_URL, { timeout: 15000 })
     return res.data
-  } catch (err) {
-    // 回退：尝试内置 fallback
-    const fallbackPath = path.join(app.getAppPath(), 'dist', 'plugins', 'marketplace.json')
-    if (fs.existsSync(fallbackPath)) {
-      return JSON.parse(fs.readFileSync(fallbackPath, 'utf-8'))
+  } catch (_cdnErr) {
+    // 回退 1：生产模式用 dist/，开发模式用 public/
+    const basePath = app.getAppPath()
+    const candidates = [
+      path.join(basePath, 'dist', 'plugins', 'marketplace.json'),
+      path.join(basePath, 'public', 'plugins', 'marketplace.json'),
+    ]
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        return JSON.parse(fs.readFileSync(p, 'utf-8'))
+      }
     }
-    throw new Error('MARKETPLACE_UNAVAILABLE')
+    // 回退 2：返回空清单，不抛异常
+    console.warn('[pluginManager] 市场清单不可用，返回空列表')
+    return { version: 1, plugins: [] }
   }
 }
 
