@@ -501,7 +501,7 @@ const continueAsk = async () => {
   try {
     stopSpeak()
     const params = {
-      room_name: "新房间",
+      room_name: t('common.newRoom'),
       llm_model: realModel.value,
       selected_text: message.value || userMessage.value,
       screenshot: screenshot.value,
