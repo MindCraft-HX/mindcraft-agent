@@ -254,15 +254,15 @@ async function installPlugin(plugin) {
   try {
     const res = await api('Install')?.(plugin.id)
     if (res?.ok === false) {
-      ElMessage.error(`安装失败: ${res.error || t('agent.unknownError')}`)
+      ElMessage.error(t('agent.installError', { message: res.error || t('agent.unknownError') }))
     } else {
       plugin.installed = true
       plugin.enabled = true
-      ElMessage.success(`已安装 ${plugin.name}`)
+      ElMessage.success(t('agent.installedPlugin', { name: plugin.name }))
       emit('plugin-toggled')
     }
   } catch (e) {
-    ElMessage.error(`安装失败: ${e?.message || e}`)
+    ElMessage.error(t('agent.installError', { message: e?.message || e }))
   } finally {
     plugin._busy = false
   }
@@ -273,14 +273,14 @@ async function uninstallPlugin(plugin) {
   try {
     const res = await api('Uninstall')?.(plugin.id)
     if (res?.ok === false) {
-      ElMessage.error(`卸载失败: ${res.error || t('agent.unknownError')}`)
+      ElMessage.error(t('agent.uninstallError', { message: res.error || t('agent.unknownError') }))
     } else {
       plugin.installed = false
       plugin.enabled = true
-      ElMessage.success(`已卸载 ${plugin.name}`)
+      ElMessage.success(t('agent.uninstalledPlugin', { name: plugin.name }))
     }
   } catch (e) {
-    ElMessage.error(`卸载失败: ${e?.message || e}`)
+    ElMessage.error(t('agent.uninstallError', { message: e?.message || e }))
   } finally {
     plugin._busy = false
   }

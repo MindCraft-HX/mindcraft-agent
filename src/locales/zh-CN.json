@@ -595,6 +595,8 @@
     "marketConnectFailed": "无法连接到 skills.sh，请检查网络",
     "searchMarketFailed": "搜索失败: {message}",
     "netErrorFallback": "网络错误",
+    "installedPlugin": "已安装 {name}",
+    "uninstalledPlugin": "已卸载 {name}",
     "memory": {
       "noMemories": "暂无记忆。使用 /memory add <type> <name> <内容> 添加",
       "addUsage": "用法: /memory add [--system] <type> <name> <内容>\ntype: user|feedback|project|reference\n示例: /memory add user my_role \"角色描述\"",

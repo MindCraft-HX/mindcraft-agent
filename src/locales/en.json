@@ -591,6 +591,8 @@
     "marketConnectFailed": "Unable to connect to skills.sh, check your network",
     "searchMarketFailed": "Search failed: {message}",
     "netErrorFallback": "Network error",
+    "installedPlugin": "{name} installed",
+    "uninstalledPlugin": "{name} uninstalled",
     "memory": {
       "noMemories": "No memories. Use /memory add <type> <name> <content> to add one",
       "addUsage": "Usage: /memory add [--system] <type> <name> <content>\ntype: user|feedback|project|reference\nExample: /memory add user my_role \"role description\"",
