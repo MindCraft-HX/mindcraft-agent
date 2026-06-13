@@ -369,6 +369,7 @@
     "planEntered": "已进入计划模式",
     "planExited": "已退出计划模式",
     "planFile": "计划文件：",
+    "planExecution": "执行计划",
     "currentPlan": "当前计划",
     "locateMsg": "定位到原消息",
     "expandPlan": "展开当前计划",

@@ -4,7 +4,7 @@
       <div class="plan-hero-top">
         <div class="plan-title-wrap">
           <div class="plan-kicker">PLAN</div>
-          <div class="plan-title">执行计划</div>
+          <div class="plan-title">{{ $t('agent.planExecution') }}</div>
         </div>
         <div v-if="parsed.summary.total" class="plan-progress-pill">{{ progressText }}</div>
       </div>
@@ -14,15 +14,15 @@
       </div>
 
       <div v-if="parsed.summary.total" class="plan-meta">
-        <span class="plan-meta-chip">总计 {{ parsed.summary.total }}</span>
-        <span class="plan-meta-chip is-active">进行中 {{ parsed.summary.inProgress }}</span>
-        <span class="plan-meta-chip is-done">已完成 {{ parsed.summary.completed }}</span>
-        <span class="plan-meta-chip">待处理 {{ parsed.summary.pending }}</span>
+        <span class="plan-meta-chip">{{ $t('agent.totalN', { n: parsed.summary.total }) }}</span>
+        <span class="plan-meta-chip is-active">{{ $t('agent.inProgressN', { n: parsed.summary.inProgress }) }}</span>
+        <span class="plan-meta-chip is-done">{{ $t('agent.completedN', { n: parsed.summary.completed }) }}</span>
+        <span class="plan-meta-chip">{{ $t('agent.pendingN', { n: parsed.summary.pending }) }}</span>
       </div>
     </div>
 
     <div v-if="parsed.explanation" class="plan-explanation-card">
-      <div class="plan-section-label">说明</div>
+      <div class="plan-section-label">{{ $t('agent.description') }}</div>
       <div class="plan-explanation">{{ parsed.explanation }}</div>
     </div>
 
@@ -30,7 +30,7 @@
       <div v-for="(item, index) in parsed.steps" :key="item.id || index" class="plan-row">
         <span class="plan-index" :class="`s-${item.status}`">{{ index + 1 }}</span>
         <div class="plan-main">
-          <div v-if="item.status === 'in_progress'" class="plan-current-mark">当前步骤</div>
+          <div v-if="item.status === 'in_progress'" class="plan-current-mark">{{ $t('agent.currentStep') }}</div>
           <div class="plan-step">{{ item.step }}</div>
         </div>
         <span class="plan-status" :class="`s-${item.status}`">{{ statusLabel(item.status) }}</span>
@@ -38,7 +38,7 @@
     </div>
 
     <details v-if="msg.text" class="tool-raw-details">
-      <summary>原始参数</summary>
+      <summary>{{ $t('agent.rawParams') }}</summary>
       <pre class="tool-raw">{{ msg.text }}</pre>
     </details>
   </div>
@@ -46,7 +46,10 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { parseUpdatePlanPayload } from './updatePlan.mjs'
+
+const { t } = useI18n()
 
 const props = defineProps({
   msg: { type: Object, required: true },
@@ -60,14 +63,14 @@ const progressPercent = computed(() => {
 })
 const progressText = computed(() => {
   const total = parsed.value.summary.total
-  if (!total) return '未开始'
-  return `${parsed.value.summary.completed}/${total} 已完成`
+  if (!total) return t('agent.notStarted')
+  return t('agent.completedFraction', { completed: parsed.value.summary.completed, total })
 })
 
 function statusLabel(status) {
-  if (status === 'completed') return '已完成'
-  if (status === 'in_progress') return '进行中'
-  return '待处理'
+  if (status === 'completed') return t('agent.completed')
+  if (status === 'in_progress') return t('agent.inProgress')
+  return t('agent.pending')
 }
 </script>
 

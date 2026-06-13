@@ -364,6 +364,7 @@
     "planEntered": "Entered Plan Mode",
     "planExited": "Exited Plan Mode",
     "planFile": "Plan file: ",
+    "planExecution": "Execution Plan",
     "currentPlan": "Current Plan",
     "locateMsg": "Locate message",
     "expandPlan": "Expand Plan",
