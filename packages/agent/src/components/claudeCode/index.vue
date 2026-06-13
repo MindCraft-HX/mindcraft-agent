@@ -245,7 +245,9 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, nextTick, watch, markRaw, provide, inject, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 
 defineOptions({ name: 'claudeCode' })
 
@@ -670,7 +672,7 @@ function buildUserContentBlocks(text, imgs = [], files = []) {
     blocks.push({
       type: 'file',
       source: {
-        filename: f?.name || '文件',
+        filename: f?.name || t('common.file'),
         size: f?.size || 0,
       },
     })
@@ -978,7 +980,7 @@ function normalizeSessionEventsToUiMessages(rawData) {
         // 检测 compact summary：SDK compact 后写入的 user 消息
         if (t && isCompactSummaryText(t)) {
           const summary = extractCompactSummary(t)
-          out.push({ id: nextMsgId(), role: 'system', text: '上下文已压缩', compactTitle: '上下文已压缩', compactSummary: summary, expanded: false, _isCompact: true })
+          out.push({ id: nextMsgId(), role: 'system', text: t('agent.contextCompacted'), compactTitle: t('agent.contextCompacted'), compactSummary: summary, expanded: false, _isCompact: true })
         } else if (t || displayBlocks.length) {
           out.push({
             id: nextMsgId(),
@@ -1002,7 +1004,7 @@ function normalizeSessionEventsToUiMessages(rawData) {
         // 检测 compact summary
         if (isCompactSummaryText(t)) {
           const summary = extractCompactSummary(t)
-          out.push({ id: nextMsgId(), role: 'system', text: '上下文已压缩', compactTitle: '上下文已压缩', compactSummary: summary, expanded: false, _isCompact: true })
+          out.push({ id: nextMsgId(), role: 'system', text: t('agent.contextCompacted'), compactTitle: t('agent.contextCompacted'), compactSummary: summary, expanded: false, _isCompact: true })
         } else {
           out.push({
             id: nextMsgId(),
@@ -1043,8 +1045,8 @@ function normalizeSessionEventsToUiMessages(rawData) {
         const post = Number(meta.post_tokens || 0)
         const saved = pre > 0 && post > 0 ? Math.max(0, pre - post) : 0
         const compactTitle = pre > 0 && post > 0
-          ? `上下文已压缩：${pre} → ${post} tokens（减少 ${saved}）`
-          : '上下文已压缩'
+          ? t('agent.compactTokens', { pre, post, saved })
+          : t('agent.contextCompacted')
         out.push({ id: nextMsgId(), role: 'system', text: compactTitle, compactTitle, compactSummary: '', expanded: false, _isCompact: true })
         continue
       }
@@ -1056,7 +1058,7 @@ function normalizeSessionEventsToUiMessages(rawData) {
           if (last?._isCompact && !last.compactSummary) {
             last.compactSummary = summary
           } else {
-            out.push({ id: nextMsgId(), role: 'system', text: '上下文已压缩', compactTitle: '上下文已压缩', compactSummary: summary, expanded: false, _isCompact: true })
+            out.push({ id: nextMsgId(), role: 'system', text: t('agent.contextCompacted'), compactTitle: t('agent.contextCompacted'), compactSummary: summary, expanded: false, _isCompact: true })
           }
         }
         continue
@@ -1209,7 +1211,7 @@ function normalizeFlatSessionMessagesToUiMessages(rawData) {
         const { text: t, blocks: displayBlocks } = applyCompactStripping(rawText, userBlocks)
         if (t && isCompactSummaryText(t)) {
           const summary = extractCompactSummary(t)
-          out.push({ id: nextMsgId(), role: 'system', text: '上下文已压缩', compactTitle: '上下文已压缩', compactSummary: summary, expanded: false, _isCompact: true })
+          out.push({ id: nextMsgId(), role: 'system', text: t('agent.contextCompacted'), compactTitle: t('agent.contextCompacted'), compactSummary: summary, expanded: false, _isCompact: true })
         } else if (t || displayBlocks.length) {
           out.push({ id: nextMsgId(), role: 'user', text: t, content: displayBlocks.length ? displayBlocks : [{ type: 'text', text: t }], specialItems: [] })
         }
@@ -1229,7 +1231,7 @@ function normalizeFlatSessionMessagesToUiMessages(rawData) {
         if (!t) continue
         if (t && isCompactSummaryText(t)) {
           const summary = extractCompactSummary(t)
-          out.push({ id: nextMsgId(), role: 'system', text: '上下文已压缩', compactTitle: '上下文已压缩', compactSummary: summary, expanded: false, _isCompact: true })
+          out.push({ id: nextMsgId(), role: 'system', text: t('agent.contextCompacted'), compactTitle: t('agent.contextCompacted'), compactSummary: summary, expanded: false, _isCompact: true })
         } else if (t) {
           out.push({ id: nextMsgId(), role: 'user', text: t, content: [{ type: 'text', text: t }], specialItems: [] })
         }
@@ -1270,8 +1272,8 @@ function normalizeFlatSessionMessagesToUiMessages(rawData) {
         const post = Number(meta.post_tokens || 0)
         const saved = pre > 0 && post > 0 ? Math.max(0, pre - post) : 0
         const compactTitle = pre > 0 && post > 0
-          ? `上下文已压缩：${pre} → ${post} tokens（减少 ${saved}）`
-          : '上下文已压缩'
+          ? t('agent.compactTokens', { pre, post, saved })
+          : t('agent.contextCompacted')
         out.push({ id: nextMsgId(), role: 'system', text: compactTitle, compactTitle, compactSummary: '', expanded: false, _isCompact: true })
         continue
       }
@@ -1283,7 +1285,7 @@ function normalizeFlatSessionMessagesToUiMessages(rawData) {
           if (last?._isCompact && !last.compactSummary) {
             last.compactSummary = summary
           } else {
-            out.push({ id: nextMsgId(), role: 'system', text: '上下文已压缩', compactTitle: '上下文已压缩', compactSummary: summary, expanded: false, _isCompact: true })
+            out.push({ id: nextMsgId(), role: 'system', text: t('agent.contextCompacted'), compactTitle: t('agent.contextCompacted'), compactSummary: summary, expanded: false, _isCompact: true })
           }
         }
         continue
@@ -1494,8 +1496,8 @@ async function openModelPicker() {
   if (result && tab) {
     tab.model = result.model
     metricsData.value.model = result.model
-    const effortNote = result.effortLabel ? ` · 推理强度 ${result.effortLabel}` : ''
-    pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: `已切换到 ${result.label} 模型 (${result.model})${effortNote}` })
+    const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
+    pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
     scrollBottom(tab.id)
     saveHistory()
     slashModelName.value = result.model
@@ -1570,7 +1572,7 @@ function createChat() {
   const id = nextChatId()
   return {
     id,
-    name: '新对话',
+    name: t('agent.newChat'),
     sessionId: `session-${id}-${Date.now()}`,
     createdAt: Date.now(),
     fileSize: null,
@@ -1588,7 +1590,7 @@ function createChat() {
 
 function createProject() {
   const id = nextProjectId()
-  return { id, name: '新项目', cwd: '', cwdLocked: false, chats: [], hasDoneNotification: false }
+  return { id, name: t('agent.newProject'), cwd: '', cwdLocked: false, chats: [], hasDoneNotification: false }
 }
 
 function teardownHistoryTopObserver() {
@@ -1710,7 +1712,7 @@ async function refreshProjectSessionsInBackground(p) {
       const rawTitle = s.title || ''
       const name = rawTitle
         ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
-        : `会话 ${String(s.id || '').slice(0, 8)}`
+        : `${t('agent.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
       const pendingChat = !cached
         ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value, scannedSessionId: s.id })
         : null
@@ -1957,7 +1959,7 @@ async function ensureChatMessagesLoaded(chat) {
 async function requestDeleteChat(chat) {
   const p = activeProject.value
   if (!p || !chat) return
-  const ok = await confirmDialogRef.value?.open({ message: '是否确认删除该对话？' })
+  const ok = await confirmDialogRef.value?.open({ message: t('agent.confirmDeleteChat') })
   if (!ok) return
   window.electronAPI.claudeAgentAbort?.(chat.sessionId)
   // 删除 SDK 持久化的 .jsonl 文件
@@ -1980,7 +1982,7 @@ async function handleRenameChat(session, newName) {
   const chat = p.chats.find(c => c.id === session.id)
   if (!chat) return
   if (!chat.cliSessionId && !chat.filePath) {
-    ElMessage.warning('请先发送一条消息，待会话文件创建后再重命名')
+    ElMessage.warning(t('agent.renameFirst'))
     return
   }
   try {
@@ -1990,14 +1992,14 @@ async function handleRenameChat(session, newName) {
       cwd: p.cwd,
     })
     if (!result?.success) {
-      ElMessage.error(result?.error || '会话重命名失败')
+      ElMessage.error(result?.error || t('agent.renameFailed'))
       return
     }
     chat.name = newName
     chat._userRenamed = true
     saveHistory({ immediate: true })
   } catch (e) {
-    ElMessage.error(e?.message || '会话重命名失败')
+    ElMessage.error(e?.message || t('agent.renameFailed'))
   }
 }
 
@@ -2007,7 +2009,7 @@ async function requestDeleteProject(project) {
   const hasRunning = (project.chats || []).some(c => c.thinking)
   if (hasRunning) {
     const ok = await confirmDialogRef.value?.open({
-      message: '关闭此项目标签页？\n该项目有运行中的对话，关闭标签将中断对话。',
+      message: t('agent.closeProjectTab'),
     })
     if (!ok) return
   }
@@ -2064,7 +2066,7 @@ async function selectDir(project, onAfterSelect) {
     if (Array.isArray(sessions) && sessions.length) {
       project.chats = sessions.map(s => ({
         id: nextChatId(),
-        name: s.name || `会话 ${String(s.id || '').slice(0, 8)}`,
+        name: s.name || `${t('agent.sessionPrefix')}${String(s.id || '').slice(0, 8)}`,
         sessionId: s.id || `session-${Date.now()}`,
         cliSessionId: s.id || null,
         createdAt: s.createdAt || null,
@@ -2093,7 +2095,7 @@ async function selectDir(project, onAfterSelect) {
     } else if (!project.chats.length) {
       const c = createChat()
       if (onAfterSelect) {
-        const msg = onAfterSelect(`✓ 已设置工作目录：${dir}`)
+        const msg = onAfterSelect(t('agent.workDirSet', { dir }))
         c.messages.push(msg)
       }
       project.chats.push(c)
@@ -2117,7 +2119,7 @@ async function loadProjectSessions(cwd) {
         const rawTitle = s.title || ''
         const name = rawTitle
           ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
-          : `会话 ${String(s.id || '').slice(0, 8)}`
+          : `${t('agent.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
         return {
           id: s.id || nextSessionId(),
           createdAt: s.createdAt || null,
@@ -2402,7 +2404,7 @@ function handleProviderActivated() {
     tab.model = m
     metricsData.value.model = m
   })
-  pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '已切换 API 配置，当前对话将继续使用新模型。' })
+  pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
   saveHistory()
 }
 
@@ -2415,7 +2417,7 @@ function abortSession() {
   metricsData.value.thinking = false
   if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
   metricsLiveDurationMs.value = 0
-  pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '已中断' })
+  pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.aborted') })
   trimMessages(tab, true)
   scrollBottom(tab.id)
   saveHistory()
@@ -2521,8 +2523,8 @@ async function sendMessage() {
       if (result) {
         tab.model = result.model
         metricsData.value.model = result.model
-        const effortNote = result.effortLabel ? ` · 推理强度 ${result.effortLabel}` : ''
-        pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: `已切换到 ${result.label} 模型 (${result.model})${effortNote}` })
+        const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
+        pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
         scrollBottom(tab.id)
         saveHistory()
         slashEffortLevel.value = result.effort || slashEffortLevel.value
@@ -2556,7 +2558,7 @@ async function sendMessage() {
           }
         }
         if (!systemMems.length && !projectMems.length) {
-          systemListRows.push({ type: 'empty', text: '暂无记忆。使用 /memory add <type> <name> <内容> 添加' })
+          systemListRows.push({ type: 'empty', text: t('agent.memory.noMemories') })
         }
         const lines = systemListRows.map(r => {
           if (r.type === 'title' || r.type === 'empty') return r.text
@@ -2572,19 +2574,19 @@ async function sendMessage() {
         const type = filteredArgs[1] || 'project'
         const name = filteredArgs[2] || ''
         if (!name) {
-          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '用法: /memory add [--system] <type> <name> <内容>\ntype: user|feedback|project|reference\n示例: /memory add user my_role "角色描述"' })
+          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.addUsage') })
           scrollBottom(tab.id)
           return
         }
         const body = filteredArgs.slice(3).join(' ') || ''
         if (!body) {
-          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: `请提供记忆内容。用法:\n/memory add ${type} ${name} <内容>` })
+          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.needContent', { type, name }) })
           scrollBottom(tab.id)
           return
         }
         const filename = `${type}_${name}`
         const res = await window.electronAPI.claudeMemoryWrite?.({ cwd, filename, name, description: body.slice(0, 60), type, body, scope })
-        const msg = res?.ok ? `已保存${isSystem ? '系统' : '项目'}记忆: ${res.filename}` : `保存失败: ${res?.message || '未知错误'}`
+        const msg = res?.ok ? t('agent.memory.saved', { scope: isSystem ? t('agent.memory.scopeSystem') : t('agent.memory.scopeProject'), filename: res.filename }) : t('agent.memory.saveFailed', { message: res?.message || t('agent.memory.unknownError') })
         pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: msg })
         scrollBottom(tab.id)
         saveHistory()
@@ -2594,12 +2596,12 @@ async function sendMessage() {
       if (subCmd === 'delete' || subCmd === 'rm') {
         const filename = filteredArgs[1] || ''
         if (!filename) {
-          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '用法: /memory delete [--system] <filename>' })
+          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.deleteUsage') })
           scrollBottom(tab.id)
           return
         }
         const res = await window.electronAPI.claudeMemoryDelete?.({ cwd, filename, scope })
-        const msg = res?.ok ? `已删除${isSystem ? '系统' : '项目'}记忆: ${filename}` : `删除失败: 文件不存在或已删除`
+        const msg = res?.ok ? t('agent.memory.deleted', { scope: isSystem ? t('agent.memory.scopeSystem') : t('agent.memory.scopeProject'), filename }) : t('agent.memory.deleteFailed')
         pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: msg })
         scrollBottom(tab.id)
         saveHistory()
@@ -2609,13 +2611,13 @@ async function sendMessage() {
       if (subCmd === 'show') {
         const filename = filteredArgs[1] || ''
         if (!filename) {
-          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '用法: /memory show [--system] <filename>' })
+          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.showUsage') })
           scrollBottom(tab.id)
           return
         }
         const mem = await window.electronAPI.claudeMemoryRead?.({ cwd, filename, scope })
         if (!mem) {
-          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: `未找到记忆: ${filename}` })
+          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.notFound', { filename }) })
         } else {
           pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: `[${mem.type}] ${mem.name}\n${mem.description}\n---\n${mem.body}` })
         }
@@ -2628,19 +2630,19 @@ async function sendMessage() {
         const mode = filteredArgs[1] || ''
         if (!['system', 'user', 'off'].includes(mode)) {
           const current = await window.electronAPI.claudeMemoryGetInjectMode?.() || 'system'
-          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: `当前注入模式: ${current}\n用法: /memory inject <system|user|off>` })
+          pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.injectUsage', { current }) })
           scrollBottom(tab.id)
           return
         }
         await window.electronAPI.claudeMemorySetInjectMode?.(mode)
-        pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: `Memory 注入模式已切换为: ${mode}` })
+        pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.injectSwitched', { mode }) })
         scrollBottom(tab.id)
         saveHistory()
         return
       }
 
       // 未知子命令
-      pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '可用命令:\n/memory — 查看所有记忆（系统+项目）\n/memory add [--system] <type> <name> <内容>\n/memory show [--system] <filename>\n/memory delete [--system] <filename>\n/memory inject <system|user|off>\n\n加 --system 操作系统级记忆（~/.claude/memory/）' })
+      pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.memory.helpText') })
       scrollBottom(tab.id)
       return
     }
@@ -2648,7 +2650,7 @@ async function sendMessage() {
       openSkills()
       pushTabMessage(tab, {
         id: nextMsgId(), role: 'system',
-        text: '正在打开技能管理面板…',
+        text: t('agent.openingSkills'),
       })
       scrollBottom(tab.id)
       saveHistory()
@@ -2680,10 +2682,10 @@ async function sendMessage() {
       }
       // 加上本地内置命令
       const builtins = [
-        { name: 'model', desc: '选择模型' },
-        { name: 'clear', desc: '清空当前对话' },
-        { name: 'skills', desc: '浏览与管理 Skills（安装/卸载）' },
-        { name: 'commands', desc: '查看所有可用命令' },
+        { name: 'model', desc: t('slashCmd.modelDesc') },
+        { name: 'clear', desc: t('slashCmd.clear') },
+        { name: 'skills', desc: t('slashCmd.skills') },
+        { name: 'commands', desc: t('slashCmd.commandsDesc') },
       ]
       for (const b of builtins) {
         const n = normName(b.name)
@@ -2697,7 +2699,7 @@ async function sendMessage() {
         const cmdStr = n.startsWith('/') ? n : `/${n}`
         systemListRows.push({ type: 'row', cmd: cmdStr, meta: item.source, desc: item.desc || '' })
       }
-      if (!all.length) systemListRows.push({ type: 'empty', text: '暂无可用命令' })
+      if (!all.length) systemListRows.push({ type: 'empty', text: t('agent.noCommands') })
       const lines = systemListRows.map((r) => {
         if (r.type === 'title' || r.type === 'empty') return r.text
         return `  ${r.cmd}  ·  ${r.meta}  ·  ${r.desc}`
@@ -2777,7 +2779,7 @@ async function sendMessage() {
     await window.electronAPI.claudeAgentQuery(payload)
   } catch (e) {
     tab.thinking = false
-    pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: '发送失败：' + e.message })
+    pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.sendFailed', { message: e.message }) })
     scrollBottom(tab.id)
   }
 }
@@ -2806,7 +2808,7 @@ function toolIcon(name) {
   return resolveToolIconKey(name)
 }
 function toolLabel(name) {
-  return resolveToolLabel(name) || name || '工具'
+  return resolveToolLabel(name) || name || t('common.toolLabel')
 }
 
 // ─── diff 构建（行级 LCS diff）────────────────────────────────
@@ -3109,18 +3111,18 @@ async function checkFirstTimeSetup() {
       window.electronAPI?.claudeReadSettingsJson?.(),
     ])
     const missing = []
-    if (!env?.claude?.installed) missing.push('Claude Code 未安装')
+    if (!env?.claude?.installed) missing.push(t('agent.claudeNotInstalled'))
     // key 可能存在于 app 存储或 settings.json
     const hasKey = (key?.trim()) ||
       settingsJson?.env?.ANTHROPIC_AUTH_TOKEN ||
       settingsJson?.primaryApiKey ||
       settingsJson?.apiKey
-    if (!hasKey) missing.push('API Key 未配置')
+    if (!hasKey) missing.push(t('agent.apiKeyNotConfigured'))
     if (!missing.length) return
     const ok = await confirmDialogRef.value?.open({
-      message: `检测到以下问题：\n${missing.map(m => '• ' + m).join('\n')}\n\n是否前往设置？`,
-      okText: '去设置',
-      cancelText: '稍后',
+      message: t('agent.missingItemsDialog', { items: missing.map(m => '• ' + m).join('\n') }),
+      okText: t('common.goToSettings'),
+      cancelText: t('common.later'),
     })
     if (ok) openSettings()
   } catch (_) {}
@@ -3259,7 +3261,7 @@ defineExpose({
     const chats = p.chats || []
     return {
       id: p.id,
-      name: p.cwd ? p.cwd.split(/[\\/]/).pop() || '未选择文件夹' : '未选择文件夹',
+      name: p.cwd ? p.cwd.split(/[\\/]/).pop() || t('common.noFolder') : t('common.noFolder'),
       cwd: p.cwd || '',
       cwdLocked: Boolean(p.cwdLocked),
       runningCount: chats.filter(c => c.thinking).length,
