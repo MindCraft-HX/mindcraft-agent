@@ -343,7 +343,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const props = defineProps({
   apiPrefix: { type: String, default: 'skills' },

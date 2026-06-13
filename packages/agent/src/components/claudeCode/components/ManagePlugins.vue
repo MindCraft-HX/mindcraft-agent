@@ -190,7 +190,10 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const props = defineProps({
   apiPrefix: { type: String, default: 'plugins' }, // 'plugins' for ClaudeCode, 'codexPlugins' for CodeX

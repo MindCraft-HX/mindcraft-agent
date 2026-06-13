@@ -359,6 +359,7 @@
     "syncDesc": "Sync description only",
     "notStarted": "Not Started",
     "nComplete": "{n}/{total} Complete",
+    "syncExplanation": "Syncing plan…",
     "currentStep": "Current Step",
     "webSearchTool": "Web Search",
     "searchQuery": "Search: ",

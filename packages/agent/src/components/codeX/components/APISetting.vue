@@ -154,10 +154,13 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useCodexConfigStore } from '../../../stores/codexConfig.js'
 import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from '../../agentCommon/components/ConfirmDialog.vue'
+
+const { t } = useI18n()
 
 const confirmDialogRef = ref(null)
 const codexConfigStore = useCodexConfigStore()

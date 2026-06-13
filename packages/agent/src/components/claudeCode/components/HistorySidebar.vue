@@ -128,7 +128,10 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { shouldDeferClaudeSessionMessageTitle } from '../utils/pendingSessionBinding.mjs'
+
+const { t } = useI18n()
 
 const PAGE_SIZE = 100
 

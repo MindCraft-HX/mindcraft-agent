@@ -159,9 +159,12 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+
+const { t } = useI18n()
 
 const confirmDialogRef = ref(null)
 

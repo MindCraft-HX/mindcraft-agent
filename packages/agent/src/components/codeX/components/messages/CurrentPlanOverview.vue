@@ -44,10 +44,10 @@
       </div>
 
       <div class="plan-overview-chips">
-        <span class="plan-overview-chip">总计 {{ overview.summary.total }}</span>
-        <span class="plan-overview-chip is-active">进行中 {{ overview.summary.inProgress }}</span>
-        <span class="plan-overview-chip is-done">已完成 {{ overview.summary.completed }}</span>
-        <span class="plan-overview-chip">待处理 {{ overview.summary.pending }}</span>
+        <span class="plan-overview-chip">{{ $t('agent.totalN', { n: overview.summary.total }) }}</span>
+        <span class="plan-overview-chip is-active">{{ $t('agent.inProgressN', { n: overview.summary.inProgress }) }}</span>
+        <span class="plan-overview-chip is-done">{{ $t('agent.completedN', { n: overview.summary.completed }) }}</span>
+        <span class="plan-overview-chip">{{ $t('agent.pendingN', { n: overview.summary.pending }) }}</span>
       </div>
 
       <div class="plan-overview-focus-grid">
@@ -72,7 +72,10 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { resolvePlanOverviewCollapsedState } from './tools/currentPlanOverviewState.mjs'
+
+const { t } = useI18n()
 
 const props = defineProps({
   overview: { type: Object, required: true },
@@ -102,7 +105,7 @@ const progressPercent = computed(() => {
 const progressText = computed(() => {
   const total = props.overview?.summary?.total || 0
   if (!total) return t('agent.syncExplanation')
-  return `${props.overview.summary.completed}/${total} 已完成`
+  return t('agent.nComplete', { n: props.overview.summary.completed, total })
 })
 
 const lastCompletedStep = computed(() => {

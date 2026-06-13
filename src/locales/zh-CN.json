@@ -359,6 +359,7 @@
     "syncDesc": "仅同步说明",
     "notStarted": "未开始",
     "nComplete": "{n}/{total} 已完成",
+    "syncExplanation": "正在同步计划…",
     "currentStep": "当前步骤",
     "webSearchTool": "网页搜索",
     "searchQuery": "搜索：",
