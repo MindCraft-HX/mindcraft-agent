@@ -276,13 +276,13 @@ async function installClaudeCode() {
   try {
     const result = await window.electronAPI?.claudeInstallClaudeCode?.()
     if (result?.success) {
-      ElMessage.success('Claude Code 安装成功')
+      ElMessage.success(t('system.installSuccess'))
       await checkEnvironment()
     } else {
-      ElMessage.error(result?.message || '安装失败,请手动运行:npm install -g @anthropic-ai/claude-code')
+      ElMessage.error(result?.message || t('settings.installFailedManual'))
     }
   } catch (e) {
-    ElMessage.error('安装失败:' + (e?.message || e))
+    ElMessage.error(t('settings.installFailed') + (e?.message || e))
   } finally {
     envInstalling.value = false
   }
@@ -297,41 +297,41 @@ async function checkForUpdate() {
   try {
     const env = await window.electronAPI?.claudeCheckEnvironment?.()
     if (!env?.claude?.installed || !env?.claude?.version) {
-      ElMessage.warning('请先安装 Claude Code')
+      ElMessage.warning(t('system.installClaudeFirst'))
       return
     }
     const res = await window.electronAPI?.claudeCheckLatestVersion?.()
     if (!res?.ok || !res.version) {
-      ElMessage.error('查询最新版本失败: ' + (res?.error || ''))
+      ElMessage.error(t('system.versionCheckFail') + ': ' + (res?.error || ''))
       return
     }
     const localVer = env.claude.version.replace(/^v/, '').split(/\s/)[0].trim()
     const latestVer = res.version
     if (localVer === latestVer) {
-      ElMessage.success(`已是最新版本 (v${latestVer})`)
+      ElMessage.success(t('system.alreadyLatest', { version: latestVer }))
       envUpdateAvailable.value = false
     } else {
       envUpdateAvailable.value = true
       envLatestVersion.value = latestVer
       const ok = await confirmDialogRef.value?.open({
-        message: `发现 Claude Code 新版本 v${latestVer}，当前版本 v${localVer}\n\n是否立即更新？`,
-        okText: '立即更新',
-        cancelText: '稍后',
+        message: t('settings.newVersionMsg', { latest: latestVer, local: localVer }),
+        okText: t('settings.updateNow'),
+        cancelText: t('settings.later'),
       })
       if (ok) {
         const result = await window.electronAPI?.claudeInstallClaudeCode?.()
         if (result?.success) {
-          ElMessage.success('Claude Code 更新成功，正在重新检测…')
+          ElMessage.success(t('settings.updateSuccessRedetect'))
           await checkEnvironment()
           envUpdateAvailable.value = false
           envLatestVersion.value = ''
         } else {
-          ElMessage.error('更新失败: ' + (result?.message || t('agent.unknownError')))
+          ElMessage.error(t('settings.updateFailed') + (result?.message || t('agent.unknownError')))
         }
       }
     }
   } catch (e) {
-    ElMessage.error('检查更新失败: ' + (e?.message || e))
+    ElMessage.error(t('settings.checkUpdateFailed') + (e?.message || e))
   } finally {
     envCheckingUpdate.value = false
   }
@@ -342,9 +342,9 @@ async function writeSettingsJson(configObj) {
   try {
     const plain = JSON.parse(JSON.stringify(configObj))
     const result = await window.electronAPI?.claudeWriteSettingsJson?.(plain)
-    if (!result?.ok) ElMessage.warning('写入 settings.json 失败:' + (result?.message || ''))
+    if (!result?.ok) ElMessage.warning(t('system.writeSettingsFail') + ':' + (result?.message || ''))
   } catch (e) {
-    ElMessage.error('写入 settings.json 失败:' + (e?.message || ''))
+    ElMessage.error(t('system.writeSettingsFail') + ':' + (e?.message || ''))
   }
 }
 
@@ -460,7 +460,7 @@ async function openSettings() {
 
           if (sKey || sUrl) {
             settingsForm.value.providers = [{
-              name: '默认',
+              name: t('settings.defaultProvider'),
               key: sKey,
               url: sUrl,
               config: sj,
@@ -540,7 +540,7 @@ async function applyAndActivate(activeIdx, opts = {}) {
     return true
   } catch (e) {
     console.warn('[APISetting] applyAndActivate failed:', e?.message || e)
-    ElMessage.error('保存失败:' + (e?.message || t('agent.unknownError')))
+    ElMessage.error(t('settings.saveFailed') + (e?.message || t('agent.unknownError')))
     return false
   }
 }
@@ -583,7 +583,7 @@ async function handleProviderFormSave(payload) {
   showProviderForm.value = false
   currentProvider.value = null
   formInitialConfigJson.value = null
-  ElMessage.success('已保存')
+  ElMessage.success(t('settings.saved'))
 }
 
 function handleProviderFormClose() {
@@ -610,7 +610,7 @@ async function toggleSkipWebFetchPreflight() {
   settingsSkipWebFetchPreflight.value = !settingsSkipWebFetchPreflight.value
   try {
     await window.electronAPI?.claudeSetSkipWebFetchPreflight?.(settingsSkipWebFetchPreflight.value)
-    ElMessage.success(settingsSkipWebFetchPreflight.value ? '已开启：WebFetch 跳过域名验证' : '已关闭：WebFetch 将执行域名安全验证')
+    ElMessage.success(settingsSkipWebFetchPreflight.value ? t('system.skipWebFetch') : t('settings.webFetchDisabled'))
   } catch (e) {
     ElMessage.error(t('common.saveFailed'))
     settingsSkipWebFetchPreflight.value = !settingsSkipWebFetchPreflight.value
@@ -626,7 +626,7 @@ async function saveCompactWindow() {
   const num = parseInt(raw, 10)
   const max = compactWindowMax.value
   if (!Number.isFinite(num) || num <= 0) {
-    ElMessage.warning(`请输入有效的 token 阈值（${compactWindowMin} ~ ${max}）`)
+    ElMessage.warning(t('settings.invalidThresholdRange', { min: compactWindowMin, max }))
     return
   }
   const clamped = Math.min(max, Math.max(compactWindowMin, num))
@@ -635,12 +635,12 @@ async function saveCompactWindow() {
   try {
     const res = await window.electronAPI?.claudeSetAutoCompactWindow?.(clamped)
     if (res?.ok) {
-      ElMessage.success(`自动压缩阈值已设为 ${clamped} tokens`)
+      ElMessage.success(t('settings.compactThresholdSet', { n: clamped }))
     } else {
-      ElMessage.error('保存失败：' + (res?.message || t('agent.unknownError')))
+      ElMessage.error(t('settings.saveFailed') + (res?.message || t('agent.unknownError')))
     }
   } catch (e) {
-    ElMessage.error('保存失败：' + (e?.message || e))
+    ElMessage.error(t('settings.saveFailed') + (e?.message || e))
   }
 }
 
@@ -650,12 +650,12 @@ async function resetCompactWindow() {
   try {
     const res = await window.electronAPI?.claudeSetAutoCompactWindow?.(null)
     if (res?.ok) {
-      ElMessage.success('已恢复为 SDK 默认压缩阈值')
+      ElMessage.success(t('system.restoredSdk'))
     } else {
-      ElMessage.error('重置失败：' + (res?.message || t('agent.unknownError')))
+      ElMessage.error(t('settings.resetFailed') + (res?.message || t('agent.unknownError')))
     }
   } catch (e) {
-    ElMessage.error('重置失败：' + (e?.message || e))
+    ElMessage.error(t('settings.resetFailed') + (e?.message || e))
   }
 }
 
@@ -680,13 +680,13 @@ async function validateProviderByIdx(i) {
     const res = await window.electronAPI.claudeValidateKey(p.key, p.url, model)
     const elapsed = Date.now() - start
     if (res.valid) {
-      ElMessage.success(`${p.name || '未命名'} 运行正常 (${elapsed}ms)`)
+      ElMessage.success(t('settings.validOk', { name: p.name || t('settings.unnamed'), elapsed }))
     } else {
-      ElMessage.error(res.error || 'API Key 无效')
+      ElMessage.error(res.error || t('settings.apiKeyInvalidShort'))
     }
   } catch (e) {
     const elapsed = Date.now() - start
-    ElMessage.error(`${p.name || '未命名'} 验证失败 (${elapsed}ms): ${e.message}`)
+    ElMessage.error(t('settings.validFailed', { name: p.name || t('settings.unnamed'), elapsed, error: e.message }))
   } finally {
     validatingIdx.value = -1
   }
@@ -758,7 +758,7 @@ function addProvider() {
 async function copyProvider(i) {
   const src = settingsForm.value.providers[i]
   const copy = JSON.parse(JSON.stringify(src))
-  copy.name = (copy.name || '未命名') + ' (副本)'
+  copy.name = (copy.name || t('settings.unnamed')) + t('settings.copySuffix')
   if (src?.config && typeof src.config === 'object') {
     copy.config = JSON.parse(JSON.stringify(src.config))
   }
@@ -769,41 +769,36 @@ async function copyProvider(i) {
 async function importFromLegacy() {
   try {
     const result = await window.electronAPI?.claudeImportLegacyConfig?.()
-    if (!result) { ElMessage.error('导入失败：无法连接到主进程'); return }
+    if (!result) { ElMessage.error(t('settings.importFailedNoConn')); return }
     if (result.notFound) {
-      ElMessage.warning('未找到 MindCraft 的用户数据目录，请确认 mindcraft-electron 已安装并至少运行过一次')
+      ElMessage.warning(t('settings.importNoDataDir'))
       return
     }
-    if (!result.success) { ElMessage.error('导入失败：' + (result.error || t('agent.unknownError'))); return }
+    if (!result.success) { ElMessage.error(t('settings.importFailedGeneric') + (result.error || t('agent.unknownError'))); return }
     const { imported } = result
     const parts = []
-    if (imported.providers > 0) parts.push(`${imported.providers} 个 Provider`)
+    if (imported.providers > 0) parts.push(t('settings.importedProviders', { n: imported.providers }))
     if (imported.tierModels) parts.push('Tier Models')
     await openSettings()
     if (parts.length) {
-      ElMessage.success(`已导入：${parts.join('、')}`)
+      ElMessage.success(t('settings.importedResult', { items: parts.join('、') }))
     } else {
-      ElMessage.warning('未找到可导入的配置')
+      ElMessage.warning(t('settings.importNoConfig'))
     }
   } catch (e) {
-    ElMessage.error('导入失败：' + (e?.message || e))
+    ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))
   }
 }
 
 async function importFromFile(i) {
-  const name = settingsForm.value.providers[i]?.name || '未命名'
+  const name = settingsForm.value.providers[i]?.name || t('settings.unnamed')
   const ok = await confirmDialogRef.value?.open({
-    message: `用配置文件覆盖「${name}」？
-
-将读取 ~/.claude/settings.json 中的当前运行配置，
-覆盖此条记录的名称、Key、URL、模型等字段。
-
-此操作不可撤销，是否继续？`,
+    message: t('settings.importOverwriteMsg', { name }),
   })
   if (!ok) return
   try {
     const sj = await window.electronAPI?.claudeReadSettingsJson?.()
-    if (!sj) { ElMessage.warning('未找到 settings.json 或文件为空'); return }
+    if (!sj) { ElMessage.warning(t('settings.importNoSettingsJson')); return }
     let sKey = sj.env?.ANTHROPIC_AUTH_TOKEN || ''
     let sUrl = sj.env?.ANTHROPIC_BASE_URL || ''
     if (!sKey && sj.primaryApiKey) sKey = sj.primaryApiKey
@@ -818,16 +813,16 @@ async function importFromFile(i) {
     if (sModel && !sSonnet && sModel.includes('sonnet')) sSonnet = sModel
     if (sModel && !sOpus && sModel.includes('opus')) sOpus = sModel
     if (sModel && !sHaiku && sModel.includes('haiku')) sHaiku = sModel
-    if (!sKey && !sUrl) { ElMessage.warning('配置文件中未找到 API Key 或 Base URL'); return }
+    if (!sKey && !sUrl) { ElMessage.warning(t('settings.importNoApiKey')); return }
     const p = settingsForm.value.providers[i]
     p.key = sKey
     p.url = sUrl
     p.config = sj
     p.tierModels = { haiku: sHaiku, sonnet: sSonnet, opus: sOpus, reasoning: sReasoning }
     await persistProviders()
-    ElMessage.success(`已用配置文件覆盖「${p.name || '未命名'}」`)
+    ElMessage.success(t('settings.importOverwritten', { name: p.name || t('settings.unnamed') }))
   } catch (e) {
-    ElMessage.error('导入失败：' + (e?.message || e))
+    ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))
   }
 }
 
