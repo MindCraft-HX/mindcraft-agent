@@ -4,7 +4,7 @@
       <div v-if="visible && currentQuestion" class="ask-dialog-overlay" :class="themeClass" @click.self="() => {}">
         <div class="ask-dialog">
           <div class="ask-dialog-header">
-            <span class="ask-dialog-title">Claude 需要你的回答</span>
+            <span class="ask-dialog-title">{{ $t('agent.askTitle') }}</span>
             <span class="ask-dialog-step">{{ currentIndex + 1 }} / {{ questions.length }}</span>
             <span class="ask-dialog-close" @click="handleClose">✕</span>
           </div>
@@ -25,11 +25,11 @@
             <div class="ask-q-custom">
               <input
                 class="ask-q-input"
-                placeholder="输入自定义回答…"
+                :placeholder="$t('agent.askPlaceholder')"
                 v-model="customText"
                 @keydown.enter.stop="submitCustom"
               />
-              <button class="ask-q-send" @click="submitCustom">发送</button>
+              <button class="ask-q-send" @click="submitCustom">{{ $t('agent.send') }}</button>
             </div>
           </div>
         </div>
