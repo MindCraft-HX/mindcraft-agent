@@ -4,20 +4,9 @@
       <!-- 左侧边栏 -->
       <el-aside class="sidebar" :class="{ collapsed: sidebarCollapsed }" :width="sidebarCollapsed ? '48px' : '64px'">
         <div class="sidebar-inner">
-          <!-- Home -->
-          <div
-            class="sidebar-item"
-            :class="{ active: activeIndex === '/main/codeHub' }"
-            @click="$router.push('/main/codeHub')"
-            title="首页"
-          >
-            <div class="sidebar-icon-wrapper">
-              <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 8.5L10 2l7 6.5v8a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 16.5v-8z"/>
-                <polyline points="7 18 7 11 13 11 13 18"/>
-              </svg>
-            </div>
-            <span v-show="!sidebarCollapsed" class="sidebar-label">首页</span>
+          <!-- Logo -->
+          <div class="sidebar-logo" @click="$router.push('/main/codeHub')" title="MindCraft-Agent">
+            <div class="logo-icon"></div>
           </div>
 
           <!-- 导航菜单 -->
@@ -196,6 +185,15 @@ window.electronAPI?.openTabByName?.((progress) => {
   transition: width 0.2s ease;
 
   &.collapsed {
+    .sidebar-logo {
+      width: 32px;
+      height: 32px;
+      margin: 8px 8px 16px;
+      .logo-icon {
+        width: 30px;
+        height: 30px;
+      }
+    }
     .sidebar-item {
       height: 40px;
     }
@@ -207,6 +205,33 @@ window.electronAPI?.openTabByName?.((progress) => {
   flex-direction: column;
   height: 100%;
   align-items: center;
+}
+
+/* Logo */
+.sidebar-logo {
+  width: 48px;
+  height: 48px;
+  margin: 12px 8px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--cc-bg-hover, rgba(255, 255, 255, 0.06));
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    background-image: url(./assets/mindcraft_logo_svg.svg);
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
 }
 
 /* 导航区 */
