@@ -242,7 +242,16 @@
     "importNoConfigCodex": "未找到可导入的配置（共享文件已天然互通）",
     "codexImportOverwriteMsg": "用配置文件覆盖「{name}」？\n\n将读取 ~/.codex/config.toml 中的当前运行配置，\n覆盖此条记录的名称、Key、URL、模型等字段。\n\n此操作不可撤销，是否继续？",
     "importNoConfigToml": "未找到 config.toml 或文件为空",
-    "importNoAuthToken": "配置文件中未找到 auth_token 或 base_url"
+    "importNoAuthToken": "配置文件中未找到 auth_token 或 base_url",
+    "systemSettings": "系统设置",
+    "appVersion": "应用版本",
+    "company": "深圳瀚象信息科技有限公司",
+    "checkAppUpdate": "检查应用更新",
+    "appUpToDate": "已是最新版本",
+    "appUpdateAvailable": "发现新版本 v{version}",
+    "appUpdateDownloading": "正在下载 {progress}%",
+    "appUpdateDownloaded": "已下载，重启后生效",
+    "appUpdateFailed": "更新检查失败"
   },
   "chat": {
     "newChat": "新对话",

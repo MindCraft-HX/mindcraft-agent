@@ -178,11 +178,22 @@
         </div>
       </div>
     </div>
+
+    <div class="home-footer">
+      <div class="footer-left"></div>
+      <div class="footer-right">
+        <span class="footer-version">v{{ appVersion }}</span>
+        <button class="footer-update-btn" :disabled="updateChecking" @click="checkForUpdate">
+          {{ updateChecking ? $t('settings.checking') : $t('settings.checkAppUpdate') }}
+        </button>
+        <span v-if="updateAvailable" class="footer-update-dot" :title="$t('settings.newVersion')"></span>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClaudeThemeStore } from '@mindcraft/agent'
 import TokenChart from '@/components/Home/TokenChart.vue'
@@ -205,6 +216,41 @@ onMounted(async () => {
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
   } catch (_) {}
 })
+
+// 版本号 + 更新检测
+const appVersion = ref('')
+const updateChecking = ref(false)
+const updateAvailable = ref(false)
+let _cleanupUpdateStatus = null
+
+onMounted(async () => {
+  try {
+    const v = await window.electronAPI?.getAppVersion()
+    if (v) appVersion.value = v
+  } catch (_) {}
+
+  try {
+    const status = await window.electronAPI?.getAppUpdateStatus()
+    if (status?.state === 'available') updateAvailable.value = true
+    if (status?.state === 'checking') updateChecking.value = true
+  } catch (_) {}
+
+  _cleanupUpdateStatus = window.electronAPI?.onAppUpdateStatus?.((data) => {
+    if (!data) return
+    updateChecking.value = data.state === 'checking'
+    updateAvailable.value = data.state === 'available'
+  })
+})
+
+onUnmounted(() => {
+  if (typeof _cleanupUpdateStatus === 'function') _cleanupUpdateStatus()
+})
+
+function checkForUpdate() {
+  if (!window.electronAPI?.checkForUpdates) return
+  updateChecking.value = true
+  window.electronAPI.checkForUpdates()
+}
 
 function openChat(chat) {
   localStorage.setItem('mindcraft_agent_chat_target_session', chat.id)
@@ -231,6 +277,8 @@ function dirPath(filePath) {
   overflow-y: auto;
   padding: 28px 32px;
   background: var(--cc-bg-secondary, #1e1e1e);
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===== Hero ===== */
@@ -611,5 +659,58 @@ function dirPath(filePath) {
   height: 200px;
   color: var(--cc-text-dim, #888);
   font-size: 13px;
+}
+
+.home-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-top: 1px solid var(--cc-border, rgba(255,255,255,0.06));
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.home-footer .footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-footer .footer-version {
+  font-size: 11px;
+  color: var(--cc-text-muted, #777);
+  font-family: monospace;
+}
+
+.home-footer .footer-update-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--cc-border, rgba(255,255,255,0.08));
+  background: transparent;
+  color: var(--cc-text-dim, #888);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.home-footer .footer-update-btn:hover:not(:disabled) {
+  color: var(--cc-primary, #4a9eff);
+  border-color: var(--cc-primary, #4a9eff);
+}
+.home-footer .footer-update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.home-footer .footer-update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cc-warning, #f0a020);
+  animation: footer-pulse 1.5s ease-in-out infinite;
+}
+@keyframes footer-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }
 </style>

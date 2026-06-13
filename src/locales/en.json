@@ -242,7 +242,16 @@
     "importNoConfigCodex": "No config found to import (shared files are already interoperable)",
     "codexImportOverwriteMsg": "Overwrite \"{name}\" with config file?\n\nWill read current runtime config from ~/.codex/config.toml,\noverwriting this record's name, Key, URL, model, etc.\n\nThis action cannot be undone. Continue?",
     "importNoConfigToml": "config.toml not found or is empty",
-    "importNoAuthToken": "No auth_token or base_url found in config file"
+    "importNoAuthToken": "No auth_token or base_url found in config file",
+    "systemSettings": "System Settings",
+    "appVersion": "App Version",
+    "company": "Shenzhen Hanxiang Information Technology Co., Ltd.",
+    "checkAppUpdate": "Check for App Updates",
+    "appUpToDate": "Already up to date",
+    "appUpdateAvailable": "New version v{version} available",
+    "appUpdateDownloading": "Downloading {progress}%",
+    "appUpdateDownloaded": "Downloaded, will install on restart",
+    "appUpdateFailed": "Update check failed"
   },
   "chat": {
     "newChat": "New Chat",

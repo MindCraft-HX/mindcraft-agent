@@ -30,21 +30,35 @@
 
 <script setup>
 import { ref, computed, reactive, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
+import SystemSettings from '../agentCommon/components/SystemSettings.vue'
 
 const { agents } = useAgentRegistry()
+const { t } = useI18n()
 
 const visible = ref(false)
 const active = ref(agents.value[0]?.key || '')
 const settingsRefs = reactive({})
 
-const tabs = computed(() => agents.value.map(a => ({
-  key: a.key,
-  label: a.name,
-  iconClass: a.iconClass,
-  iconStyle: { ...a.iconStyle, fontSize: a.key === 'codex' ? '18px' : '16px' },
-  settingsComponent: a.settingsComponent,
-})))
+const tabs = computed(() => {
+  const agentTabs = agents.value.map(a => ({
+    key: a.key,
+    label: a.name,
+    iconClass: a.iconClass,
+    iconStyle: { ...a.iconStyle, fontSize: a.key === 'codex' ? '18px' : '16px' },
+    settingsComponent: a.settingsComponent,
+  }))
+  // 追加系统设置 Tab
+  agentTabs.push({
+    key: 'system',
+    label: t('settings.systemSettings'),
+    iconClass: 'ss-icon-system',
+    iconStyle: { color: '#7e8ba3', fontSize: '16px' },
+    settingsComponent: SystemSettings,
+  })
+  return agentTabs
+})
 
 function open() {
   visible.value = true
@@ -107,6 +121,7 @@ defineExpose({ open, close })
   justify-content: center; border-radius: 6px;
 }
 .shared-settings-close:hover { background: var(--cc-menu-hover); color: var(--cc-text); }
+.ss-icon-system::before { content: '⚙'; }
 .shared-settings-body {
   flex: 1; overflow-y: auto; min-height: 0;
   background: var(--cc-bg-secondary);
