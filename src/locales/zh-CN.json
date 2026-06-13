@@ -326,6 +326,7 @@
     "feedback": "💬 反馈",
     "accept": "✅ 接受",
     "reject": "❌ 拒绝",
+    "send": "发送",
     "installedN": "已安装 ({n})",
     "marketplaceN": "市场 ({n})",
     "todoTitle": "计划清单",

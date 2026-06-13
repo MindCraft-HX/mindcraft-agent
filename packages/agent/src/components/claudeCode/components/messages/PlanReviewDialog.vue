@@ -4,22 +4,22 @@
       <div v-if="visible" class="plan-review-overlay" :class="themeClass">
         <div class="plan-review-dialog">
           <div class="plan-review-header">
-            <span class="plan-review-title">计划审查</span>
+            <span class="plan-review-title">{{ $t('agent.planReview') }}</span>
             <span class="plan-review-close" @click="$emit('reject')">✕</span>
           </div>
           <div class="plan-review-body">
             <div v-if="planText" class="plan-review-content" v-html="planText"></div>
-            <div v-else class="plan-review-empty">（计划内容为空）</div>
+            <div v-else class="plan-review-empty">{{ $t('agent.planEmpty') }}</div>
           </div>
           <div class="plan-review-footer">
             <div v-if="showFeedback" class="plan-review-feedback-row">
-              <textarea v-model="fbText" class="plan-review-fb-input" placeholder="输入反馈意见…" rows="2" @keydown.enter.exact.stop="submitFeedback"></textarea>
-              <button class="plan-review-fb-send" @click="submitFeedback">发送</button>
+              <textarea v-model="fbText" class="plan-review-fb-input" :placeholder="$t('agent.planFeedback')" rows="2" @keydown.enter.exact.stop="submitFeedback"></textarea>
+              <button class="plan-review-fb-send" @click="submitFeedback">{{ $t('agent.send') }}</button>
             </div>
             <div class="plan-review-actions">
-              <button class="plan-btn fb-btn" @click="showFeedback = !showFeedback">{{ showFeedback ? '收起' : '💬 反馈' }}</button>
-              <button class="plan-btn reject-btn" @click="$emit('reject')">❌ 拒绝</button>
-              <button class="plan-btn accept-btn" @click="$emit('accept')">✅ 接受</button>
+              <button class="plan-btn fb-btn" @click="showFeedback = !showFeedback">{{ showFeedback ? $t('agent.collapse') : $t('agent.feedback') }}</button>
+              <button class="plan-btn reject-btn" @click="$emit('reject')">{{ $t('agent.reject') }}</button>
+              <button class="plan-btn accept-btn" @click="$emit('accept')">{{ $t('agent.accept') }}</button>
             </div>
           </div>
         </div>

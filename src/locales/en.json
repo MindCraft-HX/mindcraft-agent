@@ -325,6 +325,8 @@
     "planFeedback": "Enter feedback…",
     "feedback": "💬 Feedback",
     "accept": "✅ Accept",
+    "reject": "❌ Reject",
+    "send": "Send",
     "selected": "Selected: ",
     "waitingAnswer": "Waiting for answer…",
     "answer": "Answer",
