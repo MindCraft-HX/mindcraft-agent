@@ -159,9 +159,9 @@ function openSettings() {
 }
 
 // 窗口控制（无边框模式）
-const minimize = () => { console.log('[win] minimize'); window.electronAPI?.minimize() }
-const maximize = () => { console.log('[win] maximize'); window.electronAPI?.maximize() }
-const closeWin = () => { console.log('[win] close'); window.electronAPI?.close() }
+const minimize = () => window.electronAPI?.minimize()
+const maximize = () => window.electronAPI?.maximize()
+const closeWin = () => window.electronAPI?.close()
 
 const route = useRoute();
 const router = useRouter();
@@ -193,6 +193,7 @@ window.electronAPI?.openTabByName?.((progress) => {
 <style lang="scss" scoped>
 .main-layout {
   height: 100%;
+  -webkit-app-region: no-drag;
 }
 
 /* === 内容区顶部拖拽区（::before 伪元素，无独立背景，渐变由 content-layout 统一控制） === */
@@ -200,6 +201,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   content: '';
   display: block;
   height: 18px;
+  margin-right: 90px;
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -211,6 +213,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   right: 0;
   z-index: 9999;
   display: flex;
+  -webkit-app-region: no-drag;
 }
 .wc-btn {
   width: 30px;
@@ -476,7 +479,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.08), transparent 100px), var(--cc-bg-secondary, #f0f2f5);
+  background: var(--cc-bg-secondary, #f0f2f5);
   display: flex;
   flex-direction: column;
 
