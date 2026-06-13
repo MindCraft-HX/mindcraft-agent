@@ -174,8 +174,8 @@ function readRuntimeConfig() {
 function readPermissionPolicy() {
   try {
     const conf = new Conf({ name: 'mindcraft-codex' })
-    return conf.get('permissionPolicy') || 'ask'
-  } catch (_) { return 'ask' }
+    return conf.get('permissionPolicy') || 'allow_all'
+  } catch (_) { return 'allow_all' }
 }
 
 /** 读取沙箱模式 — 与权限策略联动：read_only=read-only, ask=workspace-write, allow_all=danger-full-access */

@@ -7,7 +7,7 @@ import { ref } from 'vue'
  */
 export const useCodexConfigStore = defineStore('codexConfig', () => {
   /** 权限策略：read_only | ask | allow_all */
-  const permissionPolicy = ref('ask')
+  const permissionPolicy = ref('allow_all')
 
   /** 权限策略可选值 */
   const policies = [
