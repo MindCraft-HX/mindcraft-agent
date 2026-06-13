@@ -90,7 +90,7 @@
                   {{ $t('agent.loadHistory') }}
                 </button>
                 <button class="cc-secondary-btn" type="button" @click="newChat">
-                  新建对话
+                  {{ $t('agent.newChat') }}
                 </button>
               </div>
             </div>
@@ -111,7 +111,7 @@
                 <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M1 3.5A1.5 1.5 0 012.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0115 5.5v7a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z"/>
                 </svg>
-                选择文件夹
+                {{ $t('agent.selectFolder') }}
               </button>
             </div>
           </div>
@@ -155,7 +155,7 @@
               rows="1"
             ></textarea>
             <div class="input-actions">
-              <button v-if="activeTab?.thinking" type="button" class="abort-btn" @click="abortSession" title="中断">
+              <button v-if="activeTab?.thinking" type="button" class="abort-btn" @click="abortSession" :title="$t('agent.abortShort')">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5h6A1.5 1.5 0 0112.5 5v6a1.5 1.5 0 01-1.5 1.5H5A1.5 1.5 0 013.5 11V5A1.5 1.5 0 015 3.5z"/></svg>
               </button>
               <button class="send-btn" :disabled="!canSend" @click="sendMessage">
@@ -190,6 +190,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, onActivated, nextTick, watch, inject } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Conf } from 'electron-conf/renderer'
 import { ElMessage } from 'element-plus'
@@ -258,6 +259,7 @@ const themeStore = useClaudeThemeStore()
 const codexConfigStore = useCodexConfigStore()
 const themeClass = computed(() => `cc-theme-${themeStore.theme}`)
 const router = useRouter()
+const { t } = useI18n()
 const codexSafeModeEnabled = ref(false)
 
 async function loadGlobalCodexSafeMode() {
@@ -299,7 +301,7 @@ function buildUserContentBlocks(text, imgs = [], files = []) {
     blocks.push({
       type: 'file',
       source: {
-        filename: f?.name || '文件',
+        filename: f?.name || t('common.file'),
         size: f?.size || 0,
       },
     })
@@ -482,19 +484,19 @@ function toggleMentionFlatMode() {
 }
 let newChatLock = false
 const slashCommands = ref([
-  { cmd: '/clear', desc: '清空当前对话' },
-  { cmd: '/new', desc: '新建对话' },
-  { cmd: '/model', desc: '切换模型和推理强度' },
-  { cmd: '/plan', desc: '切换到计划模式（先规划后执行）' },
-  { cmd: '/init', desc: '创建 AGENTS.md 项目指引文件' },
-  { cmd: '/review', desc: '审查当前代码修改并发现问题' },
-  { cmd: '/diff', desc: '显示 git diff（含未跟踪文件）' },
-  { cmd: '/status', desc: '查看会话配置和 token 用量' },
-  { cmd: '/goal', desc: '设定或查看长期任务目标' },
-  { cmd: '/rename', desc: '重命名当前会话' },
-  { cmd: '/memories', desc: '配置记忆使用和生成' },
-  { cmd: '/permissions', desc: '配置 Codex 权限' },
-  { cmd: '/skills', desc: '浏览与管理 Skills（安装/卸载）' },
+  { cmd: '/clear', desc: t('slashCmd.clear') },
+  { cmd: '/new', desc: t('slashCmd.new') },
+  { cmd: '/model', desc: t('slashCmd.model') },
+  { cmd: '/plan', desc: t('slashCmd.plan') },
+  { cmd: '/init', desc: t('slashCmd.agents') },
+  { cmd: '/review', desc: t('slashCmd.review') },
+  { cmd: '/diff', desc: t('slashCmd.diff') },
+  { cmd: '/status', desc: t('slashCmd.status') },
+  { cmd: '/goal', desc: t('slashCmd.goal') },
+  { cmd: '/rename', desc: t('slashCmd.rename') },
+  { cmd: '/memories', desc: t('slashCmd.memory') },
+  { cmd: '/permissions', desc: t('slashCmd.permissions') },
+  { cmd: '/skills', desc: t('slashCmd.skills') },
 ])
 const slashSuggestions = ref([])
 const slashIdx = ref(0)
@@ -720,8 +722,8 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
         id: nextMsgId(),
         role: 'system',
         text: planModeActive.value
-          ? '已切换到 Plan 模式。在 Plan 模式下，Codex 将先输出计划再执行。再次输入 /plan 可退出。'
-          : '已退出 Plan 模式。',
+          ? t('agent.planModeActivated')
+          : t('agent.planModeDeactivated'),
       })
       saveHistory()
       scrollBottom(tab.id)
@@ -730,20 +732,20 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
     // /diff — 跑 git diff 并展示结果（与 CodeX CLI 源码 get_git_diff.rs 一致）
     if (firstToken === '/diff') {
       ;(async () => {
-        pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: '正在获取 git diff…' })
+        pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.fetchingGitDiff') })
         scrollBottom(tab.id)
         try {
           const cwd = activeProject.value?.cwd || undefined
           const result = await window.electronAPI.codexRunGitDiff?.(cwd)
           if (!result?.isGitRepo) {
-            pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: '`/diff` — 当前目录不在 git 仓库内' })
+            pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: '`/diff` — ' + t('slashCmd.noGit') })
           } else if (!result?.diff) {
-            pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: '`/diff` — 无变更' })
+            pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: '`/diff` — ' + t('slashCmd.noChanges') })
           } else {
             pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: result.diff, _isDiffBlock: true })
           }
         } catch (e) {
-          pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: `获取 diff 失败：${e?.message || e}` })
+          pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('slashCmd.diffFailed') + ': ' + (e?.message || e) })
         }
         saveHistory()
         scrollBottom(tab.id)
@@ -790,20 +792,20 @@ async function refreshSlashCommands() {
     // 排除 TUI 专属命令（/vim /theme /quit /raw /copy /ps /stop 等）
     // 处理方式：SLASH_ROUTES 标记 'local' 的由应用拦截，其余透传给模型
     const local = [
-      { cmd: '/clear', desc: '清空当前对话' },
-      { cmd: '/new', desc: '新建对话' },
-      { cmd: '/model', desc: '切换模型和推理强度' },
-      { cmd: '/plan', desc: '切换到计划模式（先规划后执行）' },
-      { cmd: '/init', desc: '创建 AGENTS.md 项目指引文件' },
-      { cmd: '/review', desc: '审查当前代码修改并发现问题' },
-      { cmd: '/diff', desc: '显示 git diff（含未跟踪文件）' },
-      { cmd: '/status', desc: '查看会话配置和 token 用量' },
-      { cmd: '/goal', desc: '设定或查看长期任务目标' },
-      { cmd: '/rename', desc: '重命名当前会话' },
-      { cmd: '/memories', desc: '配置记忆使用和生成' },
-      { cmd: '/permissions', desc: '配置 Codex 权限' },
-      { cmd: '/plugins', desc: '管理插件（安装/卸载/市场源）' },
-      { cmd: '/skills', desc: '浏览与管理 Skills（安装/卸载）' },
+      { cmd: '/clear', desc: t('slashCmd.clear') },
+      { cmd: '/new', desc: t('slashCmd.new') },
+      { cmd: '/model', desc: t('slashCmd.model') },
+      { cmd: '/plan', desc: t('slashCmd.plan') },
+      { cmd: '/init', desc: t('slashCmd.agents') },
+      { cmd: '/review', desc: t('slashCmd.review') },
+      { cmd: '/diff', desc: t('slashCmd.diff') },
+      { cmd: '/status', desc: t('slashCmd.status') },
+      { cmd: '/goal', desc: t('slashCmd.goal') },
+      { cmd: '/rename', desc: t('slashCmd.rename') },
+      { cmd: '/memories', desc: t('slashCmd.memory') },
+      { cmd: '/permissions', desc: t('slashCmd.permissions') },
+      { cmd: '/plugins', desc: t('slashCmd.plugins') },
+      { cmd: '/skills', desc: t('slashCmd.skills') },
     ]
     const merged = [...local]
 
@@ -817,7 +819,7 @@ async function refreshSlashCommands() {
       if (!n) continue
       const cmd = n.startsWith('/') ? n : `/${n}`
       if (merged.some(x => x.cmd === cmd)) continue
-      merged.push({ cmd, desc: c?.description || 'Codex 命令' })
+      merged.push({ cmd, desc: c?.description || t('agent.codexCommand') })
     }
 
     // 本地 skills
@@ -827,7 +829,7 @@ async function refreshSlashCommands() {
       if (!n) continue
       const cmd = n.startsWith('/') ? n : `/${n}`
       if (merged.some(x => x.cmd === cmd)) continue
-      merged.push({ cmd, desc: `Skill：${s?.description || n}` })
+      merged.push({ cmd, desc: t('agent.skillPrefix') + (s?.description || n) })
     }
 
     slashCommands.value = merged
@@ -1054,7 +1056,7 @@ const isActiveTabHistoryDeferred = computed(() =>
 const deferredHistoryHint = computed(() => {
   const guard = activeTab.value?.historyLoadGuard
   if (!guard?.shouldDefer) return ''
-  return `\u6587\u4ef6 ${(guard.fileSize / 1024).toFixed(0)} KB\uff0c\u5c3e\u90e8\u8d85\u957f\u8f93\u51fa ${guard.tailLargeOutputCount} \u6761\uff0c\u6700\u957f ${(guard.tailMaxOutputChars / 1024).toFixed(1)} KB\u3002`
+  return t('agent.deferredHistoryHint', { size: (guard.fileSize / 1024).toFixed(0), count: guard.tailLargeOutputCount, maxLen: (guard.tailMaxOutputChars / 1024).toFixed(1) })
   return `鏂囦欢 ${(guard.fileSize / 1024).toFixed(0)} KB锛屽熬閮ㄨ秴闀胯緭鍑?${guard.tailLargeOutputCount} 鏉★紝鏈€闀?${(guard.tailMaxOutputChars / 1024).toFixed(1)} KB銆?`
 })
 const dismissedPlanOverviewSourceMessageId = ref(null)
@@ -1137,7 +1139,7 @@ function toolIcon(name) {
   return resolveToolIconKey(name)
 }
 function toolLabel(name) {
-  return resolveToolLabel(name) || name || '工具'
+  return resolveToolLabel(name) || name || t('common.toolLabel')
 }
 
 function inferToolFailureFromText(toolName, text) {
@@ -1156,7 +1158,7 @@ function createToolMessage(opts) {
 function createNewChat() {
   const id = nextChatId()
   return {
-    id, name: '新对话', sessionId: `codex-session-${id}-${Date.now()}`,
+    id, name: t('agent.newChat'), sessionId: `codex-session-${id}-${Date.now()}`,
     cwd: activeProject.value?.cwd || '',
     createdAt: Date.now(),
     thinking: false, messages: [], currentAssistantId: null,
@@ -1177,7 +1179,7 @@ async function buildChatFromSessionSummary(summary) {
   if (cNum > chatCounter) chatCounter = cNum
   const chat = makeRestoredChat({
     id: `chat-${summary.id}`,
-    name: summary.name || `会话 ${String(summary.id || '').slice(0, 8)}`,
+    name: summary.name || `${t('agent.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`,
     sessionId: summary.sessionId || summary.id,
     cliSessionId: summary.cliSessionId || summary.id,
     filePath: summary.filePath,
@@ -1215,7 +1217,7 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
   for (const summary of summaries) {
     const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
     const cached = cacheByPath[normalizedPath] || cacheBySid[summary.id] || null
-    const name = summary.name || `会话 ${String(summary.id || '').slice(0, 8)}`
+    const name = summary.name || `${t('agent.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
 
     if (cached) {
       if (!cached._userRenamed) cached.name = name
@@ -1293,7 +1295,7 @@ async function refreshProjectSessionsInBackground(project) {
       if (project.id !== activeProjectId.value) return
       const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
       const cached = cacheByPath[normalizedPath] || cacheBySid[summary.id] || null
-      const name = summary.name || `会话 ${String(summary.id || '').slice(0, 8)}`
+      const name = summary.name || `${t('agent.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
 
       if (cached) {
         if (!cached._userRenamed) cached.name = name
@@ -1565,7 +1567,7 @@ function doScrollPrev(el, fallbackIndex = -1) {
 // Project management
 function newProject() {
   const id = nextProjectId()
-  projects.value.push({ id, name: '新项目', cwd: '', cwdLocked: false, chats: [] })
+  projects.value.push({ id, name: t('agent.newProject'), cwd: '', cwdLocked: false, chats: [] })
   activeProjectId.value = id
   activeChatId.value = null
   inputText.value = ''
@@ -1615,7 +1617,7 @@ async function requestDeleteProject(project) {
   const hasRunning = (project.chats || []).some(c => c.thinking)
   if (hasRunning) {
     const ok = await confirmDialogRef.value?.open({
-      message: '关闭此项目标签页？\n该项目有运行中的对话，关闭标签将中断对话。',
+      message: t('agent.closeProjectTab'),
     })
     if (!ok) return
   }
@@ -1698,7 +1700,7 @@ function newChat() {
 
 async function requestDeleteChat(chat) {
   if (!chat) return
-  const ok = await confirmDialogRef.value?.open({ message: '是否确认删除该对话？' })
+  const ok = await confirmDialogRef.value?.open({ message: t('agent.confirmDeleteChat') })
   if (ok) {
     window.electronAPI.codexAgentAbort?.(chat.sessionId)
     // 删除磁盘上的 JSONL 会话文件，防止刷新时重新出现
@@ -1721,7 +1723,7 @@ async function handleRenameChat(session, newName) {
   const chat = p.chats.find(c => c.id === session.id)
   if (!chat) return
   if (!chat.cliSessionId || !chat.filePath) {
-    ElMessage.warning('请先发送一条消息，待会话文件创建后再重命名')
+    ElMessage.warning(t('agent.renameFirst'))
     return
   }
   try {
@@ -1730,14 +1732,14 @@ async function handleRenameChat(session, newName) {
       title: newName,
     })
     if (!result?.success) {
-      ElMessage.error(result?.error || '会话重命名失败')
+      ElMessage.error(result?.error || t('agent.renameFailed'))
       return
     }
     chat.name = newName
     chat._userRenamed = true
     saveHistory({ immediate: true })
   } catch (e) {
-    ElMessage.error(e?.message || '会话重命名失败')
+    ElMessage.error(e?.message || t('agent.renameFailed'))
   }
 }
 
@@ -1815,7 +1817,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     }
     if (dispatched.action === 'inject_async') {
       // /review 等异步注入：展示 loading，获取 diff 后拼 prompt 再发送
-      pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: '正在获取代码变更…' })
+      pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.fetchingCodeChanges') })
       scrollBottom(tab.id)
       saveHistory()
       text = await dispatched.handler()
@@ -1834,7 +1836,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   const fileAttachments = composerAttachments
     .filter(img => !img?.isImage)
     .map(({ name, size, path }) => ({
-      name: name || '文件',
+      name: name || t('common.file'),
       size: size || 0,
       path: path || '',
     }))
@@ -1909,7 +1911,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     if (idx >= 0) tab.messages.splice(idx, 1)
     tab._awaitingDone = false
     tab.thinking = false
-    ElMessage.warning('CodeX 正在处理上一轮请求，请稍后重试')
+    ElMessage.warning(t('agent.codexBusy'))
     saveHistory()
     return
   }
@@ -1940,7 +1942,7 @@ async function openModelPicker() {
     slashModelName.value = result.label || result.model
     slashEffortLevel.value = result.effort || slashEffortLevel.value
     metricsData.value.model = result.model
-    pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: `已切换到 ${result.label} 模型 (${result.model})` })
+    pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) })
     scrollBottom(tab.id)
     saveHistory()
   }
@@ -2461,7 +2463,7 @@ defineExpose({
     const chats = p.chats || []
     return {
       id: p.id,
-      name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || '未选择文件夹' : '未选择文件夹',
+      name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('common.noFolder') : t('common.noFolder'),
       cwd: p.cwd || '',
       cwdLocked: Boolean(p.cwdLocked),
       runningCount: chats.filter(c => c.thinking).length,
