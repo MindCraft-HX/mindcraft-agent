@@ -269,6 +269,14 @@ function uninstallPlugin(pluginId) {
   }
 
   const target = pluginRegistry[pluginId]
+  // dev 插件：只从注册表移除，不删 dev-plugins/ 中的源文件
+  if (target.devMode) {
+    delete pluginRegistry[pluginId]
+    saveRegistry()
+    broadcastPluginChange()
+    return { success: true, devMode: true }
+  }
+
   if (target.installPath && fs.existsSync(target.installPath)) {
     fs.rmSync(target.installPath, { recursive: true })
   }

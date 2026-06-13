@@ -821,6 +821,7 @@
     "notInstalled": "Plugin \"{id}\" is not installed",
     "pluginDisabled": "Plugin \"{name}\" is disabled",
     "goMarket": "Go to Marketplace",
-    "installPath": "Install Path"
+    "installPath": "Install Path",
+    "remove": "Remove"
   }
 }

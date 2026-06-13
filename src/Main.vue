@@ -464,6 +464,9 @@ window.electronAPI?.openTabByName?.((progress) => {
     font-size: 10px;
     line-height: 1;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 56px;
   }
 }
 

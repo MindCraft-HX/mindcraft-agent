@@ -821,6 +821,7 @@
     "notInstalled": "插件 \"{id}\" 未安装",
     "pluginDisabled": "插件 \"{name}\" 已禁用",
     "goMarket": "前往插件市场",
-    "installPath": "安装路径"
+    "installPath": "安装路径",
+    "remove": "移除"
   }
 }
