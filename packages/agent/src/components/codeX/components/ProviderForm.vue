@@ -73,7 +73,10 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 import {
   buildManagedProviderToml,
   extractProviderDraftFromToml,
@@ -175,7 +178,7 @@ function formatAuthJson() {
     const parsed = JSON.parse(authJsonText.value)
     authJsonText.value = JSON.stringify(parsed, null, 2)
   } catch {
-    ElMessage.error('auth.json 格式错误')
+    ElMessage.error(t('settings.authJsonError'))
   }
 }
 
@@ -240,9 +243,9 @@ function formatToml() {
 
     tomlText.value = out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
     syncManagedTomlFromForm()
-    ElMessage.success('TOML 已整理')
+    ElMessage.success(t('settings.tomlFormatted'))
   } catch {
-    ElMessage.error('TOML 格式化失败')
+    ElMessage.error(t('settings.tomlFormatFailed'))
   }
 }
 
@@ -251,16 +254,16 @@ function onSave() {
   try {
     authJson = JSON.parse(authJsonText.value)
   } catch {
-    ElMessage.error('auth.json 格式错误，请检查 JSON 语法')
+    ElMessage.error(t('settings.authJsonSyntaxError'))
     return
   }
 
   if (!form.url) {
-    ElMessage.warning('请填写 API 请求地址')
+    ElMessage.warning(t('settings.pleaseFillApiUrl'))
     return
   }
   if (!form.key) {
-    ElMessage.warning('请填写 API Key')
+    ElMessage.warning(t('settings.pleaseFillApiKey'))
     return
   }
 
