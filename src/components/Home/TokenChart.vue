@@ -4,8 +4,11 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import { useClaudeThemeStore } from '../../../packages/agent/src/stores/claudeTheme.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
   data: { type: Array, default: () => [] },
@@ -99,7 +102,7 @@ function buildOption(data) {
     },
     series: [
       {
-        name: '缓存',
+        name: t('home.cache'),
         type: 'bar',
         stack: 'total',
         data: data.map(d => d.totalCache),
@@ -108,7 +111,7 @@ function buildOption(data) {
         emphasis: { focus: 'series' },
       },
       {
-        name: '输出',
+        name: t('home.output'),
         type: 'bar',
         stack: 'total',
         data: data.map(d => d.totalOutput),
@@ -117,7 +120,7 @@ function buildOption(data) {
         emphasis: { focus: 'series' },
       },
       {
-        name: '输入',
+        name: t('home.input'),
         type: 'bar',
         stack: 'total',
         data: data.map(d => d.totalInput),

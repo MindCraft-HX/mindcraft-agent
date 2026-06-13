@@ -45,7 +45,10 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { highlight } from '../../../../agentCommon/render.js'
+
+const { t } = useI18n()
 import DiffSplitView from '../../../../agentCommon/components/DiffSplitView.vue'
 import DiffModal from '../../../../agentCommon/components/DiffModal.vue'
 import { buildDiffLines } from '../../../../agentCommon/utils/helpers.js'
@@ -100,11 +103,11 @@ const fileChanges = computed(() => {
 
 /** file_change: 从 _fileChanges 取 unified_diff 或 diffLines */
 const summaryText = computed(() => {
-  if (isWriteTool.value && !effectiveDiffLines.value.length && props.msg.newContent) return '新建或整段写入'
-  if (isEditTool.value && effectiveDiffLines.value.length) return '基于差异展示修改'
-  if (isEditTool.value && props.msg.newContent) return '展示编辑后的代码'
-  if (isFileChange.value && fileChanges.value.length > 1) return `${fileChanges.value.length} 个文件`
-  if (isApplyPatch.value && fileChanges.value.length > 1) return `${fileChanges.value.length} 个文件`
+  if (isWriteTool.value && !effectiveDiffLines.value.length && props.msg.newContent) return t('agent.writeNew')
+  if (isEditTool.value && effectiveDiffLines.value.length) return t('agent.diffView')
+  if (isEditTool.value && props.msg.newContent) return t('agent.editView')
+  if (isFileChange.value && fileChanges.value.length > 1) return t('agent.nFiles', { n: fileChanges.value.length })
+  if (isApplyPatch.value && fileChanges.value.length > 1) return t('agent.nFiles', { n: fileChanges.value.length })
   return ''
 })
 

@@ -362,7 +362,7 @@
     "writeNew": "Create or overwrite",
     "diffView": "Show changes as diff",
     "editView": "Show edited code",
-    "nFiles": "N files",
+    "nFiles": "{n} files",
     "planEntered": "Entered Plan Mode",
     "planExited": "Exited Plan Mode",
     "planFile": "Plan file: ",
