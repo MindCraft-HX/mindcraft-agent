@@ -20,6 +20,8 @@ dist-electron
 source
 .history
 plugins
+!/public/plugins/
+dev-plugins/
 .worktrees/
 
 

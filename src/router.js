@@ -51,6 +51,12 @@ const routes = [
                 component: () => import('@/components/mdViewer/index.vue'),
                 meta: { parent: '/main/mdViewer' }
             },
+            {
+                path: 'plugin/:pluginId',
+                name: 'pluginView',
+                component: () => import('@/views/PluginView.vue'),
+                meta: { parent: null }
+            },
         ]
     },
     {
@@ -95,6 +101,11 @@ router.beforeEach((to, from, next) => {
     // 记录有效路由路径（仅主窗口路由，子窗口路由不参与记忆）
     if (to.path.startsWith('/main')) {
         localStorage.setItem('mindcraft_agent_last_route', to.path);
+    }
+
+    // 插件路由：设置 meta.parent 为自身路径，用于侧边栏 active 高亮
+    if (to.path.startsWith('/main/plugin/')) {
+        to.meta.parent = to.path;
     }
 
     next();

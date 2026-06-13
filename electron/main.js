@@ -21,6 +21,7 @@ const path = require("path");
 const { exec } = require('child_process');
 const { setupIpcHandlers } = require("./mainModules/ipcHandlers");
 const { setupAutoUpdater } = require("./mainModules/autoUpdate");
+const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers } = require("./mainModules/pluginManager");
 
 const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
 const { openClaudeWin } = require("./claudeWindow/index.js");
@@ -337,6 +338,12 @@ app.whenReady().then(async () => {
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件
   setupAutoUpdater(NODE_ENV, win); //更新文件
+
+  // 插件系统：启动时加载注册表 + 扫描校验 + 开发模式扫描
+  loadRegistry()
+  scanAndValidate()
+  scanDevPlugins()
+  registerPluginHandlers()
 
   registerAgentIPCs(ipcMain);
   ipcMain.handle('open-claude-win', () => openClaudeWin({ initUrl, env: NODE_ENV }));

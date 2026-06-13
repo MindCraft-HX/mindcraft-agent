@@ -148,4 +148,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+
+  // ── 插件市场（MindCraft 原生插件，非 Claude/Codex SDK 插件）──
+  pluginGetInstalled: () => ipcRenderer.invoke('plugin-get-installed'),
+  pluginMarketListing: () => ipcRenderer.invoke('plugin-marketplace-listing'),
+  pluginMarketInstall: (pluginMeta) => ipcRenderer.invoke('plugin-marketplace-install', pluginMeta),
+  pluginMarketUninstall: (pluginId) => ipcRenderer.invoke('plugin-marketplace-uninstall', pluginId),
+  pluginMarketEnable: (pluginId) => ipcRenderer.invoke('plugin-marketplace-enable', pluginId),
+  pluginMarketDisable: (pluginId) => ipcRenderer.invoke('plugin-marketplace-disable', pluginId),
+  pluginGetData: (pluginId, key) => ipcRenderer.invoke('plugin-get-data', pluginId, key),
+  pluginSetData: (pluginId, key, value) => ipcRenderer.invoke('plugin-set-data', pluginId, key, value),
+  pluginDeleteData: (pluginId, key) => ipcRenderer.invoke('plugin-delete-data', pluginId, key),
+  pluginReadAsset: (pluginId, relativePath) => ipcRenderer.invoke('plugin-read-asset', pluginId, relativePath),
+  pluginReadEntry: (pluginId) => ipcRenderer.invoke('plugin-read-entry', pluginId),
+  onPluginRegistryChanged: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('plugin-registry-changed', handler)
+    return () => ipcRenderer.removeListener('plugin-registry-changed', handler)
+  },
 });

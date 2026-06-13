@@ -68,6 +68,43 @@
               </div>
               <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.chat') }}</span>
             </div>
+
+            <!-- 分隔线（有已安装插件时显示） -->
+            <div v-if="enabledPlugins.length > 0" class="sidebar-separator"></div>
+
+            <!-- 动态插件导航项 -->
+            <div
+              v-for="plugin in enabledPlugins"
+              :key="plugin.id"
+              class="sidebar-item"
+              :class="{ active: pluginActiveId === plugin.id }"
+              @click="openPlugin(plugin.id)"
+              :title="plugin.name"
+            >
+              <div class="sidebar-icon-wrapper">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="14" height="14" rx="2"/>
+                  <line x1="9" y1="3" x2="9" y2="17"/>
+                  <line x1="3" y1="9" x2="17" y2="9"/>
+                </svg>
+              </div>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ plugin.name }}</span>
+            </div>
+
+            <!-- "+" 按钮：打开插件市场 -->
+            <div
+              class="sidebar-item sidebar-item--add"
+              @click="showMarketplace = true"
+              :title="$t('nav.addPlugin')"
+            >
+              <div class="sidebar-icon-wrapper">
+                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+                  <line x1="10" y1="3" x2="10" y2="17"/>
+                  <line x1="3" y1="10" x2="17" y2="10"/>
+                </svg>
+              </div>
+              <span v-show="!sidebarCollapsed" class="sidebar-label">{{ $t('nav.addPlugin') }}</span>
+            </div>
           </div>
 
           <!-- 底部：收缩按钮 + 设置 -->
@@ -158,6 +195,9 @@
 
     <!-- 设置弹窗（SharedSettings modal） -->
     <SharedSettings ref="sharedSettingsRef" />
+
+    <!-- 插件市场弹窗 -->
+    <PluginMarket v-model:visible="showMarketplace" />
   </div>
 </template>
 
@@ -167,6 +207,8 @@ import { useRoute, useRouter } from "vue-router";
 import { Setting, Check } from '@element-plus/icons-vue';
 import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
+import PluginMarket from '@/views/PluginMarket.vue';
+import { usePluginStore } from '@/stores/pluginStore';
 
 const settingsDrawer = ref(false);
 const activeSetting = ref(null);
@@ -174,6 +216,9 @@ const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
 // 任务完成通知状态：由 codeHub 更新，用于侧边栏"项目"图标提醒
 const codehubHasNotification = ref(false);
+const showMarketplace = ref(false);
+const pluginStore = usePluginStore();
+const { enabledPlugins } = pluginStore;
 const claudeTheme = useClaudeThemeStore();
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`);
 provide("settingsDrawer", settingsDrawer);
@@ -199,15 +244,31 @@ const activeIndex = computed(() => {
 // 文档浏览：直接路由到主窗口内嵌视图（不再弹独立窗口）
 const openMdBrowser = () => router.push('/main/mdViewer')
 
+// 插件：当前激活的插件 ID（通过路由参数判断）
+const pluginActiveId = computed(() => {
+  if (route.path.startsWith('/main/plugin/')) {
+    return route.params.pluginId
+  }
+  return null
+})
+
+function openPlugin(pluginId) {
+  router.push(`/main/plugin/${pluginId}`)
+}
+
 // 监听主进程 push 的文档打开请求（agent 消息点文档链接时触发）
 let disposeOpenMdViewer = null
-onMounted(() => {
+onMounted(async () => {
   disposeOpenMdViewer = window.electronAPI?.onOpenMdViewer?.(() => {
     router.push('/main/mdViewer')
   })
+  // 插件系统：加载已安装列表 + 监听主进程变更
+  await pluginStore.loadInstalledPlugins()
+  pluginStore.listenForRegistryChanges()
 })
 onUnmounted(() => {
   if (typeof disposeOpenMdViewer === 'function') disposeOpenMdViewer()
+  pluginStore.cleanup()
 })
 
 // 设置入口（通过 SharedSettings 弹窗触发）
@@ -422,6 +483,26 @@ window.electronAPI?.openTabByName?.((progress) => {
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
+}
+
+/* 插件导航分隔线 */
+.sidebar-separator {
+  width: 32px;
+  height: 1px;
+  background: var(--cc-border-light, #3a3a3a);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+/* "+" 按钮：虚线边框，低透明度，悬停增强 */
+.sidebar-item--add {
+  opacity: 0.55;
+  border: 1px dashed var(--cc-border-light, #3a3a3a);
+
+  &:hover {
+    opacity: 1;
+    border-style: solid;
+  }
 }
 
 /* === 主题选择器 === */
