@@ -252,7 +252,7 @@ async function checkForUpdate() {
             ElMessage.success(t('settings.codexUpdateCompleteRefresh'))
           }
         } else {
-          ElMessage.error(t('settings.updateFailed') + (result?.message || t('agent.unknownError')))
+          ElMessage.error(t('settings.updateFailed') + (result?.message || t('system.unknownError')))
         }
       }
     }
@@ -349,7 +349,7 @@ async function applyProvider(idx) {
     await window.electronAPI?.codexSetReasoningEffort?.(p.reasoningEffort || '')
     return true
   } catch (e) {
-    ElMessage.error(t('settings.saveConfigFailed') + (e?.message || t('agent.unknownError')))
+    ElMessage.error(t('settings.saveConfigFailed') + (e?.message || t('system.unknownError')))
     return false
   }
 }
@@ -431,7 +431,7 @@ async function validateProviderByIdx(i) {
       ElMessage.error(res?.error || t('settings.validationFailed'))
     }
   } catch (e) {
-    ElMessage.error(t('settings.validFailedSimple', { error: e?.message || t('agent.unknownError') }))
+    ElMessage.error(t('settings.validFailedSimple', { error: e?.message || t('system.unknownError') }))
   } finally {
     validatingIdx.value = -1
   }
@@ -512,7 +512,7 @@ async function importFromLegacy() {
       ElMessage.warning(t('settings.importNoDataDir'))
       return
     }
-    if (!result.success) { ElMessage.error(t('settings.importFailedGeneric') + (result.error || t('agent.unknownError'))); return }
+    if (!result.success) { ElMessage.error(t('settings.importFailedGeneric') + (result.error || t('system.unknownError'))); return }
     const { imported } = result
     const parts = []
     if (imported.key) parts.push('API Key')

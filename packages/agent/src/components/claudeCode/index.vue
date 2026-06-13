@@ -672,7 +672,7 @@ function buildUserContentBlocks(text, imgs = [], files = []) {
     blocks.push({
       type: 'file',
       source: {
-        filename: f?.name || t('common.file'),
+        filename: f?.name || t('agent.file'),
         size: f?.size || 0,
       },
     })
@@ -1572,7 +1572,7 @@ function createChat() {
   const id = nextChatId()
   return {
     id,
-    name: t('agent.newChat'),
+    name: t('chat.newChat'),
     sessionId: `session-${id}-${Date.now()}`,
     createdAt: Date.now(),
     fileSize: null,
@@ -1712,7 +1712,7 @@ async function refreshProjectSessionsInBackground(p) {
       const rawTitle = s.title || ''
       const name = rawTitle
         ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
-        : `${t('agent.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
+        : `${t('chat.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
       const pendingChat = !cached
         ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value, scannedSessionId: s.id })
         : null
@@ -2066,7 +2066,7 @@ async function selectDir(project, onAfterSelect) {
     if (Array.isArray(sessions) && sessions.length) {
       project.chats = sessions.map(s => ({
         id: nextChatId(),
-        name: s.name || `${t('agent.sessionPrefix')}${String(s.id || '').slice(0, 8)}`,
+        name: s.name || `${t('chat.sessionPrefix')}${String(s.id || '').slice(0, 8)}`,
         sessionId: s.id || `session-${Date.now()}`,
         cliSessionId: s.id || null,
         createdAt: s.createdAt || null,
@@ -2119,7 +2119,7 @@ async function loadProjectSessions(cwd) {
         const rawTitle = s.title || ''
         const name = rawTitle
           ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
-          : `${t('agent.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
+          : `${t('chat.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
         return {
           id: s.id || nextSessionId(),
           createdAt: s.createdAt || null,
@@ -2808,7 +2808,7 @@ function toolIcon(name) {
   return resolveToolIconKey(name)
 }
 function toolLabel(name) {
-  return resolveToolLabel(name) || name || t('common.toolLabel')
+  return resolveToolLabel(name) || name || t('agent.toolLabel')
 }
 
 // ─── diff 构建（行级 LCS diff）────────────────────────────────
@@ -3121,8 +3121,8 @@ async function checkFirstTimeSetup() {
     if (!missing.length) return
     const ok = await confirmDialogRef.value?.open({
       message: t('agent.missingItemsDialog', { items: missing.map(m => '• ' + m).join('\n') }),
-      okText: t('common.goToSettings'),
-      cancelText: t('common.later'),
+      okText: t('settings.goToSettings'),
+      cancelText: t('settings.later'),
     })
     if (ok) openSettings()
   } catch (_) {}
@@ -3261,7 +3261,7 @@ defineExpose({
     const chats = p.chats || []
     return {
       id: p.id,
-      name: p.cwd ? p.cwd.split(/[\\/]/).pop() || t('common.noFolder') : t('common.noFolder'),
+      name: p.cwd ? p.cwd.split(/[\\/]/).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
       cwd: p.cwd || '',
       cwdLocked: Boolean(p.cwdLocked),
       runningCount: chats.filter(c => c.thinking).length,

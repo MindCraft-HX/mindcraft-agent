@@ -254,7 +254,7 @@ async function installPlugin(plugin) {
   try {
     const res = await api('Install')?.(plugin.id)
     if (res?.ok === false) {
-      ElMessage.error(t('agent.installError', { message: res.error || t('agent.unknownError') }))
+      ElMessage.error(t('agent.installError', { message: res.error || t('system.unknownError') }))
     } else {
       plugin.installed = true
       plugin.enabled = true
@@ -273,7 +273,7 @@ async function uninstallPlugin(plugin) {
   try {
     const res = await api('Uninstall')?.(plugin.id)
     if (res?.ok === false) {
-      ElMessage.error(t('agent.uninstallError', { message: res.error || t('agent.unknownError') }))
+      ElMessage.error(t('agent.uninstallError', { message: res.error || t('system.unknownError') }))
     } else {
       plugin.installed = false
       plugin.enabled = true

@@ -90,7 +90,7 @@
                   {{ $t('agent.loadHistory') }}
                 </button>
                 <button class="cc-secondary-btn" type="button" @click="newChat">
-                  {{ $t('agent.newChat') }}
+                  {{ $t('chat.newChat') }}
                 </button>
               </div>
             </div>
@@ -301,7 +301,7 @@ function buildUserContentBlocks(text, imgs = [], files = []) {
     blocks.push({
       type: 'file',
       source: {
-        filename: f?.name || t('common.file'),
+        filename: f?.name || t('agent.file'),
         size: f?.size || 0,
       },
     })
@@ -1139,7 +1139,7 @@ function toolIcon(name) {
   return resolveToolIconKey(name)
 }
 function toolLabel(name) {
-  return resolveToolLabel(name) || name || t('common.toolLabel')
+  return resolveToolLabel(name) || name || t('agent.toolLabel')
 }
 
 function inferToolFailureFromText(toolName, text) {
@@ -1158,7 +1158,7 @@ function createToolMessage(opts) {
 function createNewChat() {
   const id = nextChatId()
   return {
-    id, name: t('agent.newChat'), sessionId: `codex-session-${id}-${Date.now()}`,
+    id, name: t('chat.newChat'), sessionId: `codex-session-${id}-${Date.now()}`,
     cwd: activeProject.value?.cwd || '',
     createdAt: Date.now(),
     thinking: false, messages: [], currentAssistantId: null,
@@ -1179,7 +1179,7 @@ async function buildChatFromSessionSummary(summary) {
   if (cNum > chatCounter) chatCounter = cNum
   const chat = makeRestoredChat({
     id: `chat-${summary.id}`,
-    name: summary.name || `${t('agent.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`,
+    name: summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`,
     sessionId: summary.sessionId || summary.id,
     cliSessionId: summary.cliSessionId || summary.id,
     filePath: summary.filePath,
@@ -1217,7 +1217,7 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
   for (const summary of summaries) {
     const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
     const cached = cacheByPath[normalizedPath] || cacheBySid[summary.id] || null
-    const name = summary.name || `${t('agent.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
+    const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
 
     if (cached) {
       if (!cached._userRenamed) cached.name = name
@@ -1295,7 +1295,7 @@ async function refreshProjectSessionsInBackground(project) {
       if (project.id !== activeProjectId.value) return
       const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
       const cached = cacheByPath[normalizedPath] || cacheBySid[summary.id] || null
-      const name = summary.name || `${t('agent.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
+      const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
 
       if (cached) {
         if (!cached._userRenamed) cached.name = name
@@ -1836,7 +1836,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   const fileAttachments = composerAttachments
     .filter(img => !img?.isImage)
     .map(({ name, size, path }) => ({
-      name: name || t('common.file'),
+      name: name || t('agent.file'),
       size: size || 0,
       path: path || '',
     }))
@@ -2463,7 +2463,7 @@ defineExpose({
     const chats = p.chats || []
     return {
       id: p.id,
-      name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('common.noFolder') : t('common.noFolder'),
+      name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
       cwd: p.cwd || '',
       cwdLocked: Boolean(p.cwdLocked),
       runningCount: chats.filter(c => c.thinking).length,

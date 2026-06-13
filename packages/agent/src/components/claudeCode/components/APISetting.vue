@@ -326,7 +326,7 @@ async function checkForUpdate() {
           envUpdateAvailable.value = false
           envLatestVersion.value = ''
         } else {
-          ElMessage.error(t('settings.updateFailed') + (result?.message || t('agent.unknownError')))
+          ElMessage.error(t('settings.updateFailed') + (result?.message || t('system.unknownError')))
         }
       }
     }
@@ -540,7 +540,7 @@ async function applyAndActivate(activeIdx, opts = {}) {
     return true
   } catch (e) {
     console.warn('[APISetting] applyAndActivate failed:', e?.message || e)
-    ElMessage.error(t('settings.saveFailed') + (e?.message || t('agent.unknownError')))
+    ElMessage.error(t('settings.saveFailed') + (e?.message || t('system.unknownError')))
     return false
   }
 }
@@ -637,7 +637,7 @@ async function saveCompactWindow() {
     if (res?.ok) {
       ElMessage.success(t('settings.compactThresholdSet', { n: clamped }))
     } else {
-      ElMessage.error(t('settings.saveFailed') + (res?.message || t('agent.unknownError')))
+      ElMessage.error(t('settings.saveFailed') + (res?.message || t('system.unknownError')))
     }
   } catch (e) {
     ElMessage.error(t('settings.saveFailed') + (e?.message || e))
@@ -652,7 +652,7 @@ async function resetCompactWindow() {
     if (res?.ok) {
       ElMessage.success(t('system.restoredSdk'))
     } else {
-      ElMessage.error(t('settings.resetFailed') + (res?.message || t('agent.unknownError')))
+      ElMessage.error(t('settings.resetFailed') + (res?.message || t('system.unknownError')))
     }
   } catch (e) {
     ElMessage.error(t('settings.resetFailed') + (e?.message || e))
@@ -774,7 +774,7 @@ async function importFromLegacy() {
       ElMessage.warning(t('settings.importNoDataDir'))
       return
     }
-    if (!result.success) { ElMessage.error(t('settings.importFailedGeneric') + (result.error || t('agent.unknownError'))); return }
+    if (!result.success) { ElMessage.error(t('settings.importFailedGeneric') + (result.error || t('system.unknownError'))); return }
     const { imported } = result
     const parts = []
     if (imported.providers > 0) parts.push(t('settings.importedProviders', { n: imported.providers }))

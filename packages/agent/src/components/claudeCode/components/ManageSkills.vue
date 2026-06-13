@@ -106,7 +106,7 @@
                         <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                       </div>
                       <div v-if="skill.gitUrl" class="mp-detail-section">
-                        <div class="mp-detail-label">{{ $t('common.github') }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.github') }}</div>
                         <a :href="skill.gitUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.gitUrl }}</a>
                       </div>
                     </div>
@@ -177,7 +177,7 @@
                         <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                       </div>
                       <div v-if="skill.gitUrl" class="mp-detail-section">
-                        <div class="mp-detail-label">{{ $t('common.github') }}</div>
+                        <div class="mp-detail-label">{{ $t('agent.github') }}</div>
                         <a :href="skill.gitUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.gitUrl }}</a>
                       </div>
                     </div>
@@ -297,7 +297,7 @@
                       <a :href="skill.sourceUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.sourceUrl }}</a>
                     </div>
                     <div v-if="skill.gitUrl" class="mp-detail-section">
-                      <div class="mp-detail-label">{{ $t('common.github') }}</div>
+                      <div class="mp-detail-label">{{ $t('agent.github') }}</div>
                       <a :href="skill.gitUrl" target="_blank" class="mp-detail-link" @click.stop>{{ skill.gitUrl }}</a>
                     </div>
                   </div>
@@ -460,7 +460,7 @@ async function installSkill(skill) {
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
-      ElMessage.error(t('agent.installError', { message: res.error || t('agent.unknownError') }))
+      ElMessage.error(t('agent.installError', { message: res.error || t('system.unknownError') }))
     } else {
       skill.installed = true
       skill.scope = installScope.value
@@ -482,7 +482,7 @@ async function uninstallSkill(skill) {
   try {
     const res = await api('Uninstall')?.({ skillName: skill.name, scope: skill.scope })
     if (res?.ok === false) {
-      ElMessage.error(t('agent.uninstallError', { message: res.error || t('agent.unknownError') }))
+      ElMessage.error(t('agent.uninstallError', { message: res.error || t('system.unknownError') }))
     } else {
       skill.installed = false
       skill.scope = null
@@ -585,7 +585,7 @@ async function installMarketSkill(skill, scope) {
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
-      ElMessage.error(t('agent.installError', { message: res.error || t('agent.unknownError') }))
+      ElMessage.error(t('agent.installError', { message: res.error || t('system.unknownError') }))
     } else {
       ElMessage.success(t('agent.installedSkill', { name }))
       emit('skills-changed')
