@@ -204,7 +204,7 @@ async function installCodex() {
         ElMessage.success(t('settings.codexInstallSuccessRefresh'))
       }
     } else {
-      ElMessage.error(result?.message || t('agent.installFailed'))
+      ElMessage.error(result?.message || t('system.installFail'))
     }
   } catch (e) {
     ElMessage.error(t('settings.installFailed') + (e?.message || e))
