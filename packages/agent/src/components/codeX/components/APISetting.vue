@@ -199,15 +199,15 @@ async function installCodex() {
       await checkEnvironment()
       const ver = envStatus.value?.codex?.version
       if (ver) {
-        ElMessage.success(`Codex 安装成功 v${ver.replace(/^v/, '').split(/\s/)[0]}`)
+        ElMessage.success(t('settings.codexInstallSuccess', { version: ver.replace(/^v/, '').split(/\s/)[0] }))
       } else {
-        ElMessage.success('Codex 安装成功，点击 ↻ 刷新版本')
+        ElMessage.success(t('settings.codexInstallSuccessRefresh'))
       }
     } else {
       ElMessage.error(result?.message || t('agent.installFailed'))
     }
   } catch (e) {
-    ElMessage.error('安装失败: ' + (e?.message || e))
+    ElMessage.error(t('settings.installFailed') + (e?.message || e))
   } finally { envInstalling.value = false }
 }
 
@@ -216,29 +216,29 @@ async function checkForUpdate() {
   try {
     const env = await window.electronAPI?.codexCheckEnvironment?.()
     if (!env?.codex?.installed || !env?.codex?.version) {
-      ElMessage.warning('请先安装 Codex')
+      ElMessage.warning(t('system.installCodexFirst'))
       return
     }
     const res = await window.electronAPI?.codexCheckLatestVersion?.()
     if (!res?.ok || !res.version) {
-      ElMessage.error('查询最新版本失败: ' + (res?.error || ''))
+      ElMessage.error(t('system.versionCheckFail') + ': ' + (res?.error || ''))
       return
     }
     const localVer = env.codex.version.replace(/^v/, '').split(/\s/)[0].trim()
     const latestVer = res.version
     if (localVer === latestVer) {
-      ElMessage.success(`已是最新版本 (v${latestVer})`)
+      ElMessage.success(t('system.alreadyLatest', { version: latestVer }))
       envUpdateAvailable.value = false
     } else {
       envUpdateAvailable.value = true
       envLatestVersion.value = latestVer
       const ok = await confirmDialogRef.value?.open({
-        message: `发现 Codex 新版本 v${latestVer}，当前版本 v${localVer}\n\n是否立即更新？`,
-        okText: '立即更新',
-        cancelText: '稍后',
+        message: t('settings.codexNewVersionMsg', { latest: latestVer, local: localVer }),
+        okText: t('settings.updateNow'),
+        cancelText: t('settings.later'),
       })
       if (ok) {
-        ElMessage.info('正在更新 Codex…')
+        ElMessage.info(t('settings.updatingCodex'))
         const result = await window.electronAPI?.codexInstallCodex?.()
         if (result?.success) {
           await checkEnvironment()
@@ -247,17 +247,17 @@ async function checkForUpdate() {
           const newVer = envStatus.value?.codex?.version
           if (newVer) {
             const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
-            ElMessage.success(`Codex 已更新至 v${shortVer}`)
+            ElMessage.success(t('settings.codexUpdatedTo', { version: shortVer }))
           } else {
-            ElMessage.success('Codex 更新完成，点击 ↻ 刷新版本')
+            ElMessage.success(t('settings.codexUpdateCompleteRefresh'))
           }
         } else {
-          ElMessage.error('更新失败: ' + (result?.message || t('agent.unknownError')))
+          ElMessage.error(t('settings.updateFailed') + (result?.message || t('agent.unknownError')))
         }
       }
     }
   } catch (e) {
-    ElMessage.error('检查更新失败: ' + (e?.message || e))
+    ElMessage.error(t('settings.checkUpdateFailed') + (e?.message || e))
   } finally {
     envCheckingUpdate.value = false
   }
@@ -275,7 +275,7 @@ function openSettings() {
 }
 
 function showPermissionToast(p) {
-  ElMessage.success(`权限策略已设为「${p.label}」，仅对新创建的会话生效`)
+  ElMessage.success(t('settings.permissionPolicySet', { label: p.label }))
 }
 
 defineExpose({ openSettings })
@@ -349,7 +349,7 @@ async function applyProvider(idx) {
     await window.electronAPI?.codexSetReasoningEffort?.(p.reasoningEffort || '')
     return true
   } catch (e) {
-    ElMessage.error('保存配置失败: ' + (e?.message || t('agent.unknownError')))
+    ElMessage.error(t('settings.saveConfigFailed') + (e?.message || t('agent.unknownError')))
     return false
   }
 }
@@ -412,7 +412,7 @@ async function activateProviderByIdx(i) {
   if (ok) {
     await persistProviders()
     emit('providerActivated')
-    ElMessage.success('已切换配置')
+    ElMessage.success(t('settings.switchedConfig'))
   }
 }
 
@@ -426,12 +426,12 @@ async function validateProviderByIdx(i) {
     const res = await window.electronAPI?.codexValidateKey?.(p.key || '', p.url || '', p.model || '')
     const elapsed = Date.now() - start
     if (res?.valid) {
-      ElMessage.success(`${p.name || '未命名'} 验证通过 (${elapsed}ms)`)
+      ElMessage.success(t('settings.validOk', { name: p.name || t('settings.unnamed'), elapsed }))
     } else {
-      ElMessage.error(res?.error || '验证失败')
+      ElMessage.error(res?.error || t('settings.validationFailed'))
     }
   } catch (e) {
-    ElMessage.error(`验证失败: ${e?.message || t('agent.unknownError')}`)
+    ElMessage.error(t('settings.validFailedSimple', { error: e?.message || t('agent.unknownError') }))
   } finally {
     validatingIdx.value = -1
   }
@@ -476,7 +476,7 @@ async function addProvider() {
 async function copyProvider(i) {
   const src = settingsForm.value.providers[i]
   const copy = JSON.parse(JSON.stringify(src))
-  copy.name = (copy.name || '未命名') + ' (副本)'
+  copy.name = (copy.name || t('settings.unnamed')) + t('settings.copySuffix')
   settingsForm.value.providers.splice(i + 1, 0, copy)
   await persistProviders()
 }
@@ -507,12 +507,12 @@ function extractTomlFields(tomlText) {
 async function importFromLegacy() {
   try {
     const result = await window.electronAPI?.codexImportLegacyConfig?.()
-    if (!result) { ElMessage.error('导入失败：无法连接到主进程'); return }
+    if (!result) { ElMessage.error(t('settings.importFailedNoConn')); return }
     if (result.notFound) {
-      ElMessage.warning('未找到 MindCraft 的用户数据目录，请确认 mindcraft-electron 已安装并至少运行过一次')
+      ElMessage.warning(t('settings.importNoDataDir'))
       return
     }
-    if (!result.success) { ElMessage.error('导入失败：' + (result.error || t('agent.unknownError'))); return }
+    if (!result.success) { ElMessage.error(t('settings.importFailedGeneric') + (result.error || t('agent.unknownError'))); return }
     const { imported } = result
     const parts = []
     if (imported.key) parts.push('API Key')
@@ -521,31 +521,26 @@ async function importFromLegacy() {
     if (imported.reasoningEffort) parts.push('Reasoning Effort')
     await loadProviders()
     if (parts.length) {
-      ElMessage.success(`已导入：${parts.join('、')}`)
+      ElMessage.success(t('settings.importedResult', { items: parts.join('、') }))
     } else {
-      ElMessage.warning('未找到可导入的配置（共享文件已天然互通）')
+      ElMessage.warning(t('settings.importNoConfigCodex'))
     }
   } catch (e) {
-    ElMessage.error('导入失败：' + (e?.message || e))
+    ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))
   }
 }
 
 async function importFromFile(i) {
-  const name = settingsForm.value.providers[i]?.name || '未命名'
+  const name = settingsForm.value.providers[i]?.name || t('settings.unnamed')
   const ok = await confirmDialogRef.value?.open({
-    message: `用配置文件覆盖「${name}」？
-
-将读取 ~/.codex/config.toml 中的当前运行配置，
-覆盖此条记录的名称、Key、URL、模型等字段。
-
-此操作不可撤销，是否继续？`,
+    message: t('settings.codexImportOverwriteMsg', { name }),
   })
   if (!ok) return
   try {
     const tomlText = await window.electronAPI?.codexReadConfigToml?.()
-    if (!tomlText) { ElMessage.warning('未找到 config.toml 或文件为空'); return }
+    if (!tomlText) { ElMessage.warning(t('settings.importNoConfigToml')); return }
     const fields = extractTomlFields(tomlText)
-    if (!fields.auth_token && !fields.base_url) { ElMessage.warning('配置文件中未找到 auth_token 或 base_url'); return }
+    if (!fields.auth_token && !fields.base_url) { ElMessage.warning(t('settings.importNoAuthToken')); return }
     const p = settingsForm.value.providers[i]
     p.key = fields.auth_token
     p.url = fields.base_url
@@ -554,9 +549,9 @@ async function importFromFile(i) {
     p.authJson = fields.auth_token ? { OPENAI_API_KEY: fields.auth_token } : {}
     p.tomlText = tomlText
     await persistProviders()
-    ElMessage.success(`已用配置文件覆盖「${p.name || '未命名'}」`)
+    ElMessage.success(t('settings.importOverwritten', { name: p.name || t('settings.unnamed') }))
   } catch (e) {
-    ElMessage.error('导入失败：' + (e?.message || e))
+    ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))
   }
 }
 
@@ -601,7 +596,7 @@ async function handleProviderFormSave(payload) {
   await persistProviders()
   showProviderForm.value = false
   currentProvider.value = null
-  ElMessage.success('已保存')
+  ElMessage.success(t('settings.saved'))
 }
 
 function handleProviderFormClose() {
