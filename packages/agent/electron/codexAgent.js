@@ -172,11 +172,17 @@ function readRuntimeConfig() {
 }
 
 /** 读取权限策略 */
+const CODEX_PERMISSION_POLICIES = ['read_only', 'ask', 'allow_all']
+
+function normalizePermissionPolicy(policy) {
+  return CODEX_PERMISSION_POLICIES.includes(policy) ? policy : 'ask'
+}
+
 function readPermissionPolicy() {
   try {
     const conf = new Conf({ name: 'mindcraft-codex' })
-    return conf.get('permissionPolicy') || 'allow_all'
-  } catch (_) { return 'allow_all' }
+    return normalizePermissionPolicy(conf.get('permissionPolicy'))
+  } catch (_) { return 'ask' }
 }
 
 /** 读取沙箱模式 — 与权限策略联动：read_only=read-only, ask=workspace-write, allow_all=danger-full-access */
@@ -1576,8 +1582,16 @@ function setupCodexSdkHandlers() {
     const baseURL = runtime.baseURL || ''
     const model = modelOverride?.trim() || runtime.model || ''
     const reasoningEffort = String(reasoningEffortOverride?.trim() || runtime.reasoningEffort || '').trim()
-    const permissionPolicy = sandboxLevel || readPermissionPolicy()
+    const permissionPolicy = normalizePermissionPolicy(sandboxLevel || readPermissionPolicy())
     const resolvedCwd = path.resolve(cwd || process.cwd())
+    const sandboxMode = resolveSandboxMode(permissionPolicy)
+
+    console.log('[codex] session launch:', {
+      sessionId,
+      cwd: resolvedCwd,
+      permissionPolicy,
+      sandboxMode,
+    })
 
     // 前端已通过排队机制（_queuedInput）阻止运行中发送，正常情况下不应命中此分支。
     // 若因时序竞态命中，统一 abort 旧 session 后走新建路径，避免 fire-and-forget IIFE
@@ -1700,7 +1714,7 @@ function setupCodexSdkHandlers() {
             // 无法回复 CLI 发出的 ExecApprovalRequest 事件（需要双向 app-server 协议）。
             // 权限由 sandboxMode OS 级强制执行，approvalPolicy 固定 'never'。
             approvalPolicy: 'never',
-            ...(resolveSandboxMode(permissionPolicy) ? { sandboxMode: resolveSandboxMode(permissionPolicy) } : {}),
+            ...(sandboxMode ? { sandboxMode } : {}),
             ...(model ? { model } : {}),
             ...(reasoningEffort ? { modelReasoningEffort: reasoningEffort } : {}),
             ...(networkAccessEnabled !== undefined ? { networkAccessEnabled } : {}),
@@ -1720,7 +1734,7 @@ function setupCodexSdkHandlers() {
             }
           } else {
             // B023 guard：记录每次 startThread 调用，便于排查空会话（仅含'/'）来源
-            console.log('[codex] startThread: sessionId=', sessionId, 'cwd=', resolvedCwd, 'hasPrompt=', !!prompt)
+            console.log('[codex] startThread: sessionId=', sessionId, 'cwd=', resolvedCwd, 'permissionPolicy=', permissionPolicy, 'sandboxMode=', sandboxMode, 'hasPrompt=', !!prompt)
             thread = codex.startThread(threadOptions)
           }
 
@@ -2760,7 +2774,10 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-get-permission-policy', () => readPermissionPolicy())
   ipcMain.handle('codex-set-permission-policy', (_, policy) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('permissionPolicy', policy) } catch (_) {}
+    try {
+      const c = new Conf({ name: 'mindcraft-codex' })
+      c.set('permissionPolicy', normalizePermissionPolicy(policy))
+    } catch (_) {}
     return true
   })
 

@@ -1005,6 +1005,9 @@ function makeRestoredChat(c, messages) {
     thinking: false, messages: msgs, currentAssistantId: null,
     metrics: c.metrics || null,
     model: c.model || null,
+    sandboxLevel: resolveRestoredSandboxLevel(c),
+    networkAccessEnabled: resolveRestoredNetworkAccess(c),
+    webSearchMode: resolveRestoredWebSearch(c),
     _thinkingStart: c._thinkingStart || null,
     // 冷启动恢复时不能延续上次进程内的 turn lock，否则异常退出后会把历史会话永久锁死。
     _awaitingDone: false,
@@ -1149,6 +1152,34 @@ function inferToolFailureFromText(toolName, text) {
   return false
 }
 
+function isValidSandboxLevel(level) {
+  return ['read_only', 'ask', 'allow_all'].includes(level)
+}
+
+function resolveRestoredSandboxLevel(chat) {
+  if (isValidSandboxLevel(chat?.sandboxLevel)) return chat.sandboxLevel
+  return hasStartedCodexChat(chat) ? 'ask' : codexConfigStore.permissionPolicy
+}
+
+function resolveRestoredNetworkAccess(chat) {
+  if (typeof chat?.networkAccessEnabled === 'boolean') return chat.networkAccessEnabled
+  return codexConfigStore.defaultNetworkAccess
+}
+
+function resolveRestoredWebSearch(chat) {
+  if (typeof chat?.webSearchMode === 'string' && chat.webSearchMode) return chat.webSearchMode
+  return codexConfigStore.defaultWebSearch
+}
+
+function hasStartedCodexChat(chat) {
+  return Boolean(
+    chat?.cliSessionId
+    || chat?.filePath
+    || chat?.updatedAt
+    || (Array.isArray(chat?.messages) && chat.messages.length)
+  )
+}
+
 function createToolMessage(opts) {
   const msg = { id: nextMsgId(), role: 'tool', status: opts.status || 'done', ...opts }
   if (opts.status === 'pending') msg._isPendingPerm = true
@@ -1163,6 +1194,9 @@ function createNewChat() {
     createdAt: Date.now(),
     thinking: false, messages: [], currentAssistantId: null,
     metrics: null,
+    sandboxLevel: codexConfigStore.permissionPolicy,
+    networkAccessEnabled: codexConfigStore.defaultNetworkAccess,
+    webSearchMode: codexConfigStore.defaultWebSearch,
     _thinkingStart: null,
     _awaitingDone: false,
     hasMoreHistory: false,
@@ -1794,7 +1828,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     ? projects.value.find((project) => (project?.chats || []).some((chat) => chat.id === tab.id)) || null
     : activeProject.value
   if (!ownerProject?.cwdLocked) return
-  // 首次发送消息时锁定本 Session 的 sandbox/network/search 设置
+  // 兼容旧历史数据：缺字段时在发送前补齐一次，但新 chat 默认已在创建时初始化。
   if (!tab.sandboxLevel) tab.sandboxLevel = codexConfigStore.permissionPolicy
   if (tab.networkAccessEnabled === undefined) tab.networkAccessEnabled = codexConfigStore.defaultNetworkAccess
   if (!tab.webSearchMode) tab.webSearchMode = codexConfigStore.defaultWebSearch

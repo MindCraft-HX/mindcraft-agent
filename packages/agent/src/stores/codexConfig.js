@@ -7,13 +7,13 @@ import { ref } from 'vue'
  */
 export const useCodexConfigStore = defineStore('codexConfig', () => {
   /** 权限策略：read_only | ask | allow_all */
-  const permissionPolicy = ref('allow_all')
+  const permissionPolicy = ref('ask')
 
   /** 权限策略可选值 */
   const policies = [
-    { value: 'read_only', label: '只读', desc: '仅读取，不写文件不执行命令' },
-    { value: 'ask', label: '安全模式（沙箱保护）', desc: '工作区可写，.git 和系统路径受保护' },
-    { value: 'allow_all', label: '完全访问', desc: '无沙箱限制，完全自由访问' },
+    { value: 'read_only', label: '只读', desc: '仅读取，不修改文件' },
+    { value: 'ask', label: '安全模式（工作区可写）', desc: '不走审批交互，仅允许在当前工作区内写入' },
+    { value: 'allow_all', label: '完全访问', desc: '取消沙箱限制，允许更自由的访问' },
   ]
 
   /** 默认网络访问：新会话是否允许联网 */
