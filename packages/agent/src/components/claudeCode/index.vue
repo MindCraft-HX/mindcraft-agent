@@ -3505,7 +3505,11 @@ onUnmounted(() => {
   max-height: 200px;
   flex: none;
 }
-.input-box:focus-within { border-color: var(--cc-border-focus); }
+.input-box:focus-within {
+  border-color: var(--cc-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-primary) 22%, transparent);
+}
+.cc-textarea:focus { box-shadow: none !important; }
 .input-box.disabled { border-color: var(--cc-border); }
 .input-box.disabled .cc-textarea,
 .input-box.disabled .attach-btn {

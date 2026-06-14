@@ -2641,7 +2641,11 @@ onUnmounted(() => {
   border: 1px solid var(--cc-border); border-radius: 10px; padding: 6px 6px 6px 11px;
   min-height: 26px; margin-bottom: 4px; max-height: 200px; transition: border-color 0.15s;
 }
-.input-box:focus-within { border-color: var(--cc-border-focus); }
+.input-box:focus-within {
+  border-color: var(--cc-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-primary) 22%, transparent);
+}
+.cc-textarea:focus { box-shadow: none !important; }
 .input-box.disabled { border-color: var(--cc-border); }
 .input-box.disabled .cc-textarea, .input-box.disabled .attach-btn { opacity: 0.42; pointer-events: none; }
 .cc-textarea {
