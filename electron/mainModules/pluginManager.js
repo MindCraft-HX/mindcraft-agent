@@ -329,7 +329,11 @@ function togglePlugin(pluginId, enabled) {
 
 // ─── 获取已安装列表 ────────────────────────────────────
 function getInstalledPlugins() {
-  return Object.values(pluginRegistry).map(p => ({
+  const isProduction = process.env.NODE_ENV === 'production' || app.isPackaged
+  const all = Object.values(pluginRegistry)
+  // 生产模式下过滤掉 dev 模式插件（避免 dev 注册记录残留到生产环境）
+  const plugins = isProduction ? all.filter(p => !p.devMode) : all
+  return plugins.map(p => ({
     id: p.id,
     name: p.name,
     version: p.version,
