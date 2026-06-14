@@ -1855,6 +1855,12 @@ function setupCodexSdkHandlers() {
             doneSent = true
             drainTimer = null
             currentSession.doneSent = true
+            // 标记 stream 已关闭，让 canStartCodexSessionRun 和 waitForCodexSessionRunToClose
+            // 立即通过，消除 triggerDone → codex-agent-done → 前端 flush _queuedInput →
+            // codexAgentQuery 竞态（B029：done 发送时 finally 尚未运行，streamClosed=false
+            // 导致 2.5s 超时等待 → "CodeX 正在处理上一轮请求" toast）
+            currentSession.streamClosed = true
+            try { currentSession.resolveCompletion?.() } catch (_) {}
             const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
             const sfilePath = thread.id ? path.join(SESSIONS_DIR, thread.id + '.jsonl') : ''
             console.log(`[codex] triggerDone: sessionId=${sessionId} cliId=${thread?.id} filePath=${!!sfilePath}`)

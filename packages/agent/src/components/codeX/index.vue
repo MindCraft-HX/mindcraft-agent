@@ -1951,7 +1951,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     if (idx >= 0) tab.messages.splice(idx, 1)
     tab._awaitingDone = false
     tab.thinking = false
-    ElMessage.warning(t('agent.codexBusy'))
+    ElMessage.warning({ message: t('agent.codexBusy'), showClose: true, duration: 5000 })
     saveHistory()
     return
   }
