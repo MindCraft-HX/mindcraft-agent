@@ -2405,8 +2405,8 @@ function setupCodexSdkHandlers() {
     try {
       let catalog = codexGetSkillsCatalog()
 
-      // 运行时兜底：catalog 文件不存在时从 API 拉取（dev 模式 / 首次启动）
-      if (catalog.version === '0' && !catalog.skills.length) {
+      // 运行时兜底：catalog 文件不存在时从 API 拉取（仅 dev 模式，asar 内必有不需兜底）
+      if (catalog.version === '0' && !catalog.skills.length && !__filename.includes('.asar')) {
         try {
           const { fetchSkillsForCLI } = await import('agent-skills-cli')
           const result = await fetchSkillsForCLI({ page: 1, limit: 100, sortBy: 'stars' })
@@ -2594,6 +2594,10 @@ function setupCodexSdkHandlers() {
 
   // ─── CodeX Skills 社区市场（agent-skills-cli JS API）────────────
   ipcMain.handle('codex-skills-market-search', async (_, { query, page, pageSize }) => {
+    // agent-skills-cli 是 ESM 包，在 asar 打包后无法动态 import；社区搜索仅 dev 模式可用
+    if (__filename.includes('.asar')) {
+      return { items: [], total: 0, page: page || 0, hasMore: false }
+    }
     try {
       const { fetchSkillsForCLI, searchSkillsForCLI } = await import('agent-skills-cli')
       let result
