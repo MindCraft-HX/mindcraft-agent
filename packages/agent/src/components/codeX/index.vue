@@ -1274,6 +1274,12 @@ async function refreshProjectSessionsInBackground(project) {
         project.chats = [chat]
         switchChat(chat.id)
       }
+      // 即使扫描结果为空，也注册已有的 cliSessionId 映射（对齐 T046 修复）
+      const sessionMap = {}
+      for (const chat of project.chats || []) {
+        if (chat.sessionId && chat.cliSessionId) sessionMap[chat.sessionId] = chat.cliSessionId
+      }
+      if (Object.keys(sessionMap).length) window.electronAPI.codexRegisterCliSessions?.(sessionMap)
       return { newCount: 0, changedCount: 0, totalCount: project.chats?.length || 0 }
     }
 
@@ -2441,6 +2447,15 @@ onMounted(async () => {
     activeChatId.value = getLatestChatId(p?.chats || [])
     requestAnimationFrame(() => { smartScrollBottom(); syncMetricsTimerForActiveTab() })
     void refreshMetricsForChat(activeTab.value)
+    // 恢复后立即注册所有会话的 cliSessionId 映射（对齐 ClaudeCode T046 根因 B 修复）
+    // 避免后端 cliSessionIds Map 为空时，下一条消息执行 startThread（创建新会话）而非 resumeThread
+    {
+      const sessionMap = {}
+      for (const c of projects.value.flatMap(pp => pp.chats || [])) {
+        if (c.sessionId && c.cliSessionId) sessionMap[c.sessionId] = c.cliSessionId
+      }
+      if (Object.keys(sessionMap).length) window.electronAPI.codexRegisterCliSessions?.(sessionMap)
+    }
     // T022: 先 await 活跃项目的 session 扫描，确保 resumeThread 映射就绪再允许用户交互
     const activeProj = activeProject.value
     if (activeProj?.cwdLocked && activeProj?.cwd) {
