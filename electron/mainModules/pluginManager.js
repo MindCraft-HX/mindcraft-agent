@@ -104,7 +104,8 @@ function scanAndValidate() {
           installed: true,
           enabled: true,
           installPath: pluginDir,
-          installedAt: Date.now()
+          installedAt: Date.now(),
+          icon: manifest.icon || ''
         }
       } catch (_) {}
     } else {
@@ -148,7 +149,8 @@ function scanDevPlugins() {
       enabled: true,
       installPath: path.join(devPluginsDir, entry.name),
       installedAt: Date.now(),
-      devMode: true
+      devMode: true,
+      icon: manifest.icon || ''
     }
   }
   saveRegistry()
@@ -271,7 +273,8 @@ async function installPlugin(pluginMeta) {
       installed: true,
       enabled: true,
       installPath,
-      installedAt: Date.now()
+      installedAt: Date.now(),
+      icon: manifest.icon || ''
     }
     saveRegistry()
     broadcastPluginChange()
@@ -333,7 +336,8 @@ function getInstalledPlugins() {
     installed: p.installed,
     enabled: p.enabled,
     installPath: p.installPath,
-    devMode: p.devMode || false
+    devMode: p.devMode || false,
+    icon: p.icon || ''
   }))
 }
 

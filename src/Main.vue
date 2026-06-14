@@ -82,7 +82,10 @@
               :title="plugin.name"
             >
               <div class="sidebar-icon-wrapper">
-                <svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <!-- 插件自定义图标（如 manifest.icon 中的 SVG） -->
+                <span v-if="plugin.icon" class="nav-icon-plugin" v-html="plugin.icon"></span>
+                <!-- 默认网格图标 -->
+                <svg v-else class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="3" y="3" width="14" height="14" rx="2"/>
                   <line x1="9" y1="3" x2="9" y2="17"/>
                   <line x1="3" y1="9" x2="17" y2="9"/>
@@ -206,6 +209,7 @@ import { useRoute, useRouter } from "vue-router";
 import { Setting, Check } from '@element-plus/icons-vue';
 import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
+import { storeToRefs } from 'pinia';
 import { usePluginStore } from '@/stores/pluginStore';
 
 const settingsDrawer = ref(false);
@@ -215,7 +219,7 @@ const sidebarCollapsed = ref(false);
 // 任务完成通知状态：由 codeHub 更新，用于侧边栏"项目"图标提醒
 const codehubHasNotification = ref(false);
 const pluginStore = usePluginStore();
-const { enabledPlugins } = pluginStore;
+const { enabledPlugins } = storeToRefs(pluginStore);
 const claudeTheme = useClaudeThemeStore();
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`);
 provide("settingsDrawer", settingsDrawer);
@@ -457,6 +461,18 @@ window.electronAPI?.openTabByName?.((progress) => {
   }
 
   .nav-icon {
+    display: block;
+  }
+
+  /* 插件自定义 SVG 图标：继承父元素颜色 */
+  .nav-icon-plugin {
+    display: block;
+    width: 20px;
+    height: 20px;
+  }
+  .nav-icon-plugin :deep(svg) {
+    width: 20px;
+    height: 20px;
     display: block;
   }
 
