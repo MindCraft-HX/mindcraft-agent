@@ -8,8 +8,12 @@
       aria-label="图片预览"
       @click="emit('close')"
     >
-      <button type="button" class="cc-img-lightbox-close" aria-label="关闭" @click.stop="emit('close')">×</button>
-      <img :src="src" class="cc-img-lightbox-img" alt="预览" @click.stop />
+      <div class="cc-img-lightbox-wrapper">
+        <button type="button" class="cc-img-lightbox-close" aria-label="关闭" @click.stop="emit('close')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+        <img :src="src" class="cc-img-lightbox-img" alt="预览" @click.stop />
+      </div>
     </div>
   </Teleport>
 </template>
@@ -34,6 +38,11 @@ const emit = defineEmits(['close'])
   background: var(--cc-overlay-bg);
   cursor: zoom-out;
 }
+.cc-img-lightbox-wrapper {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
 .cc-img-lightbox-img {
   max-width: min(96vw, 1400px);
   max-height: 92vh;
@@ -45,25 +54,25 @@ const emit = defineEmits(['close'])
   cursor: default;
 }
 .cc-img-lightbox-close {
-  position: fixed;
-  top: 14px;
-  right: 16px;
-  width: 36px;
-  height: 36px;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 8px;
-  background: var(--cc-bg-elevated);
-  color: var(--cc-text);
-  font-size: 22px;
-  line-height: 1;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100000;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, transform 0.15s;
 }
 .cc-img-lightbox-close:hover {
-  background: var(--cc-bg-hover);
-  color: var(--cc-btn-primary-text);
+  background: rgba(0, 0, 0, 0.7);
+  transform: scale(1.08);
 }
 </style>

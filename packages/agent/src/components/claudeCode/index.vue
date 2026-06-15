@@ -1548,6 +1548,8 @@ const {
     const n = Math.min(MAX_MESSAGES, msgs.length)
     return {
       ...c,
+      model: c.model || '',
+      effort: c.effort || 'medium',
       messages: msgs.slice(-n),
       thinking: false,
       currentAssistantId: null,
@@ -1915,6 +1917,10 @@ function newChat() {
 function switchChat(id) {
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
+  // 实时更新斜杠面板的模型/effort显示
+  loadModelPanelState()
+  // 同步更新状态栏模型名（refreshMetricsForChat 会异步补齐全局默认值）
+  metricsData.value.model = chat?.model || ''
   // 切换时如果消息超限，先截断再保存
   if (chat) trimMessages(chat)
   resetScrollPrev()
