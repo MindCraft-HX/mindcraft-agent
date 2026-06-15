@@ -1985,11 +1985,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
       tab.thinking = true
       tab._thinkingStart = tab._thinkingStart || Date.now()
       tab.metrics = {
-        ...(tab.metrics || {}),
+        ...buildNewTurnMetrics(tab),
         sessionId: tab.sessionId,
         model: tab.metrics?.model || metricsData.value.model || '',
         thinking: true,
-        durationMs: tab.metrics?.durationMs || 0,
       }
       if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
       saveHistory()
@@ -2018,11 +2017,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
     tab._queuedInputMessageId = null
   }
   tab.metrics = {
-    ...(tab.metrics || {}),
+    ...buildNewTurnMetrics(tab),
     sessionId: tab.sessionId,
     model: tab.metrics?.model || metricsData.value.model || '',
     thinking: true,
-    durationMs: 0,
   }
   if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
 }
@@ -2150,6 +2148,19 @@ const defaultMetrics = () => ({
   gitChanges: 0,
   usageApiSessionPct: null,
 })
+
+function buildNewTurnMetrics(tab) {
+  return {
+    ...(tab?.metrics || {}),
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    contextUsage: 0,
+    durationMs: 0,
+    speedOutputPerSec: 0,
+  }
+}
 
 const metricsData = computed(() => {
   const tab = activeTab.value

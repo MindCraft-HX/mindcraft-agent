@@ -67,6 +67,73 @@ function run() {
   })
 
   withTempDir((dir) => {
+    const filePath = path.join(dir, 'session-turn-metrics.jsonl')
+    fs.writeFileSync(filePath, [
+      JSON.stringify({
+        timestamp: '2026-06-08T12:00:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-08T12:00:05.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 1000,
+              output_tokens: 200,
+              cached_input_tokens: 400,
+              cache_creation_input_tokens: 0,
+            },
+            last_token_usage: {
+              input_tokens: 1000,
+              output_tokens: 200,
+              cached_input_tokens: 400,
+              total_tokens: 1400,
+            },
+          },
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-08T12:10:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-08T12:10:07.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 1600,
+              output_tokens: 280,
+              cached_input_tokens: 700,
+              cache_creation_input_tokens: 0,
+            },
+            last_token_usage: {
+              input_tokens: 600,
+              output_tokens: 80,
+              cached_input_tokens: 300,
+              total_tokens: 900,
+            },
+          },
+        },
+      }),
+      '',
+    ].join('\n'), 'utf8')
+
+    const metrics = __test__.getCodexSessionMetricsByFile(filePath, '', dir)
+    assert.ok(metrics)
+    assert.equal(metrics.inputTokens, 600)
+    assert.equal(metrics.outputTokens, 80)
+    assert.equal(metrics.cacheReadTokens, 300)
+    assert.equal(metrics.contextUsage, 900)
+    assert.equal(metrics.durationMs, 7000)
+  })
+
+  withTempDir((dir) => {
     const filePath = path.join(dir, 'session-history.jsonl')
     fs.writeFileSync(filePath, [
       JSON.stringify({

@@ -448,6 +448,19 @@ function toPositiveNumber(...values) {
   return 0
 }
 
+function toNonNegativeNumber(value, fallback = 0) {
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
+function pickCodexTurnTokenValue(lastValue, deltaValue, fallback = 0) {
+  const direct = Number(lastValue)
+  if (Number.isFinite(direct) && direct >= 0) return direct
+  const delta = Number(deltaValue)
+  if (Number.isFinite(delta) && delta >= 0) return delta
+  return fallback
+}
+
 /** 从 token_count payload 中提取 context usage 值（兼容多种字段名） */
 function pickCodexContextUsage(info = {}, payload = {}) {
   // Prefer explicit context usage from Codex events; fallback to token estimate.
@@ -508,6 +521,15 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
     let cwd = fallbackCwd || ''
     let firstTimestamp = null
     let lastTimestamp = null
+    let lastTurnDurationMs = 0
+    let cumulativeInputTokens = 0
+    let cumulativeOutputTokens = 0
+    let cumulativeCacheReadTokens = 0
+    let cumulativeCacheCreationTokens = 0
+    let turnStartInputTokens = 0
+    let turnStartOutputTokens = 0
+    let turnStartCacheReadTokens = 0
+    let turnStartCacheCreationTokens = 0
 
     // 速度计算（仿 claudeMetrics.getSpeedMetrics，按 turn 配对 user→token_count）
     let lastUserTs = null
@@ -570,15 +592,30 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
       if (row.type === 'event_msg' && row.payload?.type === 'user_message') {
         settleCodexTurn()
         lastUserTs = ts || null
+        turnStartInputTokens = cumulativeInputTokens
+        turnStartOutputTokens = cumulativeOutputTokens
+        turnStartCacheReadTokens = cumulativeCacheReadTokens
+        turnStartCacheCreationTokens = cumulativeCacheCreationTokens
       }
 
       if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
         const info = row.payload.info || {}
         const total = info.total_token_usage || {}
-        inputTokens = Number(total.input_tokens) || inputTokens
-        outputTokens = Number(total.output_tokens) || outputTokens
-        cacheReadTokens = Number(total.cached_input_tokens) || cacheReadTokens
-        cacheCreationTokens = Number(total.cache_creation_input_tokens) || cacheCreationTokens
+        const last = info.last_token_usage || {}
+        const nextCumulativeInput = toNonNegativeNumber(total.input_tokens, cumulativeInputTokens)
+        const nextCumulativeOutput = toNonNegativeNumber(total.output_tokens, cumulativeOutputTokens)
+        const nextCumulativeCacheRead = toNonNegativeNumber(total.cached_input_tokens, cumulativeCacheReadTokens)
+        const nextCumulativeCacheCreation = toNonNegativeNumber(total.cache_creation_input_tokens, cumulativeCacheCreationTokens)
+
+        inputTokens = pickCodexTurnTokenValue(last.input_tokens, nextCumulativeInput - turnStartInputTokens, inputTokens)
+        outputTokens = pickCodexTurnTokenValue(last.output_tokens, nextCumulativeOutput - turnStartOutputTokens, outputTokens)
+        cacheReadTokens = pickCodexTurnTokenValue(last.cached_input_tokens, nextCumulativeCacheRead - turnStartCacheReadTokens, cacheReadTokens)
+        cacheCreationTokens = pickCodexTurnTokenValue(last.cache_creation_input_tokens, nextCumulativeCacheCreation - turnStartCacheCreationTokens, cacheCreationTokens)
+        cumulativeInputTokens = nextCumulativeInput
+        cumulativeOutputTokens = nextCumulativeOutput
+        cumulativeCacheReadTokens = nextCumulativeCacheRead
+        cumulativeCacheCreationTokens = nextCumulativeCacheCreation
+        if (lastUserTs && ts) lastTurnDurationMs = Math.max(0, ts - lastUserTs)
         contextUsage = pickCodexContextUsage(info, row.payload) || contextUsage
         contextWindow = pickCodexContextWindow(info, row.payload, contextWindow)
 
@@ -609,7 +646,7 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
       cacheCreationTokens,
       contextUsage,
       contextWindow,
-      durationMs: firstTimestamp != null && lastTimestamp != null ? Math.max(0, lastTimestamp - firstTimestamp) : 0,
+      durationMs: lastTurnDurationMs,
       speedOutputPerSec: speedSec > 0 ? Math.round(totalSpeedOutputTokens / speedSec) : 0,
       gitBranch: gitInfo?.branch || '',
       gitChanges: gitInfo?.changes || 0,
