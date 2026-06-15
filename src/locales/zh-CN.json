@@ -462,7 +462,7 @@
     "planTodo": "计划清单",
     "selectFile": "选择或拖入本地文件",
     "addFile": "添加本地文件或图片",
-    "refFile": "引用文件 @",
+    "refFile": "引用文件",
     "command": "命令 /",
     "plugins": "插件管理",
     "skills": "技能管理",
