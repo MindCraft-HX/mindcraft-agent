@@ -1997,9 +1997,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
       }
       return
     }
-    // 回滚：移除刚 push 的用户消息
-    const idx = tab.messages.findIndex(m => m.id === userMsg.id)
-    if (idx >= 0) tab.messages.splice(idx, 1)
+    // 非 queueable 拒绝（IPC 异常或意外返回值）：不清除用户消息，仅清理 thinking 状态。
+    // 保留用户消息可以避免"消息消失"的恶劣体验；用户看到 toast 后可稍后重试。
     tab._awaitingDone = false
     tab.thinking = false
     ElMessage.warning({ message: t('agent.codexBusy'), showClose: true, duration: 5000 })
