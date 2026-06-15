@@ -159,7 +159,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import ProviderForm from './ProviderForm.vue'
@@ -496,6 +496,10 @@ async function openSettings() {
 
   showSettings.value = true
 }
+
+// 异步组件加载完成后自动检测环境，避免 SharedSettings 首次打开时
+// openSettings() 尚未被调用导致 envStatus 为 null，显示"检测失败请重试"
+onMounted(() => { checkEnvironment() })
 
 defineExpose({ openSettings })
 
