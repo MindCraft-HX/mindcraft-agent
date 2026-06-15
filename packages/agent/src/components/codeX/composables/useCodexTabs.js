@@ -16,7 +16,7 @@ export function useCodexTabs({
       cwd: getLastProjectCwd?.() || '',
       thinking: false, messages: [],
       currentAssistantId: null,
-      sandboxLevel: '',  // 首次发送消息时由全局默认锁定
+      sandboxMode: '',  // 首次发送消息时由全局默认锁定
     }
   }
 

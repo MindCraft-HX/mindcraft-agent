@@ -171,25 +171,31 @@ function readRuntimeConfig() {
   return { apiKey, baseURL, model, reasoningEffort }
 }
 
-/** 读取权限策略 */
-const CODEX_PERMISSION_POLICIES = ['read_only', 'ask', 'allow_all']
+/** CodeX SDK 原生 sandboxMode 值 */
+const CODEX_SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access']
 
-function normalizePermissionPolicy(policy) {
-  return CODEX_PERMISSION_POLICIES.includes(policy) ? policy : 'ask'
+/** 旧 permissionPolicy 值 → 新 sandboxMode 值迁移映射 */
+const CODEX_SANDBOX_MIGRATE = {
+  read_only: 'read-only',
+  ask: 'workspace-write',
+  allow_all: 'danger-full-access',
 }
 
-function readPermissionPolicy() {
+function readSandboxMode() {
   try {
     const conf = new Conf({ name: 'mindcraft-codex' })
-    return normalizePermissionPolicy(conf.get('permissionPolicy'))
-  } catch (_) { return 'ask' }
-}
-
-/** 读取沙箱模式 — 与权限策略联动：read_only=read-only, ask=workspace-write, allow_all=danger-full-access */
-function resolveSandboxMode(policy) {
-  if (policy === 'read_only') return 'read-only'
-  if (policy === 'ask') return 'workspace-write'
-  return 'danger-full-access'  // allow_all → 完全自由，SDK 默认是 read-only，必须显式传
+    // 先读新 key
+    const mode = conf.get('sandboxMode')
+    if (mode && CODEX_SANDBOX_MODES.includes(mode)) return mode
+    // 尝试旧 key 迁移
+    const old = conf.get('permissionPolicy')
+    if (old && CODEX_SANDBOX_MIGRATE[old]) {
+      conf.set('sandboxMode', CODEX_SANDBOX_MIGRATE[old])
+      conf.delete('permissionPolicy')
+      return CODEX_SANDBOX_MIGRATE[old]
+    }
+  } catch (_) {}
+  return 'workspace-write'
 }
 
 let codexModulePromise = null
@@ -1575,7 +1581,7 @@ function resetCodexSdkRuntime() {
 function setupCodexSdkHandlers() {
   loadCodexSdk().catch(() => {})
 
-  ipcMain.handle('codex-agent-query', async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxLevel, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
+  ipcMain.handle('codex-agent-query', async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxMode: frontendSandbox, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
     const runtime = readRuntimeConfig()
     console.log('[codex-diag] readRuntimeConfig:', {
       hasApiKey: !!runtime.apiKey,
@@ -1588,14 +1594,12 @@ function setupCodexSdkHandlers() {
     const baseURL = runtime.baseURL || ''
     const model = modelOverride?.trim() || runtime.model || ''
     const reasoningEffort = String(reasoningEffortOverride?.trim() || runtime.reasoningEffort || '').trim()
-    const permissionPolicy = normalizePermissionPolicy(sandboxLevel || readPermissionPolicy())
+    const sandboxMode = frontendSandbox || readSandboxMode()
     const resolvedCwd = path.resolve(cwd || process.cwd())
-    const sandboxMode = resolveSandboxMode(permissionPolicy)
 
     console.log('[codex] session launch:', {
       sessionId,
       cwd: resolvedCwd,
-      permissionPolicy,
       sandboxMode,
     })
 
@@ -1740,7 +1744,7 @@ function setupCodexSdkHandlers() {
             }
           } else {
             // B023 guard：记录每次 startThread 调用，便于排查空会话（仅含'/'）来源
-            console.log('[codex] startThread: sessionId=', sessionId, 'cwd=', resolvedCwd, 'permissionPolicy=', permissionPolicy, 'sandboxMode=', sandboxMode, 'hasPrompt=', !!prompt)
+            console.log('[codex] startThread: sessionId=', sessionId, 'cwd=', resolvedCwd, 'sandboxMode=', sandboxMode, 'hasPrompt=', !!prompt)
             thread = codex.startThread(threadOptions)
           }
 
@@ -2778,11 +2782,13 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-get-permission-policy', () => readPermissionPolicy())
-  ipcMain.handle('codex-set-permission-policy', (_, policy) => {
+  ipcMain.handle('codex-get-sandbox-mode', () => readSandboxMode())
+  ipcMain.handle('codex-set-sandbox-mode', (_, mode) => {
     try {
       const c = new Conf({ name: 'mindcraft-codex' })
-      c.set('permissionPolicy', normalizePermissionPolicy(policy))
+      if (mode && CODEX_SANDBOX_MODES.includes(mode)) {
+        c.set('sandboxMode', mode)
+      }
     } catch (_) {}
     return true
   })

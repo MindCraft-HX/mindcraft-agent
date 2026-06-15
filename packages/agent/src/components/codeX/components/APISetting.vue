@@ -15,19 +15,19 @@
           <button class="settings-close" @click="closeSettings">×</button>
         </div>
 
-        <!-- 权限策略 -->
+        <!-- 默认文件权限 -->
         <div class="theme-row">
-          <span class="theme-label">{{ $t('settings.permission') }}</span>
+          <span class="theme-label">{{ $t('settings.defaultFileAccess') }}</span>
           <div class="theme-options">
             <button
-              v-for="p in codexConfigStore.policies"
-              :key="p.value"
+              v-for="s in codexConfigStore.sandboxLevels"
+              :key="s.value"
               class="theme-option permission-option"
-              :class="{ active: codexConfigStore.permissionPolicy === p.value }"
-              :title="p.desc"
-              @click="codexConfigStore.setPermissionPolicy(p.value); showPermissionToast(p)"
+              :class="{ active: codexConfigStore.sandboxMode === s.value }"
+              :title="s.desc"
+              @click="codexConfigStore.setSandboxMode(s.value); showSandboxToast(s)"
             >
-              <span class="theme-text">{{ p.label }}</span>
+              <span class="theme-text">{{ s.label }}</span>
             </button>
           </div>
         </div>
@@ -272,15 +272,15 @@ function openSettings() {
   editingNewProvider.value = false
   showSettings.value = true
   loadProviders()
-  codexConfigStore.loadPermissionPolicy()
+  codexConfigStore.loadSandboxMode()
   codexConfigStore.loadDefaultNetworkAccess()
   codexConfigStore.loadDefaultWebSearch()
   // 环境检测不阻塞面板打开（execSync 可能很慢）
   checkEnvironment()
 }
 
-function showPermissionToast(p) {
-  ElMessage.success(t('settings.permissionPolicySet', { label: p.label }))
+function showSandboxToast(s) {
+  ElMessage.success(t('settings.sandbox.modeChanged', { label: s.label }))
 }
 
 defineExpose({ openSettings })

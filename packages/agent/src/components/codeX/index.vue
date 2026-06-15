@@ -167,6 +167,7 @@
             :disabled="!activeProject?.cwdLocked || !activeTab || isActiveTabHistoryDeferred"
             :network-access="activeTab?.networkAccessEnabled ?? codexConfigStore.defaultNetworkAccess"
             :web-search="activeTab?.webSearchMode ?? codexConfigStore.defaultWebSearch"
+            :sandbox-mode="activeTab?.sandboxMode ?? codexConfigStore.sandboxMode"
             @addFile="addImageClick"
             @triggerMention="triggerMention"
             @triggerSlash="triggerSlashMenu"
@@ -174,6 +175,7 @@
             @openSkills="() => codexSkillsRef?.open?.()"
             @update:networkAccess="setSessionNetworkAccess"
             @update:webSearch="setSessionWebSearch"
+            @update:sandboxMode="setSessionSandbox"
           />
           <input ref="fileInputRef" type="file" multiple style="display:none" @change="onFileSelect" />
         </div>
@@ -332,6 +334,13 @@ function setSessionWebSearch(mode) {
   const tab = activeTab.value
   if (!tab) return
   tab.webSearchMode = mode
+}
+
+/** 会话级：切换 sandbox 文件权限（下个 turn 自动生效） */
+function setSessionSandbox(mode) {
+  const tab = activeTab.value
+  if (!tab || !['read-only', 'workspace-write', 'danger-full-access'].includes(mode)) return
+  tab.sandboxMode = mode
 }
 
 /** 项目级：更新额外目录 */
@@ -1005,7 +1014,7 @@ function makeRestoredChat(c, messages) {
     thinking: false, messages: msgs, currentAssistantId: null,
     metrics: c.metrics || null,
     model: c.model || null,
-    sandboxLevel: resolveRestoredSandboxLevel(c),
+    sandboxMode: resolveRestoredSandboxMode(c),
     networkAccessEnabled: resolveRestoredNetworkAccess(c),
     webSearchMode: resolveRestoredWebSearch(c),
     _thinkingStart: c._thinkingStart || null,
@@ -1153,13 +1162,30 @@ function inferToolFailureFromText(toolName, text) {
   return false
 }
 
-function isValidSandboxLevel(level) {
-  return ['read_only', 'ask', 'allow_all'].includes(level)
+/** 旧 sandbox 值 → 新 SDK 原生值迁移映射 */
+const SANDBOX_MIGRATE = {
+  read_only: 'read-only',
+  ask: 'workspace-write',
+  allow_all: 'danger-full-access',
 }
 
-function resolveRestoredSandboxLevel(chat) {
-  if (isValidSandboxLevel(chat?.sandboxLevel)) return chat.sandboxLevel
-  return hasStartedCodexChat(chat) ? 'ask' : codexConfigStore.permissionPolicy
+function isValidSandboxMode(mode) {
+  return ['read-only', 'workspace-write', 'danger-full-access'].includes(mode)
+}
+
+function migrateSandboxValue(raw) {
+  if (!raw) return null
+  if (isValidSandboxMode(raw)) return raw
+  if (SANDBOX_MIGRATE[raw]) return SANDBOX_MIGRATE[raw]
+  return null
+}
+
+function resolveRestoredSandboxMode(chat) {
+  // 先读新字段名，再读旧字段名（兼容历史数据）
+  const raw = chat?.sandboxMode || chat?.sandboxLevel
+  const valid = migrateSandboxValue(raw)
+  if (valid) return valid
+  return hasStartedCodexChat(chat) ? 'workspace-write' : codexConfigStore.sandboxMode
 }
 
 function resolveRestoredNetworkAccess(chat) {
@@ -1195,7 +1221,7 @@ function createNewChat() {
     createdAt: Date.now(),
     thinking: false, messages: [], currentAssistantId: null,
     metrics: null,
-    sandboxLevel: codexConfigStore.permissionPolicy,
+    sandboxMode: codexConfigStore.sandboxMode,
     networkAccessEnabled: codexConfigStore.defaultNetworkAccess,
     webSearchMode: codexConfigStore.defaultWebSearch,
     _thinkingStart: null,
@@ -1830,7 +1856,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     : activeProject.value
   if (!ownerProject?.cwdLocked) return
   // 兼容旧历史数据：缺字段时在发送前补齐一次，但新 chat 默认已在创建时初始化。
-  if (!tab.sandboxLevel) tab.sandboxLevel = codexConfigStore.permissionPolicy
+  if (!tab.sandboxMode) tab.sandboxMode = codexConfigStore.sandboxMode
   if (tab.networkAccessEnabled === undefined) tab.networkAccessEnabled = codexConfigStore.defaultNetworkAccess
   if (!tab.webSearchMode) tab.webSearchMode = codexConfigStore.defaultWebSearch
 
@@ -1936,7 +1962,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   const rawPayload = {
     prompt: finalPrompt, images, cwd: ownerProject?.cwd || '',
     sessionId: tab.sessionId,
-    sandboxLevel: tab.sandboxLevel,
+    sandboxMode: tab.sandboxMode,
     networkAccessEnabled: tab.networkAccessEnabled,
     webSearchMode: tab.webSearchMode,
     model: (tab.model || tab.metrics?.model || ''),
@@ -2474,7 +2500,7 @@ async function loadMoreHistory(scrollEl) {
 }
 
 onMounted(async () => {
-  codexConfigStore.loadPermissionPolicy()
+  codexConfigStore.loadSandboxMode()
   codexConfigStore.loadDefaultNetworkAccess()
   codexConfigStore.loadDefaultWebSearch()
   await loadGlobalCodexSafeMode()

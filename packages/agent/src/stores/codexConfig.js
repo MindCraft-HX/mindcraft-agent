@@ -1,20 +1,38 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+/** CodeX SDK 原生 sandboxMode 值 */
+const VALID_SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access']
+
+/** 旧值 → 新值迁移映射 */
+const MIGRATE_MAP = {
+  read_only: 'read-only',
+  ask: 'workspace-write',
+  allow_all: 'danger-full-access',
+}
+
 /**
  * Codex SDK 配置 Store
- * 管理权限策略、网络访问、网页搜索等 Codex 专属设置
+ * 管理文件权限（sandbox）、网络访问、网页搜索等 Codex 专属设置
  */
 export const useCodexConfigStore = defineStore('codexConfig', () => {
-  /** 权限策略：read_only | ask | allow_all */
-  const permissionPolicy = ref('ask')
+  /** 默认 sandbox 模式：SDK 默认 read-only，我们主动设为 workspace-write */
+  const sandboxMode = ref('workspace-write')
 
-  /** 权限策略可选值 */
-  const policies = [
-    { value: 'read_only', label: '只读', desc: '仅读取，不修改文件' },
-    { value: 'ask', label: '安全模式（工作区可写）', desc: '不走审批交互，仅允许在当前工作区内写入' },
-    { value: 'allow_all', label: '完全访问', desc: '取消沙箱限制，允许更自由的访问' },
+  /** sandbox 级别可选值 */
+  const sandboxLevels = [
+    { value: 'read-only', label: '只读', desc: '仅读取文件，不执行任何修改' },
+    { value: 'workspace-write', label: '工作区可写（推荐）', desc: '可修改当前项目文件，无法访问工作区外' },
+    { value: 'danger-full-access', label: '完全访问', desc: '可读取和修改任意路径文件' },
   ]
+
+  /** 旧值迁移：兼容 localStorage 中 ClaudeCode 式命名 */
+  function migrateValue(raw) {
+    if (!raw) return null
+    if (VALID_SANDBOX_MODES.includes(raw)) return raw
+    if (MIGRATE_MAP[raw]) return MIGRATE_MAP[raw]
+    return null
+  }
 
   /** 默认网络访问：新会话是否允许联网 */
   const defaultNetworkAccess = ref(true)
@@ -30,25 +48,29 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
   ]
 
   /**
-   * 设置权限策略并同步到主进程
-   * @param {'read_only' | 'ask' | 'allow_all'} policy
+   * 设置默认 sandbox 模式并同步到主进程
    */
-  async function setPermissionPolicy(policy) {
-    if (!policies.some(p => p.value === policy)) return
-    permissionPolicy.value = policy
+  async function setSandboxMode(mode) {
+    if (!VALID_SANDBOX_MODES.includes(mode)) return
+    sandboxMode.value = mode
     try {
-      await window.electronAPI?.codexSetPermissionPolicy?.(policy)
+      await window.electronAPI?.codexSetSandboxMode?.(mode)
     } catch (_) {}
   }
 
   /**
-   * 从主进程 electron-conf 加载权限策略
+   * 从主进程 electron-conf 加载默认 sandbox 模式（含旧值迁移）
    */
-  async function loadPermissionPolicy() {
+  async function loadSandboxMode() {
     try {
-      const stored = await window.electronAPI?.codexGetPermissionPolicy?.()
-      if (stored && policies.some(p => p.value === stored)) {
-        permissionPolicy.value = stored
+      const raw = await window.electronAPI?.codexGetSandboxMode?.()
+      const valid = migrateValue(raw)
+      if (valid) {
+        sandboxMode.value = valid
+        // 旧值已迁移 → 写回主进程
+        if (raw !== valid) {
+          await setSandboxMode(valid)
+        }
       }
     } catch (_) {}
   }
@@ -88,15 +110,14 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
     } catch (_) {}
   }
 
-
   return {
-    permissionPolicy,
-    policies,
+    sandboxMode,
+    sandboxLevels,
     defaultNetworkAccess,
     defaultWebSearch,
     webSearchOptions,
-    setPermissionPolicy,
-    loadPermissionPolicy,
+    setSandboxMode,
+    loadSandboxMode,
     setDefaultNetworkAccess,
     loadDefaultNetworkAccess,
     setDefaultWebSearch,
@@ -106,6 +127,7 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
   persist: {
     key: 'codexConfig',
     storage: localStorage,
-    paths: ['permissionPolicy', 'defaultNetworkAccess', 'defaultWebSearch'],
+    // sandboxMode: 新 key；permissionPolicy: 旧 key（pinia persist 会自动从 localStorage 读回旧值，我们在 loadSandboxMode 中做迁移）
+    paths: ['sandboxMode', 'defaultNetworkAccess', 'defaultWebSearch'],
   },
 })

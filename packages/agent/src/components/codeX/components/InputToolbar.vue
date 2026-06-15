@@ -71,6 +71,18 @@
           <span class="mini-toggle-knob"></span>
         </button>
       </label>
+      <!-- sandbox 文件权限 -->
+      <select
+        :value="sandboxMode"
+        class="mode-select"
+        title="文件访问权限"
+        :disabled="disabled"
+        @change="$emit('update:sandboxMode', $event.target.value)"
+      >
+        <option value="read-only">{{ $t('settings.sandbox.readOnlyShort') }}</option>
+        <option value="workspace-write">{{ $t('settings.sandbox.workspaceWriteShort') }}</option>
+        <option value="danger-full-access">{{ $t('settings.sandbox.fullAccessShort') }}</option>
+      </select>
       <!-- 网页搜索模式 -->
       <select
         :value="webSearch"
@@ -92,9 +104,10 @@ defineProps({
   disabled: { type: Boolean, default: false },
   networkAccess: { type: Boolean, default: true },
   webSearch: { type: String, default: 'disabled' },
+  sandboxMode: { type: String, default: 'workspace-write' },
 })
 
-defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:networkAccess', 'update:webSearch', 'openPlugins', 'openSkills'])
+defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:networkAccess', 'update:webSearch', 'update:sandboxMode', 'openPlugins', 'openSkills'])
 </script>
 
 <style scoped>
@@ -207,7 +220,7 @@ defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:networkAccess'
   transform: translateX(12px);
 }
 
-/* 搜索模式下拉 */
+/* sandbox / 搜索模式下拉 */
 .mode-select {
   height: 22px;
   min-width: 72px;
