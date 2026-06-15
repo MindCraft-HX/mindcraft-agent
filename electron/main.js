@@ -175,12 +175,14 @@ function createWindow() {
   }
   win.webContents.on('before-input-event', (event, input) => {
     // Ctrl+Shift+I / Cmd+Shift+I：打开 DevTools（所有环境）
-    if (input.key === 'I' && input.shift && (input.control || input.meta) && !input.alt) {
+    // input.key 在不同平台可能返回大小写不一致，统一用大写比较
+    const key = (input.key || '').toUpperCase()
+    if (key === 'I' && input.shift && (input.control || input.meta) && !input.alt) {
       win.webContents.openDevTools({ mode: 'detach' })
       event.preventDefault()
     }
     // 开发模式额外：Ctrl+R / Cmd+R 刷新页面
-    if (NODE_ENV === 'development' && input.key === 'r' && (input.control || input.meta) && !input.shift && !input.alt) {
+    if (NODE_ENV === 'development' && key === 'R' && (input.control || input.meta) && !input.shift && !input.alt) {
       win.reload()
       event.preventDefault()
     }
