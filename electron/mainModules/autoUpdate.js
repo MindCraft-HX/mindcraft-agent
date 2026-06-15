@@ -98,12 +98,18 @@ function setupAutoUpdater(env, win) {
   ipcMain.handle('get-app-update-status', () => currentStatus)
 
   // 下载更新（由 SystemSettings "下载更新" 按钮触发）
-  ipcMain.handle('download-update', () => {
-    setSetting("isUpdateAvailable", false);
-    win.webContents.send("client-update-info-data", false)
-    sendStatus(win, { state: 'downloading', progress: 0 })
-    autoUpdater.downloadUpdate()
-    return true
+  ipcMain.handle('download-update', async () => {
+    try {
+      setSetting("isUpdateAvailable", false);
+      win.webContents.send("client-update-info-data", false)
+      sendStatus(win, { state: 'downloading', progress: 0 })
+      await autoUpdater.downloadUpdate()
+      return { success: true }
+    } catch (e) {
+      console.error('下载更新失败:', e)
+      sendStatus(win, { state: 'error', error: e?.message || String(e) })
+      return { success: false, error: e?.message || String(e) }
+    }
   })
   // 安装更新（由 SystemSettings "重启安装" 按钮触发）
   ipcMain.on('install-update', () => {

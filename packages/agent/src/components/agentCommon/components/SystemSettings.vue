@@ -84,11 +84,17 @@
         </div>
 
         <!-- 下载进度 -->
-        <div v-if="updateState === 'downloading' && downloadProgress != null" class="ss-item ss-progress">
+        <div v-if="updateState === 'downloading'" class="ss-item ss-progress">
           <div class="ss-progress-bar">
-            <div class="ss-progress-fill" :style="{ width: Math.round(downloadProgress) + '%' }"></div>
+            <div
+              class="ss-progress-fill"
+              :class="{ 'ss-progress-indeterminate': downloadProgress === 0 }"
+              :style="{ width: downloadProgress > 0 ? Math.round(downloadProgress) + '%' : '30%' }"
+            ></div>
           </div>
-          <span class="ss-progress-text">{{ $t('settings.appUpdateDownloading', { progress: Math.round(downloadProgress) }) }}</span>
+          <span class="ss-progress-text">
+            {{ downloadProgress > 0 ? $t('settings.appUpdateDownloading', { progress: Math.round(downloadProgress) }) : $t('settings.downloading') }}
+          </span>
         </div>
       </div>
     </div>
@@ -138,10 +144,9 @@ function handleCheckUpdate() {
 }
 
 async function handleDownloadUpdate() {
-  const ok = await window.electronAPI?.downloadUpdate?.()
-  if (ok) {
-    updateState.value = 'downloading'
-    downloadProgress.value = 0
+  const result = await window.electronAPI?.downloadUpdate?.()
+  if (!result?.success) {
+    updateState.value = 'error'
   }
 }
 
@@ -327,6 +332,15 @@ onUnmounted(() => {
   background: var(--cc-primary);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+.ss-progress-indeterminate {
+  animation: ss-progress-pulse 1.2s ease-in-out infinite;
+  opacity: 0.6;
+}
+@keyframes ss-progress-pulse {
+  0%   { opacity: 0.3; }
+  50%  { opacity: 0.8; }
+  100% { opacity: 0.3; }
 }
 
 .ss-progress-text {
