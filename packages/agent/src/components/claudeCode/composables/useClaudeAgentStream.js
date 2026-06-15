@@ -74,6 +74,24 @@ function syncPlanTaskStateFromToolResult(tab, toolUseId, content, saveHistory, e
   }
 }
 
+function markOpenToolsInterrupted(tab, reason = 'interrupted') {
+  const messages = Array.isArray(tab?.messages) ? tab.messages : []
+  const label = reason === 'failed'
+    ? 'Claude 本轮执行失败，工具调用未返回结果。'
+    : 'Claude 本轮执行中断，工具调用未返回结果。'
+  let changed = false
+  for (const msg of messages) {
+    if (!msg || msg.role !== 'tool') continue
+    if (msg.status !== 'running' && msg.status !== 'pending') continue
+    msg.status = 'error'
+    msg.toolError = msg.toolError || label
+    msg._interruptedToolUse = true
+    msg.expanded = true
+    changed = true
+  }
+  return changed
+}
+
 export function useClaudeAgentStream({
   tabs,
   projects,
@@ -504,6 +522,15 @@ export function useClaudeAgentStream({
       }
     }
     tab.thinking = false
+    if (reason !== 'completed') {
+      markOpenToolsInterrupted(tab, reason)
+      tab._sessionIntegrity = {
+        ...(tab._sessionIntegrity || {}),
+        hasDanglingToolUse: true,
+        recommendedDoneReason: reason,
+      }
+      tab._hasDanglingToolRecovery = true
+    }
 
     if (projects && getActiveProjectId) {
       const ownerProject = projects.value.find(p => (p.chats || []).some(c => c.sessionId === sid))

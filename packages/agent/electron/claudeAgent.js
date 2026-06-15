@@ -327,6 +327,69 @@ function resolveClaudeDoneReasonFromError(err) {
   return 'failed'
 }
 
+function finalizeClaudeDoneReason({
+  resultReceived = false,
+  exitCode = 0,
+  fallbackReason = '',
+  sessionFileIntegrity = null,
+} = {}) {
+  if (fallbackReason === 'aborted') return 'aborted'
+  if (fallbackReason === 'failed') return 'failed'
+  if (resultReceived) return 'completed'
+  if (sessionFileIntegrity?.hasDanglingToolUse) return 'interrupted'
+  if (exitCode !== 0) return 'failed'
+  return 'interrupted'
+}
+
+function analyzeClaudeJsonlFileIntegrity(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return null
+    const text = fs.readFileSync(filePath, 'utf8')
+    const lines = text.split(/\r?\n/).filter(Boolean)
+    const openToolUses = new Set()
+    let hasResultRow = false
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line)
+        const type = entry?.type || entry?._source_type || ''
+        if (type === 'result') {
+          hasResultRow = true
+          openToolUses.clear()
+          continue
+        }
+        const isAssistantEntry = type === 'assistant' || (type === 'message' && entry?.message?.role === 'assistant')
+        const isUserEntry = type === 'user' || (type === 'message' && entry?.message?.role === 'user')
+        if (isAssistantEntry && Array.isArray(entry?.message?.content)) {
+          for (const block of entry.message.content) {
+            if (block?.type === 'tool_use') {
+              const toolUseId = String(block?.id || '').trim()
+              if (toolUseId) openToolUses.add(toolUseId)
+            }
+            if (block?.type === 'tool_result') {
+              const toolUseId = String(block?.tool_use_id || block?.toolUseId || '').trim()
+              if (toolUseId) openToolUses.delete(toolUseId)
+            }
+          }
+        }
+        if (isUserEntry && Array.isArray(entry?.message?.content)) {
+          for (const block of entry.message.content) {
+            if (block?.type === 'tool_result') {
+              const toolUseId = String(block?.tool_use_id || block?.toolUseId || '').trim()
+              if (toolUseId) openToolUses.delete(toolUseId)
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return {
+      hasResult: hasResultRow,
+      hasDanglingToolUse: openToolUses.size > 0,
+    }
+  } catch (_) {
+    return null
+  }
+}
+
 /** 获取项目面板状态路径 - 使用 ~/.claude/projects/<cwd-hash>/panel-state.json */
 function getClaudeCodePanelStatePath() {
   // panel state 保存到 Electron userData 目录（属于 mindcraft 应用自身数据）
@@ -2680,6 +2743,7 @@ function setupClaudeHandlers() {
             // 如果错误发生在流式首条消息之前，cliSessionId 未注册。
             // 兜底扫描项目目录，按修改时间找本次查询创建的 .jsonl（误差窗口 60s）。
             let finalCliSessionId = fallbackCliSessionId
+            let sessionFileIntegrity = null
             if (!finalCliSessionId && (s.cwd || resolvedCwd)) {
               try {
                 const projectDir = getClaudeProjectsRootDir(s.cwd || resolvedCwd)
@@ -2703,11 +2767,21 @@ function setupClaudeHandlers() {
                 }
               } catch (_) {}
             }
+            if (finalCliSessionId && (s.cwd || resolvedCwd)) {
+              const jsonlPath = path.join(getClaudeProjectsRootDir(s.cwd || resolvedCwd), `${finalCliSessionId}.jsonl`)
+              sessionFileIntegrity = analyzeClaudeJsonlFileIntegrity(jsonlPath)
+            }
+            const doneReason = finalizeClaudeDoneReason({
+              resultReceived,
+              exitCode,
+              fallbackReason: exitCode === 0 ? 'interrupted' : 'failed',
+              sessionFileIntegrity,
+            })
             const donePayload = buildClaudeAgentDonePayload({
               sessionId,
               cliSessionId: finalCliSessionId,
               cwd: s.cwd || resolvedCwd,
-              reason: exitCode === 0 ? 'completed' : 'failed',
+              reason: doneReason,
             })
             safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
           }
@@ -3527,7 +3601,9 @@ function setupClaudeHandlers() {
 module.exports = {
   setupClaudeHandlers,
   __test__: {
+    analyzeClaudeJsonlFileIntegrity,
     buildClaudeAgentDonePayload,
+    finalizeClaudeDoneReason,
     getClaudeProjectsRootDir,
     resolveClaudeDoneReasonFromError,
   },

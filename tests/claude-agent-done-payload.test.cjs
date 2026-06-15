@@ -1,4 +1,7 @@
 const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 
 const {
   __test__,
@@ -53,11 +56,109 @@ function runDoneReasonResolutionTest() {
   assert.equal(__test__.resolveClaudeDoneReasonFromError(new Error('unexpected failure')), 'failed')
 }
 
+function runDoneReasonFinalizationTest() {
+  assert.equal(__test__.finalizeClaudeDoneReason({
+    resultReceived: true,
+    exitCode: 0,
+    fallbackReason: 'interrupted',
+  }), 'completed')
+
+  assert.equal(__test__.finalizeClaudeDoneReason({
+    resultReceived: false,
+    exitCode: 0,
+    sessionFileIntegrity: { hasDanglingToolUse: true },
+  }), 'interrupted')
+
+  assert.equal(__test__.finalizeClaudeDoneReason({
+    resultReceived: false,
+    exitCode: 0,
+  }), 'interrupted')
+
+  assert.equal(__test__.finalizeClaudeDoneReason({
+    resultReceived: false,
+    exitCode: -1,
+  }), 'failed')
+
+  assert.equal(__test__.finalizeClaudeDoneReason({
+    resultReceived: false,
+    exitCode: -1,
+    fallbackReason: 'aborted',
+  }), 'aborted')
+
+  assert.equal(__test__.finalizeClaudeDoneReason({
+    resultReceived: false,
+    exitCode: 0,
+    sessionFileIntegrity: { hasDanglingToolUse: true },
+    fallbackReason: 'completed',
+  }), 'interrupted')
+}
+
+function runJsonlIntegrityFileTest() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-jsonl-integrity-'))
+  const filePath = path.join(dir, 'session.jsonl')
+  fs.writeFileSync(filePath, [
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'pwd' } }],
+      },
+    }),
+    '',
+  ].join('\n'), 'utf8')
+
+  const integrity = __test__.analyzeClaudeJsonlFileIntegrity(filePath)
+
+  assert.deepEqual(integrity, {
+    hasResult: false,
+    hasDanglingToolUse: true,
+  })
+
+  fs.rmSync(dir, { recursive: true, force: true })
+}
+
+function runJsonlIntegrityMultipleToolUseTest() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-jsonl-integrity-multi-'))
+  const filePath = path.join(dir, 'session.jsonl')
+  fs.writeFileSync(filePath, [
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'toolu_done', name: 'Read', input: { file_path: 'a.txt' } },
+          { type: 'tool_use', id: 'toolu_open', name: 'Bash', input: { command: 'pytest' } },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_done', content: 'ok' }],
+      },
+    }),
+    '',
+  ].join('\n'), 'utf8')
+
+  const integrity = __test__.analyzeClaudeJsonlFileIntegrity(filePath)
+
+  assert.deepEqual(integrity, {
+    hasResult: false,
+    hasDanglingToolUse: true,
+  })
+
+  fs.rmSync(dir, { recursive: true, force: true })
+}
+
 function run() {
   runDonePayloadDefaultReasonTest()
   runDonePayloadFallbackPathTest()
   runDonePayloadExplicitReasonTest()
   runDoneReasonResolutionTest()
+  runDoneReasonFinalizationTest()
+  runJsonlIntegrityFileTest()
+  runJsonlIntegrityMultipleToolUseTest()
   console.log('claude agent done payload tests passed')
 }
 

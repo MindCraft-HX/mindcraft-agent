@@ -12,15 +12,16 @@ test('reload remains allowed for idle chat without pending tools', () => {
   assert.equal(shouldReloadClaudeChatFromDisk(chat), true)
 })
 
-test('reload is blocked while chat waits for permission approval', () => {
+test('keeps runtime permission prompts from being overwritten by disk reload', () => {
   const chat = {
+    filePath: 'C:/Users/me/.claude/projects/repo/live.jsonl',
     thinking: true,
     messages: [
       {
         role: 'tool',
-        toolName: 'Edit',
         status: 'pending',
-        requestId: 'req-1',
+        toolName: 'Bash',
+        requestId: 'perm-1',
       },
     ],
   }
@@ -34,11 +35,33 @@ test('reload is blocked while ask-user-question is still pending', () => {
     messages: [
       {
         role: 'tool',
-        toolName: 'AskUserQuestion',
         status: 'pending',
+        toolName: 'AskUserQuestion',
       },
     ],
   }
 
   assert.equal(shouldReloadClaudeChatFromDisk(chat), false)
+})
+
+test('allows disk reload for recovered dangling tool prompts', () => {
+  const chat = {
+    filePath: 'C:/Users/me/.claude/projects/repo/interrupted.jsonl',
+    thinking: false,
+    _sessionIntegrity: {
+      hasDanglingToolUse: true,
+      danglingToolUseIds: ['toolu_1'],
+    },
+    messages: [
+      {
+        role: 'tool',
+        status: 'pending',
+        toolName: 'Bash',
+        requestId: 'perm-1',
+        toolUseId: 'toolu_1',
+      },
+    ],
+  }
+
+  assert.equal(shouldReloadClaudeChatFromDisk(chat), true)
 })

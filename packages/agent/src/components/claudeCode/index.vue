@@ -332,6 +332,7 @@ import { buildDiffLines, applyToolResult, safeIpcPayload, stripSystemContextTags
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
+import { analyzeClaudeSessionIntegrity, markDanglingClaudeToolsInterrupted } from './utils/sessionIntegrity.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
 import { sanitizeClaudeProjectsForPersistence } from './utils/historyPersistenceSanitizer.mjs'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
@@ -802,7 +803,7 @@ function applyToolResultToHistoryMessages(messages, toolUseId, content, isErrorF
   })
 }
 
-function normalizeSessionEventsToUiMessages(rawData) {
+function normalizeSessionEventsToUiMessages(rawData, { recoverDanglingTools = false } = {}) {
   const out = []
   let currentAssistantId = null
 
@@ -1069,11 +1070,14 @@ function normalizeSessionEventsToUiMessages(rawData) {
     }
   }
 
+  if (recoverDanglingTools) {
+    markDanglingClaudeToolsInterrupted(out, analyzeClaudeSessionIntegrity(rawData), { nextId: nextMsgId })
+  }
   return out
 }
 
 // 扁平 session：{ role, content:[...], _source_type } —— 将 tool_use / tool_result 也拆成与实时流一致的 UI 消息
-function normalizeFlatSessionMessagesToUiMessages(rawData) {
+function normalizeFlatSessionMessagesToUiMessages(rawData, { recoverDanglingTools = false } = {}) {
   const out = []
   let currentAssistantId = null
 
@@ -1296,6 +1300,9 @@ function normalizeFlatSessionMessagesToUiMessages(rawData) {
     }
   }
 
+  if (recoverDanglingTools) {
+    markDanglingClaudeToolsInterrupted(out, analyzeClaudeSessionIntegrity(rawData), { nextId: nextMsgId })
+  }
   return out
 }
 const activeRunMode = computed({
@@ -1938,10 +1945,11 @@ async function ensureChatMessagesLoaded(chat) {
       e && (typeof e.role === 'string' || Array.isArray(e.content) || typeof e.content === 'string')
     )
 
+    const integrity = analyzeClaudeSessionIntegrity(rawData.messages)
     const allMessages = looksLikeFlatMessages
-      ? normalizeFlatSessionMessagesToUiMessages(rawData.messages)
+      ? normalizeFlatSessionMessagesToUiMessages(rawData.messages, { recoverDanglingTools: true })
         .filter(msg => msg && (msg.role || msg.specialItems?.length > 0))
-      : normalizeSessionEventsToUiMessages(rawData.messages)
+      : normalizeSessionEventsToUiMessages(rawData.messages, { recoverDanglingTools: true })
         .filter(msg => msg && (msg.role || msg.specialItems?.length > 0))
 
     const n = Math.min(MAX_MESSAGES, allMessages.length)
@@ -1949,6 +1957,12 @@ async function ensureChatMessagesLoaded(chat) {
     chat.hasMoreHistory = rawData.hasMore
     chat.currentPage = 0
     chat.pageSize = 60
+    chat._sessionIntegrity = integrity
+    chat._hasDanglingToolRecovery = Boolean(integrity.hasDanglingToolUse)
+    if (integrity.hasDanglingToolUse) {
+      chat.thinking = false
+      chat._pendingSessionBinding = false
+    }
     chat._messagesLoaded = true
   } catch (e) {
     console.warn('[ensureChatMessagesLoaded] failed:', e?.message || e)
@@ -2314,9 +2328,9 @@ async function loadMoreHistory(scrollEl) {
     const moreMessages = rawData.messages.some(e =>
       e && (typeof e.role === 'string' || Array.isArray(e.content) || typeof e.content === 'string')
     )
-      ? normalizeFlatSessionMessagesToUiMessages(rawData.messages)
+      ? normalizeFlatSessionMessagesToUiMessages(rawData.messages, { recoverDanglingTools: false })
         .filter(msg => msg && (msg.role || msg.specialItems?.length > 0))
-      : normalizeSessionEventsToUiMessages(rawData.messages)
+      : normalizeSessionEventsToUiMessages(rawData.messages, { recoverDanglingTools: false })
         .filter(msg => msg && (msg.role || msg.specialItems?.length > 0))
 
     // 用 unshift 批量插入，减少数组重建开销
