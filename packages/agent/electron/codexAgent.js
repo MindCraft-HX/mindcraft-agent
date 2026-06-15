@@ -1812,6 +1812,7 @@ function setupCodexSdkHandlers() {
           function maybeSendDone() {
             if (doneSent) return
             if (!turnCompletedSeen) return
+            console.log(`[codex] maybeSendDone: pendingItems=${pendingItemIds.size} sessionId=${sessionId}`)
             if (pendingItemIds.size === 0) {
               scheduleDone(DRAIN_EMPTY_MS)
               return
@@ -1825,9 +1826,10 @@ function setupCodexSdkHandlers() {
             if (doneSent) return
             drainTimer = null
             if (!turnCompletedSeen) return
-
             const now = Date.now()
             const totalWait = turnCompletedAt > 0 ? now - turnCompletedAt : 0
+            const idleWait = lastItemProgressAt > 0 ? now - lastItemProgressAt : 0
+            console.log(`[codex] flushDone: totalWait=${totalWait}ms idleWait=${idleWait}ms pendingItems=${pendingItemIds.size} sessionId=${sessionId}`)
 
             // pending 重新出现（有新 item started），续期
             if (totalWait >= DRAIN_MAX_MS) {
@@ -1841,7 +1843,6 @@ function setupCodexSdkHandlers() {
             }
 
             // 总上限到达，强制结束
-            const idleWait = lastItemProgressAt > 0 ? now - lastItemProgressAt : 0
             if (idleWait >= DRAIN_PENDING_IDLE_MS) {
               triggerDone()
               return
@@ -1859,9 +1860,9 @@ function setupCodexSdkHandlers() {
           }
 
           function triggerDone() {
-            if (doneSent) return
+            if (doneSent) { console.log(`[codex] triggerDone: already doneSent, skipping. sessionId=${sessionId}`); return }
             const currentSession = codexSessions.get(sessionId)
-            if (currentSession?.runId !== runId) return
+            if (currentSession?.runId !== runId) { console.warn(`[codex] triggerDone: session gone or runId mismatch. currentRunId=${currentSession?.runId} expected=${runId} sessionId=${sessionId}`); return }
             doneSent = true
             drainTimer = null
             currentSession.doneSent = true
@@ -1936,6 +1937,7 @@ function setupCodexSdkHandlers() {
             }
 
             if (ev.type === 'turn.completed' || ev.type === 'turn.failed' || ev.type === 'task_complete') {
+              console.log(`[codex] turn terminal: type=${ev.type} sessionId=${sessionId} pendingItems=${pendingItemIds.size}`)
               resultReceived = true
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
