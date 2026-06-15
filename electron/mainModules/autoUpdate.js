@@ -112,8 +112,9 @@ function setupAutoUpdater(env, win) {
     }
   })
   // 安装更新（由 SystemSettings "重启安装" 按钮触发）
+  // isForceRunAfter=true: 安装器以分离进程启动，不受主进程退出时序影响
   ipcMain.on('install-update', () => {
-    autoUpdater.quitAndInstall()
+    autoUpdater.quitAndInstall(true, true)
   })
 }
 
