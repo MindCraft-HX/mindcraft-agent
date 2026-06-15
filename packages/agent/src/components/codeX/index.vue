@@ -2057,15 +2057,18 @@ async function abortSession() {
   if (!tab) return
   if (tab._queuedInput) tab._queuedInput = ''
   if (tab._queuedInputMessageId) tab._queuedInputMessageId = null
+  // 立即隐藏停止按钮给予即时反馈，_awaitingDone 阻止 sendMessage
+  // 直到后端 abort 完成，避免下一条消息撞上 session_already_running
+  tab.thinking = false
+  tab._awaitingDone = true
+  tab._thinkingStart = null
+  stopMetricsTimer()
   try {
     await window.electronAPI.codexAgentAbort?.(tab.sessionId)
   } catch (_) {
     // abort 失败不阻塞状态清理
   }
-  tab.thinking = false
   tab._awaitingDone = false
-  tab._thinkingStart = null
-  stopMetricsTimer()
   saveHistory()
 }
 
