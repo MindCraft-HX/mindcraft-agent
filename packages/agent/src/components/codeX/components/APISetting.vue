@@ -88,8 +88,9 @@
               </span>
               <button v-if="envStatus.codex?.installed"
                 class="env-update-btn" :class="{ updating: envCheckingUpdate }"
+                :disabled="envInstalling || envCheckingUpdate"
                 @click="checkForUpdate"
-                :title="$t('settings.checkUpdate')">{{ envCheckingUpdate ? $t('settings.checking') : envUpdateAvailable ? `${$t('settings.updateTo')} v${envLatestVersion}` : $t('settings.checkUpdate') }}</button>
+                :title="$t('settings.checkUpdate')">{{ envInstalling ? $t('settings.installing') : envCheckingUpdate ? $t('settings.checking') : envUpdateAvailable ? `${$t('settings.updateTo')} v${envLatestVersion}` : $t('settings.checkUpdate') }}</button>
               <span v-if="envUpdateAvailable" class="env-update-badge">{{ $t('settings.newVersion') }}</span>
               <button v-if="!envStatus.codex?.installed"
                 class="env-install-btn"
@@ -238,21 +239,25 @@ async function checkForUpdate() {
         cancelText: t('settings.later'),
       })
       if (ok) {
-        ElMessage.info(t('settings.updatingCodex'))
-        const result = await window.electronAPI?.codexInstallCodex?.()
-        if (result?.success) {
-          await checkEnvironment()
-          envUpdateAvailable.value = false
-          envLatestVersion.value = ''
-          const newVer = envStatus.value?.codex?.version
-          if (newVer) {
-            const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
-            ElMessage.success(t('settings.codexUpdatedTo', { version: shortVer }))
+        envInstalling.value = true
+        try {
+          const result = await window.electronAPI?.codexInstallCodex?.()
+          if (result?.success) {
+            await checkEnvironment()
+            envUpdateAvailable.value = false
+            envLatestVersion.value = ''
+            const newVer = envStatus.value?.codex?.version
+            if (newVer) {
+              const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
+              ElMessage.success(t('settings.codexUpdatedTo', { version: shortVer }))
+            } else {
+              ElMessage.success(t('settings.codexUpdateCompleteRefresh'))
+            }
           } else {
-            ElMessage.success(t('settings.codexUpdateCompleteRefresh'))
+            ElMessage.error(t('settings.updateFailed') + (result?.message || t('system.unknownError')))
           }
-        } else {
-          ElMessage.error(t('settings.updateFailed') + (result?.message || t('system.unknownError')))
+        } finally {
+          envInstalling.value = false
         }
       }
     }

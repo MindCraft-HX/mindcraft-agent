@@ -136,6 +136,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener('app-update-status', handler)
   },
   getAppUpdateStatus: () => ipcRenderer.invoke('get-app-update-status'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.send('install-update'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Clipboard

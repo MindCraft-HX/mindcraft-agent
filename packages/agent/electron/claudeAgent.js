@@ -168,7 +168,7 @@ function loadClaudeAgentSdk() {
   return sdkModulePromise
 }
 
-const { execSync, execFileSync } = require('child_process')
+const { execSync, execFileSync, exec, execFile } = require('child_process')
 
 /** 构建包含系统 Node.js 路径的 env 对象（打包后 PATH 可能缺失 node/npm） */
 function getEnvWithNodePath() {
@@ -189,6 +189,7 @@ function getEnvWithNodePath() {
 
 // 缓存系统 claude 路径，避免每次 query 都重新检测
 let _systemClaudePath = undefined
+let installingClaudeCode = false
 let _claudeConfRef = null // 由 setupClaudeHandlers 注入，供 findSystemClaude 复用
 
 async function findSystemClaude() {
@@ -1303,7 +1304,11 @@ function setupClaudeHandlers() {
     // 检测 Node.js
     try {
       const env = getEnvWithNodePath()
-      const nodeVer = execSync('node --version', { encoding: 'utf8', timeout: 5000, env }).trim()
+      const nodeVer = (await new Promise((resolve, reject) => {
+        exec('node --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
+          if (err) reject(err); else resolve(stdout)
+        })
+      })).trim()
       const match = nodeVer.match(/^v(\d+)\./)
       const major = match ? parseInt(match[1], 10) : 0
       result.node = { installed: true, version: nodeVer, compatible: major >= 18 }
@@ -1315,7 +1320,11 @@ function setupClaudeHandlers() {
     // 检测 npm
     try {
       const env = getEnvWithNodePath()
-      const npmVer = execSync('npm --version', { encoding: 'utf8', timeout: 5000, env }).trim()
+      const npmVer = (await new Promise((resolve, reject) => {
+        exec('npm --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
+          if (err) reject(err); else resolve(stdout)
+        })
+      })).trim()
       result.npm = { installed: true, version: npmVer }
     } catch (e) {
       console.warn('[claude] npm check failed:', e?.message || e)
@@ -1333,12 +1342,16 @@ function setupClaudeHandlers() {
           const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)
           const cmd = isCmdShim ? 'cmd.exe' : claudePath
           const args = isCmdShim ? ['/c', claudePath, '--version'] : ['--version']
-          claudeVersion = execFileSync(cmd, args, {
-            encoding: 'utf8',
-            timeout: 5000,
-            windowsHide: true,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          }).trim()
+          claudeVersion = (await new Promise((resolve, reject) => {
+            execFile(cmd, args, {
+              encoding: 'utf8',
+              timeout: 5000,
+              windowsHide: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            }, (err, stdout) => {
+              if (err) reject(err); else resolve(stdout)
+            })
+          })).trim()
         } catch (_) {}
       }
       result.claude = { installed: !!claudePath, path: claudePath || null, customPath, version: claudeVersion }
@@ -1352,6 +1365,8 @@ function setupClaudeHandlers() {
 
   // 安装 Claude Code（需要 Node >= 18 且 npm 可用）
   ipcMain.handle('claude-install-claude-code', async () => {
+    if (installingClaudeCode) return { success: false, message: lt('install.inProgress') }
+    installingClaudeCode = true
     try {
       // 先终止可能占用 claude.exe 的进程，避免 EBUSY
       try { execSync('taskkill /IM claude.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
@@ -1359,11 +1374,17 @@ function setupClaudeHandlers() {
       try { execSync('taskkill /IM claude-agent-sdk-win32-x64.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
 
       const env = getEnvWithNodePath()
-      execSync('npm install -g @anthropic-ai/claude-code', {
-        encoding: 'utf8',
-        timeout: 180000,
-        stdio: 'pipe',
-        env,
+      await new Promise((resolve, reject) => {
+        exec('npm install -g @anthropic-ai/claude-code', {
+          encoding: 'utf8',
+          timeout: 180000,
+          stdio: 'pipe',
+          windowsHide: true,
+          env,
+        }, (err, stdout, stderr) => {
+          if (err) reject(Object.assign(err, { stdout, stderr }))
+          else resolve(stdout)
+        })
       })
       resetSystemClaudeCache()
       const newPath = await findSystemClaude()
@@ -1385,6 +1406,8 @@ function setupClaudeHandlers() {
         hint = e?.message || String(e)
       }
       return { success: false, message: hint }
+    } finally {
+      installingClaudeCode = false
     }
   })
 
@@ -1662,17 +1685,6 @@ function setupClaudeHandlers() {
   ipcMain.handle('claude-get-model', () => readPrimaryModel())
   ipcMain.handle('claude-set-key', (_, key) => { confSet('claudeApiKey', key); return true })
   ipcMain.handle('claude-set-base-url', (_, url) => { confSet('claudeBaseURL', url); return true })
-  ipcMain.handle('claude-set-model', (_, model) => {
-    const next = typeof model === 'string' ? model.trim() : ''
-    if (!next) return false
-    const tier = confGet('claudeSelectedTier', 'sonnet')
-    confSet('claudeModel', next)
-    // 同步更新当前选中的 tier
-    const tierModels = readTierModelsFromConf()
-    tierModels[tier] = next
-    writeTierModelsToConf(tierModels)
-    return true
-  })
   ipcMain.handle('claude-get-models', () => confGet('claudeModels', defaultModels))
   ipcMain.handle('claude-set-models', (_, models) => { confSet('claudeModels', models); return true })
   ipcMain.handle('claude-add-model', (_, model) => {
@@ -1730,19 +1742,16 @@ function setupClaudeHandlers() {
     // “保存当前使用中的 provider”由 UI 侧显式调用 claude-write-settings-json 来完成。
     internalConf.set('claudeProviders', { providers, activeIdx })
     internalConf.set('tierModels', tierModels)
-    internalConf.set('claudeModel', model)
-    internalConf.set('claudeSelectedTier', selectedTier)
     resetAgentRuntime('provider-activated')
     return { ok: true, model }
   })
-  ipcMain.handle('claude-get-selected-tier', () => confGet('claudeSelectedTier', 'sonnet'))
-  ipcMain.handle('claude-set-selected-tier', (_, tier) => {
-    const valid = ['haiku', 'sonnet', 'opus', 'reasoning']
-    if (valid.includes(tier)) {
-      confSet('claudeSelectedTier', tier)
-      return true
+  ipcMain.handle('claude-get-selected-tier', () => {
+    // 从 ~/.claude/settings.json 读取默认 tier（SDK 原生路径）
+    const sj = readSystemSettingsJson()
+    if (sj && typeof sj.model === 'string' && ['haiku','sonnet','opus','reasoning'].includes(sj.model)) {
+      return sj.model
     }
-    return false
+    return 'sonnet'
   })
 
   const TIER_ENV_MAP = {
@@ -2202,11 +2211,11 @@ function setupClaudeHandlers() {
     resetSystemClaudeCache()
   }
 
-  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode }) => {
+  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride }) => {
     const runtime = readRuntimeConfigFromUserSettingsFile()
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL
-    const model = runtime.model
+    const model = (modelOverride && typeof modelOverride === 'string' && modelOverride.trim()) ? modelOverride.trim() : runtime.model
     const permissionPolicy = readPermissionPolicy()
     const mode = ['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)
       ? runMode
@@ -2354,7 +2363,7 @@ function setupClaudeHandlers() {
               thinking: internalConf.get('claudeThinkingEnabled', true)
                 ? { type: 'adaptive' }
                 : { type: 'disabled' },
-              effort: readEffortLevel(),
+              effort: (effortOverride && typeof effortOverride === 'string' && ['low', 'medium', 'high', 'max'].includes(effortOverride.trim().toLowerCase())) ? effortOverride.trim().toLowerCase() : readEffortLevel(),
               skipWebFetchPreflight: true,
               systemPrompt: (() => {
                 const parts = [

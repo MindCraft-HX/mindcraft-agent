@@ -39,6 +39,20 @@
             {{ updateBtnText }}
           </button>
 
+          <!-- 下载按钮 -->
+          <button
+            v-if="updateState === 'available' && !forceUpdate"
+            class="ss-action-btn ss-action-btn--primary"
+            @click="handleDownloadUpdate"
+          >
+            {{ $t('settings.downloadUpdate') }}
+          </button>
+
+          <!-- 强制更新提示 -->
+          <span v-if="updateState === 'available' && forceUpdate" class="ss-status ss-status--force">
+            {{ $t('settings.forceUpdateRequired') }}
+          </span>
+
           <!-- 状态指示 -->
           <span v-if="updateState === 'available'" class="ss-status ss-status--warn">
             {{ $t('settings.appUpdateAvailable', { version: newVersion }) }}
@@ -52,6 +66,21 @@
           <span v-else-if="updateState === 'downloaded'" class="ss-status ss-status--ok">
             {{ $t('settings.appUpdateDownloaded') }}
           </span>
+        </div>
+
+        <!-- 更新日志 -->
+        <div v-if="updateState === 'available' && releaseNotes" class="ss-item ss-release-notes">
+          <pre class="ss-release-notes-text">{{ releaseNotes }}</pre>
+        </div>
+
+        <!-- 重启安装按钮 -->
+        <div v-if="updateState === 'downloaded'" class="ss-item">
+          <button
+            class="ss-action-btn ss-action-btn--primary"
+            @click="handleInstallUpdate"
+          >
+            {{ $t('settings.restartToInstall') }}
+          </button>
         </div>
 
         <!-- 下载进度 -->
@@ -84,6 +113,8 @@ const updateState = ref('idle') // idle | checking | not-available | available |
 const newVersion = ref('')
 const downloadProgress = ref(0)
 const isDevMode = ref(false)
+const releaseNotes = ref('')
+const forceUpdate = ref(false)
 
 let cleanupListener = null
 
@@ -106,6 +137,18 @@ function handleCheckUpdate() {
   window.electronAPI?.checkForUpdates()
 }
 
+async function handleDownloadUpdate() {
+  const ok = await window.electronAPI?.downloadUpdate?.()
+  if (ok) {
+    updateState.value = 'downloading'
+    downloadProgress.value = 0
+  }
+}
+
+function handleInstallUpdate() {
+  window.electronAPI?.installUpdate?.()
+}
+
 onMounted(async () => {
   // 获取应用版本号
   try {
@@ -123,6 +166,8 @@ onMounted(async () => {
       if (status.version) newVersion.value = status.version
       if (status.progress != null) downloadProgress.value = status.progress
       if (status.dev) isDevMode.value = true
+      if (status.releaseNotes) releaseNotes.value = status.releaseNotes
+      if (status.force) forceUpdate.value = true
     }
   } catch (_) { /* ignore */ }
 
@@ -134,6 +179,8 @@ onMounted(async () => {
     if (data.progress != null) downloadProgress.value = data.progress
     if (data.dev) isDevMode.value = true
     if (data.error) updateState.value = 'error'
+    if (data.releaseNotes) releaseNotes.value = data.releaseNotes
+    if (data.force) forceUpdate.value = true
   })
 })
 
@@ -285,5 +332,45 @@ onUnmounted(() => {
 .ss-progress-text {
   font-size: 11px;
   color: var(--cc-text-muted);
+}
+
+/* ── Action Button ── */
+.ss-action-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--cc-primary);
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.ss-action-btn--primary {
+  background: var(--cc-primary);
+  color: #fff;
+}
+.ss-action-btn--primary:hover {
+  filter: brightness(1.1);
+}
+
+/* ── Force Update ── */
+.ss-status--force {
+  color: var(--cc-error);
+  font-weight: 600;
+}
+
+/* ── Release Notes ── */
+.ss-release-notes {
+  max-height: 120px;
+  overflow-y: auto;
+}
+.ss-release-notes-text {
+  margin: 0;
+  font-size: 11px;
+  color: var(--cc-text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 </style>

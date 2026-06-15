@@ -3,7 +3,7 @@ const { Conf } = require('electron-conf')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
-const { execSync, execFileSync, exec } = require('child_process')
+const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
@@ -193,6 +193,7 @@ function resolveSandboxMode(policy) {
 }
 
 let codexModulePromise = null
+let installingCodex = false
 
 /** 缓存已找到的 codex 路径，避免每次调用重复探测 */
 let _globalCodexPath = undefined
@@ -2829,11 +2830,19 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-check-environment', async () => {
     const result = { node: null, npm: null, codex: null }
     try {
-      const ver = execSync('node --version', { encoding: 'utf8', timeout: 5000 }).trim()
+      const ver = (await new Promise((resolve, reject) => {
+        exec('node --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
+          if (err) reject(err); else resolve(stdout)
+        })
+      })).trim()
       result.node = { installed: true, version: ver }
     } catch (_) { result.node = { installed: false, version: null } }
     try {
-      const ver = execSync('npm --version', { encoding: 'utf8', timeout: 5000 }).trim()
+      const ver = (await new Promise((resolve, reject) => {
+        exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
+          if (err) reject(err); else resolve(stdout)
+        })
+      })).trim()
       result.npm = { installed: true, version: ver }
     } catch (_) { result.npm = { installed: false, version: null } }
     try {
@@ -2858,10 +2867,14 @@ function setupCodexSdkHandlers() {
           const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath)
           const cmd = isCmdShim ? 'cmd.exe' : codexPath
           const args = isCmdShim ? ['/c', codexPath, '--version'] : ['--version']
-          codexVersion = execFileSync(cmd, args, {
-            encoding: 'utf8', timeout: 5000, windowsHide: true,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          }).trim()
+          codexVersion = (await new Promise((resolve, reject) => {
+            execFile(cmd, args, {
+              encoding: 'utf8', timeout: 5000, windowsHide: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            }, (err, stdout) => {
+              if (err) reject(err); else resolve(stdout)
+            })
+          })).trim()
         } catch (_) {}
       }
       result.codex = { installed: !!codexPath, path: codexPath, version: codexVersion }
@@ -2894,9 +2907,16 @@ function setupCodexSdkHandlers() {
   })
 
   ipcMain.handle('codex-install-codex', async () => {
+    if (installingCodex) return { success: false, message: lt('install.inProgress') }
+    installingCodex = true
     try {
       try { execSync('taskkill /IM codex.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
-      execSync('npm install -g @openai/codex', { encoding: 'utf8', timeout: 180000, stdio: 'pipe' })
+      await new Promise((resolve, reject) => {
+        exec('npm install -g @openai/codex', { encoding: 'utf8', timeout: 180000, stdio: 'pipe', windowsHide: true }, (err, stdout, stderr) => {
+          if (err) reject(Object.assign(err, { stdout, stderr }))
+          else resolve(stdout)
+        })
+      })
       // 清除 SDK 的 require 缓存，让下次检测重新解析
       Object.keys(require.cache).forEach((k) => {
         if (k.includes('codex-sdk')) delete require.cache[k]
@@ -2905,6 +2925,8 @@ function setupCodexSdkHandlers() {
       return { success: true }
     } catch (e) {
       return { success: false, message: e?.stderr || e?.message || String(e) }
+    } finally {
+      installingCodex = false
     }
   })
 

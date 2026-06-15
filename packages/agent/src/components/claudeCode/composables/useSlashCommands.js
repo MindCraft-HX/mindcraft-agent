@@ -26,6 +26,16 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
 
   async function loadModelPanelState() {
     try {
+      // 优先读取当前 session 的模型/effort
+      const tab = getActiveTab?.()
+      if (tab && (tab.model || tab.effort)) {
+        slashModelName.value = tab.model || '未配置模型'
+        slashEffortLevel.value = ['low', 'medium', 'high', 'max'].includes(tab.effort) ? tab.effort : 'medium'
+        const thinking = await window.electronAPI?.claudeGetThinkingEnabled?.()
+        slashThinkingEnabled.value = thinking !== false
+        return
+      }
+      // Fallback: 读取全局 conf
       const [model, tier, effort, thinking] = await Promise.all([
         window.electronAPI?.claudeGetModel?.(),
         window.electronAPI?.claudeGetSelectedTier?.(),
@@ -43,6 +53,10 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
     const valid = ['low', 'medium', 'high', 'max']
     if (!valid.includes(level)) return
     slashEffortLevel.value = level
+    // 更新当前 session 的 effort
+    const tab = getActiveTab?.()
+    if (tab) tab.effort = level
+    // 同时写入全局 conf 作为新 session 的默认值
     await window.electronAPI?.claudeSetEffortLevel?.(level)
   }
 

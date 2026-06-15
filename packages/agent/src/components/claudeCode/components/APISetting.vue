@@ -76,8 +76,9 @@
               </span>
               <button v-if="envStatus.claude?.installed"
                 class="env-update-btn" :class="{ updating: envCheckingUpdate }"
+                :disabled="envInstalling || envCheckingUpdate"
                 @click="checkForUpdate"
-                :title="$t('settings.checkUpdate')">{{ envCheckingUpdate ? $t('settings.checking') : envUpdateAvailable ? `${$t('settings.updateTo')} v${envLatestVersion}` : $t('settings.checkUpdate') }}</button>
+                :title="$t('settings.checkUpdate')">{{ envInstalling ? $t('settings.installing') : envCheckingUpdate ? $t('settings.checking') : envUpdateAvailable ? `${$t('settings.updateTo')} v${envLatestVersion}` : $t('settings.checkUpdate') }}</button>
               <span v-if="envUpdateAvailable" class="env-update-badge">{{ $t('settings.newVersion') }}</span>
               <button v-if="!envStatus.claude?.installed"
                 class="env-install-btn"
@@ -319,14 +320,19 @@ async function checkForUpdate() {
         cancelText: t('settings.later'),
       })
       if (ok) {
-        const result = await window.electronAPI?.claudeInstallClaudeCode?.()
-        if (result?.success) {
-          ElMessage.success(t('settings.updateSuccessRedetect'))
-          await checkEnvironment()
-          envUpdateAvailable.value = false
-          envLatestVersion.value = ''
-        } else {
-          ElMessage.error(t('settings.updateFailed') + (result?.message || t('system.unknownError')))
+        envInstalling.value = true
+        try {
+          const result = await window.electronAPI?.claudeInstallClaudeCode?.()
+          if (result?.success) {
+            ElMessage.success(t('settings.updateSuccessRedetect'))
+            await checkEnvironment()
+            envUpdateAvailable.value = false
+            envLatestVersion.value = ''
+          } else {
+            ElMessage.error(t('settings.updateFailed') + (result?.message || t('system.unknownError')))
+          }
+        } finally {
+          envInstalling.value = false
         }
       }
     }

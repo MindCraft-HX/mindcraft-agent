@@ -251,7 +251,10 @@
     "appUpdateAvailable": "New version v{version} available",
     "appUpdateDownloading": "Downloading {progress}%",
     "appUpdateDownloaded": "Downloaded, will install on restart",
-    "appUpdateFailed": "Update check failed"
+    "appUpdateFailed": "Update check failed",
+    "downloadUpdate": "Download Update",
+    "restartToInstall": "Restart to Install",
+    "forceUpdateRequired": "Mandatory update. The app will exit."
   },
   "chat": {
     "newChat": "New Chat",

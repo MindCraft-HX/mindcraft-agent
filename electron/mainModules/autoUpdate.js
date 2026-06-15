@@ -1,6 +1,5 @@
 const { autoUpdater } = require("electron-updater");
-const { app,dialog, BrowserWindow, ipcMain } = require("electron");
-const path = require("path");
+const { app, ipcMain } = require("electron");
 
 const { getSetting, setSetting } = require('./settingsStore')
 
@@ -47,33 +46,18 @@ function setupAutoUpdater(env, win) {
     autoUpdater.checkForUpdates()
   }
 
-  // 监听更新事件
-  autoUpdater.on("update-available", async (info) => {
+  // 监听更新事件 — 不再使用模态对话框，改为通过 sendStatus 通知 SystemSettings
+  autoUpdater.on("update-available", (info) => {
     clearUpdateTimeout()
     console.log("发现可用更新");
     console.log("版本号：", info.version);
     console.log("更新内容：", info.releaseNotes);
     setSetting("isUpdateAvailable", true);
     win.webContents.send("client-update-info-data", true)
-    sendStatus(win, { state: 'available', version: info.version, releaseNotes: info.releaseNotes })
-    // 有可用更新时的处理逻辑
-    const { response } = await dialog.showMessageBox({
-      type: "question",
-      buttons: ["下载", "取消"],
-      defaultId: 0,
-      message: "发现新版本",
-      detail: `版本号：${info.version}\n\n更新内容：\n${info.releaseNotes}`, // releaseNotes为更新日志
-    });
-    if (response === 0) {
-      autoUpdater.downloadUpdate(); // 下载更新
-      setSetting("isUpdateAvailable", false);
-      win.webContents.send("client-update-info-data", false)
-      sendStatus(win, { state: 'downloading', progress: 0 })
-    }else if(response === 1) {
-      sendStatus(win, { state: 'available', version: info.version, skipped: true })
-      if(info.force) {
-        app.exit(); //关闭软件  不更新就关闭 强制
-      }
+    sendStatus(win, { state: 'available', version: info.version, releaseNotes: info.releaseNotes, force: !!info.force })
+    // 强制更新：给 renderer 300ms 接收状态后退出
+    if (info.force) {
+      setTimeout(() => { app.exit() }, 300)
     }
   });
 
@@ -87,59 +71,14 @@ function setupAutoUpdater(env, win) {
   });
 
 
-  //创建进度度条窗口
-  let progressWin = null;
-  function createProgressWindow() {
-    progressWin = new BrowserWindow({
-      width: 350,
-      height: 150,
-      webPreferences: {
-        preload: path.join(__dirname, "../preload.js"), // 确保这里的路径正确指向你的preload.js文件
-        sandbox: false,
-      },
-      useContentSize: true,
-      autoHideMenuBar: true,
-      resizable: false,
-      fullscreen: false,
-      fullscreenable: false,
-      minimizable: false,
-      maximizable: false,
-      title: "Updating...",
-    });
-
-    progressWin.loadFile(path.join(__dirname, "../progress.html"));
-    progressWin.on("closed", () => {
-      progressWin = null;
-    });
-  }
-
-  // 应用更新进度
+  // 应用更新进度 — 仅通过 sendStatus 推送给 SystemSettings 进度条
   autoUpdater.on("download-progress", (progressObj) => {
-    if (!progressWin) {
-      createProgressWindow();
-    }
-    progressWin.setProgressBar(progressObj.percent / 100);
-    progressWin.setTitle(`正在更新中... (${Math.round(progressObj.percent)}%)`);
-    progressWin.webContents.send("download-progress", progressObj.percent);
     sendStatus(win, { state: 'downloading', progress: progressObj.percent })
   });
 
-  autoUpdater.on("update-downloaded", async () => {
-    // 更新下载完成时的处理逻辑
-    if (progressWin) {
-      progressWin.close();
-    }
+  autoUpdater.on("update-downloaded", () => {
+    // 更新下载完成 — 不弹对话框，等用户在 SystemSettings 中点击"重启安装"
     sendStatus(win, { state: 'downloaded', version: currentStatus.version })
-    const { response } = await dialog.showMessageBox({
-      type: "question",
-      buttons: ["Yes", "No"],
-      defaultId: 0,
-      message: "更新下载完成",
-      detail: "是否立即退出并安装新版本？",
-    });
-    if (response === 0) {
-      autoUpdater.quitAndInstall(); // 退出并安装更新包
-    }
   });
   autoUpdater.on("error", (error) => {
     clearUpdateTimeout()
@@ -157,6 +96,19 @@ function setupAutoUpdater(env, win) {
     win.webContents.send("client-update-info-data", isUpdateAvailable);
   })
   ipcMain.handle('get-app-update-status', () => currentStatus)
+
+  // 下载更新（由 SystemSettings "下载更新" 按钮触发）
+  ipcMain.handle('download-update', () => {
+    setSetting("isUpdateAvailable", false);
+    win.webContents.send("client-update-info-data", false)
+    sendStatus(win, { state: 'downloading', progress: 0 })
+    autoUpdater.downloadUpdate()
+    return true
+  })
+  // 安装更新（由 SystemSettings "重启安装" 按钮触发）
+  ipcMain.on('install-update', () => {
+    autoUpdater.quitAndInstall()
+  })
 }
 
 module.exports = { setupAutoUpdater };

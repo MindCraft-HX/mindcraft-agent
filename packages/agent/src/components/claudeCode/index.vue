@@ -500,8 +500,8 @@ function onMetricsUpdate(data) {
   const tab = activeTab.value
   if (tab && data.sessionId && data.sessionId !== tab.sessionId) return
   Object.assign(metricsData.value, data)
-  // 把 model 存到 chat 上，切换对话时可恢复
-  if (data.model && tab) tab.model = data.model
+  // 把 model 存到 chat 上（仅在用户未显式选择时）
+  if (data.model && tab && !tab.model) tab.model = data.model
   // 如果 thinking，启动实时计时
   if (data.thinking && !metricsLiveTimer) {
     const start = Date.now() - (data.durationMs || 0)
@@ -1492,9 +1492,13 @@ async function openModelPicker() {
   resetSlashSuggestions()
   inputText.value = ''
   const tab = activeTab.value
-  const result = await selectModelRef.value?.open?.()
+  const result = await selectModelRef.value?.open?.({
+    currentModel: tab?.model || '',
+    currentEffort: tab?.effort || 'medium',
+  })
   if (result && tab) {
     tab.model = result.model
+    tab.effort = result.effort
     metricsData.value.model = result.model
     const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
     pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
@@ -1577,6 +1581,8 @@ function createChat() {
     createdAt: Date.now(),
     fileSize: null,
     runMode: 'ask_before_edits',
+    model: '',
+    effort: 'medium',
     thinking: false,
     messages: [],
     currentAssistantId: null,
@@ -1747,6 +1753,8 @@ async function refreshProjectSessionsInBackground(p) {
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
           runMode: activeChat?.runMode || 'ask_before_edits',
+          model: '',
+          effort: 'medium',
           thinking: false,
           messages: [],
           currentAssistantId: null,
@@ -2073,6 +2081,8 @@ async function selectDir(project, onAfterSelect) {
         updatedAt: s.updatedAt || null,
         fileSize: s.fileSize || null,
         runMode: 'ask_before_edits',
+        model: '',
+        effort: 'medium',
         thinking: false,
         messages: [],
         currentAssistantId: null,
@@ -2399,9 +2409,8 @@ function handleProviderActivated() {
   const tab = activeTab.value
   if (!tab) return
   window.electronAPI?.claudeAgentAbort?.(tab.sessionId)
-  // 同步更新状态栏模型显示（与 /model 保持一致）
+  // 同步更新状态栏模型显示
   window.electronAPI?.claudeGetModel?.().then(m => {
-    tab.model = m
     metricsData.value.model = m
   })
   pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
@@ -2496,6 +2505,8 @@ async function sendMessage() {
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
       runMode: tab.runMode || 'ask_before_edits',
+      model: tab.model || undefined,
+      effort: tab.effort || undefined,
     })
     return
   }
@@ -2519,9 +2530,13 @@ async function sendMessage() {
       return
     }
     if (cmd === '/model') {
-      const result = await selectModelRef.value?.open?.()
+      const result = await selectModelRef.value?.open?.({
+        currentModel: tab.model || '',
+        currentEffort: tab.effort || 'medium',
+      })
       if (result) {
         tab.model = result.model
+        tab.effort = result.effort
         metricsData.value.model = result.model
         const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
         pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
@@ -2774,6 +2789,8 @@ async function sendMessage() {
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
       runMode: tab.runMode || 'ask_before_edits',
+      model: tab.model || undefined,
+      effort: tab.effort || undefined,
     }
     const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
     await window.electronAPI.claudeAgentQuery(payload)
