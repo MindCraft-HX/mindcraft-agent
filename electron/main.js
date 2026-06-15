@@ -167,17 +167,23 @@ function createWindow() {
     }
   })
 
-  // DevTools: 开发模式自动打开，所有环境支持 Ctrl+Shift+I
+  // DevTools: 开发模式自动打开，所有环境支持 Ctrl+Shift/I
+  // 使用窗口级快捷键（before-input-event）替代 globalShortcut.register，
+  // 避免生产版和开发版同时运行时全局快捷键互相抢占导致只有一个窗口能打开 DevTools。
   if (NODE_ENV === 'development') {
     win.webContents.openDevTools({ mode: 'detach' })
-    // 开发模式额外：Ctrl+R 刷新页面
-    globalShortcut.register('CmdOrCtrl+R', () => {
-      win.reload()
-    })
   }
-  // 所有环境（含生产）：Ctrl+Shift+I 打开 DevTools
-  globalShortcut.register('CommandOrControl+Shift+I', () => {
-    win.webContents.openDevTools({ mode: 'detach' })
+  win.webContents.on('before-input-event', (event, input) => {
+    // Ctrl+Shift+I / Cmd+Shift+I：打开 DevTools（所有环境）
+    if (input.key === 'I' && input.shift && (input.control || input.meta) && !input.alt) {
+      win.webContents.openDevTools({ mode: 'detach' })
+      event.preventDefault()
+    }
+    // 开发模式额外：Ctrl+R / Cmd+R 刷新页面
+    if (NODE_ENV === 'development' && input.key === 'r' && (input.control || input.meta) && !input.shift && !input.alt) {
+      win.reload()
+      event.preventDefault()
+    }
   })
 
   // 复制粘贴
