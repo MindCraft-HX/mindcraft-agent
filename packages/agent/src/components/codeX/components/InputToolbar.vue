@@ -80,7 +80,6 @@
         @change="$emit('update:sandboxMode', $event.target.value)"
       >
         <option value="read-only">{{ $t('settings.sandbox.readOnlyShort') }}</option>
-        <option value="workspace-write">{{ $t('settings.sandbox.workspaceWriteShort') }}</option>
         <option value="danger-full-access">{{ $t('settings.sandbox.fullAccessShort') }}</option>
       </select>
       <!-- 网页搜索模式 -->
@@ -104,7 +103,7 @@ defineProps({
   disabled: { type: Boolean, default: false },
   networkAccess: { type: Boolean, default: true },
   webSearch: { type: String, default: 'disabled' },
-  sandboxMode: { type: String, default: 'workspace-write' },
+  sandboxMode: { type: String, default: 'danger-full-access' },
 })
 
 defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:networkAccess', 'update:webSearch', 'update:sandboxMode', 'openPlugins', 'openSkills'])

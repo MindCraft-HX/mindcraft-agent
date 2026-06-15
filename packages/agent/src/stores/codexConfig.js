@@ -10,8 +10,11 @@ import {
  * 管理文件权限（sandbox）、网络访问、网页搜索等 Codex 专属设置
  */
 export const useCodexConfigStore = defineStore('codexConfig', () => {
-  /** 默认 sandbox 模式：SDK 默认 read-only，我们主动设为 workspace-write */
-  const sandboxMode = ref('workspace-write')
+  /**
+   * 默认 sandbox 模式：danger-full-access（完全访问）。
+   * workspace-write 因单向 stdin 架构无法处理审批，已从 UI 移除。
+   */
+  const sandboxMode = ref('danger-full-access')
 
   /**
    * sandbox 级别可选值
@@ -19,7 +22,6 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
    */
   const sandboxLevels = [
     { value: 'read-only', labelKey: 'settings.sandbox.readOnlyShort', descKey: 'settings.sandbox.readOnlyDesc' },
-    { value: 'workspace-write', labelKey: 'settings.sandbox.workspaceWriteShort', descKey: 'settings.sandbox.workspaceWriteDesc' },
     { value: 'danger-full-access', labelKey: 'settings.sandbox.fullAccessShort', descKey: 'settings.sandbox.fullAccessDesc' },
   ]
 
@@ -41,6 +43,8 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
    */
   async function setSandboxMode(mode) {
     if (!VALID_SANDBOX_MODES.includes(mode)) return
+    // workspace-write 因单向 stdin 架构无法处理审批，暂不可用
+    if (mode === 'workspace-write') return
     sandboxMode.value = mode
     try {
       await window.electronAPI?.codexSetSandboxMode?.(mode)

@@ -341,6 +341,8 @@ function setSessionWebSearch(mode) {
 function setSessionSandbox(mode) {
   const tab = activeTab.value
   if (!tab || !isValidSandboxMode(mode)) return
+  // workspace-write 因单向 stdin 架构无法处理审批，暂不可用
+  if (mode === 'workspace-write') return
   tab.sandboxMode = mode
   saveHistory()
 }
@@ -1171,7 +1173,8 @@ function resolveRestoredSandboxMode(chat) {
   const raw = chat?.sandboxMode || chat?.sandboxLevel
   const valid = migrateSandboxValue(raw)
   if (valid) return valid
-  return hasStartedCodexChat(chat) ? 'workspace-write' : codexConfigStore.sandboxMode
+  // workspace-write 暂不可用 → 回退到 store 默认值（danger-full-access）
+  return codexConfigStore.sandboxMode
 }
 
 function resolveRestoredNetworkAccess(chat) {

@@ -629,7 +629,7 @@ class Thread {
 
 | 字段 | 类型 | 用途 | 状态 |
 |------|------|------|:--:|
-| `sandboxMode` | `'read-only' \| 'workspace-write' \| 'danger-full-access'` | OS 级文件沙箱 | ✅ |
+| `sandboxMode` | `'read-only' \| 'workspace-write' \| 'danger-full-access'` | OS 级文件沙箱。`workspace-write` 因审批通道缺失**已从 UI 移除** | ⚠️ |
 | `approvalPolicy` | `'never' \| 'on-request' \| 'on-failure' \| 'untrusted'` | 工具级审批策略。**固定 `'never'`** | ✅ |
 | `model` | `string` | 模型 ID | ✅ |
 | `workingDirectory` | `string` | 工作目录（对应 CLI `--cwd`） | ✅ |
@@ -680,7 +680,15 @@ danger-full-access              on-failure   ← 同上
                                 untrusted    ← 同上
 ```
 
-> ⚠️ **关键事实**：CodeX 的 `exec --experimental-json` 模式在输入发送后立即关闭 stdin，无法处理审批交互。因此 `approvalPolicy` 被固定为 `'never'`，**唯一有效的权限维度是 `sandboxMode`**。
+> ⚠️ **关键事实**：CodeX 的 `exec --experimental-json` 模式在输入发送后立即关闭 stdin，无法处理审批交互。因此 `approvalPolicy` 被固定为 `'never'`。
+>
+> ⚠️ **实测结论（2026-06-15）**：`workspace-write` + `never` 组合实测与 `read-only` 行为一致（无法写入）。因为 CodeX CLI 对写操作内部仍走审批判断，`never` 使审批被直接拒绝，不会自动放行。`danger-full-access` + `never` 则可正常写入。
+>
+> **当前有效权限模型**：
+> - `read-only` + `never` → 只读
+> - `danger-full-access` + `never` → 全部可写（默认）
+>
+> 要恢复 `workspace-write` 的中间档能力，需要架构升级：支持 CodeX CLI 审批事件的双向通信（如改用 app-server 协议或实现审批回调）。
 
 **sandboxMode 行为**：
 
@@ -728,7 +736,7 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 |--------|------|:--:|
 | CodeX 权限用 `read_only/ask/allow_all` 三态 | SDK 原生是 `read-only/workspace-write/danger-full-access`，`approvalPolicy` 是独立维度 | ✅ 已修复（T108-T111） |
 | ClaudeCode effortLevel 白名单仅 `low/medium/high/max` | SDK 原生还有 `xhigh`（Opus 4.7） | ✅ 已修复（T105） |
-| CodeX approvalPolicy 映射层可被误解为"两层权限" | 实际是二维正交：sandboxMode + approvalPolicy，但因为 stdin 模式限制 approvalPolicy 固定为 'never'，**有效的只有 sandboxMode 一维** | ✅ 已更新文档 |
+| CodeX approvalPolicy 映射层可被误解为"两层权限" | 实际是二维正交：sandboxMode + approvalPolicy，但因为 stdin 模式限制 approvalPolicy 固定为 'never'。**实测 `workspace-write` + `never` = 只读，已置灰该选项** | ✅ 已更新（T108-T111 + 方案B） |
 
 ### 14.2 无需纠正（经核对正确）
 
