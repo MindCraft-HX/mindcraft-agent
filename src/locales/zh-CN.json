@@ -137,6 +137,7 @@
 		"reasoningLow": "低(更快)",
 		"reasoningMid": "中(平衡)",
 		"reasoningHigh": "高(更深思考)",
+		"reasoningXHigh": "超高(深度推理)",
 		"reasoningMax": "最大(极限推理)",
 		"jsonFormatError": "JSON 格式错误,请检查后重试",
 		"pleaseSetApiKey": "请设置 API Key",

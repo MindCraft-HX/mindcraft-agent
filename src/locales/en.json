@@ -137,6 +137,7 @@
 		"reasoningLow": "Low (Faster)",
 		"reasoningMid": "Medium (Balanced)",
 		"reasoningHigh": "High (Deeper)",
+		"reasoningXHigh": "X-High (Deeper)",
 		"reasoningMax": "Maximum (Extreme)",
 		"jsonFormatError": "JSON format error, please check and retry",
 		"pleaseSetApiKey": "Please set API Key",

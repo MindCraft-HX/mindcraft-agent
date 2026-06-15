@@ -1256,12 +1256,12 @@ function setupClaudeHandlers() {
   })
   function readEffortLevel() {
     const effort = confGet('claudeEffortLevel', 'medium')
-    const valid = ['low', 'medium', 'high', 'max']
+    const valid = ['low', 'medium', 'high', 'xhigh', 'max']
     return valid.includes(effort) ? effort : 'medium'
   }
   ipcMain.handle('claude-get-effort-level', () => readEffortLevel())
   ipcMain.handle('claude-set-effort-level', (_, effort) => {
-    const valid = ['low', 'medium', 'high', 'max']
+    const valid = ['low', 'medium', 'high', 'xhigh', 'max']
     if (!valid.includes(effort)) return false
     confSet('claudeEffortLevel', effort)
     return true

@@ -380,7 +380,7 @@ async function openSettings() {
 
   try {
     const effort = await window.electronAPI?.claudeGetEffortLevel?.()
-    settingsEffortLevel.value = ['low', 'medium', 'high', 'max'].includes(effort) ? effort : 'medium'
+    settingsEffortLevel.value = ['low', 'medium', 'high', 'xhigh', 'max'].includes(effort) ? effort : 'medium'
   } catch (e) { settingsEffortLevel.value = 'medium' }
 
   try {
