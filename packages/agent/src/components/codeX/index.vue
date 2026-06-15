@@ -1963,7 +1963,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
   let queryResult = null
   try {
     queryResult = await window.electronAPI.codexAgentQuery?.(payload)
-    // result === 0：旧版静默拒绝；result?.accepted === false：新版结构化拒绝
+    // result?.accepted === false：结构化拒绝（session_already_running / session_close_timeout）
+    // result?.accepted === true：Promise 路径正常完成（result.exitCode 为退出码）
     accepted = queryResult !== 0 && (!queryResult || queryResult.accepted !== false)
   } catch (_) {
     accepted = false
@@ -2001,18 +2002,6 @@ async function sendMessage(textOverride = null, targetTab = null) {
     if (idx >= 0) tab.messages.splice(idx, 1)
     tab._awaitingDone = false
     tab.thinking = false
-    // T107 诊断：busy toast 不应在正常流程中出现（后端仅返回 queueable 原因），
-    // 捕获调用栈和 IPC 返回值以定位意外触发路径。
-    console.error('[codex-busy-diag] sendMessage rejected with non-queueable reason:', {
-      sessionId: tab.sessionId,
-      isQueuedFlush,
-      queryResultType: typeof queryResult,
-      queryResult,
-      tabThinking: tab.thinking,
-      tabAwaitingDone: tab._awaitingDone,
-      tabQueuedInput: tab._queuedInput,
-      stack: new Error('busy-toast-stack').stack,
-    })
     ElMessage.warning({ message: t('agent.codexBusy'), showClose: true, duration: 5000 })
     saveHistory()
     return

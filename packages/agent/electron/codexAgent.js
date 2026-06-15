@@ -2214,7 +2214,7 @@ function setupCodexSdkHandlers() {
             }))
           }
 
-          resolve(exitCode)
+          resolve({ accepted: true, exitCode })
         }
       })()
     })
