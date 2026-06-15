@@ -1,15 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-
-/** CodeX SDK 原生 sandboxMode 值 */
-const VALID_SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access']
-
-/** 旧值 → 新值迁移映射 */
-const MIGRATE_MAP = {
-  read_only: 'read-only',
-  ask: 'workspace-write',
-  allow_all: 'danger-full-access',
-}
+import {
+  VALID_SANDBOX_MODES,
+  migrateSandboxValue,
+} from '../components/agentCommon/utils/sandboxHelpers.js'
 
 /**
  * Codex SDK 配置 Store
@@ -19,20 +13,15 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
   /** 默认 sandbox 模式：SDK 默认 read-only，我们主动设为 workspace-write */
   const sandboxMode = ref('workspace-write')
 
-  /** sandbox 级别可选值 */
+  /**
+   * sandbox 级别可选值
+   * labelKey / descKey 使用 i18n key，模板中通过 $t() 获取本地化文本
+   */
   const sandboxLevels = [
-    { value: 'read-only', label: '只读', desc: '仅读取文件，不执行任何修改' },
-    { value: 'workspace-write', label: '工作区可写（推荐）', desc: '可修改当前项目文件，无法访问工作区外' },
-    { value: 'danger-full-access', label: '完全访问', desc: '可读取和修改任意路径文件' },
+    { value: 'read-only', labelKey: 'settings.sandbox.readOnlyShort', descKey: 'settings.sandbox.readOnlyDesc' },
+    { value: 'workspace-write', labelKey: 'settings.sandbox.workspaceWriteShort', descKey: 'settings.sandbox.workspaceWriteDesc' },
+    { value: 'danger-full-access', labelKey: 'settings.sandbox.fullAccessShort', descKey: 'settings.sandbox.fullAccessDesc' },
   ]
-
-  /** 旧值迁移：兼容 localStorage 中 ClaudeCode 式命名 */
-  function migrateValue(raw) {
-    if (!raw) return null
-    if (VALID_SANDBOX_MODES.includes(raw)) return raw
-    if (MIGRATE_MAP[raw]) return MIGRATE_MAP[raw]
-    return null
-  }
 
   /** 默认网络访问：新会话是否允许联网 */
   const defaultNetworkAccess = ref(true)
@@ -64,7 +53,7 @@ export const useCodexConfigStore = defineStore('codexConfig', () => {
   async function loadSandboxMode() {
     try {
       const raw = await window.electronAPI?.codexGetSandboxMode?.()
-      const valid = migrateValue(raw)
+      const valid = migrateSandboxValue(raw)
       if (valid) {
         sandboxMode.value = valid
         // 旧值已迁移 → 写回主进程

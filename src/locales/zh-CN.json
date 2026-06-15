@@ -265,7 +265,7 @@
 			"readOnlyDesc": "仅读取文件，不执行任何修改",
 			"workspaceWriteDesc": "可修改当前项目文件，无法访问工作区外",
 			"fullAccessDesc": "可读取和修改任意路径文件",
-			"modeChanged": "文件权限已设为「{label}」",
+			"modeChanged": "默认文件权限已设为「{label}」",
 			"midSessionHint": "将在下一条消息中生效"
 		}
 	},

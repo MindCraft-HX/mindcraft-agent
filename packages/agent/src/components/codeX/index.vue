@@ -256,6 +256,7 @@ import { useCodexConfigStore } from '../../stores/codexConfig.js'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
+import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 
 const themeStore = useClaudeThemeStore()
 const codexConfigStore = useCodexConfigStore()
@@ -339,7 +340,7 @@ function setSessionWebSearch(mode) {
 /** 会话级：切换 sandbox 文件权限（下个 turn 自动生效） */
 function setSessionSandbox(mode) {
   const tab = activeTab.value
-  if (!tab || !['read-only', 'workspace-write', 'danger-full-access'].includes(mode)) return
+  if (!tab || !isValidSandboxMode(mode)) return
   tab.sandboxMode = mode
 }
 
@@ -1162,23 +1163,7 @@ function inferToolFailureFromText(toolName, text) {
   return false
 }
 
-/** 旧 sandbox 值 → 新 SDK 原生值迁移映射 */
-const SANDBOX_MIGRATE = {
-  read_only: 'read-only',
-  ask: 'workspace-write',
-  allow_all: 'danger-full-access',
-}
-
-function isValidSandboxMode(mode) {
-  return ['read-only', 'workspace-write', 'danger-full-access'].includes(mode)
-}
-
-function migrateSandboxValue(raw) {
-  if (!raw) return null
-  if (isValidSandboxMode(raw)) return raw
-  if (SANDBOX_MIGRATE[raw]) return SANDBOX_MIGRATE[raw]
-  return null
-}
+// migrateSandboxValue / isValidSandboxMode 从 agentCommon/utils/sandboxHelpers.js 导入（共享，去重 T115）
 
 function resolveRestoredSandboxMode(chat) {
   // 先读新字段名，再读旧字段名（兼容历史数据）

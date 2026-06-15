@@ -24,10 +24,10 @@
               :key="s.value"
               class="theme-option permission-option"
               :class="{ active: codexConfigStore.sandboxMode === s.value }"
-              :title="s.desc"
+              :title="$t(s.descKey)"
               @click="codexConfigStore.setSandboxMode(s.value); showSandboxToast(s)"
             >
-              <span class="theme-text">{{ s.label }}</span>
+              <span class="theme-text">{{ $t(s.labelKey) }}</span>
             </button>
           </div>
         </div>
@@ -280,7 +280,7 @@ function openSettings() {
 }
 
 function showSandboxToast(s) {
-  ElMessage.success(t('settings.sandbox.modeChanged', { label: s.label }))
+  ElMessage.success(t('settings.sandbox.modeChanged', { label: t(s.labelKey) }))
 }
 
 defineExpose({ openSettings })

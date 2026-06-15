@@ -265,7 +265,7 @@
 			"readOnlyDesc": "Read files only, no modifications",
 			"workspaceWriteDesc": "Write within workspace, restricted outside",
 			"fullAccessDesc": "Read and write any file on disk",
-			"modeChanged": "File access set to \"{label}\"",
+			"modeChanged": "Default file access set to \"{label}\"",
 			"midSessionHint": "Takes effect on next message"
 		}
 	},
