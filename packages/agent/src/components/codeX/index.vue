@@ -2021,6 +2021,77 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
 }
 
+/**
+ * 专用内部 flush：绕过公共锁和 busy toast，静默重试直至成功或超时。
+ *
+ * 与 sendMessage() 的区别：
+ * - 不走 isCodexTurnLocked（turn 刚结束，锁应由 done 事件解除）
+ * - 不弹 codexBusy toast（用户未主动发送，静默失败即可）
+ * - 内部指数退避重试（session_close_timeout / session_already_running）
+ */
+const FLUSH_MAX_RETRIES = 8
+const FLUSH_BASE_DELAY_MS = 150
+
+async function flushQueuedInput({ tab, text, ownerProject, queuedInputMessageId }) {
+  if (!tab || !text || !ownerProject?.cwd) return
+
+  const payload = safeIpcPayload({
+    prompt: text,
+    images: [],
+    cwd: ownerProject.cwd || '',
+    sessionId: tab.sessionId,
+    sandboxMode: tab.sandboxMode,
+    networkAccessEnabled: tab.networkAccessEnabled,
+    webSearchMode: tab.webSearchMode,
+    model: (tab.model || tab.metrics?.model || ''),
+    reasoningEffort: tab.reasoningEffort || '',
+    additionalDirectories: ownerProject.additionalDirectories || [],
+  }, 'flushQueuedInput')
+
+  for (let attempt = 0; attempt <= FLUSH_MAX_RETRIES; attempt++) {
+    let accepted = false
+    let queryResult = null
+    try {
+      queryResult = await window.electronAPI.codexAgentQuery?.(payload)
+      accepted = queryResult !== 0 && (!queryResult || queryResult.accepted !== false)
+    } catch (_) { /* retry */ }
+
+    if (accepted) {
+      if (queuedInputMessageId && tab._queuedInputMessageId === queuedInputMessageId) {
+        tab._queuedInputMessageId = null
+      }
+      tab.thinking = true
+      tab._thinkingStart = Date.now()
+      tab.metrics = {
+        ...(tab.metrics || {}),
+        sessionId: tab.sessionId,
+        model: tab.metrics?.model || metricsData.value.model || '',
+        thinking: true,
+        durationMs: 0,
+      }
+      if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
+      console.log('[codex] flushQueuedInput accepted: sessionId=', tab.sessionId, 'attempt=', attempt)
+      return
+    }
+
+    // 只对临时性拒绝重试
+    if (!shouldQueueRejectedCodexInput(queryResult) && attempt > 0) {
+      // 非临时性拒绝且已重试过 → 放弃
+      console.warn('[codex] flushQueuedInput gave up: sessionId=', tab.sessionId, 'reason=', queryResult?.reason, 'attempt=', attempt)
+      return
+    }
+
+    if (attempt < FLUSH_MAX_RETRIES) {
+      const delay = FLUSH_BASE_DELAY_MS * Math.pow(2, attempt)
+      console.log('[codex] flushQueuedInput retry: sessionId=', tab.sessionId, 'attempt=', attempt, 'delay=', delay, 'reason=', queryResult?.reason)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+
+  // 全部重试耗尽
+  console.warn('[codex] flushQueuedInput exhausted: sessionId=', tab.sessionId)
+}
+
 async function openModelPicker() {
   inputText.value = ''
   slashSuggestions.value = []
@@ -2505,14 +2576,11 @@ onMounted(async () => {
       activeProject: activeProject.value,
     })
     if (!canFlushQueuedInputTarget(target)) return
-    const { tab, text } = target
+    const { tab, text, ownerProject } = target
     tab._queuedInput = ''
     const queuedInputMessageId = tab._queuedInputMessageId || null
-    nextTick(async () => {
-      // targetTab lets queued flush run without stealing the user's active tab.
-      await nextTick()
-      await sendMessage(text, tab)
-      if (tab._queuedInputMessageId === queuedInputMessageId) tab._queuedInputMessageId = null
+    nextTick(() => {
+      flushQueuedInput({ tab, text, ownerProject, queuedInputMessageId })
     })
   })
   window.electronAPI.onCodexAgentMetrics?.(onMetricsUpdate)
