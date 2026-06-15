@@ -2110,7 +2110,6 @@ function setupCodexSdkHandlers() {
             }
           }
 
-          deleteCodexSessionRunIfCurrent(codexSessions, sessionId, runId)
         } catch (err) {
           exitCode = -1
           const errMsg = err?.message || String(err)
