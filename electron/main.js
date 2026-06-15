@@ -167,21 +167,18 @@ function createWindow() {
     }
   })
 
-  if(NODE_ENV != "production") {
-    if(NODE_ENV == "development") {
-        win.webContents.openDevTools({ mode: "detach" });
-    }
-    // 注册全局快捷键，按下Ctrl+Shift+I时触发打开开发者工具
-    globalShortcut.register("CommandOrControl+Shift+I", () => {
-      win.webContents.openDevTools({ mode: "detach" });
-    });
-  
-    //按下Ctrl+R时触发刷新页面
-    globalShortcut.register("CmdOrCtrl+R", () => {
-      win.reload();
-    });
-    
+  // DevTools: 开发模式自动打开，所有环境支持 Ctrl+Shift+I
+  if (NODE_ENV === 'development') {
+    win.webContents.openDevTools({ mode: 'detach' })
+    // 开发模式额外：Ctrl+R 刷新页面
+    globalShortcut.register('CmdOrCtrl+R', () => {
+      win.reload()
+    })
   }
+  // 所有环境（含生产）：Ctrl+Shift+I 打开 DevTools
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    win.webContents.openDevTools({ mode: 'detach' })
+  })
 
   // 复制粘贴
   win.webContents.on("context-menu", async (e, params) => {
