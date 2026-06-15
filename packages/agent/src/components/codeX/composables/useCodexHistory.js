@@ -82,6 +82,7 @@ export function useCodexHistory({
           messages: streamingIds.has(c.sessionId) || !shouldPersistInlineMessages(c) ? [] : (c.messages || []),
           metrics: c.metrics || null,
           model: c.model || null,
+          sandboxMode: c.sandboxMode || null,
           _thinkingStart: c._thinkingStart || null,
           _awaitingDone: Boolean(c._awaitingDone),
           cliSessionId: c.cliSessionId, filePath: c.filePath,

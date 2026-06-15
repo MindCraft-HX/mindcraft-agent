@@ -337,11 +337,12 @@ function setSessionWebSearch(mode) {
   tab.webSearchMode = mode
 }
 
-/** 会话级：切换 sandbox 文件权限（下个 turn 自动生效） */
+/** 会话级：切换 sandbox 文件权限（下个 turn 自动生效，立即落盘防止重启丢失） */
 function setSessionSandbox(mode) {
   const tab = activeTab.value
   if (!tab || !isValidSandboxMode(mode)) return
   tab.sandboxMode = mode
+  saveHistory()
 }
 
 /** 项目级：更新额外目录 */
