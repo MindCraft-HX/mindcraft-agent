@@ -2001,6 +2001,18 @@ async function sendMessage(textOverride = null, targetTab = null) {
     if (idx >= 0) tab.messages.splice(idx, 1)
     tab._awaitingDone = false
     tab.thinking = false
+    // T107 诊断：busy toast 不应在正常流程中出现（后端仅返回 queueable 原因），
+    // 捕获调用栈和 IPC 返回值以定位意外触发路径。
+    console.error('[codex-busy-diag] sendMessage rejected with non-queueable reason:', {
+      sessionId: tab.sessionId,
+      isQueuedFlush,
+      queryResultType: typeof queryResult,
+      queryResult,
+      tabThinking: tab.thinking,
+      tabAwaitingDone: tab._awaitingDone,
+      tabQueuedInput: tab._queuedInput,
+      stack: new Error('busy-toast-stack').stack,
+    })
     ElMessage.warning({ message: t('agent.codexBusy'), showClose: true, duration: 5000 })
     saveHistory()
     return
