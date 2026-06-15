@@ -161,16 +161,23 @@ async function confirmSelection(key) {
     pickerTierModels.value[key] = model
     activeTier.value = key
 
-    // 写入全局 conf
-    window.electronAPI?.claudeSetModel?.(model)
-    window.electronAPI?.claudeSetTierModels?.(pickerTierModels.value)
-    window.electronAPI?.claudeSetSelectedTier?.(key)
-    window.electronAPI?.claudeSetEffortLevel?.(effort)
+    const newTierModels = {
+      haiku: (pickerTierModels.value.haiku || '').trim(),
+      sonnet: (pickerTierModels.value.sonnet || '').trim(),
+      opus: (pickerTierModels.value.opus || '').trim(),
+      reasoning: (pickerTierModels.value.reasoning || '').trim(),
+    }
+
+    await window.electronAPI?.claudeSetModel?.(model)
+    await window.electronAPI?.claudeSetTierModels?.(newTierModels)
+    await window.electronAPI?.claudeSetSelectedTier?.(key)
+    await window.electronAPI?.claudePatchSettingsJson?.({ model: key })
+    await window.electronAPI?.claudeSetEffortLevel?.(effort)
 
     resolveOpen?.({ key, label, model, effort, effortLabel })
   } else {
     // 同一 tier：仅可能更新 effort
-    window.electronAPI?.claudeSetEffortLevel?.(effort)
+    await window.electronAPI?.claudeSetEffortLevel?.(effort)
     resolveOpen?.({ key, label, model: displayModel(key), effort, effortLabel })
   }
 
