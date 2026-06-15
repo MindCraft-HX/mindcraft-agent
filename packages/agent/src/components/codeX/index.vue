@@ -1912,8 +1912,12 @@ async function sendMessage(textOverride = null, targetTab = null) {
     trimMessages(tab, true)
     tab.messages.push(userMsg)
   }
-  // 飞行锁：设置 _awaitingDone 阻止 IPC 期间重复 send（thinking 在 IPC 确认后设置）
+  // 飞行锁 + 乐观 thinking：必须在 await 之前设置 thinking=true。
+  // 后端 Promise 在 finally 中 resolve，晚于 codex-agent-done 事件发送。
+  // 如果 thinking 在 await 之后才设置，onAgentDone 已将其清为 false 后又被覆盖为 true，导致永不消失。
   tab._awaitingDone = true
+  tab.thinking = true
+  tab._thinkingStart = Date.now()
 
   const images = imageAttachments.map(({ dataUrl, mediaType, path, name, size }) => ({
     dataUrl,
@@ -1970,6 +1974,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
     accepted = false
   }
   if (!accepted) {
+    // 清除乐观设置的 thinking（await 之前设的），再根据拒绝类型决定是否重新显示
+    tab.thinking = false
+    tab._thinkingStart = null
+    stopMetricsTimer()
     if (shouldQueueRejectedCodexInput(queryResult)) {
       tab._queuedInput = text
       tab._queuedInputMessageId = userMsg.id
@@ -2000,17 +2008,15 @@ async function sendMessage(textOverride = null, targetTab = null) {
     // 非 queueable 拒绝（IPC 异常或意外返回值）：不清除用户消息，仅清理 thinking 状态。
     // 保留用户消息可以避免"消息消失"的恶劣体验；用户看到 toast 后可稍后重试。
     tab._awaitingDone = false
-    tab.thinking = false
+    // tab.thinking 已在上面清除
     ElMessage.warning({ message: t('agent.codexBusy'), showClose: true, duration: 5000 })
     saveHistory()
     return
   }
-  // IPC 确认接受，设置 thinking 状态
+  // IPC 确认接受，thinking 已在 await 之前乐观设置
   if (queuedInputMessageId && tab._queuedInputMessageId === queuedInputMessageId) {
     tab._queuedInputMessageId = null
   }
-  tab.thinking = true
-  tab._thinkingStart = Date.now()
   tab.metrics = {
     ...(tab.metrics || {}),
     sessionId: tab.sessionId,

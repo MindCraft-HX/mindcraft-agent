@@ -110,6 +110,23 @@ assert.ok(
   'absolute local markdown links should not fall back to raw href navigation'
 )
 
+const inlineCodeWithUnderscoreHtml = renderContent(
+  'Run `wasm_gtslidersettagrawdata` before `gt_slidersettagrawdata`.'
+)
+
+assert.ok(
+  inlineCodeWithUnderscoreHtml.includes('<code class="inline-code">wasm_gtslidersettagrawdata</code>'),
+  'inline code should preserve underscores in the first code span'
+)
+assert.ok(
+  inlineCodeWithUnderscoreHtml.includes('<code class="inline-code">gt_slidersettagrawdata</code>'),
+  'inline code should preserve underscores in the second code span'
+)
+assert.ok(
+  !inlineCodeWithUnderscoreHtml.includes('<em>'),
+  'underscore emphasis should not be parsed across inline code spans'
+)
+
 // --- 表格渲染测试 ---
 
 // A1: 全无管道格式（GFM 允许缺首尾管道）

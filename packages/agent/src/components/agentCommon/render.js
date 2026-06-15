@@ -158,9 +158,14 @@ function highlightCode(code, lang) {
 function renderInline(text) {
   if (!text) return ''
   let s = escapeHtmlPreserveEntities(text)
+  const inlineCodeTokens = []
 
   s = s.replace(/\\([*_~`#\[\]()!\\])/g, (_, ch) => ch)
-  s = s.replace(/`([^`\n]+)`/g, (_, code) => `<code class="inline-code">${code}</code>`)
+  s = s.replace(/`([^`\n]+)`/g, (_, code) => {
+    const token = `\x00MCINLINECODE${inlineCodeTokens.length}\x00`
+    inlineCodeTokens.push(`<code class="inline-code">${code}</code>`)
+    return token
+  })
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
   s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>')
@@ -186,6 +191,7 @@ function renderInline(text) {
     `<a class="md-link" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${url}</a>`
   )
   s = linkifyHtmlTextNodes(s)
+  s = s.replace(/\x00MCINLINECODE(\d+)\x00/g, (_, idx) => inlineCodeTokens[Number(idx)] || '')
 
   return s
 }
