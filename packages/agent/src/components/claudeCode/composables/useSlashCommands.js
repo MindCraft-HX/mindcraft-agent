@@ -26,30 +26,14 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
 
   async function loadModelPanelState() {
     try {
-      const tab = getActiveTab?.()
-
-      // Effort: per-session 优先，否则读全局
-      const tabEffort = tab?.effort
-      if (tabEffort && ['low', 'medium', 'high', 'max'].includes(tabEffort)) {
-        slashEffortLevel.value = tabEffort
-      } else {
-        const effort = await window.electronAPI?.claudeGetEffortLevel?.()
-        slashEffortLevel.value = ['low', 'medium', 'high', 'max'].includes(effort) ? effort : 'medium'
-      }
-
-      // Model: per-session 优先，否则读全局
-      if (tab && tab.model) {
-        slashModelName.value = tab.model
-        const thinking = await window.electronAPI?.claudeGetThinkingEnabled?.()
-        slashThinkingEnabled.value = thinking !== false
-        return
-      }
-      // Fallback: 读取全局 conf（新 session 显示默认模型名，不显示"未配置模型"）
-      const [model, tier, thinking] = await Promise.all([
+      // 读取全局 conf
+      const [effort, model, tier, thinking] = await Promise.all([
+        window.electronAPI?.claudeGetEffortLevel?.(),
         window.electronAPI?.claudeGetModel?.(),
         window.electronAPI?.claudeGetSelectedTier?.(),
         window.electronAPI?.claudeGetThinkingEnabled?.(),
       ])
+      slashEffortLevel.value = ['low', 'medium', 'high', 'max'].includes(effort) ? effort : 'medium'
       const tierLabel = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', reasoning: 'Reasoning' }
       slashModelName.value = model || tierLabel[tier] || '未配置模型'
       slashThinkingEnabled.value = thinking !== false
@@ -60,10 +44,6 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
     const valid = ['low', 'medium', 'high', 'max']
     if (!valid.includes(level)) return
     slashEffortLevel.value = level
-    // 更新当前 session 的 effort
-    const tab = getActiveTab?.()
-    if (tab) tab.effort = level
-    // 同时写入全局 conf 作为新 session 的默认值
     await window.electronAPI?.claudeSetEffortLevel?.(level)
   }
 

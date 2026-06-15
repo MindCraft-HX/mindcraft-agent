@@ -2211,11 +2211,11 @@ function setupClaudeHandlers() {
     resetSystemClaudeCache()
   }
 
-  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride }) => {
+  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode }) => {
     const runtime = readRuntimeConfigFromUserSettingsFile()
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL
-    const model = (modelOverride && typeof modelOverride === 'string' && modelOverride.trim()) ? modelOverride.trim() : runtime.model
+    const model = runtime.model
     const permissionPolicy = readPermissionPolicy()
     const mode = ['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)
       ? runMode
@@ -2363,7 +2363,7 @@ function setupClaudeHandlers() {
               thinking: internalConf.get('claudeThinkingEnabled', true)
                 ? { type: 'adaptive' }
                 : { type: 'disabled' },
-              effort: (effortOverride && typeof effortOverride === 'string' && ['low', 'medium', 'high', 'max'].includes(effortOverride.trim().toLowerCase())) ? effortOverride.trim().toLowerCase() : readEffortLevel(),
+              effort: readEffortLevel(),
               skipWebFetchPreflight: true,
               systemPrompt: (() => {
                 const parts = [

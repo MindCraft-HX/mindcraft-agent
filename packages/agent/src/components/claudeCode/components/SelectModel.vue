@@ -90,8 +90,12 @@ function cancel() {
   close()
 }
 
-async function open({ currentModel: initialModel, currentEffort: initialEffort } = {}) {
-  const tierModels = (await window.electronAPI?.claudeGetTierModels?.()) || {}
+async function open() {
+  const [tierModels, currentModel, currentEffort] = await Promise.all([
+    window.electronAPI?.claudeGetTierModels?.() || Promise.resolve({}),
+    window.electronAPI?.claudeGetModel?.() || Promise.resolve(''),
+    window.electronAPI?.claudeGetEffortLevel?.() || Promise.resolve('medium'),
+  ])
   pickerTierModels.value = {
     haiku: (tierModels.haiku || '').trim(),
     sonnet: (tierModels.sonnet || '').trim(),
@@ -99,21 +103,7 @@ async function open({ currentModel: initialModel, currentEffort: initialEffort }
     reasoning: (tierModels.reasoning || '').trim(),
   }
 
-  // 参数提供的 currentModel/currentEffort 优先；未提供则从全局 conf 读取
-  let model = ''
-  let effortStr = 'medium'
-  if (initialModel !== undefined && initialModel !== null && initialEffort !== undefined && initialEffort !== null) {
-    model = String(initialModel || '').trim()
-    effortStr = String(initialEffort || 'medium').trim().toLowerCase()
-  } else {
-    const [globalModel, globalEffort] = await Promise.all([
-      window.electronAPI?.claudeGetModel?.() || Promise.resolve(''),
-      window.electronAPI?.claudeGetEffortLevel?.() || Promise.resolve('medium'),
-    ])
-    model = String(globalModel || '').trim()
-    effortStr = String(globalEffort || 'medium').trim().toLowerCase()
-  }
-
+  const model = currentModel.trim()
   let storedTier = ''
   try {
     storedTier = (await window.electronAPI?.claudeGetSelectedTier?.()) || ''
@@ -142,7 +132,8 @@ async function open({ currentModel: initialModel, currentEffort: initialEffort }
   hoveredTier.value = inferred
   initialTier.value = inferred
 
-  // 匹配 effort 索引
+  // 读取当前 effort 并匹配到索引
+  const effortStr = String(currentEffort || 'medium').trim().toLowerCase()
   const idx = efforts.findIndex(e => e.key === effortStr)
   effortIndex.value = idx >= 0 ? idx : 1
 
@@ -170,9 +161,16 @@ async function confirmSelection(key) {
     pickerTierModels.value[key] = model
     activeTier.value = key
 
+    // 写入全局 conf
+    window.electronAPI?.claudeSetModel?.(model)
+    window.electronAPI?.claudeSetTierModels?.(pickerTierModels.value)
+    window.electronAPI?.claudeSetSelectedTier?.(key)
+    window.electronAPI?.claudeSetEffortLevel?.(effort)
+
     resolveOpen?.({ key, label, model, effort, effortLabel })
   } else {
     // 同一 tier：仅可能更新 effort
+    window.electronAPI?.claudeSetEffortLevel?.(effort)
     resolveOpen?.({ key, label, model: displayModel(key), effort, effortLabel })
   }
 

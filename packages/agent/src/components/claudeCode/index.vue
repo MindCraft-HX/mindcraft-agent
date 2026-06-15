@@ -500,8 +500,6 @@ function onMetricsUpdate(data) {
   const tab = activeTab.value
   if (tab && data.sessionId && data.sessionId !== tab.sessionId) return
   Object.assign(metricsData.value, data)
-  // 把 model 存到 chat 上（仅在用户未显式选择时）
-  if (data.model && tab && !tab.model) tab.model = data.model
   // 如果 thinking，启动实时计时
   if (data.thinking && !metricsLiveTimer) {
     const start = Date.now() - (data.durationMs || 0)
@@ -536,10 +534,10 @@ async function refreshMetricsForChat(chat) {
   try {
     const result = await window.electronAPI.claudeAgentQueryMetrics?.({
       cliSessionId: chat.cliSessionId,
-      model: chat.model || metricsData.value.model || '',
+      model: metricsData.value.model || '',
     })
     if (result) {
-      if (!result.model) result.model = chat.model || metricsData.value.model || ''
+      if (!result.model) result.model = metricsData.value.model || ''
       result.thinking = Boolean(chat.thinking)
       resetMetrics()
       Object.assign(metricsData.value, result)
@@ -1492,18 +1490,12 @@ async function openModelPicker() {
   resetSlashSuggestions()
   inputText.value = ''
   const tab = activeTab.value
-  const result = await selectModelRef.value?.open?.({
-    currentModel: tab?.model || '',
-    currentEffort: tab?.effort || 'medium',
-  })
+  const result = await selectModelRef.value?.open?.()
   if (result && tab) {
-    tab.model = result.model
-    tab.effort = result.effort
     metricsData.value.model = result.model
     const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
     pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
     scrollBottom(tab.id)
-    saveHistory()
     slashModelName.value = result.model
     slashEffortLevel.value = result.effort || slashEffortLevel.value
   }
@@ -1548,8 +1540,6 @@ const {
     const n = Math.min(MAX_MESSAGES, msgs.length)
     return {
       ...c,
-      model: c.model || '',
-      effort: c.effort || 'medium',
       messages: msgs.slice(-n),
       thinking: false,
       currentAssistantId: null,
@@ -1583,8 +1573,6 @@ function createChat() {
     createdAt: Date.now(),
     fileSize: null,
     runMode: 'ask_before_edits',
-    model: '',
-    effort: 'medium',
     thinking: false,
     messages: [],
     currentAssistantId: null,
@@ -1755,8 +1743,6 @@ async function refreshProjectSessionsInBackground(p) {
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
           runMode: activeChat?.runMode || 'ask_before_edits',
-          model: '',
-          effort: 'medium',
           thinking: false,
           messages: [],
           currentAssistantId: null,
@@ -1919,8 +1905,7 @@ function switchChat(id) {
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   // 实时更新斜杠面板的模型/effort显示
   loadModelPanelState()
-  // 同步更新状态栏模型名（refreshMetricsForChat 会异步补齐全局默认值）
-  metricsData.value.model = chat?.model || ''
+  // 同步更新状态栏模型名（refreshMetricsForChat 会异步补齐正确的值）
   // 切换时如果消息超限，先截断再保存
   if (chat) trimMessages(chat)
   resetScrollPrev()
@@ -2087,8 +2072,6 @@ async function selectDir(project, onAfterSelect) {
         updatedAt: s.updatedAt || null,
         fileSize: s.fileSize || null,
         runMode: 'ask_before_edits',
-        model: '',
-        effort: 'medium',
         thinking: false,
         messages: [],
         currentAssistantId: null,
@@ -2511,8 +2494,6 @@ async function sendMessage() {
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
       runMode: tab.runMode || 'ask_before_edits',
-      model: tab.model || undefined,
-      effort: tab.effort || undefined,
     })
     return
   }
@@ -2536,18 +2517,12 @@ async function sendMessage() {
       return
     }
     if (cmd === '/model') {
-      const result = await selectModelRef.value?.open?.({
-        currentModel: tab.model || '',
-        currentEffort: tab.effort || 'medium',
-      })
+      const result = await selectModelRef.value?.open?.()
       if (result) {
-        tab.model = result.model
-        tab.effort = result.effort
         metricsData.value.model = result.model
         const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
         pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
         scrollBottom(tab.id)
-        saveHistory()
         slashEffortLevel.value = result.effort || slashEffortLevel.value
       }
       return
@@ -2795,8 +2770,6 @@ async function sendMessage() {
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
       runMode: tab.runMode || 'ask_before_edits',
-      model: tab.model || undefined,
-      effort: tab.effort || undefined,
     }
     const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
     await window.electronAPI.claudeAgentQuery(payload)
