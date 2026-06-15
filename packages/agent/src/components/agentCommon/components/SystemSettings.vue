@@ -30,6 +30,7 @@
       <div class="ss-section-body">
         <div class="ss-item ss-item-update">
           <button
+            v-if="updateState !== 'downloaded'"
             class="ss-update-btn"
             :class="updateBtnClass"
             :disabled="updateState === 'checking' || updateState === 'downloading'"

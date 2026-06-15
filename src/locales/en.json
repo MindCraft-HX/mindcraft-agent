@@ -252,10 +252,10 @@
 		"appUpdateAvailable": "New version v{version} available",
 		"appUpdateDownloading": "Downloading {progress}%",
 		"downloading": "Downloading...",
-		"appUpdateDownloaded": "Downloaded, will install on restart",
+		"appUpdateDownloaded": "Update downloaded",
 		"appUpdateFailed": "Update check failed",
 		"downloadUpdate": "Download Update",
-		"restartToInstall": "Restart to Install",
+		"restartToInstall": "Quit and Install Update",
 		"forceUpdateRequired": "Mandatory update. The app will exit.",
 		"defaultFileAccess": "Default File Access",
 		"sandbox": {

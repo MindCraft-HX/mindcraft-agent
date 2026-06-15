@@ -12,7 +12,7 @@ function sendStatus(win, status) {
   }
 }
 
-function setupAutoUpdater(env, win) {
+function setupAutoUpdater(env, win, { beforeInstall } = {}) {
   //检查更新
   let updateUrl = "https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/";
   if(env === "development" || env === "testing") {
@@ -111,9 +111,14 @@ function setupAutoUpdater(env, win) {
       return { success: false, error: e?.message || String(e) }
     }
   })
-  // 安装更新（由 SystemSettings "重启安装" 按钮触发）
-  // isForceRunAfter=true: 安装器以分离进程启动，不受主进程退出时序影响
+  // 安装更新（由 SystemSettings 按钮触发）
+  // quitAndInstall 会先关闭窗口再退出，必须在调用前让主窗口 close handler 放行。
   ipcMain.on('install-update', () => {
+    try {
+      beforeInstall?.()
+    } catch (e) {
+      console.warn('[auto-update] before install cleanup failed:', e?.message || e)
+    }
     autoUpdater.quitAndInstall(true, true)
   })
 }

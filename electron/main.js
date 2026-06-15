@@ -61,6 +61,12 @@ if (process.env.VITE_DEV_SERVER_URL) {
 }
 let sideFloatWin = null
 let win = null
+let isAppQuitting = false
+let isQuittingForUpdate = false
+
+app.on('before-quit', () => {
+  isAppQuitting = true
+})
 
 // 单实例锁（仅生产模式，dev 模式允许多开调试）
 if (NODE_ENV !== 'development') {
@@ -161,10 +167,13 @@ function createWindow() {
       globalShortcut.unregisterAll()
       win = null
       app.quit()
-    } else {
-      e.preventDefault();
-      win.hide();
+      return
     }
+    if (isQuittingForUpdate || isAppQuitting) {
+      return
+    }
+    e.preventDefault();
+    win.hide();
   })
 
   // DevTools: 开发模式自动打开，所有环境支持 Ctrl+Shift/I
@@ -294,6 +303,17 @@ function createTray(platform) {
   });
 }
 
+function prepareForUpdateInstall() {
+  isQuittingForUpdate = true
+  isAppQuitting = true
+  try { globalShortcut.unregisterAll() } catch (_) {}
+  try { resetCodexSdkRuntime?.() } catch (e) { console.warn('[main] reset codex runtime before update failed:', e?.message || e) }
+  try {
+    if (tray && !tray.isDestroyed?.()) tray.destroy()
+  } catch (_) {}
+  tray = null
+}
+
 // ─── 应用设置/主题存储（原生 JSON 文件，替代 electron-conf）──
 const { getSetting, setSetting } = require('./mainModules/settingsStore')
 
@@ -349,7 +369,7 @@ app.whenReady().then(async () => {
   createTray(NODE_PLATFORM)
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件
-  setupAutoUpdater(NODE_ENV, win); //更新文件
+  setupAutoUpdater(NODE_ENV, win, { beforeInstall: prepareForUpdateInstall }); //更新文件
 
   // 插件系统：IPC handlers + 注册表立即加载（轻量），目录扫描延迟执行
   loadRegistry()

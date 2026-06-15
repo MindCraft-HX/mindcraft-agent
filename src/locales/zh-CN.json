@@ -252,10 +252,10 @@
 		"appUpdateAvailable": "发现新版本 v{version}",
 		"appUpdateDownloading": "正在下载 {progress}%",
 		"downloading": "正在下载...",
-		"appUpdateDownloaded": "已下载，重启后生效",
+		"appUpdateDownloaded": "更新包已下载",
 		"appUpdateFailed": "更新检查失败",
 		"downloadUpdate": "下载更新",
-		"restartToInstall": "重启安装",
+		"restartToInstall": "退出并安装更新",
 		"forceUpdateRequired": "强制更新，应用即将退出",
 		"defaultFileAccess": "默认文件权限",
 		"sandbox": {
