@@ -3487,11 +3487,6 @@ onUnmounted(() => {
   box-sizing: border-box;
   max-height: none;
 }
-@media (max-width: 1024px) {
-  .cc-input-area {
-    max-height: 30vh;
-  }
-}
 .input-box {
   display: flex; align-items: flex-end; gap: 5px;
   background: var(--cc-bg-secondary); border: 1px solid var(--cc-border); border-radius: 10px;

@@ -88,6 +88,16 @@ async function runCloseSessionRunMarksClosedAndResolvesCompletionTest() {
   assert.equal(resolved, true)
 }
 
+function runDoneSentDoesNotMarkStreamClosedTest() {
+  const session = { doneSent: false, streamClosed: false }
+
+  __test__.markCodexSessionDoneSent(session)
+
+  assert.equal(session.doneSent, true)
+  assert.equal(session.streamClosed, false)
+  assert.equal(__test__.canStartCodexSessionRun(session), false)
+}
+
 function runFindSlashCommandSessionByCliIdTest() {
   const sessions = new Map([
     ['sid-1', { runId: 'run-1', thread: { id: 'cli-1' }, streamClosed: false }],
@@ -105,6 +115,7 @@ async function run() {
   await runTerminalTurnWaitsForCloseTest()
   runFinalizeSilentFailureStateTest()
   await runCloseSessionRunMarksClosedAndResolvesCompletionTest()
+  runDoneSentDoesNotMarkStreamClosedTest()
   runFindSlashCommandSessionByCliIdTest()
   console.log('codex session run ownership tests passed')
 }

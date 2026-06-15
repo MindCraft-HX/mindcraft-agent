@@ -231,7 +231,7 @@ import { useCodexTabs } from './composables/useCodexTabs.js'
 import { useCodexHistory } from './composables/useCodexHistory.js'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
-import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget } from './utils/queuedInputFlush.mjs'
+import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput, shouldRetryRejectedCodexInput } from './utils/queuedInputFlush.mjs'
 import { isCodexTurnLocked, shouldHydrateHistoryFromDisk, shouldSyncThinkingFromMetrics } from './utils/sessionLifecycle.mjs'
 import {
   isCodeXEditToolName,
@@ -1042,6 +1042,7 @@ const activeMsgContainer = ref(null)
 const { show: showScrollBottomBtn, newMsgCount, onScroll: onScrollHook } = useScrollBottom(activeMsgContainer)
 const showScrollPrevBtn = ref(false)
 let scrollPrevCurrentId = null
+const queuedRetryTimers = new Map()
 
 const activeProject = computed(() => projects.value.find(p => p.id === activeProjectId.value) || null)
 const activeTab = computed(() => {
@@ -1880,7 +1881,11 @@ async function sendMessage(textOverride = null, targetTab = null) {
       size: size || 0,
       path: path || '',
     }))
-  const userMsg = {
+  const queuedInputMessageId = isQueuedFlush ? tab._queuedInputMessageId : null
+  const existingQueuedUserMsg = queuedInputMessageId
+    ? tab.messages.find(m => m.id === queuedInputMessageId && m.role === 'user')
+    : null
+  const userMsg = existingQueuedUserMsg || {
     id: nextMsgId(),
     role: 'user',
     text,
@@ -1888,8 +1893,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
     images: imageAttachments,
     files: fileAttachments,
   }
-  trimMessages(tab, true)
-  tab.messages.push(userMsg)
+  if (!existingQueuedUserMsg) {
+    trimMessages(tab, true)
+    tab.messages.push(userMsg)
+  }
   // 飞行锁：设置 _awaitingDone 阻止 IPC 期间重复 send（thinking 在 IPC 确认后设置）
   tab._awaitingDone = true
 
@@ -1938,14 +1945,42 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }
   const payload = safeIpcPayload(rawPayload, 'codexAgentQuery')
   let accepted = true
+  let queryResult = null
   try {
-    const result = await window.electronAPI.codexAgentQuery?.(payload)
+    queryResult = await window.electronAPI.codexAgentQuery?.(payload)
     // result === 0：旧版静默拒绝；result?.accepted === false：新版结构化拒绝
-    accepted = result !== 0 && (!result || result.accepted !== false)
+    accepted = queryResult !== 0 && (!queryResult || queryResult.accepted !== false)
   } catch (_) {
     accepted = false
   }
   if (!accepted) {
+    if (shouldQueueRejectedCodexInput(queryResult)) {
+      tab._queuedInput = text
+      tab._queuedInputMessageId = userMsg.id
+      tab._awaitingDone = true
+      tab.thinking = true
+      tab._thinkingStart = tab._thinkingStart || Date.now()
+      tab.metrics = {
+        ...(tab.metrics || {}),
+        sessionId: tab.sessionId,
+        model: tab.metrics?.model || metricsData.value.model || '',
+        thinking: true,
+        durationMs: tab.metrics?.durationMs || 0,
+      }
+      if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
+      saveHistory()
+      if (shouldRetryRejectedCodexInput(queryResult) && !queuedRetryTimers.has(tab.sessionId)) {
+        const timer = setTimeout(async () => {
+          queuedRetryTimers.delete(tab.sessionId)
+          if (!tab._queuedInput) return
+          const retryText = tab._queuedInput
+          tab._queuedInput = ''
+          await sendMessage(retryText, tab)
+        }, 1200)
+        queuedRetryTimers.set(tab.sessionId, timer)
+      }
+      return
+    }
     // 回滚：移除刚 push 的用户消息
     const idx = tab.messages.findIndex(m => m.id === userMsg.id)
     if (idx >= 0) tab.messages.splice(idx, 1)
@@ -1956,6 +1991,9 @@ async function sendMessage(textOverride = null, targetTab = null) {
     return
   }
   // IPC 确认接受，设置 thinking 状态
+  if (queuedInputMessageId && tab._queuedInputMessageId === queuedInputMessageId) {
+    tab._queuedInputMessageId = null
+  }
   tab.thinking = true
   tab._thinkingStart = Date.now()
   tab.metrics = {
@@ -2002,6 +2040,7 @@ async function abortSession() {
   const tab = activeTab.value
   if (!tab) return
   if (tab._queuedInput) tab._queuedInput = ''
+  if (tab._queuedInputMessageId) tab._queuedInputMessageId = null
   try {
     await window.electronAPI.codexAgentAbort?.(tab.sessionId)
   } catch (_) {
@@ -2453,11 +2492,12 @@ onMounted(async () => {
     if (!canFlushQueuedInputTarget(target)) return
     const { tab, text } = target
     tab._queuedInput = ''
+    const queuedInputMessageId = tab._queuedInputMessageId || null
     nextTick(async () => {
-      // 切到目标 tab（sendMessage 依赖 activeTab）
+      // targetTab lets queued flush run without stealing the user's active tab.
       await nextTick()
       await sendMessage(text, tab)
-      // 若用户之前在别的 tab，静默切回
+      if (tab._queuedInputMessageId === queuedInputMessageId) tab._queuedInputMessageId = null
     })
   })
   window.electronAPI.onCodexAgentMetrics?.(onMetricsUpdate)
@@ -2537,6 +2577,8 @@ onActivated(() => {
 onUnmounted(() => {
   stopMetricsTimer()
   window.removeEventListener('beforeunload', flushOnUnload)
+  for (const timer of queuedRetryTimers.values()) clearTimeout(timer)
+  queuedRetryTimers.clear()
   flushOnUnload()
   dispose()
   window.electronAPI.offCodexAgentListeners?.()
