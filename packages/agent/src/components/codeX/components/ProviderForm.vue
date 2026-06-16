@@ -133,7 +133,7 @@ function initFromProps() {
   const draft = extractProviderDraftFromToml(provider.tomlText || '')
 
   form.name = provider.name || draft.name || ''
-  form.key = provider.key || ''
+  form.key = provider.key || draft.apiKey || ''
   form.url = provider.url || draft.url || ''
   form.model = provider.model || draft.model || ''
   reasoningEffort.value = provider.reasoningEffort || draft.reasoningEffort || ''
@@ -156,7 +156,7 @@ function buildDefaultToml() {
     model: form.model,
     url: form.url,
     reasoningEffort: reasoningEffort.value,
-    envKey: 'OPENAI_API_KEY',
+    apiKey: form.key,
   })}# [projects.'/absolute/path/to/project']
 # trust_level = "trusted"
 `
@@ -168,7 +168,7 @@ function syncManagedTomlFromForm() {
     model: form.model,
     url: form.url,
     reasoningEffort: reasoningEffort.value,
-    envKey: 'OPENAI_API_KEY',
+    apiKey: form.key,
   })
   tomlText.value = mergeManagedProviderToml(tomlText.value, managedToml)
 }
@@ -225,7 +225,7 @@ function formatToml() {
 
       for (const comment of topComments) out.push(comment)
 
-      const KEY_ORDER = ['model_reasoning_effort', 'model', 'model_provider', 'name', 'base_url', 'env_key', 'trust_level']
+      const KEY_ORDER = ['model_reasoning_effort', 'model', 'model_provider', 'name', 'base_url', 'experimental_bearer_token', 'trust_level']
       section.keys.sort((a, b) => {
         const ka = (a.match(/^([a-z_]+)/)?.[1] || '').toLowerCase()
         const kb = (b.match(/^([a-z_]+)/)?.[1] || '').toLowerCase()

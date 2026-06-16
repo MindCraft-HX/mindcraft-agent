@@ -1,5 +1,4 @@
 const DEFAULT_PROVIDER_NAME = 'mindcraft'
-const DEFAULT_ENV_KEY = 'OPENAI_API_KEY'
 
 function normalizeProviderName(name) {
   const value = String(name || '').trim()
@@ -77,7 +76,7 @@ export function buildManagedProviderToml(provider = {}) {
   const name = normalizeProviderName(provider.name)
   const model = String(provider.model || '').trim()
   const url = String(provider.url || '').trim()
-  const envKey = String(provider.envKey || DEFAULT_ENV_KEY).trim() || DEFAULT_ENV_KEY
+  const apiKey = String(provider.apiKey || '').trim()
   const reasoningEffort = String(provider.reasoningEffort || '').trim()
 
   const out = []
@@ -88,7 +87,7 @@ export function buildManagedProviderToml(provider = {}) {
   out.push(`[model_providers.${name}]`)
   out.push(`name = ${quoteTomlString(name)}`)
   out.push(`base_url = ${quoteTomlString(url)}`)
-  out.push(`env_key = ${quoteTomlString(envKey)}`)
+  if (apiKey) out.push(`experimental_bearer_token = ${quoteTomlString(apiKey)}`)
   out.push('')
   return out.join('\n')
 }
@@ -108,7 +107,7 @@ export function extractProviderDraftFromToml(tomlText = '') {
     model: String(root.model || '').trim(),
     reasoningEffort: String(root.model_reasoning_effort || root.reasoning_effort || '').trim(),
     url: String(providerFields.base_url || root.base_url || '').trim(),
-    envKey: String(providerFields.env_key || DEFAULT_ENV_KEY).trim() || DEFAULT_ENV_KEY,
+    apiKey: String(providerFields.experimental_bearer_token || '').trim(),
   }
 }
 

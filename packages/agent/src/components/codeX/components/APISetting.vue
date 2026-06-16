@@ -306,7 +306,7 @@ async function loadProviders() {
         name: 'default',
         key, url, model, reasoningEffort,
         authJson: key ? { OPENAI_API_KEY: key } : {},
-        tomlText: buildDefaultToml(model, url, reasoningEffort),
+        tomlText: buildDefaultToml(model, url, reasoningEffort, key),
       }]
       settingsForm.value.activeIdx = 0
       settingsForm.value.selectedIdx = 0
@@ -318,15 +318,16 @@ async function loadProviders() {
   }
 }
 
-function buildDefaultToml(model, url, reasoningEffort = '') {
+function buildDefaultToml(model, url, reasoningEffort = '', apiKey = '') {
   const effortLine = reasoningEffort ? `model_reasoning_effort = "${reasoningEffort}"\n` : ''
+  const tokenLine = apiKey ? `experimental_bearer_token = "${apiKey}"\n` : ''
   return `${effortLine}model = "${model}"
 model_provider = "mindcraft"
 
 [model_providers.mindcraft]
 name = "mindcraft"
 base_url = "${url}"
-env_key = "OPENAI_API_KEY"`
+${tokenLine}`.trimEnd() + '\n'
 }
 
 function selectProvider(i) {
@@ -343,11 +344,9 @@ async function applyProvider(idx) {
   const p = settingsForm.value.providers[idx]
   if (!p) return
   try {
-    // 写入 auth.json 和 config.toml 到 ~/.codex/
-    // 用 JSON 序列化剥离 Vue 响应式代理
-    await window.electronAPI?.codexWriteAuthJson?.(JSON.parse(JSON.stringify(p.authJson || {})))
+    // 仅写入 config.toml（不再写 auth.json — 第三方 provider 认证通过
+    // experimental_bearer_token 内嵌于 toml，参照 cc-switch 标准做法）
     if (p.tomlText) {
-      // 合并写入：只替换模型配置部分，保留磁盘上其余内容（trust/mcp_servers 等）
       const mergedToml = await mergeTomlModelConfig(p.tomlText)
       await window.electronAPI?.codexWriteConfigToml?.(mergedToml)
     }
