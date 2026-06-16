@@ -139,6 +139,8 @@ test('openDocumentCandidate opens supported files in md viewer payload', async (
   assert.equal(result.ok, true)
   assert.equal(result.openMode, 'mdViewer')
   assert.equal(payloads.length, 1)
+  assert.equal(payloads[0].name, 'TODO.md')
+  assert.equal(payloads[0].size, 0)
   assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\TODO.md'))
 })
 

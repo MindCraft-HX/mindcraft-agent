@@ -192,9 +192,16 @@ async function openDocumentCandidate({
   const openMode = inferOpenMode(resolved.filePath)
   if (openMode === 'mdViewer' || openMode === 'textViewer') {
     if (typeof openMdPayload === 'function') {
+      let size = 0
+      try {
+        const stat = pathExists(resolved.filePath) ? fs.statSync(resolved.filePath) : null
+        size = stat?.size || 0
+      } catch (_) {}
       await openMdPayload({
+        name: path.basename(resolved.filePath),
         filePath: resolved.filePath,
         openMode,
+        size,
         source: 'document-candidate',
       })
     }

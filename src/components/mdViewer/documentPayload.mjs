@@ -1,13 +1,13 @@
 import { inferDocumentExtension, resolveDocumentViewerType } from './viewerRegistry.mjs'
 
-function getDisplayName(payload = {}) {
+export function getDisplayName(payload = {}, fallback = '预览') {
   if (payload.name) return String(payload.name)
   if (payload.filePath) {
     const normalized = String(payload.filePath)
     const parts = normalized.split(/[\\/]/)
     return parts[parts.length - 1] || normalized
   }
-  return '预览'
+  return fallback
 }
 
 export function decodeBinaryPayload(raw) {
@@ -49,6 +49,7 @@ export function createDocumentTab(payload = {}) {
     binary,
     size: Number(payload.size || binary?.byteLength || 0),
     isLoading: false,
+    isLoadError: false,
     sourcePayload: payload,
   }
 }

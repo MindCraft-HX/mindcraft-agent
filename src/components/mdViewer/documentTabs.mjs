@@ -1,19 +1,9 @@
-import { createDocumentTab } from './documentPayload.mjs'
+import { createDocumentTab, getDisplayName } from './documentPayload.mjs'
 import { inferDocumentExtension, resolveDocumentViewerType } from './viewerRegistry.mjs'
-
-function getPendingName(payload = {}) {
-  if (payload.name) return String(payload.name)
-  if (payload.filePath) {
-    const normalized = String(payload.filePath)
-    const parts = normalized.split(/[\\/]/)
-    return parts[parts.length - 1] || normalized
-  }
-  return 'Untitled'
-}
 
 export function createPendingDocumentTab(payload = {}) {
   const filePath = String(payload.filePath || payload.path || '')
-  const name = getPendingName(payload)
+  const name = getDisplayName(payload, 'Untitled')
   const ext = inferDocumentExtension(filePath || name)
   const viewerType = resolveDocumentViewerType({ filePath: filePath || name })
 
@@ -28,6 +18,7 @@ export function createPendingDocumentTab(payload = {}) {
     binary: null,
     size: 0,
     isLoading: true,
+    isLoadError: false,
     sourcePayload: payload,
   }
 }

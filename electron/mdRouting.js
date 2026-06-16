@@ -3,31 +3,43 @@ const { ipcMain } = require('electron')
 let mainWin = null
 let mdViewerReady = false
 let pendingPayloads = []
+let nextPayloadId = 0
 const MAX_PENDING_PAYLOADS = 20
 
 function setMainWindow(win) {
   mainWin = win
-  // 刷新/重载后渲染端监听器全部失效，重置握手标志
   if (win && !win.isDestroyed()) {
     win.webContents.on('did-start-loading', () => { mdViewerReady = false })
     win.on('closed', () => { mainWin = null; mdViewerReady = false; pendingPayloads = [] })
   }
 }
 
+function withRequestId(payload) {
+  if (!payload) return null
+  if (payload.__mdRequestId) return payload
+  nextPayloadId += 1
+  return {
+    ...payload,
+    __mdRequestId: `md-${Date.now()}-${nextPayloadId}`,
+  }
+}
+
+function pushPendingPayload(payload) {
+  if (!payload) return
+  pendingPayloads.push(payload)
+  if (pendingPayloads.length > MAX_PENDING_PAYLOADS) {
+    pendingPayloads = pendingPayloads.slice(-MAX_PENDING_PAYLOADS)
+  }
+}
+
 function openMdInMain(payload) {
   if (!mainWin || mainWin.isDestroyed()) return
 
-  if (payload) {
-    // 入队兜底：保证刷新/首访等场景下 onMounted→getPendingMdContent 可拉到
-    pendingPayloads.push(payload)
-    if (pendingPayloads.length > MAX_PENDING_PAYLOADS) {
-      pendingPayloads = pendingPayloads.slice(-MAX_PENDING_PAYLOADS)
-    }
-    // 直投路径：keep-alive 保留组件实例，onMounted 不会重新触发导致队列无人消费，
-    // 已就绪时必须直接投递给活跃的 onMdContent 监听器。
-    // did-start-loading 会在刷新前重置 mdViewerReady=false，不会误投到已销毁的组件。
+  const routedPayload = withRequestId(payload)
+  if (routedPayload) {
+    pushPendingPayload(routedPayload)
     if (mdViewerReady) {
-      mainWin.webContents.send('md-content', payload)
+      mainWin.webContents.send('md-content', routedPayload)
     }
   }
 
@@ -35,7 +47,6 @@ function openMdInMain(payload) {
   mainWin.show()
   mainWin.focus()
 
-  // 通知渲染端切到文档视图
   mainWin.webContents.send('open-md-viewer')
 }
 
@@ -48,4 +59,30 @@ function registerMdViewerHandlers() {
   })
 }
 
-module.exports = { setMainWindow, openMdInMain, registerMdViewerHandlers }
+function resetForTest() {
+  mainWin = null
+  mdViewerReady = false
+  pendingPayloads = []
+  nextPayloadId = 0
+}
+
+module.exports = {
+  setMainWindow,
+  openMdInMain,
+  registerMdViewerHandlers,
+  __test__: {
+    resetForTest,
+    setReady(value) { mdViewerReady = Boolean(value) },
+    drainPendingPayloads() {
+      const payloads = [...pendingPayloads]
+      pendingPayloads = []
+      return payloads
+    },
+    getState() {
+      return {
+        mdViewerReady,
+        pendingPayloads: [...pendingPayloads],
+      }
+    },
+  },
+}

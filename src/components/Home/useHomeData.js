@@ -9,7 +9,19 @@ const defaultStats = () => ({
 
 function loadRecentDocs() {
   try {
-    return JSON.parse(localStorage.getItem('mindcraft_agent_recent_docs') || '[]')
+    const docs = JSON.parse(localStorage.getItem('mindcraft_agent_recent_docs') || '[]')
+    if (!Array.isArray(docs)) return []
+    return docs
+      .filter(doc => doc && doc.filePath)
+      .map((doc) => {
+        const filePath = String(doc.filePath || '')
+        const name = doc.name || filePath.split(/[\\/]/).pop() || ''
+        return {
+          ...doc,
+          name,
+          ext: doc.ext || name.split('.').pop() || '',
+        }
+      })
   } catch (_) { return [] }
 }
 
