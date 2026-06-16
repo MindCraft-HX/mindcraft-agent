@@ -115,6 +115,8 @@
           <div class="sp-left">
             <div class="sp-list-header">{{ $t('settings.configList') }}<button class="import-legacy-btn" @click="importFromLegacy" :title="$t('settings.importFromMindCraftHint')">
                   <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.importFromMindCraft') }}</button>
+                  <button class="import-legacy-btn repair" @click="repairCodexCliConfig" :title="$t('settings.codexRepairConfigHint')">
+                    <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 7 A4 4 0 1 0 4 2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M4 2 H1 V5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 7 L5.5 8.5 L8.5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ $t('settings.codexRepairConfig') }}</button>
               </div>
             <div class="sp-list">
               <div v-for="(p, i) in settingsForm.providers" :key="i"
@@ -160,7 +162,12 @@ import { ElMessage } from 'element-plus'
 import { useCodexConfigStore } from '../../../stores/codexConfig.js'
 import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from '../../agentCommon/components/ConfirmDialog.vue'
-import { buildManagedProviderToml, mergeManagedProviderToml } from '../utils/providerToml.mjs'
+import {
+  buildManagedProviderToml,
+  extractProviderDraftFromToml,
+  mergeManagedProviderToml,
+  normalizeCodexReasoningEffort,
+} from '../utils/providerToml.mjs'
 
 const { t } = useI18n()
 
@@ -305,7 +312,7 @@ async function loadProviders() {
       const reasoningEffort = await window.electronAPI?.codexGetReasoningEffort?.() || ''
       settingsForm.value.providers = [{
         name: 'default',
-        key, url, model, reasoningEffort,
+        key, url, model, reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort),
         authJson: key ? { OPENAI_API_KEY: key } : {},
         tomlText: buildManagedProviderToml({ name: 'default', model, url, reasoningEffort, apiKey: key }),
       }]
@@ -329,9 +336,67 @@ function providerAvatar(p) {
   return (p?.name || 'D')[0].toUpperCase()
 }
 
+function normalizeProviderRecord(provider = {}) {
+  const draft = extractProviderDraftFromToml(provider.tomlText || '')
+  const key = String(provider.key || draft.apiKey || '').trim()
+  return {
+    ...provider,
+    name: provider.name || draft.name || '',
+    key,
+    url: provider.url || draft.url || '',
+    model: provider.model || draft.model || '',
+    reasoningEffort: normalizeCodexReasoningEffort(provider.reasoningEffort || draft.reasoningEffort),
+    authJson: provider.authJson || (key ? { OPENAI_API_KEY: key } : {}),
+  }
+}
+
+async function repairCodexCliConfig() {
+  const idx = settingsForm.value.activeIdx >= 0 ? settingsForm.value.activeIdx : settingsForm.value.selectedIdx
+  if (idx < 0 || idx >= settingsForm.value.providers.length) {
+    ElMessage.warning(t('settings.codexRepairNoKey'))
+    return
+  }
+  const p = normalizeProviderRecord(settingsForm.value.providers[idx] || {})
+  if (!p.key) {
+    ElMessage.warning(t('settings.codexRepairNoKey'))
+    return
+  }
+
+  const ok = await confirmDialogRef.value?.open({
+    message: t('settings.codexRepairConfigMsg'),
+    okText: t('settings.codexRepairConfig'),
+    cancelText: t('common.cancel'),
+  })
+  if (!ok) return
+
+  try {
+    const currentToml = await window.electronAPI?.codexReadConfigToml?.() || ''
+    const freshToml = buildManagedProviderToml({
+      name: p.name,
+      model: p.model,
+      url: p.url,
+      reasoningEffort: p.reasoningEffort,
+      apiKey: p.key,
+    })
+    const mergedToml = mergeManagedProviderToml(currentToml, freshToml)
+    const res = await window.electronAPI?.codexRepairConfigToml?.(mergedToml)
+    if (!res?.ok) {
+      ElMessage.error(t('settings.codexRepairFailed') + (res?.message || t('system.unknownError')))
+      return
+    }
+    p.tomlText = mergedToml
+    settingsForm.value.providers.splice(idx, 1, p)
+    await persistProviders()
+    ElMessage.success(res.changed ? t('settings.codexRepairDone') : t('settings.codexRepairNoChange'))
+  } catch (e) {
+    ElMessage.error(t('settings.codexRepairFailed') + (e?.message || e || t('system.unknownError')))
+  }
+}
+
 async function applyProvider(idx) {
-  const p = settingsForm.value.providers[idx]
-  if (!p) return
+  const provider = settingsForm.value.providers[idx]
+  if (!provider) return false
+  const p = normalizeProviderRecord(provider)
   try {
     // 仅写入 config.toml（不再写 auth.json — 第三方 provider 认证通过
     // experimental_bearer_token 内嵌于 toml，参照 cc-switch 标准做法）
@@ -341,7 +406,7 @@ async function applyProvider(idx) {
       name: p.name,
       model: p.model,
       url: p.url,
-      reasoningEffort: p.reasoningEffort,
+      reasoningEffort: normalizeCodexReasoningEffort(p.reasoningEffort),
       apiKey: p.key,
     })
     const currentToml = await window.electronAPI?.codexReadConfigToml?.() || ''
@@ -353,7 +418,7 @@ async function applyProvider(idx) {
     await window.electronAPI?.codexSetKey?.(p.key || '')
     await window.electronAPI?.codexSetBaseURL?.(p.url || '')
     await window.electronAPI?.codexSetModel?.(p.model || '')
-    await window.electronAPI?.codexSetReasoningEffort?.(p.reasoningEffort || '')
+    await window.electronAPI?.codexSetReasoningEffort?.(normalizeCodexReasoningEffort(p.reasoningEffort))
     return true
   } catch (e) {
     ElMessage.error(t('settings.saveConfigFailed') + (e?.message || t('system.unknownError')))
@@ -441,6 +506,11 @@ async function copyProvider(i) {
 function extractTomlFields(tomlText) {
   const result = { auth_token: '', base_url: '', model: '', reasoning_effort: '' }
   if (!tomlText) return result
+  const draft = extractProviderDraftFromToml(tomlText)
+  result.auth_token = draft.apiKey || ''
+  result.base_url = draft.url || ''
+  result.model = draft.model || ''
+  result.reasoning_effort = draft.reasoningEffort || ''
   let inSection = false
   for (const rawLine of tomlText.split('\n')) {
     const line = rawLine.replace(/\r$/, '').trim()
@@ -451,11 +521,11 @@ function extractTomlFields(tomlText) {
     const key = m[1].toLowerCase()
     const val = m[2]
     if (!inSection) {
-      if (key === 'auth_token') result.auth_token = val
-      else if (key === 'model') result.model = val
-      else if (key === 'model_reasoning_effort' || key === 'reasoning_effort') result.reasoning_effort = val
+      if (key === 'auth_token' && !result.auth_token) result.auth_token = val
+      else if (key === 'model' && !result.model) result.model = val
+      else if ((key === 'model_reasoning_effort' || key === 'reasoning_effort') && !result.reasoning_effort) result.reasoning_effort = normalizeCodexReasoningEffort(val)
     }
-    if (key === 'base_url') result.base_url = val
+    if (key === 'base_url' && !result.base_url) result.base_url = val
   }
   return result
 }
@@ -501,7 +571,7 @@ async function importFromFile(i) {
     p.key = fields.auth_token
     p.url = fields.base_url
     p.model = fields.model
-    p.reasoningEffort = fields.reasoning_effort
+    p.reasoningEffort = normalizeCodexReasoningEffort(fields.reasoning_effort)
     p.authJson = fields.auth_token ? { OPENAI_API_KEY: fields.auth_token } : {}
     p.tomlText = tomlText
     await persistProviders()
@@ -699,6 +769,8 @@ function closeSettings() {
   display: inline-flex; align-items: center; gap: 4px;
   transition: background .2s, color .2s;
   &:hover { background: var(--cc-warning, #e6a23c); color: #fff; }
+  &.repair { margin-left: 0; border-color: var(--cc-primary); color: var(--cc-primary); }
+  &.repair:hover { background: var(--cc-primary); color: #fff; }
 }
 .sp-list {
   flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px;

@@ -243,7 +243,7 @@
 		"importNoConfigCodex": "No config found to import (shared files are already interoperable)",
 		"codexImportOverwriteMsg": "Overwrite \"{name}\" with config file?\n\nWill read current runtime config from ~/.codex/config.toml,\noverwriting this record's name, Key, URL, model, etc.\n\nThis action cannot be undone. Continue?",
 		"importNoConfigToml": "config.toml not found or is empty",
-		"importNoAuthToken": "No auth_token or base_url found in config file",
+		"importNoAuthToken": "No experimental_bearer_token, auth_token, or base_url found in config file",
 		"systemSettings": "System Settings",
 		"appVersion": "App Version",
 		"company": "Shenzhen Hanxiang Information Technology Co., Ltd.",
@@ -267,7 +267,14 @@
 			"fullAccessDesc": "Read and write any file on disk",
 			"modeChanged": "Default file access set to \"{label}\"",
 			"midSessionHint": "Takes effect on next message"
-		}
+		},
+		"codexRepairConfig": "Repair Codex CLI Config",
+		"codexRepairConfigHint": "Back up and repair old env_key entries in ~/.codex/config.toml without touching auth.json",
+		"codexRepairConfigMsg": "This will repair old env_key entries in ~/.codex/config.toml and create a backup before writing.\n\nOnly config.toml is modified; auth.json is not touched. Continue?",
+		"codexRepairNoKey": "The current provider has no API key to write, so Codex CLI config cannot be repaired",
+		"codexRepairDone": "Codex CLI config repaired",
+		"codexRepairNoChange": "Codex CLI config does not need repair",
+		"codexRepairFailed": "Failed to repair Codex CLI config: "
 	},
 	"chat": {
 		"newChat": "New Chat",

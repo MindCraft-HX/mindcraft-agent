@@ -12,16 +12,19 @@ test('buildManagedProviderToml keeps provider string values quoted and closed', 
     name: 'mindcraft31231',
     model: 'gpt-5.4',
     url: 'https://api.mindcraft.com.cn/v1',
-    reasoningEffort: 'medium',
+    reasoningEffort: 'extra_high',
+    apiKey: 'sk-test',
   })
 
-  assert.match(toml, /^model_reasoning_effort = "medium"$/m)
+  assert.match(toml, /^model_reasoning_effort = "xhigh"$/m)
   assert.match(toml, /^model = "gpt-5\.4"$/m)
   assert.match(toml, /^model_provider = "mindcraft31231"$/m)
   assert.match(toml, /^\[model_providers\.mindcraft31231\]$/m)
   assert.match(toml, /^name = "mindcraft31231"$/m)
   assert.doesNotMatch(toml, /^name = "mindcraft31231$/m)
   assert.match(toml, /^base_url = "https:\/\/api\.mindcraft\.com\.cn\/v1"$/m)
+  assert.match(toml, /^experimental_bearer_token = "sk-test"$/m)
+  assert.doesNotMatch(toml, /^env_key\s*=/m)
 })
 
 test('extractProviderDraftFromToml reads managed provider fields from config.toml', () => {
@@ -33,7 +36,7 @@ model_provider = "mindcraft31231"
 [model_providers.mindcraft31231]
 name = "mindcraft31231"
 base_url = "https://api.mindcraft.com.cn/v1"
-env_key = "OPENAI_API_KEY"
+experimental_bearer_token = "sk-test"
 
 [plugins.foo]
 enabled = true
@@ -43,7 +46,7 @@ enabled = true
   assert.equal(draft.model, 'gpt-5.4')
   assert.equal(draft.reasoningEffort, 'medium')
   assert.equal(draft.url, 'https://api.mindcraft.com.cn/v1')
-  assert.equal(draft.envKey, 'OPENAI_API_KEY')
+  assert.equal(draft.apiKey, 'sk-test')
 })
 
 test('mergeManagedProviderToml replaces managed provider block and preserves other sections', () => {
@@ -57,6 +60,11 @@ name = "old-provider"
 base_url = "https://old.example.com/v1"
 env_key = "OPENAI_API_KEY"
 
+[model_providers.keep-provider]
+name = "keep-provider"
+base_url = "https://keep.example.com/v1"
+experimental_bearer_token = "keep-key"
+
 [plugins.bar]
 enabled = true
 
@@ -68,12 +76,17 @@ trust_level = "trusted"
       model: 'gpt-5.4',
       url: 'https://api.mindcraft.com.cn/v1',
       reasoningEffort: 'medium',
+      apiKey: 'sk-new',
     }),
   )
 
   assert.doesNotMatch(merged, /old-provider/)
+  assert.doesNotMatch(merged, /^env_key\s*=/m)
   assert.match(merged, /^model_provider = "mindcraft31231"$/m)
   assert.match(merged, /^\[model_providers\.mindcraft31231\]$/m)
+  assert.match(merged, /^experimental_bearer_token = "sk-new"$/m)
+  assert.match(merged, /^\[model_providers\.keep-provider\]$/m)
+  assert.match(merged, /^base_url = "https:\/\/keep\.example\.com\/v1"$/m)
   assert.match(merged, /^\[plugins\.bar\]$/m)
   assert.match(merged, /^enabled = true$/m)
   assert.match(merged, /^\[projects\.'D:\/demo'\]$/m)

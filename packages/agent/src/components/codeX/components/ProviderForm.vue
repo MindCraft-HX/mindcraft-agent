@@ -46,7 +46,7 @@
             <option value="low">low</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
-            <option value="extra_high">extra_high</option>
+            <option value="xhigh">xhigh</option>
           </select>
         </div>
 
@@ -81,6 +81,7 @@ import {
   buildManagedProviderToml,
   extractProviderDraftFromToml,
   mergeManagedProviderToml,
+  normalizeCodexReasoningEffort,
 } from '../utils/providerToml.mjs'
 
 const props = defineProps({
@@ -136,7 +137,7 @@ function initFromProps() {
   form.key = provider.key || draft.apiKey || ''
   form.url = provider.url || draft.url || ''
   form.model = provider.model || draft.model || ''
-  reasoningEffort.value = provider.reasoningEffort || draft.reasoningEffort || ''
+  reasoningEffort.value = normalizeCodexReasoningEffort(provider.reasoningEffort || draft.reasoningEffort)
   authJsonText.value = provider.authJson
     ? JSON.stringify(provider.authJson, null, 2)
     : buildDefaultAuthJson()
@@ -275,7 +276,7 @@ function onSave() {
       key: form.key,
       url: form.url,
       model: form.model,
-      reasoningEffort: reasoningEffort.value || '',
+      reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort.value),
       authJson,
       tomlText: tomlText.value,
     },

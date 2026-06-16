@@ -257,6 +257,7 @@ import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentC
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
+import { normalizeCodexReasoningEffort } from './utils/providerToml.mjs'
 
 const themeStore = useClaudeThemeStore()
 const codexConfigStore = useCodexConfigStore()
@@ -868,10 +869,10 @@ function triggerSlashMenu() {
     slashModelName.value = tab.model
   }
   if (tab?.reasoningEffort) {
-    slashEffortLevel.value = tab.reasoningEffort
+    slashEffortLevel.value = normalizeCodexReasoningEffort(tab.reasoningEffort)
   } else {
     window.electronAPI?.codexGetReasoningEffort?.().then(e => {
-      if (e) slashEffortLevel.value = e
+      if (e) slashEffortLevel.value = normalizeCodexReasoningEffort(e)
     })
   }
   nextTick(() => {
@@ -1959,7 +1960,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     networkAccessEnabled: tab.networkAccessEnabled,
     webSearchMode: tab.webSearchMode,
     model: (tab.model || tab.metrics?.model || ''),
-    reasoningEffort: tab.reasoningEffort || '',
+    reasoningEffort: normalizeCodexReasoningEffort(tab.reasoningEffort),
     additionalDirectories: ownerProject?.additionalDirectories || [],
   }
   const payload = safeIpcPayload(rawPayload, 'codexAgentQuery')
@@ -2033,11 +2034,11 @@ async function openModelPicker() {
   const tab = activeTab.value
   if (tab) {
     tab.model = result.model
-    tab.reasoningEffort = result.effort || ''
+    tab.reasoningEffort = normalizeCodexReasoningEffort(result.effort)
     const prev = activeProject.value?.chats?.filter(c => c.id !== tab.id) || []
-    prev.forEach(c => { c.model = result.model; c.reasoningEffort = result.effort || '' }) // sync all tabs
+    prev.forEach(c => { c.model = result.model; c.reasoningEffort = normalizeCodexReasoningEffort(result.effort) }) // sync all tabs
     slashModelName.value = result.label || result.model
-    slashEffortLevel.value = result.effort || slashEffortLevel.value
+    slashEffortLevel.value = normalizeCodexReasoningEffort(result.effort) || slashEffortLevel.value
     metricsData.value.model = result.model
     pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) })
     scrollBottom(tab.id)
@@ -2046,11 +2047,12 @@ async function openModelPicker() {
 }
 
 function setSlashEffortLevel(level) {
-  slashEffortLevel.value = level
-  window.electronAPI?.codexSetReasoningEffort?.(level)
+  const effort = normalizeCodexReasoningEffort(level)
+  slashEffortLevel.value = effort
+  window.electronAPI?.codexSetReasoningEffort?.(effort)
   const tab = activeTab.value
   if (tab) {
-    tab.reasoningEffort = level
+    tab.reasoningEffort = effort
     saveHistory()
   }
 }

@@ -243,7 +243,7 @@
 		"importNoConfigCodex": "未找到可导入的配置（共享文件已天然互通）",
 		"codexImportOverwriteMsg": "用配置文件覆盖「{name}」？\n\n将读取 ~/.codex/config.toml 中的当前运行配置，\n覆盖此条记录的名称、Key、URL、模型等字段。\n\n此操作不可撤销，是否继续？",
 		"importNoConfigToml": "未找到 config.toml 或文件为空",
-		"importNoAuthToken": "配置文件中未找到 auth_token 或 base_url",
+		"importNoAuthToken": "配置文件中未找到 experimental_bearer_token、auth_token 或 base_url",
 		"systemSettings": "系统设置",
 		"appVersion": "应用版本",
 		"company": "深圳瀚象信息科技有限公司",
@@ -267,7 +267,14 @@
 			"fullAccessDesc": "可读取和修改任意路径文件",
 			"modeChanged": "默认文件权限已设为「{label}」",
 			"midSessionHint": "将在下一条消息中生效"
-		}
+		},
+		"codexRepairConfig": "修复 Codex CLI 配置",
+		"codexRepairConfigHint": "备份并修复 ~/.codex/config.toml 中的旧 env_key 写法，不修改 auth.json",
+		"codexRepairConfigMsg": "将修复 ~/.codex/config.toml 中由旧版本写入的 env_key 配置，并在写入前自动备份。\n\n此操作只修改 config.toml，不会修改 auth.json。继续？",
+		"codexRepairNoKey": "当前 Provider 没有可写入的 API Key，无法修复 Codex CLI 配置",
+		"codexRepairDone": "Codex CLI 配置已修复",
+		"codexRepairNoChange": "Codex CLI 配置无需修复",
+		"codexRepairFailed": "修复 Codex CLI 配置失败："
 	},
 	"chat": {
 		"newChat": "新对话",

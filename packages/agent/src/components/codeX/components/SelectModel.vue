@@ -53,6 +53,7 @@
 
 <script setup>
 import { ref, nextTick } from 'vue'
+import { normalizeCodexReasoningEffort } from '../utils/providerToml.mjs'
 
 const visible = ref(false)
 const panelRef = ref(null)
@@ -99,7 +100,7 @@ async function open() {
   hoveredId.value = matched ? model : modelOptions[0].id
   initialModel.value = model || ''
 
-  const effortStr = String(currentEffort || 'medium').trim().toLowerCase()
+  const effortStr = normalizeCodexReasoningEffort(currentEffort) || 'medium'
   const idx = efforts.findIndex(e => e.key === effortStr)
   effortIndex.value = idx >= 0 ? idx : 2
 

@@ -170,6 +170,7 @@ function createAgentBridge(ipcRenderer) {
   codexWriteAuthJson: (obj) => ipcRenderer.invoke('codex-write-auth-json', obj),
   codexReadConfigToml: () => ipcRenderer.invoke('codex-read-config-toml'),
   codexWriteConfigToml: (content) => ipcRenderer.invoke('codex-write-config-toml', content),
+  codexRepairConfigToml: (content) => ipcRenderer.invoke('codex-repair-config-toml', content),
   codexGetLastCwd: () => ipcRenderer.invoke('codex-get-last-cwd'),
   codexCheckEnvironment: () => ipcRenderer.invoke('codex-check-environment'),
   codexCheckLatestVersion: () => ipcRenderer.invoke('codex-check-latest-version'),

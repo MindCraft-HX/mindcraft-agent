@@ -177,9 +177,16 @@ function readRuntimeConfig() {
   const apiKey = userApiKey || tomlApiKey
   const baseURL = userBaseURL || tomlBaseURL
   const model = userModel || tomlModel
-  const reasoningEffort = userEffort || tomlEffort
+  const reasoningEffort = normalizeCodexReasoningEffort(userEffort || tomlEffort)
 
   return { apiKey, baseURL, model, reasoningEffort }
+}
+
+function normalizeCodexReasoningEffort(value) {
+  const effort = String(value || '').trim().toLowerCase()
+  if (!effort) return ''
+  if (effort === 'extra_high' || effort === 'max') return 'xhigh'
+  return ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : ''
 }
 
 /** CodeX SDK 原生 sandboxMode 值 */
@@ -2740,7 +2747,7 @@ function setupCodexSdkHandlers() {
     try {
       const c = new Conf({ name: 'mindcraft-codex' })
       const r = c.get('runtime') || {}
-      r.reasoningEffort = effort
+      r.reasoningEffort = normalizeCodexReasoningEffort(effort)
       c.set('runtime', r)
     } catch (_) {}
     return true
@@ -3024,6 +3031,29 @@ function setupCodexSdkHandlers() {
     } catch (_) { return '' }
   })
 
+  function appendPreservedCodexConfigSections(content, existing) {
+    let finalContent = content || ''
+    const preserved = []
+    let inPreserve = false
+    for (const line of String(existing || '').split('\n')) {
+      const trimmed = line.trim()
+      if (/^\[plugins\./.test(trimmed) || /^\[marketplaces\./.test(trimmed)) {
+        inPreserve = true
+      } else if (inPreserve && /^\[/.test(trimmed) && !/^\[plugins\./.test(trimmed) && !/^\[marketplaces\./.test(trimmed)) {
+        inPreserve = false
+      }
+      if (inPreserve) preserved.push(line)
+    }
+    const preserveBlock = preserved.join('\n').trim()
+    if (!preserveBlock) return finalContent
+
+    const normalizeNewlines = (value) => String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (!normalizeNewlines(finalContent).includes(normalizeNewlines(preserveBlock))) {
+      finalContent = finalContent.trimEnd() + '\n\n' + preserveBlock + '\n'
+    }
+    return finalContent
+  }
+
   ipcMain.handle('codex-write-config-toml', (_, content) => {
     try {
       if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
@@ -3031,24 +3061,31 @@ function setupCodexSdkHandlers() {
       let finalContent = content || ''
       if (fs.existsSync(CONFIG_TOML_FILE)) {
         const existing = fs.readFileSync(CONFIG_TOML_FILE, 'utf8')
-        const preserved = []
-        let inPreserve = false
-        for (const line of existing.split('\n')) {
-          const trimmed = line.trim()
-          if (/^\[plugins\./.test(trimmed) || /^\[marketplaces\./.test(trimmed)) {
-            inPreserve = true
-          } else if (inPreserve && /^\[/.test(trimmed) && !/^\[plugins\./.test(trimmed) && !/^\[marketplaces\./.test(trimmed)) {
-            inPreserve = false
-          }
-          if (inPreserve) preserved.push(line)
-        }
-        const preserveBlock = preserved.join('\n').trim()
-        if (preserveBlock && !finalContent.includes(preserveBlock)) {
-          finalContent = finalContent.trimEnd() + '\n\n' + preserveBlock + '\n'
-        }
+        finalContent = appendPreservedCodexConfigSections(finalContent, existing)
       }
       fs.writeFileSync(CONFIG_TOML_FILE, finalContent, 'utf8')
       return { ok: true }
+    } catch (e) { return { ok: false, message: e.message } }
+  })
+
+  ipcMain.handle('codex-repair-config-toml', (_, content) => {
+    try {
+      if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
+      const previous = fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : ''
+      let finalContent = content || ''
+      if (fs.existsSync(CONFIG_TOML_FILE)) {
+        const existing = fs.readFileSync(CONFIG_TOML_FILE, 'utf8')
+        finalContent = appendPreservedCodexConfigSections(finalContent, existing)
+      }
+      if (previous === finalContent) return { ok: true, changed: false, backupPath: '' }
+      let backupPath = ''
+      if (previous) {
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
+        backupPath = path.join(CODEX_CONFIG_DIR, `config.toml.mindcraft-bak-${stamp}`)
+        fs.copyFileSync(CONFIG_TOML_FILE, backupPath)
+      }
+      fs.writeFileSync(CONFIG_TOML_FILE, finalContent, 'utf8')
+      return { ok: true, changed: true, backupPath }
     } catch (e) { return { ok: false, message: e.message } }
   })
 
