@@ -3406,12 +3406,45 @@ function setupClaudeHandlers() {
     }
   })
 
-  // ─── Skills 社区市场（agent-skills-cli JS API）─────────────────
+  // ─── Skills 社区市场 ────────────────────────────────────────
+  // dev 模式：通过 agent-skills-cli API 实时拉取
+  // asar 打包模式：用构建时生成的 skills-catalog.json 兜底（ESM import 在 asar 内不可用）
   ipcMain.handle('skills-market-search', async (_, { query, page, pageSize }) => {
-    // agent-skills-cli 是 ESM 包，在 asar 打包后无法动态 import；社区搜索仅 dev 模式可用
-    if (__filename.includes('.asar')) {
-      return { items: [], total: 0, page: page || 0, hasMore: false }
+    const asarMode = __filename.includes('.asar')
+
+    // 在 asar 模式下用静态 catalog 兜底
+    if (asarMode) {
+      try {
+        const catalog = getSkillsCatalog()
+        let items = (catalog.skills || []).map(s => ({
+          name: s.name,
+          displayName: s.displayName || s.name,
+          description: s.description || '',
+          author: s.author || '',
+          category: s.category || '',
+          tags: s.tags || [],
+          sourceUrl: s.sourceUrl || '',
+          gitUrl: s.gitUrl || '',
+          subPath: s.subPath || '',
+          installs: s.installs || 0,
+        }))
+        if (query && query.trim()) {
+          const q = query.trim().toLowerCase()
+          items = items.filter(s =>
+            s.name.toLowerCase().includes(q) ||
+            s.description.toLowerCase().includes(q)
+          )
+        }
+        const p = page || 0
+        const ps = pageSize || 30
+        const total = items.length
+        items = items.slice(p * ps, (p + 1) * ps)
+        return { items, total, page: p, hasMore: (p + 1) * ps < total }
+      } catch (_) {
+        return { items: [], total: 0, page: page || 0, hasMore: false }
+      }
     }
+
     try {
       const { fetchSkillsForCLI, searchSkillsForCLI } = await import('agent-skills-cli')
       let result

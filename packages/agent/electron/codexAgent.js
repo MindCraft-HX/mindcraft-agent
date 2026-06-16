@@ -140,10 +140,34 @@ function readRuntimeConfig() {
   const toml = parseSimpleToml(CONFIG_TOML_FILE)
 
   // 从 config.toml 提取 CLI 级默认值
-  let tomlApiKey = toml.auth_token || ''
+  let tomlApiKey = toml.auth_token || toml.experimental_bearer_token || ''
   let tomlBaseURL = toml.base_url || ''
   let tomlModel = toml.model || ''
   let tomlEffort = toml.reasoning_effort || toml.reason_effort || ''
+
+  // 从 [model_providers.<id>] 段提取第三方 provider 的 experimental_bearer_token
+  if (!tomlApiKey && toml.model_providers) {
+    const mp = toml.model_providers
+    const providerId = toml.model_provider || ''
+    // 优先匹配 model_provider 指定的 provider，否则取第一个
+    if (providerId && mp[providerId] && mp[providerId].experimental_bearer_token) {
+      tomlApiKey = mp[providerId].experimental_bearer_token
+    } else {
+      for (const [, pt] of Object.entries(mp)) {
+        if (pt && pt.experimental_bearer_token) { tomlApiKey = pt.experimental_bearer_token; break }
+      }
+    }
+    // base_url 同样从 provider 段读取
+    if (!tomlBaseURL) {
+      if (providerId && mp[providerId] && mp[providerId].base_url) {
+        tomlBaseURL = mp[providerId].base_url
+      } else {
+        for (const [, pt] of Object.entries(mp)) {
+          if (pt && pt.base_url) { tomlBaseURL = pt.base_url; break }
+        }
+      }
+    }
+  }
 
   if (!tomlApiKey && toml.auth && toml.auth.token) tomlApiKey = toml.auth.token
   if (!tomlBaseURL && toml.api && toml.api.base_url) tomlBaseURL = toml.api.base_url
@@ -2667,12 +2691,44 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  // ─── CodeX Skills 社区市场（agent-skills-cli JS API）────────────
+  // ─── CodeX Skills 社区市场 ──────────────────────────────────
+  // dev 模式：通过 agent-skills-cli API 实时拉取
+  // asar 打包模式：用构建时生成的 codex-skills-catalog.json 兜底
   ipcMain.handle('codex-skills-market-search', async (_, { query, page, pageSize }) => {
-    // agent-skills-cli 是 ESM 包，在 asar 打包后无法动态 import；社区搜索仅 dev 模式可用
-    if (__filename.includes('.asar')) {
-      return { items: [], total: 0, page: page || 0, hasMore: false }
+    const asarMode = __filename.includes('.asar')
+
+    if (asarMode) {
+      try {
+        const catalog = codexGetSkillsCatalog()
+        let items = (catalog.skills || []).map(s => ({
+          name: s.name,
+          displayName: s.displayName || s.name,
+          description: s.description || '',
+          author: s.author || '',
+          category: s.category || '',
+          tags: s.tags || [],
+          sourceUrl: s.sourceUrl || '',
+          gitUrl: s.gitUrl || '',
+          subPath: s.subPath || '',
+          installs: s.installs || 0,
+        }))
+        if (query && query.trim()) {
+          const q = query.trim().toLowerCase()
+          items = items.filter(s =>
+            s.name.toLowerCase().includes(q) ||
+            s.description.toLowerCase().includes(q)
+          )
+        }
+        const p = page || 0
+        const ps = pageSize || 30
+        const total = items.length
+        items = items.slice(p * ps, (p + 1) * ps)
+        return { items, total, page: p, hasMore: (p + 1) * ps < total }
+      } catch (_) {
+        return { items: [], total: 0, page: page || 0, hasMore: false }
+      }
     }
+
     try {
       const { fetchSkillsForCLI, searchSkillsForCLI } = await import('agent-skills-cli')
       let result

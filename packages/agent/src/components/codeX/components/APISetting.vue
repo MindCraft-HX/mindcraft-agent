@@ -160,6 +160,7 @@ import { ElMessage } from 'element-plus'
 import { useCodexConfigStore } from '../../../stores/codexConfig.js'
 import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from '../../agentCommon/components/ConfirmDialog.vue'
+import { buildManagedProviderToml, mergeManagedProviderToml } from '../utils/providerToml.mjs'
 
 const { t } = useI18n()
 
@@ -306,7 +307,7 @@ async function loadProviders() {
         name: 'default',
         key, url, model, reasoningEffort,
         authJson: key ? { OPENAI_API_KEY: key } : {},
-        tomlText: buildDefaultToml(model, url, reasoningEffort, key),
+        tomlText: buildManagedProviderToml({ name: 'default', model, url, reasoningEffort, apiKey: key }),
       }]
       settingsForm.value.activeIdx = 0
       settingsForm.value.selectedIdx = 0
@@ -316,18 +317,6 @@ async function loadProviders() {
     settingsForm.value.activeIdx = -1
     settingsForm.value.selectedIdx = -1
   }
-}
-
-function buildDefaultToml(model, url, reasoningEffort = '', apiKey = '') {
-  const effortLine = reasoningEffort ? `model_reasoning_effort = "${reasoningEffort}"\n` : ''
-  const tokenLine = apiKey ? `experimental_bearer_token = "${apiKey}"\n` : ''
-  return `${effortLine}model = "${model}"
-model_provider = "mindcraft"
-
-[model_providers.mindcraft]
-name = "mindcraft"
-base_url = "${url}"
-${tokenLine}`.trimEnd() + '\n'
 }
 
 function selectProvider(i) {
@@ -346,10 +335,20 @@ async function applyProvider(idx) {
   try {
     // 仅写入 config.toml（不再写 auth.json — 第三方 provider 认证通过
     // experimental_bearer_token 内嵌于 toml，参照 cc-switch 标准做法）
-    if (p.tomlText) {
-      const mergedToml = await mergeTomlModelConfig(p.tomlText)
-      await window.electronAPI?.codexWriteConfigToml?.(mergedToml)
-    }
+    // 注意：必须从 provider 字段重新生成 TOML，而非使用存储的 tomlText
+    // （存储的 tomlText 可能仍是旧 env_key 格式，直接写入会污染 CLI 配置）
+    const freshToml = buildManagedProviderToml({
+      name: p.name,
+      model: p.model,
+      url: p.url,
+      reasoningEffort: p.reasoningEffort,
+      apiKey: p.key,
+    })
+    const currentToml = await window.electronAPI?.codexReadConfigToml?.() || ''
+    const mergedToml = mergeManagedProviderToml(currentToml, freshToml)
+    await window.electronAPI?.codexWriteConfigToml?.(mergedToml)
+    // 同步更新内存中的 tomlText，确保后续 persistProviders 存入正确格式
+    p.tomlText = mergedToml
     // 更新 runtime config
     await window.electronAPI?.codexSetKey?.(p.key || '')
     await window.electronAPI?.codexSetBaseURL?.(p.url || '')
@@ -360,57 +359,6 @@ async function applyProvider(idx) {
     ElMessage.error(t('settings.saveConfigFailed') + (e?.message || t('system.unknownError')))
     return false
   }
-}
-
-/** 将 provider 的模型配置合并到当前磁盘 config.toml，保留其余内容 */
-async function mergeTomlModelConfig(providerToml) {
-  try {
-    const current = await window.electronAPI?.codexReadConfigToml?.() || ''
-    if (!current) return providerToml  // 文件不存在，直接用 provider 的
-
-    // 从 provider toml 提取模型相关字段（model / model_provider / model_reasoning_effort / [model_providers.*] 段）
-    const modelBlock = extractTomlModelBlock(providerToml)
-
-    // 从当前文件移除旧的模型相关段，得到「其余内容」
-    const rest = removeTomlModelBlock(current)
-
-    // 合并：新模型配置 + 其余内容
-    return modelBlock.trimEnd() + '\n\n' + rest.trimStart()
-  } catch (_) {
-    return providerToml  // 出错降级：直接用 provider 的
-  }
-}
-
-/** 从 TOML 文本中提取模型相关区块（顶层 model 字段 + [model_providers.*] 段） */
-function extractTomlModelBlock(toml) {
-  const lines = toml.split('\n')
-  const out = []
-  let inModelProviders = false
-  for (const line of lines) {
-    const t = line.trim()
-    if (/^\[model_providers\./.test(t)) { inModelProviders = true; out.push(line); continue }
-    if (inModelProviders && /^\[/.test(t) && !/^\[model_providers\./.test(t)) { inModelProviders = false }
-    if (inModelProviders) { out.push(line); continue }
-    // 顶层模型字段
-    if (/^(model|model_provider|model_reasoning_effort)\s*=/.test(t)) { out.push(line) }
-  }
-  return out.join('\n')
-}
-
-/** 从 TOML 文本中移除模型相关区块，返回其余内容 */
-function removeTomlModelBlock(toml) {
-  const lines = toml.split('\n')
-  const out = []
-  let skip = false
-  for (const line of lines) {
-    const t = line.trim()
-    if (/^\[model_providers\./.test(t)) { skip = true; continue }
-    if (skip && /^\[/.test(t) && !/^\[model_providers\./.test(t)) { skip = false }
-    if (skip) continue
-    if (/^(model|model_provider|model_reasoning_effort)\s*=/.test(t)) continue
-    out.push(line)
-  }
-  return out.join('\n')
 }
 
 async function activateProviderByIdx(i) {
@@ -473,7 +421,7 @@ async function addProvider() {
   // 从磁盘读取当前 config.toml 作为初始模板，保留已有配置（trust 等）
   let latestToml = ''
   try { latestToml = await window.electronAPI?.codexReadConfigToml?.() || '' } catch (_) {}
-  const p = { name: '', key: '', url: '', model: '', reasoningEffort: '', authJson: {}, tomlText: latestToml || buildDefaultToml('', '', '') }
+  const p = { name: '', key: '', url: '', model: '', reasoningEffort: '', authJson: {}, tomlText: latestToml || buildManagedProviderToml({}) }
   settingsForm.value.providers.push(p)
   settingsForm.value.selectedIdx = settingsForm.value.providers.length - 1
   editingNewProvider.value = true
