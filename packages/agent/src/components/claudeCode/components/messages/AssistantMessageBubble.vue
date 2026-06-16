@@ -73,6 +73,10 @@ const props = defineProps({
 .assistant-content :deep(.md-h4),
 .assistant-content :deep(.md-strong-line) { color: var(--cc-assistant-heading); }
 .assistant-content :deep(.md-link) { color: var(--cc-assistant-heading); }
+.assistant-content :deep(a.inline-code.md-file-link) {
+  color: var(--cc-assistant-inline-code-text);
+  border-bottom-color: currentColor;
+}
 .assistant-content :deep(.md-blockquote) {
   border-left-color: var(--cc-assistant-table-border);
   color: var(--cc-text-secondary);

@@ -227,6 +227,10 @@ function getImageSrc(source) {
 .user-bubble :deep(.md-h4),
 .user-bubble :deep(.md-strong-line) { color: var(--cc-user-heading); }
 .user-bubble :deep(.md-link) { color: #fff3b0; }
+.user-bubble :deep(a.inline-code.md-file-link) {
+  color: var(--cc-user-code-text);
+  border-bottom-color: currentColor;
+}
 .user-bubble :deep(.md-blockquote) {
   border-left-color: rgba(255, 255, 255, 0.35);
   color: rgba(255, 255, 255, 0.82);

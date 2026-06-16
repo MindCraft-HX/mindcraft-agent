@@ -581,7 +581,8 @@ window.electronAPI?.openTabByName?.((progress) => {
 }
 
 .theme-dot-light {
-  background: #b85c3a;
+  background: linear-gradient(135deg, #ffffff 0%, #f7f6f4 58%, #eceae6 100%);
+  border-color: #cfc8be;
 }
 
 .theme-dot-blue {
