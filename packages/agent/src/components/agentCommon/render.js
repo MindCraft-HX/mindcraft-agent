@@ -107,8 +107,8 @@ function createPathCandidateAnchor(label, candidate) {
 }
 
 function linkifyStrongLocalPaths(input = '') {
-  // 匹配 Windows 绝对路径 | UNC | Unix 绝对路径 | 目录/文件 模式 | ./ 或 ../
-  const candidatePattern = /(^|[\s(])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
+  // 匹配 Windows 绝对路径 | UNC | Unix 绝对路径 | 工程目录前缀 | 目录/文件 模式 | ./ 或 ../
+  const candidatePattern = /(^|[\s(])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)(?:[\\/][^\s<>"')\]]+)+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
   return String(input || '').replace(candidatePattern, (match, prefix, candidate) => {
     if (!isStrongLocalPathCandidate(candidate)) return match
     return `${prefix}${createPathCandidateAnchor(candidate, candidate)}`

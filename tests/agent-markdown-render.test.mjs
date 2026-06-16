@@ -215,4 +215,34 @@ assert.ok(richTableHtml.includes('<strong>Login</strong>'), 'D4: bold in cell sh
 assert.ok(richTableHtml.includes('<code class="inline-code">done</code>'), 'D4: code in cell should work')
 assert.ok(richTableHtml.includes('<del>pending</del>'), 'D4: strikethrough in cell should work')
 
+// --- 路径链接化回归测试（保护 afb16f5 目录前缀分支不退化） ---
+
+// E1: 白名单目录路径不带扩展名
+const noExt_1 = renderContent('docs/TODO')
+assert.ok(noExt_1.includes('data-path-candidate="docs/TODO"'), 'E1: whitelisted dir path without extension should be clickable')
+
+assert.ok(renderContent('src/main').includes('data-path-candidate="src/main"'), 'E1: src/main should be clickable')
+assert.ok(renderContent('packages/foo/bar').includes('data-path-candidate="packages/foo/bar"'), 'E1: packages/foo/bar should be clickable')
+assert.ok(renderContent('config/settings').includes('data-path-candidate="config/settings"'), 'E1: config/settings (new whitelist) should be clickable')
+assert.ok(renderContent('scripts/deploy').includes('data-path-candidate="scripts/deploy"'), 'E1: scripts/deploy (new whitelist) should be clickable')
+assert.ok(renderContent('lib/utils').includes('data-path-candidate="lib/utils"'), 'E1: lib/utils (new whitelist) should be clickable')
+
+// E2: 带扩展名的白名单路径仍然正常
+assert.ok(renderContent('docs/TODO.md').includes('data-path-candidate="docs/TODO.md"'), 'E2: with extension should still be clickable')
+assert.ok(renderContent('src/main.js').includes('data-path-candidate="src/main.js"'), 'E2: src/main.js with extension')
+
+// E3: 非白名单路径不带扩展名不应当链接
+const nonWhitelist = renderContent('other/file')
+assert.ok(!nonWhitelist.includes('data-path-candidate'), 'E3: non-whitelisted dir without extension should NOT be clickable')
+
+// E4: ./ ../ 相对路径
+assert.ok(renderContent('./foo/bar.md').includes('data-path-candidate="./foo/bar.md"'), 'E4: ./ relative path should be clickable')
+assert.ok(renderContent('../parent/file.ts').includes('data-path-candidate="../parent/file.ts"'), 'E4: ../ relative path should be clickable')
+
+// E5: Unix 绝对路径（afb16f5 新增支持）
+assert.ok(renderContent('/home/user/file.txt').includes('data-path-candidate="/home/user/file.txt"'), 'E5: Unix absolute path should be clickable')
+
+// E6: 英文短语假阳性过滤
+assert.ok(!renderContent('he/she.go').includes('data-path-candidate'), 'E6: he/she.go should NOT be clickable (false positive filter)')
+
 console.log('agent markdown render test passed')
