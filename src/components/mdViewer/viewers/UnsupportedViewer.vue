@@ -44,35 +44,35 @@ const fileLabel = computed(() => props.ext ? `.${props.ext}` : (props.name || 'è
   width: min(460px, 100%);
   padding: 28px 24px;
   border-radius: 18px;
-  border: 1px solid #dbe4f0;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--doc-line, #dbe4f0);
+  background: var(--cc-bg-elevated, var(--doc-paper, #ffffff));
+  box-shadow: 0 16px 40px var(--cc-shadow, rgba(15, 23, 42, 0.08));
 }
 
 .unsupported-title {
   font-size: 18px;
   font-weight: 700;
-  color: #111827;
+  color: var(--doc-text, #111827);
 }
 
 .unsupported-desc {
   margin-top: 10px;
   line-height: 1.7;
-  color: #475569;
+  color: var(--doc-muted, #475569);
 }
 
 .unsupported-btn {
   margin-top: 18px;
   height: 36px;
   padding: 0 14px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--cc-primary-border, #bfdbfe);
   border-radius: 10px;
-  color: #1d4ed8;
-  background: #eff6ff;
+  color: var(--cc-primary, #1d4ed8);
+  background: var(--cc-primary-bg, #eff6ff);
   cursor: pointer;
 }
 
 .unsupported-btn:hover {
-  background: #dbeafe;
+  background: var(--cc-bg-hover, #dbeafe);
 }
 </style>

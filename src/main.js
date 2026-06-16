@@ -8,9 +8,7 @@ import pinia from "./stores";
 import { i18n } from './i18n'
 import { useLocaleStore } from './stores/locale'
 
-import 'highlight.js/styles/androidstudio.css';
 import './styles/codeBlockStyles.scss';
-import 'highlight.js/styles/default.css';
 import './styles/claudeThemes.css';
 import './assets/iconfont/iconfont.css';
 import './assets/iconfont/iconfont.js';

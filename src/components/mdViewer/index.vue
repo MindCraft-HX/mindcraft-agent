@@ -1,4 +1,3 @@
-import { i18n } from '@/i18n'
 <template>
   <div
     class="doc-viewer"
@@ -63,9 +62,10 @@ import { i18n } from '@/i18n'
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 
 defineOptions({ name: 'mdViewer' })
+import { i18n } from '@/i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { FolderOpened, Loading } from '@element-plus/icons-vue'
 import MarkdownViewer from './viewers/MarkdownViewer.vue'
@@ -86,6 +86,8 @@ const VIEWER_MAP = {
 
 const tabs = ref([])
 const activeTabId = ref('')
+const seenPayloadKeys = new Map()
+const MAX_SEEN_PAYLOAD_KEYS = 200
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
@@ -123,6 +125,30 @@ function upsertTab(nextTab) {
   })
 }
 
+function getPayloadKey(payload = {}) {
+  if (payload.__mdRequestId) return `request:${payload.__mdRequestId}`
+  if (payload.filePath || payload.path) return `path:${payload.filePath || payload.path}`
+  if (payload.id) return `id:${payload.id}`
+  const dataSize = payload.data
+    ? (payload.data.byteLength || payload.data.length || payload.data.data?.length || 0)
+    : 0
+  return `inline:${payload.name || ''}:${payload.size || dataSize}:${payload.type || ''}:${payload.content ? String(payload.content).length : ''}`
+}
+
+function rememberPayload(payload = {}) {
+  const key = getPayloadKey(payload)
+  const now = Date.now()
+  const previous = seenPayloadKeys.get(key)
+  seenPayloadKeys.set(key, now)
+  if (seenPayloadKeys.size > MAX_SEEN_PAYLOAD_KEYS) {
+    const oldest = [...seenPayloadKeys.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, seenPayloadKeys.size - MAX_SEEN_PAYLOAD_KEYS)
+    for (const [oldKey] of oldest) seenPayloadKeys.delete(oldKey)
+  }
+  if (key.startsWith('request:')) return Boolean(previous)
+  return Boolean(previous && now - previous < 1000)
+}
 async function ensurePayloadContent(payload = {}) {
   if (!payload?.filePath || payload.content || payload.data) return payload
   const file = await window.electronAPI?.readFileByPath?.(payload.filePath)
@@ -145,20 +171,22 @@ function saveRecentDoc(payload = {}) {
   try {
     const key = 'mindcraft_agent_recent_docs'
     const docs = JSON.parse(localStorage.getItem(key) || '[]')
+    const name = payload.name || payload.filePath.split(/[\\/]/).pop() || ''
     const entry = {
-      name: payload.name || '',
+      name,
       filePath: payload.filePath,
-      ext: (payload.name || '').split('.').pop() || '',
+      ext: name.split('.').pop() || '',
       openedAt: Date.now(),
     }
-    // 去重 + 最大5条
+    // 鍘婚噸 + 鏈€澶?鏉?
     const filtered = docs.filter(d => d.filePath !== entry.filePath)
     filtered.unshift(entry)
     localStorage.setItem(key, JSON.stringify(filtered.slice(0, 5)))
   } catch (_) {}
 }
 
-async function addPayload(payload = {}) {
+// 鍚屾搴旂敤 payload锛氱珛鍗冲垱寤?tab銆佹洿鏂?UI銆傝繑鍥為渶瑕佸紓姝ヨ鍙栫殑 pendingTab锛堟垨 null锛?
+function applyPayloadSync(payload = {}) {
   const existing = findTabByFilePath(payload.filePath)
   const requiresRead = Boolean(payload?.filePath && !payload.content && !payload.data)
 
@@ -170,12 +198,13 @@ async function addPayload(payload = {}) {
     upsertTab(readyTab)
     activeTabId.value = readyTab.id
     saveRecentDoc(payload)
-    return
+    return null
   }
 
-  if (existing && !existing.isLoading) {
+  // 宸叉湁闈炲姞杞戒腑鐨?tab锛氱洿鎺ュ垏鎹€備絾澶辫触 tab 闇€閲嶈瘯璇诲彇
+  if (existing && !existing.isLoading && !existing.isLoadError) {
     activeTabId.value = existing.id
-    return
+    return null
   }
 
   const pendingTab = existing?.isLoading
@@ -187,18 +216,28 @@ async function addPayload(payload = {}) {
 
   upsertTab(pendingTab)
   activeTabId.value = pendingTab.id
+  return pendingTab
+}
 
+// 寮傛瀹屾垚 payload锛氳鍙栨枃浠跺唴瀹广€乫inalize tab
+async function completePayloadAsync(payload = {}, pendingTab) {
   try {
     const ready = await ensurePayloadContent(payload)
-    const completedTab = finalizeDocumentTab(pendingTab, ready)
+    const completedTab = { ...finalizeDocumentTab(pendingTab, ready), isLoadError: false }
     upsertTab(completedTab)
-    activeTabId.value = completedTab.id
-    saveRecentDoc(payload)
+    // 浠呭綋鐢ㄦ埛鏈垏鎹㈠埌鍏朵粬 tab 鏃舵墠鑷姩鍒囨崲锛堥槻姝㈣鐩栧悗缁搷浣滐級
+    if (activeTabId.value === pendingTab.id) {
+      activeTabId.value = completedTab.id
+    }
+    saveRecentDoc(ready)
   } catch (error) {
-    upsertTab({
+    const errorTab = {
       ...pendingTab,
       isLoading: false,
-    })
+      isLoadError: true,
+      content: i18n.global.t('error.fileReadMsg', { path: payload.filePath || i18n.global.t('home.unnamedFile') }),
+    }
+    upsertTab(errorTab)
     ElMessage.error(error?.message || i18n.global.t('error.fileRead'))
   }
 }
@@ -211,13 +250,16 @@ async function openFile() {
   })
   if (!files?.length) return
   for (const file of files) {
-    await addPayload({
+    const payload = {
       name: file.name,
       filePath: file.path,
       data: file.data,
       type: file.type,
       size: file.size,
-    })
+    }
+    // selectAndReadFile 閫氬父杩斿洖 data锛屼絾闃插尽鎬у鐞嗙己澶?data 鐨勬儏鍐?
+    const pendingTab = applyPayloadSync(payload)
+    if (pendingTab) await completePayloadAsync(payload, pendingTab)
   }
 }
 
@@ -225,16 +267,18 @@ async function onDrop(event) {
   const files = [...(event.dataTransfer?.files || [])]
   for (const file of files) {
     if (file.path) {
-      await addPayload({ name: file.name, filePath: file.path })
+      const payload = { name: file.name, filePath: file.path }
+      const pendingTab = applyPayloadSync(payload)
+      if (pendingTab) await completePayloadAsync(payload, pendingTab)
       continue
     }
     const ext = (file.name.split('.').pop() || '').toLowerCase()
     if (ext === 'pdf') {
       const arrayBuffer = await file.arrayBuffer()
-      await addPayload({ name: file.name, data: new Uint8Array(arrayBuffer) })
+      applyPayloadSync({ name: file.name, data: new Uint8Array(arrayBuffer) })
     } else {
       const text = await file.text()
-      await addPayload({ name: file.name, content: text })
+      applyPayloadSync({ name: file.name, content: text })
     }
   }
 }
@@ -252,7 +296,7 @@ async function confirmOpenExternal(tab) {
   if (!tab?.filePath) return
   try {
     await ElMessageBox.confirm(
-      `暂不支持预览该文件类型。是否使用系统默认程序打开？\n${tab.filePath}`,
+      `鏆備笉鏀寔棰勮璇ユ枃浠剁被鍨嬨€傛槸鍚︿娇鐢ㄧ郴缁熼粯璁ょ▼搴忔墦寮€锛焅n${tab.filePath}`,
       i18n.global.t('home.browseDocs'),
       {
         confirmButtonText: i18n.global.t('common.ok'),
@@ -267,21 +311,37 @@ async function confirmOpenExternal(tab) {
   } catch (_) {}
 }
 
-onMounted(async () => {
-  const dispose = window.electronAPI?.onMdContent?.((payload) => {
-    void addPayload(payload || {})
-  })
+// 涓茶鍖?payload 寮傛澶勭悊锛岄槻姝㈠苟鍙戞枃浠惰鍙栫珵鎬?
+// 鍚屾閮ㄥ垎锛圲I 鏇存柊锛夌珛鍗虫墽琛岋紝浣?activeTabId 鍦?router.push 涔嬪墠鐢熸晥
+// 鎵€鏈?payload锛堝惈鏃犺璺緞锛夊潎鍏ラ槦浠ヤ繚搴忥紝completePayloadAsync 鍐?activeTabId 瀹堝崼闃茶鐩?
+let payloadQueue = Promise.resolve()
+function enqueuePayload(payload) {
+  const p = payload || {}
+  if (rememberPayload(p)) return
+  const pendingTab = applyPayloadSync(p)
+  payloadQueue = payloadQueue
+    .then(() => { if (pendingTab) return completePayloadAsync(p, pendingTab) })
+    .catch(err => { console.error('[mdViewer] enqueuePayload failed:', err) })
+}
+
+async function drainPendingPayloads() {
   try {
     const payloads = await window.electronAPI?.getPendingMdContent?.()
     if (Array.isArray(payloads)) {
       for (const payload of payloads) {
-        await addPayload(payload || {})
+        enqueuePayload(payload || {})
       }
     }
   } catch (_) {}
-  if (typeof dispose === 'function') {
-    // no-op
-  }
+}
+
+onMounted(async () => {
+  window.electronAPI?.onMdContent?.(enqueuePayload)
+  await drainPendingPayloads()
+})
+
+onActivated(() => {
+  void drainPendingPayloads()
 })
 </script>
 
@@ -296,6 +356,43 @@ onMounted(async () => {
   --doc-accent: var(--cc-primary, #2563eb);
   --doc-code-bg: var(--cc-bg-code-deep, #111827);
   --doc-inline-code-bg: var(--cc-bg-hover, #eff6ff);
+  /* 浠ｇ爜鏌ョ湅鍣?UI chrome 鍙橀噺锛堜唬鐮佽〃闈㈡湰韬繚鎸佹繁鑹?IDE 椋庢牸锛?*/
+  --doc-code-meta-bg: var(--cc-bg-elevated, rgba(255, 255, 255, 0.92));
+  --doc-code-meta-border: var(--doc-line, #d9e3f0);
+  --doc-code-path: var(--doc-muted, #475569);
+  --doc-code-btn-bg: var(--cc-bg-secondary, #f8fafc);
+  --doc-code-btn-border: var(--doc-line, #d4deea);
+  --doc-code-btn-text: var(--doc-text, #334155);
+  --doc-code-btn-hover-bg: var(--cc-primary-bg, #eff6ff);
+  --doc-code-btn-hover-border: var(--cc-primary, #93c5fd);
+  --doc-code-btn-hover-text: var(--cc-primary, #1d4ed8);
+  --doc-code-input-bg: var(--doc-paper, #ffffff);
+  --doc-code-input-border: var(--doc-line, #d4deea);
+  --doc-code-input-text: var(--doc-text, #0f172a);
+  --doc-code-input-focus-border: var(--cc-primary, #60a5fa);
+  --doc-code-loading-gradient: linear-gradient(135deg, var(--cc-bg-secondary, rgba(219,234,254,0.45)), var(--cc-bg-elevated, rgba(255,255,255,0.95)));
+  --doc-code-loading-text: var(--doc-text, #1e293b);
+  --doc-code-loading-subtext: var(--doc-muted, #64748b);
+  --doc-code-spinner-border: var(--cc-primary-bg, #dbeafe);
+  --doc-code-spinner-accent: var(--cc-primary, #2563eb);
+  /* Source file viewer chrome. Keep this layer local to mdViewer. */
+  --doc-code-surface-bg: var(--cc-bg-code-deep, #111827);
+  --doc-code-surface-text: var(--cc-hljs-text, var(--doc-text, #e2e8f0));
+  --doc-code-toolbar-bg: var(--cc-bg-deep, var(--doc-code-surface-bg));
+  --doc-code-gutter-bg: var(--cc-bg-deepest, var(--doc-code-surface-bg));
+  --doc-code-gutter-text: var(--cc-text-dim, #64748b);
+  --doc-code-gutter-border: var(--cc-border-medium, rgba(148, 163, 184, 0.18));
+  --doc-code-surface-border: var(--doc-line, #dbe4f0);
+  --doc-code-surface-shadow: var(--cc-shadow, rgba(15, 23, 42, 0.14));
+  --doc-code-toolbar-border: var(--cc-border-medium, rgba(148, 163, 184, 0.18));
+  --doc-code-line-hover-bg: color-mix(in srgb, var(--cc-primary, #60a5fa) 8%, transparent);
+  --doc-code-line-active-bg: color-mix(in srgb, var(--cc-primary, #60a5fa) 16%, transparent);
+  --doc-code-line-match-bg: color-mix(in srgb, #facc15 18%, transparent);
+  --doc-code-fold-bg: color-mix(in srgb, var(--cc-primary, #3b82f6) 10%, transparent);
+  --doc-code-fold-text: var(--doc-code-surface-text);
+  --doc-code-fold-meta: var(--cc-primary, #60a5fa);
+  --doc-code-progress-bg: var(--doc-code-toolbar-bg);
+  --doc-code-progress-text: var(--cc-primary, #60a5fa);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -346,6 +443,39 @@ onMounted(async () => {
   flex-shrink: 0;
   padding: 0 16px;
   background: var(--cc-bg-secondary, rgba(255, 255, 255, 0.88));
+}
+
+.doc-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  border-bottom-color: var(--doc-line);
+}
+
+.doc-tabs :deep(.el-tabs__nav) {
+  border-color: var(--doc-line);
+}
+
+.doc-tabs :deep(.el-tabs__item) {
+  color: var(--doc-muted);
+  border-left-color: var(--doc-line);
+  background: var(--doc-paper);
+}
+
+.doc-tabs :deep(.el-tabs__item:hover),
+.doc-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--doc-accent);
+}
+
+.doc-tabs :deep(.el-tabs__item.is-active) {
+  background: var(--doc-bg);
+}
+
+.doc-tabs :deep(.el-tabs__item .is-icon-close) {
+  color: var(--doc-muted);
+}
+
+.doc-tabs :deep(.el-tabs__item .is-icon-close:hover) {
+  color: var(--doc-accent);
+  background: var(--cc-bg-hover, transparent);
 }
 
 .doc-tab-label {
@@ -424,6 +554,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.doc-empty :deep(.el-empty__description p) {
+  color: var(--doc-muted);
 }
 
 @media (max-width: 768px) {

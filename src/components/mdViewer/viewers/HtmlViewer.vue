@@ -26,10 +26,10 @@ const fallbackHtml = computed(() => `<!doctype html><html><body><p>${t('doc.html
 .viewer-html {
   height: 100%;
   min-height: 480px;
-  border: 1px solid #dbe4f0;
+  border: 1px solid var(--doc-line, #dbe4f0);
   border-radius: 14px;
   overflow: hidden;
-  background: #fff;
+  background: var(--doc-paper, #fff);
 }
 
 .html-frame {

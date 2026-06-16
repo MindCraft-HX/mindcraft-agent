@@ -40,10 +40,10 @@ onBeforeUnmount(() => {
 .viewer-pdf {
   height: 100%;
   min-height: 560px;
-  border: 1px solid #dbe4f0;
+  border: 1px solid var(--doc-line, #dbe4f0);
   border-radius: 14px;
   overflow: hidden;
-  background: #eef2ff;
+  background: var(--doc-paper, #eef2ff);
 }
 
 .pdf-frame {

@@ -26,7 +26,7 @@ const html = computed(() => renderHtml(props.text || ''))
 .viewer-markdown:deep(h4),
 .viewer-markdown:deep(h5),
 .viewer-markdown:deep(h6) {
-  color: #111827;
+  color: var(--doc-text);
   line-height: 1.35;
   margin: 1.5em 0 0.65em;
   font-weight: 700;
@@ -76,7 +76,7 @@ const html = computed(() => renderHtml(props.text || ''))
   margin-left: 0;
   padding: 0.8rem 1rem;
   color: var(--doc-muted);
-  background: #f8fafc;
+  background: var(--doc-paper);
   border-left: 4px solid var(--doc-line-strong);
   border-radius: 0 10px 10px 0;
 }
@@ -90,9 +90,9 @@ const html = computed(() => renderHtml(props.text || ''))
 .viewer-markdown:deep(td code),
 .viewer-markdown:deep(th code) {
   padding: 0.16rem 0.4rem;
-  color: #1d4ed8;
+  color: var(--cc-assistant-inline-code-text, var(--doc-accent));
   background: var(--doc-inline-code-bg);
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--doc-line);
   border-radius: 6px;
   font-size: 0.92em;
 }
@@ -103,7 +103,7 @@ const html = computed(() => renderHtml(props.text || ''))
 
 .viewer-markdown:deep(.code-block) {
   overflow: hidden;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--doc-line);
   border-radius: 12px;
   background: var(--doc-code-bg);
 }
@@ -114,7 +114,7 @@ const html = computed(() => renderHtml(props.text || ''))
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  color: #e5e7eb;
+  color: var(--doc-text);
   background: rgba(255, 255, 255, 0.06);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -126,7 +126,7 @@ const html = computed(() => renderHtml(props.text || ''))
 
 .viewer-markdown:deep(.code-block button) {
   padding: 4px 10px;
-  color: #e5e7eb;
+  color: var(--doc-text);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
@@ -136,7 +136,7 @@ const html = computed(() => renderHtml(props.text || ''))
 .viewer-markdown:deep(.code-block .hljs) {
   margin: 0;
   padding: 14px 0 14px 52px;
-  color: #e5e7eb;
+  color: var(--doc-text);
   background: transparent;
 }
 
@@ -155,6 +155,24 @@ const html = computed(() => renderHtml(props.text || ''))
   width: 0;
 }
 
+/* --- highlight.js token 颜色映射：跟随主题 --- */
+.viewer-markdown:deep(.hljs-keyword)  { color: var(--cc-hljs-keyword); }
+.viewer-markdown:deep(.hljs-built_in) { color: var(--cc-hljs-built-in); }
+.viewer-markdown:deep(.hljs-string)   { color: var(--cc-hljs-string); }
+.viewer-markdown:deep(.hljs-number)   { color: var(--cc-hljs-number); }
+.viewer-markdown:deep(.hljs-comment)  { color: var(--cc-hljs-comment); font-style: italic; }
+.viewer-markdown:deep(.hljs-function) { color: var(--cc-hljs-function); }
+.viewer-markdown:deep(.hljs-title)    { color: var(--cc-hljs-function); }
+.viewer-markdown:deep(.hljs-params)   { color: var(--cc-hljs-params); }
+.viewer-markdown:deep(.hljs-variable) { color: var(--cc-hljs-params); }
+.viewer-markdown:deep(.hljs-attr)     { color: var(--cc-hljs-params); }
+.viewer-markdown:deep(.hljs-name)     { color: var(--cc-hljs-type); }
+.viewer-markdown:deep(.hljs-tag)      { color: var(--cc-hljs-tag); }
+.viewer-markdown:deep(.hljs-type)     { color: var(--cc-hljs-type); }
+.viewer-markdown:deep(.hljs-literal)  { color: var(--cc-hljs-tag); }
+.viewer-markdown:deep(.hljs-operator) { color: var(--cc-hljs-operator); }
+.viewer-markdown:deep(.hljs-punctuation) { color: var(--cc-hljs-operator); }
+
 .viewer-markdown:deep(table) {
   display: block;
   width: 100%;
@@ -163,11 +181,11 @@ const html = computed(() => renderHtml(props.text || ''))
   border-spacing: 0;
   border: 1px solid var(--doc-line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--doc-paper);
 }
 
 .viewer-markdown:deep(thead) {
-  background: #f8fafc;
+  background: var(--doc-bg);
 }
 
 .viewer-markdown:deep(th),
@@ -180,11 +198,11 @@ const html = computed(() => renderHtml(props.text || ''))
 
 .viewer-markdown:deep(th) {
   font-weight: 700;
-  color: #111827;
+  color: var(--doc-text);
 }
 
 .viewer-markdown:deep(tr:nth-child(even) td) {
-  background: #fcfcfd;
+  background: var(--doc-bg);
 }
 
 .viewer-markdown:deep(ul),
