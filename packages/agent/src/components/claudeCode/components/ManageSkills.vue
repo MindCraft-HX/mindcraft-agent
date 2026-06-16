@@ -563,7 +563,7 @@ async function searchMarket(reset) {
     const params = new URLSearchParams({ limit: '30', sortBy: 'stars' })
     const q = marketQuery.value.trim()
     if (q) {
-      params.set('q', q)
+      params.set('search', q)
     } else {
       params.set('page', String(marketPage.value + 1))
     }
