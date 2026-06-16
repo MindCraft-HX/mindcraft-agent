@@ -3,6 +3,7 @@ const { Conf } = require('electron-conf')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
 const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
@@ -531,83 +532,7 @@ function writeClaudeCodePanelState(payload) {
 
 const CLAUDE_PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins')
 
-function readPluginsState() {
-  const marketplacesDir = path.join(CLAUDE_PLUGINS_DIR, 'marketplaces')
-  let plugins = []
-
-  // 读取安装量缓存
-  const installCounts = {}
-  try {
-    const raw = fs.readFileSync(path.join(CLAUDE_PLUGINS_DIR, 'install-counts-cache.json'), 'utf8')
-    const j = JSON.parse(raw)
-    for (const entry of (j.counts || [])) {
-      installCounts[entry.plugin] = entry.unique_installs
-    }
-  } catch (_) {}
-
-  // 读取黑名单
-  const blocklist = new Set()
-  try {
-    const raw = fs.readFileSync(path.join(CLAUDE_PLUGINS_DIR, 'blocklist.json'), 'utf8')
-    const j = JSON.parse(raw)
-    for (const entry of (j.plugins || [])) blocklist.add(entry.plugin)
-  } catch (_) {}
-
-  // 读取已知市场源
-  const marketplaces = []
-  let knownMarkets = {}
-  try {
-    const raw = fs.readFileSync(path.join(CLAUDE_PLUGINS_DIR, 'known_marketplaces.json'), 'utf8')
-    knownMarkets = JSON.parse(raw)
-    for (const [id, info] of Object.entries(knownMarkets)) {
-      marketplaces.push({ id, url: `https://github.com/${info.source?.repo || id}`, lastUpdated: info.lastUpdated })
-    }
-  } catch (_) {}
-
-  // 扫描各市场的插件目录
-  try {
-    if (fs.existsSync(marketplacesDir)) {
-      for (const marketId of fs.readdirSync(marketplacesDir)) {
-        const pluginsDir = path.join(marketplacesDir, marketId, 'plugins')
-        if (!fs.existsSync(pluginsDir)) continue
-        for (const pluginName of fs.readdirSync(pluginsDir)) {
-          const metaPath = path.join(pluginsDir, pluginName, '.claude-plugin', 'plugin.json')
-          if (!fs.existsSync(metaPath)) continue
-          try {
-            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'))
-            const pluginKey = `${pluginName}@${marketId}`
-            plugins.push({
-              id: pluginKey,
-              name: meta.name || pluginName,
-              description: meta.description || '',
-              author: meta.author?.name || meta.author || marketId,
-              market: marketId,
-              installs: installCounts[pluginKey] || 0,
-              blocked: blocklist.has(pluginKey),
-              installed: false, // 由 claude plugin list 结果覆盖
-            })
-          } catch (_) {}
-        }
-      }
-    }
-  } catch (_) {}
-
-  // 按安装量降序排列
-  plugins.sort((a, b) => b.installs - a.installs)
-
-  // 去重：同一插件目录名出现在多个 marketplace 镜像中时，只保留安装量最高的一条
-  const seenDirNames = new Set()
-  plugins = plugins.filter(p => {
-    const dirName = (p.id || '').split('@')[0]
-    if (!dirName || seenDirNames.has(dirName)) return false
-    seenDirNames.add(dirName)
-    return true
-  })
-
-  return { plugins, marketplaces }
-}
-
-// 模块级缓存：CLI 偶发超时/失败时兜底，避免已安装插件全部显示为"未安装"
+// readPluginsState 已提取到 ./pluginState.js，在此仅做适配调用：CLI 偶发超时/失败时兜底，避免已安装插件全部显示为"未安装"
 let _installedPluginsCache = null
 
 // ─── Skills 管理 ───────────────────────────────────────────────
@@ -1064,7 +989,7 @@ function setupClaudeHandlers() {
   })
 
   ipcMain.handle('plugins-get-state', async () => {
-    const state = readPluginsState()
+    const state = readPluginsState(CLAUDE_PLUGINS_DIR)
     const installed = await readInstalledPlugins()
     // 双索引匹配：先精确 ID，失败则按插件名 fallback
     // （不同 marketplace 目录名会导致 ID 后缀不同，如 anthropics-claude-plugins-official vs claude-plugins-official）

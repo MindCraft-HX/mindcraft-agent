@@ -4,6 +4,7 @@
   "main": "electron/main.js",
   "scripts": {
     "predev": "node -e \"var c=require('child_process');try{var o=c.execSync('netstat -ano|findstr :16288|findstr LISTENING',{encoding:'utf8'});o.split(/\\r?\\n/).filter(Boolean).forEach(l=>{var p=l.trim().split(/\\s+/).pop();if(/^\\d+$/.test(p))try{c.execSync('taskkill /F /PID '+p)}catch(e){}})}catch(e){};console.log('predev done')\"",
+    "test": "node --test packages/agent/electron/pluginState.test.js",
     "dev": "cross-env NODE_ENV=development vite --mode dev",
     "dev-ios": "cross-env NODE_ENV=development vite --mode devIos",
     "build": "vite build",
