@@ -2,7 +2,7 @@ import MarkdownIt from "markdown-it";
 import markdownItMermaid from "@DatatracCorporation/markdown-it-mermaid";
 import hljs from "highlight.js";
 import { useMitt } from "./mitt.js";
-import { isStrongLocalPathCandidate } from "@mindcraft/agent/render";
+import { isStrongLocalPathCandidate, linkifyHtmlTextNodes } from "@mindcraft/agent/render";
 
 const mitt = useMitt();
 
@@ -209,7 +209,8 @@ export const renderHtml = (markdown) => {
   let rendered = md_.render(protected_);
   // 还原公式占位符
   rendered = rendered.replace(/@@BLOCK_(\d+)@@/g, (_, i) => blocks[+i]);
-  return rendered;
+  // 对纯文本路径做链接化（与聊天气泡行为一致）
+  return linkifyHtmlTextNodes(rendered);
 };
 
 export const codeBlockRegex = (markdown) => {

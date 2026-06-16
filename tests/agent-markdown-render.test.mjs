@@ -127,6 +127,27 @@ assert.ok(
   'underscore emphasis should not be parsed across inline code spans'
 )
 
+const inlineCodePathHtml = renderContent(
+  'Review `packages/agent/electron/claudeAgent.js` and keep `wasm_gtslidersettagrawdata` unchanged.'
+)
+
+assert.ok(
+  inlineCodePathHtml.includes('class="md-link md-file-link inline-code"'),
+  'strong path inline code should keep inline-code styling while becoming clickable'
+)
+assert.ok(
+  inlineCodePathHtml.includes('data-path-candidate="packages/agent/electron/claudeAgent.js"'),
+  'strong path inline code should route through path candidates'
+)
+assert.ok(
+  inlineCodePathHtml.includes('<code class="inline-code">wasm_gtslidersettagrawdata</code>'),
+  'non-path inline code should remain a plain code element'
+)
+assert.ok(
+  !renderContent('Avoid opening `he/she.go` as a file.').includes('data-path-candidate'),
+  'short phrase-like inline code should not become a path candidate'
+)
+
 // --- 表格渲染测试 ---
 
 // A1: 全无管道格式（GFM 允许缺首尾管道）

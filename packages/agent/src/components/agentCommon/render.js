@@ -106,6 +106,12 @@ function createPathCandidateAnchor(label, candidate) {
   return `<a class="md-link md-file-link" href="#" title="打开 ${escapedCandidate}" data-path-candidate="${escapedCandidate}">${label}</a>`
 }
 
+function createInlineCodePathCandidateAnchor(code) {
+  const escapedCode = escapeHtmlPreserveEntities(code)
+  const escapedCandidate = escapeAttr(code)
+  return `<a class="md-link md-file-link inline-code" href="#" title="打开 ${escapedCandidate}" data-path-candidate="${escapedCandidate}">${escapedCode}</a>`
+}
+
 function linkifyStrongLocalPaths(input = '') {
   // 匹配 Windows 绝对路径 | UNC | Unix 绝对路径 | 工程目录前缀 | 目录/文件 模式 | ./ 或 ../
   const candidatePattern = /(^|[\s(])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)(?:[\\/][^\s<>"')\]]+)+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
@@ -163,7 +169,11 @@ function renderInline(text) {
   s = s.replace(/\\([*_~`#\[\]()!\\])/g, (_, ch) => ch)
   s = s.replace(/`([^`\n]+)`/g, (_, code) => {
     const token = `\x00MCINLINECODE${inlineCodeTokens.length}\x00`
-    inlineCodeTokens.push(`<code class="inline-code">${code}</code>`)
+    inlineCodeTokens.push(
+      isStrongLocalPathCandidate(code)
+        ? createInlineCodePathCandidateAnchor(code)
+        : `<code class="inline-code">${code}</code>`
+    )
     return token
   })
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -556,7 +566,7 @@ export function renderContent(text) {
 }
 
 export { escapeHtml }
-export { getDocumentOpenErrorMessage, openPathCandidateFromElement, isStrongLocalPathCandidate }
+export { getDocumentOpenErrorMessage, openPathCandidateFromElement, isStrongLocalPathCandidate, linkifyStrongLocalPaths, linkifyHtmlTextNodes, createPathCandidateAnchor }
 
 const hljsCache = new Map()
 const HLJS_CACHE_LIMIT = 2000
