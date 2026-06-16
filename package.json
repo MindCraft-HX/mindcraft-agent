@@ -8,6 +8,7 @@
     "dev": "cross-env NODE_ENV=development vite --mode dev",
     "dev-ios": "cross-env NODE_ENV=development vite --mode devIos",
     "build": "vite build",
+    "build:icons": "node ./build/icon-assets.js",
     "preview": "vite preview",
     "electron": "electron .",
     "electron:serve": "concurrently -k \"yarn dev\" \"npm run electron\"",
