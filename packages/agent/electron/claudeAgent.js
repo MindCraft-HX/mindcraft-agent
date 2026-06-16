@@ -533,7 +533,7 @@ const CLAUDE_PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins')
 
 function readPluginsState() {
   const marketplacesDir = path.join(CLAUDE_PLUGINS_DIR, 'marketplaces')
-  const plugins = []
+  let plugins = []
 
   // 读取安装量缓存
   const installCounts = {}
@@ -723,6 +723,59 @@ function setupClaudeHandlers() {
       writeGlobalSettings(s)
     }
   } catch (_) {}
+
+  // ─── 一次性迁移：清理 settings.json 中 App 专属字段（T118）────────────────
+  // 将 permissionPolicy/language/pathToClaudeCodeExecutable/gitMirrorUrl 从
+  // ~/.claude/settings.json 迁移到 claude-internal.json，修正 effortLevel:max→xhigh
+  try {
+    const s = readGlobalSettings()
+    let dirty = false
+    // 迁移 permissionPolicy → internalConf
+    if (s.permissionPolicy !== undefined) {
+      if (!internalConf.get('claudePermissionPolicy')) {
+        internalConf.set('claudePermissionPolicy', s.permissionPolicy)
+      }
+      delete s.permissionPolicy
+      dirty = true
+    }
+    // 迁移 language（仅当值为已知 App UI 语言时；非 App UI 语言的保留为 SDK 设置）
+    if (s.language && ['zh-CN', 'en-US'].includes(s.language)) {
+      if (!internalConf.get('claudeLanguage')) {
+        internalConf.set('claudeLanguage', s.language)
+      }
+      delete s.language
+      dirty = true
+    }
+    // 迁移 pathToClaudeCodeExecutable → internalConf
+    if (s.pathToClaudeCodeExecutable !== undefined) {
+      if (!internalConf.get('claudeExecutablePath')) {
+        internalConf.set('claudeExecutablePath', s.pathToClaudeCodeExecutable)
+      }
+      delete s.pathToClaudeCodeExecutable
+      dirty = true
+    }
+    // 修正 effortLevel: max → xhigh（SDK Settings interface 不含 max）
+    if (s.effortLevel === 'max') {
+      s.effortLevel = 'xhigh'
+      dirty = true
+    }
+    // 迁移 gitMirrorUrl → internalConf
+    if (s.gitMirrorUrl !== undefined) {
+      if (!internalConf.get('gitMirrorUrl')) {
+        internalConf.set('gitMirrorUrl', s.gitMirrorUrl)
+      }
+      delete s.gitMirrorUrl
+      dirty = true
+    }
+    // 删除旧版遗留 theme（已在 theme.json 正确存储）
+    if (s.theme !== undefined) {
+      delete s.theme
+      dirty = true
+    }
+    if (dirty) writeGlobalSettings(s)
+  } catch (e) {
+    console.warn('[claude] settings migration failed (non-fatal):', e?.message || e)
+  }
 
   const pendingPermissionResolvers = new Map() // requestId -> resolver(allowed)
 
@@ -1157,15 +1210,15 @@ function setupClaudeHandlers() {
     // 兼容旧键名 -> settings.json 字段映射
     if (key === 'claudeApiKey') return s.env?.ANTHROPIC_AUTH_TOKEN || s.apiKey || def
     if (key === 'claudeBaseURL') return s.env?.ANTHROPIC_BASE_URL || s.apiBaseUrl || def
-    if (key === 'claudePermissionPolicy') return s.permissionPolicy || def
-    if (key === 'claudeLanguage') return s.language || def
+    if (key === 'claudePermissionPolicy') return internalConf.get('claudePermissionPolicy', s.permissionPolicy || def)
+    if (key === 'claudeLanguage') return internalConf.get('claudeLanguage', s.language || def)
     if (key === 'claudeEffortLevel') return s.effortLevel || def
     if (key === 'claudeModel') {
       // 重要：~/.claude/settings.json 的顶层 model 在本项目中表示 tier（sonnet/opus/...），不是“真实模型ID”。
       const stored = internalConf.get('claudeModel', '')
       return (typeof stored === 'string' && stored.trim()) ? stored.trim() : def
     }
-    if (key === 'claudeExecutablePath') return s.pathToClaudeCodeExecutable || ''
+    if (key === 'claudeExecutablePath') return internalConf.get('claudeExecutablePath', s.pathToClaudeCodeExecutable || '')
     if (key === 'claudeSelectedTier') {
       const raw = (typeof s.model === 'string' ? s.model : 'sonnet').toLowerCase()
       return ['haiku', 'sonnet', 'opus', 'reasoning'].includes(raw) ? raw : 'sonnet'
@@ -1203,15 +1256,15 @@ function setupClaudeHandlers() {
     } else if (key === 'claudeBaseURL') {
       s.env = s.env || {}
       s.env.ANTHROPIC_BASE_URL = val
-    } else if (key === 'claudePermissionPolicy') s.permissionPolicy = val
-    else if (key === 'claudeLanguage') s.language = val
+    } else if (key === 'claudePermissionPolicy') { internalConf.set('claudePermissionPolicy', val); return }
+    else if (key === 'claudeLanguage') { internalConf.set('claudeLanguage', val); return }
     else if (key === 'claudeEffortLevel') s.effortLevel = val
     else if (key === 'claudeModel') {
       // 真实模型 ID 仅写入 app 内部配置，严禁写入 ~/.claude/settings.json 的顶层 model（避免覆盖 sonnet/opus tier）
       internalConf.set('claudeModel', typeof val === 'string' ? val.trim() : '')
       return
     }
-    else if (key === 'claudeExecutablePath') s.pathToClaudeCodeExecutable = val
+    else if (key === 'claudeExecutablePath') { internalConf.set('claudeExecutablePath', val); return }
     else if (key === 'claudeSelectedTier') {
       // tier 写入顶层 model
       s.model = val
@@ -1319,12 +1372,16 @@ function setupClaudeHandlers() {
   })
   function readEffortLevel() {
     const effort = confGet('claudeEffortLevel', 'medium')
-    const valid = ['low', 'medium', 'high', 'xhigh', 'max']
+    // SDK Settings interface 合法值：low/medium/high/xhigh（不含 max）
+    // 兼容旧值 'max'：自动升迁为 xhigh
+    if (effort === 'max') return 'xhigh'
+    const valid = ['low', 'medium', 'high', 'xhigh']
     return valid.includes(effort) ? effort : 'medium'
   }
   ipcMain.handle('claude-get-effort-level', () => readEffortLevel())
   ipcMain.handle('claude-set-effort-level', (_, effort) => {
-    const valid = ['low', 'medium', 'high', 'xhigh', 'max']
+    // SDK Settings interface 合法值：low/medium/high/xhigh（不含 max）
+    const valid = ['low', 'medium', 'high', 'xhigh']
     if (!valid.includes(effort)) return false
     confSet('claudeEffortLevel', effort)
     return true
@@ -1746,6 +1803,7 @@ function setupClaudeHandlers() {
   }
 
   ipcMain.handle('claude-get-model', () => readPrimaryModel())
+  ipcMain.handle('claude-set-model', (_, model) => { confSet('claudeModel', model); return true })
   ipcMain.handle('claude-set-key', (_, key) => { confSet('claudeApiKey', key); return true })
   ipcMain.handle('claude-set-base-url', (_, url) => { confSet('claudeBaseURL', url); return true })
   ipcMain.handle('claude-get-models', () => confGet('claudeModels', defaultModels))
@@ -1815,6 +1873,12 @@ function setupClaudeHandlers() {
       return sj.model
     }
     return 'sonnet'
+  })
+  ipcMain.handle('claude-set-selected-tier', (_, tier) => {
+    const valid = ['haiku', 'sonnet', 'opus', 'reasoning']
+    if (!valid.includes(tier)) return false
+    confSet('claudeSelectedTier', tier)
+    return true
   })
 
   const TIER_ENV_MAP = {

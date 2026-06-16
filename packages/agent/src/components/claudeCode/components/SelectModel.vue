@@ -64,7 +64,7 @@ const efforts = [
   { key: 'low', label: 'Low' },
   { key: 'medium', label: 'Medium' },
   { key: 'high', label: 'High' },
-  { key: 'max', label: 'Max' },
+  { key: 'xhigh', label: 'X-High' },
 ]
 
 const pickerTierModels = ref({ haiku: '', sonnet: '', opus: '', reasoning: '' })

@@ -179,4 +179,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on('plugin-registry-changed', handler)
     return () => ipcRenderer.removeListener('plugin-registry-changed', handler)
   },
+
 });

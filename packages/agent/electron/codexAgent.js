@@ -2537,6 +2537,13 @@ function setupCodexSdkHandlers() {
   // ─── Git 镜像 + 异步 clone（Skill 安装用）────────────────
   function getGitMirrorUrl() {
     try {
+      // 优先从 claude-internal.json 读取（T118 迁移后）
+      try {
+        const conf = new Conf({ name: 'claude-internal' })
+        const val = conf.get('gitMirrorUrl', '')
+        if (val) return val
+      } catch (_) {}
+      // 兜底：从 ~/.claude/settings.json 读取（迁移前或迁移失败）
       const settingsPath = require('path').join(require('os').homedir(), '.claude', 'settings.json')
       if (require('fs').existsSync(settingsPath)) {
         const s = JSON.parse(require('fs').readFileSync(settingsPath, 'utf8'))

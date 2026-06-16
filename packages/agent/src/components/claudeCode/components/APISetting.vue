@@ -343,17 +343,6 @@ async function checkForUpdate() {
   }
 }
 
-async function writeSettingsJson(configObj) {
-  if (!configObj) return
-  try {
-    const plain = JSON.parse(JSON.stringify(configObj))
-    const result = await window.electronAPI?.claudeWriteSettingsJson?.(plain)
-    if (!result?.ok) ElMessage.warning(t('system.writeSettingsFail') + ':' + (result?.message || ''))
-  } catch (e) {
-    ElMessage.error(t('system.writeSettingsFail') + ':' + (e?.message || ''))
-  }
-}
-
 async function openSettings() {
   editingNewProvider.value = false
   checkEnvironment()
@@ -380,7 +369,7 @@ async function openSettings() {
 
   try {
     const effort = await window.electronAPI?.claudeGetEffortLevel?.()
-    settingsEffortLevel.value = ['low', 'medium', 'high', 'xhigh', 'max'].includes(effort) ? effort : 'medium'
+    settingsEffortLevel.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
   } catch (e) { settingsEffortLevel.value = 'medium' }
 
   try {

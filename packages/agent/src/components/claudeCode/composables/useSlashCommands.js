@@ -33,7 +33,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
         window.electronAPI?.claudeGetSelectedTier?.(),
         window.electronAPI?.claudeGetThinkingEnabled?.(),
       ])
-      slashEffortLevel.value = ['low', 'medium', 'high', 'xhigh', 'max'].includes(effort) ? effort : 'medium'
+      slashEffortLevel.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
       const tierLabel = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', reasoning: 'Reasoning' }
       slashModelName.value = model || tierLabel[tier] || '未配置模型'
       slashThinkingEnabled.value = thinking !== false
@@ -41,7 +41,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
   }
 
   async function setEffortLevel(level) {
-    const valid = ['low', 'medium', 'high', 'xhigh', 'max']
+    const valid = ['low', 'medium', 'high', 'xhigh']
     if (!valid.includes(level)) return
     slashEffortLevel.value = level
     await window.electronAPI?.claudeSetEffortLevel?.(level)

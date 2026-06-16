@@ -107,7 +107,7 @@
               <option value="low">{{ $t('settings.reasoningLow') }}</option>
               <option value="medium">{{ $t('settings.reasoningMid') }}</option>
               <option value="high">{{ $t('settings.reasoningHigh') }}</option>
-              <option value="max">{{ $t('settings.reasoningMax') }}</option>
+              <option value="xhigh">{{ $t('settings.reasoningXHigh') }}</option>
             </select>
             <span class="setting-select-arrow">▾</span>
           </div>
@@ -318,7 +318,7 @@ function applyJsonToForm() {
     const la = (parsed.language || '').toString()
     if (['zh-CN', 'en-US'].includes(la)) lang.value = la
     const ef = (parsed.effortLevel || '').toString()
-    if (['low', 'medium', 'high', 'max'].includes(ef)) effort.value = ef
+    if (['low', 'medium', 'high', 'xhigh'].includes(ef)) effort.value = ef
   } catch (e) { console.warn('[applyJsonToForm]', e) }
 }
 

@@ -42,8 +42,8 @@
 </template>
 
 <script setup>
-const effortLevels = ['low', 'medium', 'high', 'xhigh', 'max']
-const effortLabels = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max' }
+const effortLevels = ['low', 'medium', 'high', 'xhigh']
+const effortLabels = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh' }
 
 defineProps({
   showModelGroup: { type: Boolean, default: false },
