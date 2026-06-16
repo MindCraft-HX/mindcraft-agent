@@ -346,7 +346,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   apiPrefix: { type: String, default: 'skills' },
@@ -398,6 +398,15 @@ async function loadMirrorUrl() {
     // 匹配预设
     const matched = MIRROR_PRESETS.find(p => p.value === saved && p.value !== '__custom__')
     mirrorPreset.value = matched ? saved : (saved ? '__custom__' : '')
+    // 中文用户无已保存镜像时，默认 gh-proxy.com（静默保存）
+    if (!saved && !mirrorPreset.value) {
+      const isZh = (locale.value || '').toLowerCase().startsWith('zh')
+      if (isZh) {
+        mirrorPreset.value = 'https://gh-proxy.com/'
+        mirrorUrl.value = 'https://gh-proxy.com/'
+        settingsApi()?.claudePatchSettingsJson?.({ gitMirrorUrl: 'https://gh-proxy.com/' }).catch(() => {})
+      }
+    }
   } catch (_) { mirrorUrl.value = ''; mirrorPreset.value = '' }
 }
 
