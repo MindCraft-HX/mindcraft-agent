@@ -30,7 +30,16 @@
               class="mp-search"
               :placeholder="$t('agent.searchSkills')"
               autofocus
+              @keyup.enter="searchRecommended"
             />
+            <button class="mp-btn mp-btn-install" :disabled="recSearchLoading" @click="searchRecommended">
+              {{ recSearchLoading ? $t('agent.searching') : $t('agent.search') }}
+            </button>
+          </div>
+
+          <div v-if="recSearchError" class="mp-empty market-error">
+            {{ recSearchError }}
+            <button class="mp-btn mp-btn-link" @click="searchRecommended">{{ $t('common.retry') }}</button>
           </div>
 
           <!-- 安装进度条 -->
@@ -356,6 +365,24 @@ const emit = defineEmits(['skills-changed'])
 const api = (name) => window.electronAPI?.[props.apiPrefix + name]
 const settingsApi = () => window.electronAPI
 
+// ── 共享：Skills API 映射（推荐 & 社区共用）──────────────
+const SKILLS_API = 'https://www.agentskills.in/api/skills'
+
+function mapAPISkill(s) {
+  return {
+    name: s.name,
+    displayName: s.name,
+    description: s.description || '',
+    author: s.author || '',
+    category: '',
+    tags: [],
+    sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
+    gitUrl: s.githubUrl || '',
+    subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
+    installs: s.stars || 0,
+  }
+}
+
 const visible = ref(false)
 const activeTab = ref('recommended')
 const searchQuery = ref('')
@@ -429,13 +456,25 @@ function clearInstallProgress() {
 onUnmounted(() => { if (_unsubProgress) _unsubProgress() })
 
 const allSkills = ref([])
+// 推荐 tab 服务端搜索结果（与社区统一 API）
+const recSearchResults = ref([])
+const recSearchLoading = ref(false)
+const recSearchError = ref('')
 
 async function loadState() {
   loading.value = true
   try {
     const state = await api('GetState')?.()
     const skills = Array.isArray(state?.skills) ? state.skills : []
-    allSkills.value = skills
+    // 按 name 去重：同名 skill 保留安装量最高的
+    const seen = new Map()
+    for (const s of skills) {
+      const existing = seen.get(s.name)
+      if (!existing || (s.installs || 0) > (existing.installs || 0)) {
+        seen.set(s.name, s)
+      }
+    }
+    allSkills.value = [...seen.values()]
   } catch (_) {
     if (!allSkills.value.length) {
       allSkills.value = []
@@ -445,19 +484,41 @@ async function loadState() {
   }
 }
 
-function filterByQuery(list) {
-  const q = searchQuery.value.toLowerCase().trim()
-  if (!q) return list
-  return list.filter(s =>
-    (s.displayName || s.name || '').toLowerCase().includes(q) ||
-    (s.description || '').toLowerCase().includes(q) ||
-    (s.category || '').toLowerCase().includes(q) ||
-    (s.tags || []).some(t => t.toLowerCase().includes(q))
-  )
+// 获取当前推荐 tab 的数据源（无搜索词用本地 top-100，有搜索词用 API 结果）
+function recDataSource() {
+  return searchQuery.value.trim() ? recSearchResults.value : allSkills.value
 }
 
-const installedSkills = computed(() => filterByQuery(allSkills.value.filter(s => s.installed)))
-const availableSkills = computed(() => filterByQuery(allSkills.value.filter(s => !s.installed)))
+const installedSkills = computed(() => recDataSource().filter(s => s.installed))
+const availableSkills = computed(() => recDataSource().filter(s => !s.installed))
+
+// 推荐 tab 服务端搜索（与社区统一 API）
+async function searchRecommended() {
+  const q = searchQuery.value.trim()
+  if (!q) {
+    recSearchResults.value = []
+    recSearchError.value = ''
+    return
+  }
+  recSearchLoading.value = true
+  recSearchError.value = ''
+  try {
+    const params = new URLSearchParams({ search: q, limit: '30', sortBy: 'stars' })
+    const response = await fetch(`${SKILLS_API}?${params}`)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const result = await response.json()
+    recSearchResults.value = (result.skills || []).map(s => ({
+      ...mapAPISkill(s),
+      installed: allSkills.value.some(a => a.installed && a.name === s.name),
+      scope: allSkills.value.find(a => a.installed && a.name === s.name)?.scope || null,
+      _busy: false,
+    }))
+  } catch (e) {
+    recSearchError.value = e?.message || t('agent.netErrorFallback')
+  } finally {
+    recSearchLoading.value = false
+  }
+}
 
 async function installSkill(skill) {
   skill._busy = true
@@ -540,23 +601,6 @@ function formatInstalls(n) {
   if (n >= 10000) return (n / 1000).toFixed(1) + 'k'
   if (n >= 1000) return (n / 1000).toFixed(2) + 'k'
   return String(n)
-}
-
-const SKILLS_API = 'https://www.agentskills.in/api/skills'
-
-function mapAPISkill(s) {
-  return {
-    name: s.name,
-    displayName: s.name,
-    description: s.description || '',
-    author: s.author || '',
-    category: '',
-    tags: [],
-    sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-    gitUrl: s.githubUrl || '',
-    subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-    installs: s.stars || 0,
-  }
 }
 
 async function searchMarket(reset) {
