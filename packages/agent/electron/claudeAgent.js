@@ -536,19 +536,33 @@ const CLAUDE_PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins')
 let _installedPluginsCache = null
 
 // ─── Skills 管理 ───────────────────────────────────────────────
-let _skillsCatalogCache = null
 let _skillsStateCache = null
+let _skillsFetchCache = null
 
-function getSkillsCatalog() {
-  if (_skillsCatalogCache) return _skillsCatalogCache
+const SKILLS_API = 'https://www.agentskills.in/api/skills'
+
+function mapAPISkill(s) {
+  return {
+    name: s.name, displayName: s.name, description: s.description || '',
+    author: s.author || '', category: '', tags: [],
+    sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
+    gitUrl: s.githubUrl || '',
+    subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
+    installs: s.stars || 0,
+  }
+}
+
+async function fetchSkillsFromAPI(opts = {}) {
+  if (_skillsFetchCache) return _skillsFetchCache
   try {
-    const catalogPath = path.join(__dirname, '..', 'data', 'skills-catalog.json')
-    if (fs.existsSync(catalogPath)) {
-      _skillsCatalogCache = JSON.parse(fs.readFileSync(catalogPath, 'utf8'))
-      return _skillsCatalogCache
-    }
-  } catch (_) {}
-  return { version: '0', skills: [] }
+    const params = new URLSearchParams({ limit: '100', sortBy: 'stars' })
+    if (opts.page) params.set('page', String(opts.page))
+    const resp = await fetch(`${SKILLS_API}?${params}`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    _skillsFetchCache = { version: '1', skills: (data.skills || []).map(mapAPISkill) }
+    return _skillsFetchCache
+  } catch (_) { return { version: '0', skills: [] } }
 }
 
 function scanSkillsDirs(systemDir, projectDir) {
@@ -3207,32 +3221,14 @@ function setupClaudeHandlers() {
   })
 
   // ─── Skills 市场与管理 ──────────────────────────────────────────
-  ipcMain.handle('skills-get-catalog', () => {
-    const catalog = getSkillsCatalog()
-    return { skills: catalog.skills || [], version: catalog.version, lastUpdated: catalog.lastUpdated }
+  ipcMain.handle('skills-get-catalog', async () => {
+    const catalog = await fetchSkillsFromAPI()
+    return { skills: catalog.skills || [], version: catalog.version }
   })
 
   ipcMain.handle('skills-get-state', async (_, { cwd }) => {
     try {
-      let catalog = getSkillsCatalog()
-
-      // 运行时兜底：catalog 文件不存在时从 API 拉取（仅 dev 模式，asar 内必有不需兜底）
-      if (catalog.version === '0' && !catalog.skills.length && !__filename.includes('.asar')) {
-        try {
-          const { fetchSkillsForCLI } = await import('agent-skills-cli')
-          const result = await fetchSkillsForCLI({ page: 1, limit: 100, sortBy: 'stars' })
-          const mapSkill = (s) => ({
-            name: s.name, displayName: s.name, description: s.description || '',
-            author: s.author || '', category: '', tags: [],
-            sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-            gitUrl: s.githubUrl || '',
-            subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-            installs: s.stars || 0,
-          })
-          catalog = { version: '1', skills: (result.skills || []).map(mapSkill) }
-          _skillsCatalogCache = catalog // session 级缓存，下次调用直接命中
-        } catch (_) { /* 网络不通静默回退到空 catalog */ }
-      }
+      const catalog = await fetchSkillsFromAPI()
 
       const systemDir = path.join(os.homedir(), '.claude', 'skills')
       const projectDir = path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills')
@@ -3351,12 +3347,9 @@ function setupClaudeHandlers() {
     }
   }
 
-  ipcMain.handle('skills-install', async (event, { skillName, scope, cwd }) => {
+  ipcMain.handle('skills-install', async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
     try {
-      const catalog = getSkillsCatalog()
-      const skill = (catalog.skills || []).find(s => s.name === skillName)
-      if (!skill) return { ok: false, error: `未找到 skill: ${skillName}` }
-      if (!skill.gitUrl) return { ok: false, error: '该 skill 无安装源' }
+      if (!gitUrl) return { ok: false, error: '该 skill 无安装源（GitHub URL）' }
 
       const targetDir = scope === 'system'
         ? path.join(os.homedir(), '.claude', 'skills', skillName)
@@ -3365,17 +3358,17 @@ function setupClaudeHandlers() {
       const sender = event.sender
       const tmpDir = path.join(os.tmpdir(), `skill-${skillName}-${Date.now()}`)
       try {
-        await cloneWithFallback(skill.gitUrl, tmpDir, sender)
-        const sourceDir = skill.subPath ? path.join(tmpDir, skill.subPath) : tmpDir
+        await cloneWithFallback(gitUrl, tmpDir, sender)
+        const sourceDir = subPath ? path.join(tmpDir, subPath) : tmpDir
         if (!fs.existsSync(sourceDir)) {
-          return { ok: false, error: `源目录不存在: ${skill.subPath || '/'}` }
+          return { ok: false, error: `源目录不存在: ${subPath || '/'}` }
         }
         fs.mkdirSync(path.dirname(targetDir), { recursive: true })
         fs.cpSync(sourceDir, targetDir, { recursive: true })
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null
-        _skillsCatalogCache = null
+        _skillsFetchCache = null
         return { ok: true, path: targetDir, scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
@@ -3407,76 +3400,7 @@ function setupClaudeHandlers() {
   })
 
   // ─── Skills 社区市场 ────────────────────────────────────────
-  // dev 模式：通过 agent-skills-cli API 实时拉取
-  // asar 打包模式：用构建时生成的 skills-catalog.json 兜底（ESM import 在 asar 内不可用）
-  ipcMain.handle('skills-market-search', async (_, { query, page, pageSize }) => {
-    const asarMode = __filename.includes('.asar')
-
-    // 在 asar 模式下用静态 catalog 兜底
-    if (asarMode) {
-      try {
-        const catalog = getSkillsCatalog()
-        let items = (catalog.skills || []).map(s => ({
-          name: s.name,
-          displayName: s.displayName || s.name,
-          description: s.description || '',
-          author: s.author || '',
-          category: s.category || '',
-          tags: s.tags || [],
-          sourceUrl: s.sourceUrl || '',
-          gitUrl: s.gitUrl || '',
-          subPath: s.subPath || '',
-          installs: s.installs || 0,
-        }))
-        if (query && query.trim()) {
-          const q = query.trim().toLowerCase()
-          items = items.filter(s =>
-            s.name.toLowerCase().includes(q) ||
-            s.description.toLowerCase().includes(q)
-          )
-        }
-        const p = page || 0
-        const ps = pageSize || 30
-        const total = items.length
-        items = items.slice(p * ps, (p + 1) * ps)
-        return { items, total, page: p, hasMore: (p + 1) * ps < total }
-      } catch (_) {
-        return { items: [], total: 0, page: page || 0, hasMore: false }
-      }
-    }
-
-    try {
-      const { fetchSkillsForCLI, searchSkillsForCLI } = await import('agent-skills-cli')
-      let result
-      if (query && query.trim()) {
-        const skills = await searchSkillsForCLI(query.trim(), pageSize || 30)
-        result = { skills, total: skills.length, page: 0, hasNext: false }
-      } else {
-        result = await fetchSkillsForCLI({ page: (page || 0) + 1, limit: pageSize || 30, sortBy: 'stars' })
-      }
-      const items = result.skills.map(s => ({
-        name: s.name,
-        displayName: s.name,
-        description: s.description || '',
-        author: s.author || '',
-        category: '',
-        tags: [],
-        sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-        gitUrl: s.githubUrl || '',
-        subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-        installs: s.stars || 0,
-      }))
-      return {
-        items,
-        total: result.total || items.length,
-        page: page || 0,
-        hasMore: result.hasNext ?? false,
-      }
-    } catch (e) {
-      console.error('[skills-market-search]', e?.message)
-      return { items: [], total: 0, page: page || 0, hasMore: false, error: e?.message }
-    }
-  })
+  // 社区市场搜索已改为 renderer 直连 API，不再需要 IPC handler
 
   ipcMain.handle('skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
     try {

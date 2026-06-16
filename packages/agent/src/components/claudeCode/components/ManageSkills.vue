@@ -456,7 +456,7 @@ async function installSkill(skill) {
   startInstallProgress()
   const loadingMsg = ElMessage({ message: t('agent.installingSkill', { name }), type: 'info', duration: 0 })
   try {
-    const res = await api('Install')?.({ skillName: skill.name, scope: installScope.value })
+    const res = await api('Install')?.({ skillName: skill.name, scope: installScope.value, gitUrl: skill.gitUrl, subPath: skill.subPath })
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
@@ -533,6 +533,23 @@ function formatInstalls(n) {
   return String(n)
 }
 
+const SKILLS_API = 'https://www.agentskills.in/api/skills'
+
+function mapAPISkill(s) {
+  return {
+    name: s.name,
+    displayName: s.name,
+    description: s.description || '',
+    author: s.author || '',
+    category: '',
+    tags: [],
+    sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
+    gitUrl: s.githubUrl || '',
+    subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
+    installs: s.stars || 0,
+  }
+}
+
 async function searchMarket(reset) {
   if (reset) {
     marketPage.value = 0
@@ -543,26 +560,25 @@ async function searchMarket(reset) {
   }
   marketLoading.value = true
   try {
-    const res = await api('MarketSearch')?.({
-      query: marketQuery.value.trim(),
-      page: marketPage.value,
-      pageSize: 30,
-    })
-    marketSearched.value = true
-    if (res?.error) {
-      marketError.value = res.error === 'fetch failed'
-        ? t('agent.marketConnectFailed')
-        : res.error
-      return
+    const params = new URLSearchParams({ limit: '30', sortBy: 'stars' })
+    const q = marketQuery.value.trim()
+    if (q) {
+      params.set('q', q)
+    } else {
+      params.set('page', String(marketPage.value + 1))
     }
-    const newItems = Array.isArray(res?.items) ? res.items : []
+    const response = await fetch(`${SKILLS_API}?${params}`)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const result = await response.json()
+    marketSearched.value = true
+    const newItems = (result.skills || []).map(mapAPISkill)
     if (reset) {
       marketItems.value = newItems
     } else {
       marketItems.value = [...marketItems.value, ...newItems]
     }
-    marketTotal.value = res?.total || 0
-    marketHasMore.value = res?.hasMore ?? (marketItems.value.length < marketTotal.value)
+    marketTotal.value = result.total || 0
+    marketHasMore.value = result.hasNext ?? (marketItems.value.length < marketTotal.value)
     if (newItems.length) marketPage.value++
   } catch (e) {
     marketError.value = t('agent.searchMarketFailed', { message: e?.message || t('agent.netErrorFallback') })

@@ -12,10 +12,10 @@
     "electron": "electron .",
     "electron:serve": "concurrently -k \"yarn dev\" \"npm run electron\"",
     "electron:build": "vite build && electron-builder",
-    "electron:build-beta": "cross-env NODE_ENV=testing NODE_PLATFORM=WIN node ./build/build.js --version ; node ./build/generate-skills-catalog.js ; vite build --mode test && electron-builder --config=./build/builder.test.json",
-    "electron:build-beta-ios": "cross-env NODE_ENV=testing NODE_PLATFORM=IOS node ./build/build.js --version ; node ./build/generate-skills-catalog.js ; NODE_OPTIONS=--max-old-space-size=4096 vite build --mode testIos && electron-builder --config=./build/builder.test.ios.json --mac",
-    "electron:build-prod": "cross-env NODE_ENV=production NODE_PLATFORM=WIN node ./build/build.js --version ; node ./build/generate-skills-catalog.js ; vite build --mode prod && electron-builder --config=./build/builder.prod.json",
-    "electron:build-prod-ios": "cross-env NODE_ENV=production NODE_PLATFORM=IOS node ./build/build.js --version ; node ./build/generate-skills-catalog.js ; NODE_OPTIONS=--max-old-space-size=4096 vite build --mode prodIos && electron-builder --config=./build/builder.prod.ios.json --mac"
+    "electron:build-beta": "cross-env NODE_ENV=testing NODE_PLATFORM=WIN node ./build/build.js --version ; vite build --mode test && electron-builder --config=./build/builder.test.json",
+    "electron:build-beta-ios": "cross-env NODE_ENV=testing NODE_PLATFORM=IOS node ./build/build.js --version ; NODE_OPTIONS=--max-old-space-size=4096 vite build --mode testIos && electron-builder --config=./build/builder.test.ios.json --mac",
+    "electron:build-prod": "cross-env NODE_ENV=production NODE_PLATFORM=WIN node ./build/build.js --version ; vite build --mode prod && electron-builder --config=./build/builder.prod.json",
+    "electron:build-prod-ios": "cross-env NODE_ENV=production NODE_PLATFORM=IOS node ./build/build.js --version ; NODE_OPTIONS=--max-old-space-size=4096 vite build --mode prodIos && electron-builder --config=./build/builder.prod.ios.json --mac"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.117",

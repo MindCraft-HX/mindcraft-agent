@@ -64,7 +64,6 @@ function createAgentBridge(ipcRenderer) {
   skillsGetState: (cwd) => ipcRenderer.invoke('skills-get-state', { cwd }),
   skillsInstall: (payload) => ipcRenderer.invoke('skills-install', payload),
   skillsUninstall: (payload) => ipcRenderer.invoke('skills-uninstall', payload),
-  skillsMarketSearch: (payload) => ipcRenderer.invoke('skills-market-search', payload),
   skillsMarketInstall: (payload) => ipcRenderer.invoke('skills-market-install', payload),
   onSkillsInstallProgress: (callback) => {
     const handler = (_, data) => callback(data)
@@ -209,7 +208,6 @@ function createAgentBridge(ipcRenderer) {
   codexSkillsGetState: (cwd) => ipcRenderer.invoke('codex-skills-get-state', { cwd }),
   codexSkillsInstall: (payload) => ipcRenderer.invoke('codex-skills-install', payload),
   codexSkillsUninstall: (payload) => ipcRenderer.invoke('codex-skills-uninstall', payload),
-  codexSkillsMarketSearch: (payload) => ipcRenderer.invoke('codex-skills-market-search', payload),
   codexSkillsMarketInstall: (payload) => ipcRenderer.invoke('codex-skills-market-install', payload),
   onCodexSkillsInstallProgress: (callback) => {
     const handler = (_, data) => callback(data)

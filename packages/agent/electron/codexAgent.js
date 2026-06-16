@@ -145,27 +145,14 @@ function readRuntimeConfig() {
   let tomlModel = toml.model || ''
   let tomlEffort = toml.reasoning_effort || toml.reason_effort || ''
 
-  // 从 [model_providers.<id>] 段提取第三方 provider 的 experimental_bearer_token
-  if (!tomlApiKey && toml.model_providers) {
+  // [model_providers.<id>] 段（第三方 provider 格式，参照 cc-switch）
+  if (!tomlApiKey || !tomlBaseURL) {
     const mp = toml.model_providers
-    const providerId = toml.model_provider || ''
-    // 优先匹配 model_provider 指定的 provider，否则取第一个
-    if (providerId && mp[providerId] && mp[providerId].experimental_bearer_token) {
-      tomlApiKey = mp[providerId].experimental_bearer_token
-    } else {
-      for (const [, pt] of Object.entries(mp)) {
-        if (pt && pt.experimental_bearer_token) { tomlApiKey = pt.experimental_bearer_token; break }
-      }
-    }
-    // base_url 同样从 provider 段读取
-    if (!tomlBaseURL) {
-      if (providerId && mp[providerId] && mp[providerId].base_url) {
-        tomlBaseURL = mp[providerId].base_url
-      } else {
-        for (const [, pt] of Object.entries(mp)) {
-          if (pt && pt.base_url) { tomlBaseURL = pt.base_url; break }
-        }
-      }
+    const pid = toml.model_provider || ''
+    const provider = (pid && mp && mp[pid]) || (mp && Object.values(mp).find(Boolean))
+    if (provider) {
+      if (!tomlApiKey) tomlApiKey = provider.experimental_bearer_token || ''
+      if (!tomlBaseURL) tomlBaseURL = provider.base_url || ''
     }
   }
 
@@ -2488,32 +2475,14 @@ function setupCodexSdkHandlers() {
   })
 
   // ─── Skills 市场与管理 ──────────────────────────────────────────
-  ipcMain.handle('codex-skills-get-catalog', () => {
-    const catalog = codexGetSkillsCatalog()
-    return { skills: catalog.skills || [], version: catalog.version, lastUpdated: catalog.lastUpdated }
+  ipcMain.handle('codex-skills-get-catalog', async () => {
+    const catalog = await codexFetchSkillsFromAPI()
+    return { skills: catalog.skills || [], version: catalog.version }
   })
 
   ipcMain.handle('codex-skills-get-state', async (_, { cwd }) => {
     try {
-      let catalog = codexGetSkillsCatalog()
-
-      // 运行时兜底：catalog 文件不存在时从 API 拉取（仅 dev 模式，asar 内必有不需兜底）
-      if (catalog.version === '0' && !catalog.skills.length && !__filename.includes('.asar')) {
-        try {
-          const { fetchSkillsForCLI } = await import('agent-skills-cli')
-          const result = await fetchSkillsForCLI({ page: 1, limit: 100, sortBy: 'stars' })
-          const mapSkill = (s) => ({
-            name: s.name, displayName: s.name, description: s.description || '',
-            author: s.author || '', category: '', tags: [],
-            sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-            gitUrl: s.githubUrl || '',
-            subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-            installs: s.stars || 0,
-          })
-          catalog = { version: '1', skills: (result.skills || []).map(mapSkill) }
-          _codexSkillsCatalogCache = catalog // session 级缓存，下次调用直接命中
-        } catch (_) { /* 网络不通静默回退到空 catalog */ }
-      }
+      const catalog = await codexFetchSkillsFromAPI()
 
       const systemDir = path.join(os.homedir(), '.codex', 'skills')
       const projectDir = path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills')
@@ -2636,12 +2605,9 @@ function setupCodexSdkHandlers() {
     }
   }
 
-  ipcMain.handle('codex-skills-install', async (event, { skillName, scope, cwd }) => {
+  ipcMain.handle('codex-skills-install', async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
     try {
-      const catalog = codexGetSkillsCatalog()
-      const skill = (catalog.skills || []).find(s => s.name === skillName)
-      if (!skill) return { ok: false, error: lt('skill.notFound', { name: skillName }) }
-      if (!skill.gitUrl) return { ok: false, error: lt('skill.noSource') }
+      if (!gitUrl) return { ok: false, error: lt('skill.noSource') }
 
       const targetDir = scope === 'system'
         ? path.join(os.homedir(), '.codex', 'skills', skillName)
@@ -2650,17 +2616,17 @@ function setupCodexSdkHandlers() {
       const sender = event.sender
       const tmpDir = path.join(os.tmpdir(), `codex-skill-${skillName}-${Date.now()}`)
       try {
-        await cloneWithFallback(skill.gitUrl, tmpDir, sender)
-        const sourceDir = skill.subPath ? path.join(tmpDir, skill.subPath) : tmpDir
+        await cloneWithFallback(gitUrl, tmpDir, sender)
+        const sourceDir = subPath ? path.join(tmpDir, subPath) : tmpDir
         if (!fs.existsSync(sourceDir)) {
-          return { ok: false, error: lt('skill.noSourceDir', { path: skill.subPath || '/' }) }
+          return { ok: false, error: lt('skill.noSourceDir', { path: subPath || '/' }) }
         }
         fs.mkdirSync(path.dirname(targetDir), { recursive: true })
         fs.cpSync(sourceDir, targetDir, { recursive: true })
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _codexSkillsStateCache = null
-        _codexSkillsCatalogCache = null
+        _codexSkillsFetchCache = null
         return { ok: true, path: targetDir, scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
@@ -2691,76 +2657,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  // ─── CodeX Skills 社区市场 ──────────────────────────────────
-  // dev 模式：通过 agent-skills-cli API 实时拉取
-  // asar 打包模式：用构建时生成的 codex-skills-catalog.json 兜底
-  ipcMain.handle('codex-skills-market-search', async (_, { query, page, pageSize }) => {
-    const asarMode = __filename.includes('.asar')
-
-    if (asarMode) {
-      try {
-        const catalog = codexGetSkillsCatalog()
-        let items = (catalog.skills || []).map(s => ({
-          name: s.name,
-          displayName: s.displayName || s.name,
-          description: s.description || '',
-          author: s.author || '',
-          category: s.category || '',
-          tags: s.tags || [],
-          sourceUrl: s.sourceUrl || '',
-          gitUrl: s.gitUrl || '',
-          subPath: s.subPath || '',
-          installs: s.installs || 0,
-        }))
-        if (query && query.trim()) {
-          const q = query.trim().toLowerCase()
-          items = items.filter(s =>
-            s.name.toLowerCase().includes(q) ||
-            s.description.toLowerCase().includes(q)
-          )
-        }
-        const p = page || 0
-        const ps = pageSize || 30
-        const total = items.length
-        items = items.slice(p * ps, (p + 1) * ps)
-        return { items, total, page: p, hasMore: (p + 1) * ps < total }
-      } catch (_) {
-        return { items: [], total: 0, page: page || 0, hasMore: false }
-      }
-    }
-
-    try {
-      const { fetchSkillsForCLI, searchSkillsForCLI } = await import('agent-skills-cli')
-      let result
-      if (query && query.trim()) {
-        const skills = await searchSkillsForCLI(query.trim(), pageSize || 30)
-        result = { skills, total: skills.length, page: 0, hasNext: false }
-      } else {
-        result = await fetchSkillsForCLI({ page: (page || 0) + 1, limit: pageSize || 30, sortBy: 'stars' })
-      }
-      const items = result.skills.map(s => ({
-        name: s.name,
-        displayName: s.name,
-        description: s.description || '',
-        author: s.author || '',
-        category: '',
-        tags: [],
-        sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-        gitUrl: s.githubUrl || '',
-        subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-        installs: s.stars || 0,
-      }))
-      return {
-        items,
-        total: result.total || items.length,
-        page: page || 0,
-        hasMore: result.hasNext ?? false,
-      }
-    } catch (e) {
-      console.error('[codex-skills-market-search]', e?.message)
-      return { items: [], total: 0, page: page || 0, hasMore: false, error: e?.message }
-    }
-  })
+  // 社区市场搜索已改为 renderer 直连 API，不再需要 IPC handler
 
   ipcMain.handle('codex-skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
     try {
@@ -3297,19 +3194,33 @@ function setupCodexSdkHandlers() {
   let _codexInstalledPluginsCache = null
 
   // ─── Skills 管理 ───────────────────────────────────────────────
-  let _codexSkillsCatalogCache = null
   let _codexSkillsStateCache = null
+  let _codexSkillsFetchCache = null
 
-  function codexGetSkillsCatalog() {
-    if (_codexSkillsCatalogCache) return _codexSkillsCatalogCache
+  const CODX_SKILLS_API = 'https://www.agentskills.in/api/skills'
+
+  function codexMapAPISkill(s) {
+    return {
+      name: s.name, displayName: s.name, description: s.description || '',
+      author: s.author || '', category: '', tags: [],
+      sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
+      gitUrl: s.githubUrl || '',
+      subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
+      installs: s.stars || 0,
+    }
+  }
+
+  async function codexFetchSkillsFromAPI(opts = {}) {
+    if (_codexSkillsFetchCache) return _codexSkillsFetchCache
     try {
-      const catalogPath = path.join(__dirname, '..', 'data', 'codex-skills-catalog.json')
-      if (fs.existsSync(catalogPath)) {
-        _codexSkillsCatalogCache = JSON.parse(fs.readFileSync(catalogPath, 'utf8'))
-        return _codexSkillsCatalogCache
-      }
-    } catch (_) {}
-    return { version: '0', skills: [] }
+      const params = new URLSearchParams({ limit: '100', sortBy: 'stars' })
+      if (opts.page) params.set('page', String(opts.page))
+      const resp = await fetch(`${CODX_SKILLS_API}?${params}`)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      _codexSkillsFetchCache = { version: '1', skills: (data.skills || []).map(codexMapAPISkill) }
+      return _codexSkillsFetchCache
+    } catch (_) { return { version: '0', skills: [] } }
   }
 
   function codexScanSkillsDirs(systemDir, projectDir) {
