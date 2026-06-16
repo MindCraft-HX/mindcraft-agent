@@ -26,17 +26,27 @@ function updatePackJson() {
 
 function updateBuildProdJson() {
     const filelist = ["build/builder.prod.json", "build/builder.prod.ios.json"]
+    const version = VERSION || readVersionFallback()
     filelist.map((file) => {
       const buildProdUrl = path.join(process.cwd(), file)
       const buildProdStr = fs.readFileSync(buildProdUrl, "utf-8");
       const buildProdJson = JSON.parse(buildProdStr);
       try {
-          buildProdJson.releaseInfo.releaseNotesFile = `release/release-${VERSION}.md`;
+          buildProdJson.releaseInfo.releaseNotesFile = `release/release-${version}.md`;
           fs.writeFileSync(buildProdUrl, JSON.stringify(buildProdJson, null, 2));
       } catch (error) {
           console.log("error", error);
       }
     })
+}
+
+function readVersionFallback() {
+    try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8"))
+        return pkg.version
+    } catch (_) {
+        return "0.0.0"
+    }
 }
 
 
