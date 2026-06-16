@@ -1509,31 +1509,6 @@ function setupClaudeHandlers() {
     }
   })
 
-  // 写入 ~/.claude/settings.json（全量替换：不与旧文件合并）
-  ipcMain.handle('claude-write-settings-json', (_, jsonObj) => {
-    try {
-      const claudeDir = path.join(os.homedir(), '.claude')
-      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
-      const settingsPath = path.join(claudeDir, 'settings.json')
-      // 全量替换写入：以 UI 传入内容为准，避免旧 env 字段残留
-      const toWrite = (jsonObj && typeof jsonObj === 'object') ? { ...jsonObj } : {}
-      // 确保 skipWebFetchPreflight 不会被 UI 覆盖（WebFetch 在国内网络需要跳过预检）
-      if (toWrite.skipWebFetchPreflight !== false) toWrite.skipWebFetchPreflight = true
-      const tmp = `${settingsPath}.${process.pid}.tmp`
-      const body = JSON.stringify(toWrite, null, 2)
-      fs.writeFileSync(tmp, body, 'utf8')
-      try {
-        fs.renameSync(tmp, settingsPath)
-      } catch (_) {
-        fs.copyFileSync(tmp, settingsPath)
-        try { fs.unlinkSync(tmp) } catch (_) {}
-      }
-      return { ok: true, path: settingsPath, bytes: Buffer.byteLength(body, 'utf8'), writtenAt: Date.now() }
-    } catch (e) {
-      return { ok: false, message: e?.message || String(e) }
-    }
-  })
-
   // 读取 ~/.claude/settings.json
   ipcMain.handle('claude-read-settings-json', () => {
     try {
@@ -1799,7 +1774,6 @@ function setupClaudeHandlers() {
     const model = requestedModel || (tierModels[selectedTier] || '').trim() || fallbackModel[selectedTier]
 
     // 重要：配置列表只影响 UI/管理，不允许在这里写入 ~/.claude/settings.json
-    // “保存当前使用中的 provider”由 UI 侧显式调用 claude-write-settings-json 来完成。
     internalConf.set('claudeProviders', { providers, activeIdx })
     internalConf.set('tierModels', tierModels)
     resetAgentRuntime('provider-activated')
