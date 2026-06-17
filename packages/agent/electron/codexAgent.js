@@ -10,6 +10,18 @@ const { getGitInfo } = require('./claudeMetrics')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
+const {
+  cloneWithFallback: cloneSkillRepoWithFallback,
+  normalizeGithubSkillSource,
+  resolveRelativeSourceDir,
+  resolveSkillTargetDir,
+  safeTempDir,
+} = require('./skillsSecurity')
+const {
+  filterSkillsCatalog,
+  readSkillsCatalogCache,
+  writeSkillsCatalogCache,
+} = require('./skillsCatalogCache')
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
   try {
@@ -85,11 +97,88 @@ function resolveImageInputPath(img = {}) {
 }
 
 /** 简易 TOML 解析器（仅解析 Codex config.toml 所需的字段） */
-function parseSimpleToml(filePath) {
+function parseTomlStringValue(rawValue) {
+  let value = String(rawValue ?? '').trim()
+  if (value.startsWith('"')) {
+    let out = ''
+    let escaped = false
+    for (let i = 1; i < value.length; i += 1) {
+      const ch = value[i]
+      if (escaped) {
+        out += ch
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        continue
+      }
+      if (ch === '"') return out
+      out += ch
+    }
+    return out
+  }
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (!isNaN(value) && value !== '') return Number(value)
+  return value
+}
+
+function stripTomlInlineComment(value) {
+  const raw = String(value || '').trim()
+  if (raw.startsWith('"')) {
+    let escaped = false
+    for (let i = 1; i < raw.length; i += 1) {
+      const ch = raw[i]
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        continue
+      }
+      if (ch === '"') return raw.slice(0, i + 1)
+    }
+    return raw
+  }
+  const hashIdx = raw.indexOf('#')
+  return hashIdx >= 0 ? raw.slice(0, hashIdx).trim() : raw
+}
+
+function splitTomlDottedKey(pathText) {
+  const parts = []
+  let current = ''
+  let quoted = false
+  let escaped = false
+  for (const ch of String(pathText || '').trim()) {
+    if (escaped) {
+      current += ch
+      escaped = false
+      continue
+    }
+    if (quoted && ch === '\\') {
+      escaped = true
+      continue
+    }
+    if (ch === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (!quoted && ch === '.') {
+      parts.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current || pathText) parts.push(current.trim())
+  return parts
+}
+
+function parseSimpleTomlContent(content) {
   const result = {}
   try {
-    if (!fs.existsSync(filePath)) return result
-    const content = fs.readFileSync(filePath, 'utf8')
     let currentSection = result
     for (let rawLine of content.split('\n')) {
       const line = rawLine.replace(/\r$/, '').trim()
@@ -97,7 +186,7 @@ function parseSimpleToml(filePath) {
       // 段头 [section] / [section.sub]
       const sectionMatch = line.match(/^\[([^\]]+)\]$/)
       if (sectionMatch) {
-        const keys = sectionMatch[1].split('.').map(k => k.trim())
+        const keys = splitTomlDottedKey(sectionMatch[1])
         currentSection = keys.reduce((obj, k) => { obj[k] = obj[k] || {}; return obj[k] }, result)
         continue
       }
@@ -105,51 +194,39 @@ function parseSimpleToml(filePath) {
       const kvMatch = line.match(/^([^=]+?)\s*=\s*(.+)$/s)
       if (kvMatch) {
         const key = kvMatch[1].trim()
-        let value = kvMatch[2].trim()
-        // 去掉行内注释（不在引号内的 #）
-        if (value.startsWith('"')) {
-          // 引号内的 # 不算注释
-          const endQuote = value.indexOf('"', 1)
-          if (endQuote > 0) value = value.slice(0, endQuote + 1)
-        } else {
-          const hashIdx = value.indexOf('#')
-          if (hashIdx >= 0) value = value.slice(0, hashIdx).trim()
-        }
-        // 解析值类型
-        if (value.startsWith('"') && value.endsWith('"')) {
-          value = value.slice(1, -1) // 字符串
-        } else if (value === 'true') {
-          value = true
-        } else if (value === 'false') {
-          value = false
-        } else if (!isNaN(value) && value !== '') {
-          value = Number(value)
-        }
-        currentSection[key] = value
+        currentSection[key] = parseTomlStringValue(stripTomlInlineComment(kvMatch[2]))
       }
     }
   } catch (_) {}
   return result
 }
 
-/** 读取 Codex 运行时配置
- *  优先级：electron-conf（用户偏好） > config.toml（CLI 默认配置）
- *  config.toml 属于 Codex CLI，不可被应用修改；electron-conf 是应用的持久化层
- */
-function readRuntimeConfig() {
-  const toml = parseSimpleToml(CONFIG_TOML_FILE)
+function parseSimpleToml(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return {}
+    return parseSimpleTomlContent(fs.readFileSync(filePath, 'utf8'))
+  } catch (_) {
+    return {}
+  }
+}
 
+function selectCodexTomlProvider(modelProviders, providerId) {
+  if (!modelProviders || typeof modelProviders !== 'object') return null
+  const id = String(providerId || '').trim()
+  if (id && modelProviders[id] && typeof modelProviders[id] === 'object') return modelProviders[id]
+  return Object.values(modelProviders).find(v => v && typeof v === 'object' && ('base_url' in v || 'experimental_bearer_token' in v)) || null
+}
+
+function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
   // 从 config.toml 提取 CLI 级默认值
   let tomlApiKey = toml.auth_token || toml.experimental_bearer_token || ''
   let tomlBaseURL = toml.base_url || ''
   let tomlModel = toml.model || ''
-  let tomlEffort = toml.reasoning_effort || toml.reason_effort || ''
+  let tomlEffort = toml.model_reasoning_effort || toml.reasoning_effort || toml.reason_effort || ''
 
   // [model_providers.<id>] 段（第三方 provider 格式，参照 cc-switch）
   if (!tomlApiKey || !tomlBaseURL) {
-    const mp = toml.model_providers
-    const pid = toml.model_provider || ''
-    const provider = (pid && mp && mp[pid]) || (mp && Object.values(mp).find(Boolean))
+    const provider = selectCodexTomlProvider(toml.model_providers, toml.model_provider)
     if (provider) {
       if (!tomlApiKey) tomlApiKey = provider.experimental_bearer_token || ''
       if (!tomlBaseURL) tomlBaseURL = provider.base_url || ''
@@ -159,20 +236,14 @@ function readRuntimeConfig() {
   if (!tomlApiKey && toml.auth && toml.auth.token) tomlApiKey = toml.auth.token
   if (!tomlBaseURL && toml.api && toml.api.base_url) tomlBaseURL = toml.api.base_url
   if (!tomlModel && toml.api && toml.api.model) tomlModel = toml.api.model
-  if (!tomlEffort && toml.api && (toml.api.reasoning_effort || toml.api.reason_effort)) {
-    tomlEffort = toml.api.reasoning_effort || toml.api.reason_effort
+  if (!tomlEffort && toml.api && (toml.api.model_reasoning_effort || toml.api.reasoning_effort || toml.api.reason_effort)) {
+    tomlEffort = toml.api.model_reasoning_effort || toml.api.reasoning_effort || toml.api.reason_effort
   }
 
-  // electron-conf：用户偏好，优先级高于 config.toml
-  let userApiKey = '', userBaseURL = '', userModel = '', userEffort = ''
-  try {
-    const conf = new Conf({ name: 'mindcraft-codex' })
-    const fb = conf.get('runtime') || {}
-    userApiKey = fb.apiKey || ''
-    userBaseURL = fb.baseURL || ''
-    userModel = fb.model || ''
-    userEffort = fb.reasoningEffort || fb.reasonEffort || ''
-  } catch (_) {}
+  const userApiKey = userRuntime.apiKey || ''
+  const userBaseURL = userRuntime.baseURL || ''
+  const userModel = userRuntime.model || ''
+  const userEffort = userRuntime.reasoningEffort || userRuntime.reasonEffort || ''
 
   const apiKey = userApiKey || tomlApiKey
   const baseURL = userBaseURL || tomlBaseURL
@@ -180,6 +251,23 @@ function readRuntimeConfig() {
   const reasoningEffort = normalizeCodexReasoningEffort(userEffort || tomlEffort)
 
   return { apiKey, baseURL, model, reasoningEffort }
+}
+
+/** 读取 Codex 运行时配置
+ *  优先级：electron-conf（用户偏好） > config.toml（CLI 默认配置）
+ *  config.toml 属于 Codex CLI，不可被应用修改；electron-conf 是应用的持久化层
+ */
+function readRuntimeConfig() {
+  const toml = parseSimpleToml(CONFIG_TOML_FILE)
+
+  // electron-conf：用户偏好，优先级高于 config.toml
+  let userRuntime = {}
+  try {
+    const conf = new Conf({ name: 'mindcraft-codex' })
+    userRuntime = conf.get('runtime') || {}
+  } catch (_) {}
+
+  return buildRuntimeConfigFromToml(toml, userRuntime)
 }
 
 function normalizeCodexReasoningEffort(value) {
@@ -2450,9 +2538,10 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-list-local-skills', async (_, { cwd } = {}) => {
     try {
+      const hasProjectCwd = !!String(cwd || '').trim()
       const dirs = {
         system: path.join(os.homedir(), '.codex', 'skills'),
-        project: path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills'),
+        project: hasProjectCwd ? path.join(path.resolve(cwd), '.codex', 'skills') : '',
       }
       const collect = (baseDir, scope) => {
         const out = []
@@ -2492,7 +2581,7 @@ function setupCodexSdkHandlers() {
       const catalog = await codexFetchSkillsFromAPI()
 
       const systemDir = path.join(os.homedir(), '.codex', 'skills')
-      const projectDir = path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills')
+      const projectDir = String(cwd || '').trim() ? path.join(path.resolve(cwd), '.codex', 'skills') : ''
       const installed = codexScanSkillsDirs(systemDir, projectDir)
 
       const skills = (catalog.skills || []).map(s => {
@@ -2553,88 +2642,38 @@ function setupCodexSdkHandlers() {
     return ''
   }
 
-  function resolveGitUrl(originalUrl) {
-    const mirror = getGitMirrorUrl()
-    if (!mirror || !originalUrl) return originalUrl
-    if (originalUrl.includes('github.com')) {
-      return mirror.replace(/\/+$/, '') + '/' + originalUrl
+  async function resolveCodexCatalogSkillSource(skillName) {
+    const catalog = await codexFetchSkillsFromAPI()
+    let item = (catalog.skills || []).find(s => s.name === skillName)
+    if (!item) {
+      const searchCatalog = await codexFetchSkillsFromAPI({ search: skillName, limit: 30 })
+      item = (searchCatalog.skills || []).find(s => s.name === skillName)
     }
-    return originalUrl
-  }
-
-  function cloneWithProgress(gitUrl, targetDir, sender) {
-    return new Promise((resolve, reject) => {
-      const { exec } = require('child_process')
-      const child = exec(`git clone --depth 1 --progress "${gitUrl}" "${targetDir}"`, {
-        timeout: 120000, windowsHide: true,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
-      })
-      let stderr = ''
-      child.stderr.on('data', (chunk) => {
-        const text = chunk.toString()
-        stderr += text
-        const match = text.match(/Receiving objects:\s+(\d+)%/)
-        const match2 = text.match(/Resolving deltas:\s+(\d+)%/)
-        if (match || match2) {
-          const pct = match ? parseInt(match[1]) : (match2 ? parseInt(match2[1]) : 0)
-          if (sender && !sender.isDestroyed()) {
-            sender.send('skills-install-progress', { phase: 'clone', percent: Math.min(pct, 100) })
-          }
-        }
-      })
-      child.on('close', (code) => {
-        if (code === 0) return resolve()
-        reject(new Error(stderr.slice(-500) || `git clone exit code ${code}`))
-      })
-      child.on('error', reject)
-    })
-  }
-
-  /** cloneWithFallback：先尝试镜像 URL，失败后自动回退到原始 URL 直连 */
-  async function cloneWithFallback(originalUrl, targetDir, sender) {
-    const cloneUrl = resolveGitUrl(originalUrl)
-    try {
-      await cloneWithProgress(cloneUrl, targetDir, sender)
-    } catch (mirrorErr) {
-      if (cloneUrl === originalUrl) throw mirrorErr
-      try { fs.rmSync(targetDir, { recursive: true, force: true }) } catch (_) {}
-      console.warn('[codex skills] 镜像 clone 失败，回退直连:', mirrorErr?.message?.slice(0, 120))
-      if (sender && !sender.isDestroyed()) {
-        sender.send('skills-install-progress', { phase: 'clone', percent: 0, fallback: true })
-      }
-      try {
-        await cloneWithProgress(originalUrl, targetDir, sender)
-      } catch (directErr) {
-        const mirrorMsg = mirrorErr?.message?.replace(/\n/g, ' ').slice(0, 200) || '未知错误'
-        const directMsg = directErr?.message?.replace(/\n/g, ' ').slice(0, 200) || '未知错误'
-        throw new Error(lt('skill.mirrorFail', { mirror: `${cloneUrl.slice(0, 60)}…: ${mirrorMsg}`, direct: directMsg }))
-      }
-    }
+    if (!item?.gitUrl) throw new Error(lt('skill.noSource'))
+    return normalizeGithubSkillSource(item.gitUrl, item.subPath || '')
   }
 
   ipcMain.handle('codex-skills-install', async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
     try {
-      if (!gitUrl) return { ok: false, error: lt('skill.noSource') }
-
-      const targetDir = scope === 'system'
-        ? path.join(os.homedir(), '.codex', 'skills', skillName)
-        : path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills', skillName)
+      const target = resolveSkillTargetDir({ agentName: 'codex', scope, cwd, skillName })
+      const source = await resolveCodexCatalogSkillSource(target.skillName)
 
       const sender = event.sender
-      const tmpDir = path.join(os.tmpdir(), `codex-skill-${skillName}-${Date.now()}`)
+      const tmpDir = safeTempDir('codex-skill', target.skillName)
       try {
-        await cloneWithFallback(gitUrl, tmpDir, sender)
-        const sourceDir = subPath ? path.join(tmpDir, subPath) : tmpDir
+        await cloneSkillRepoWithFallback({ originalUrl: source.gitUrl, targetDir: tmpDir, sender, mirrorUrl: getGitMirrorUrl() })
+        const sourceDir = resolveRelativeSourceDir(tmpDir, source.subPath)
         if (!fs.existsSync(sourceDir)) {
-          return { ok: false, error: lt('skill.noSourceDir', { path: subPath || '/' }) }
+          return { ok: false, error: lt('skill.noSourceDir', { path: source.subPath || '/' }) }
         }
-        fs.mkdirSync(path.dirname(targetDir), { recursive: true })
-        fs.cpSync(sourceDir, targetDir, { recursive: true })
+        fs.mkdirSync(path.dirname(target.targetDir), { recursive: true })
+        fs.rmSync(target.targetDir, { recursive: true, force: true })
+        fs.cpSync(sourceDir, target.targetDir, { recursive: true })
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _codexSkillsStateCache = null
         _codexSkillsFetchCache = null
-        return { ok: true, path: targetDir, scope }
+        return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
         const msg = e?.stderr ? String(e.stderr).slice(0, 300) : (e?.message || String(e))
@@ -2650,12 +2689,10 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-skills-uninstall', async (_, { skillName, scope, cwd }) => {
     try {
-      const targetDir = scope === 'system'
-        ? path.join(os.homedir(), '.codex', 'skills', skillName)
-        : path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills', skillName)
+      const target = resolveSkillTargetDir({ agentName: 'codex', scope, cwd, skillName })
 
-      if (fs.existsSync(targetDir)) {
-        fs.rmSync(targetDir, { recursive: true, force: true })
+      if (fs.existsSync(target.targetDir)) {
+        fs.rmSync(target.targetDir, { recursive: true, force: true })
       }
       _codexSkillsStateCache = null
       return { ok: true }
@@ -2668,15 +2705,13 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
     try {
-      if (!gitUrl) return { ok: false, error: lt('skill.noSource') }
-      const skillsDir = scope === 'system'
-        ? path.join(os.homedir(), '.codex', 'skills')
-        : path.join(path.resolve(cwd || process.cwd()), '.codex', 'skills')
+      const target = resolveSkillTargetDir({ agentName: 'codex', scope, cwd, skillName })
+      const source = await resolveCodexCatalogSkillSource(target.skillName)
 
-      const tmpDir = path.join(os.tmpdir(), `codex-skill-mkt-${skillName}-${Date.now()}`)
+      const tmpDir = safeTempDir('codex-skill-mkt', target.skillName)
       const sender = event.sender
       try {
-        await cloneWithFallback(gitUrl, tmpDir, sender)
+        await cloneSkillRepoWithFallback({ originalUrl: source.gitUrl, targetDir: tmpDir, sender, mirrorUrl: getGitMirrorUrl() })
 
         // 查找 SKILL.md 子目录
         const walk = (dir, depth = 0) => {
@@ -2695,13 +2730,13 @@ function setupCodexSdkHandlers() {
         }
         let sourceDir = walk(tmpDir, 0) || tmpDir
 
-        const targetDir = path.join(skillsDir, skillName)
-        fs.mkdirSync(path.dirname(targetDir), { recursive: true })
-        fs.cpSync(sourceDir, targetDir, { recursive: true })
+        fs.mkdirSync(path.dirname(target.targetDir), { recursive: true })
+        fs.rmSync(target.targetDir, { recursive: true, force: true })
+        fs.cpSync(sourceDir, target.targetDir, { recursive: true })
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _codexSkillsStateCache = null
-        return { ok: true }
+        return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
         throw e
@@ -3248,16 +3283,29 @@ function setupCodexSdkHandlers() {
   }
 
   async function codexFetchSkillsFromAPI(opts = {}) {
-    if (_codexSkillsFetchCache) return _codexSkillsFetchCache
+    const isDefaultCatalog = !opts.page && !opts.search
+    if (isDefaultCatalog && _codexSkillsFetchCache) return _codexSkillsFetchCache
     try {
-      const params = new URLSearchParams({ limit: '100', sortBy: 'stars' })
+      const params = new URLSearchParams({ limit: String(opts.limit || 100), sortBy: 'stars' })
       if (opts.page) params.set('page', String(opts.page))
+      if (opts.search) params.set('search', String(opts.search))
       const resp = await fetch(`${CODX_SKILLS_API}?${params}`)
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const data = await resp.json()
-      _codexSkillsFetchCache = { version: '1', skills: (data.skills || []).map(codexMapAPISkill) }
-      return _codexSkillsFetchCache
-    } catch (_) { return { version: '0', skills: [] } }
+      const catalog = { version: '1', skills: (data.skills || []).map(codexMapAPISkill) }
+      if (isDefaultCatalog) {
+        _codexSkillsFetchCache = catalog
+        writeSkillsCatalogCache('codex', catalog)
+      }
+      return catalog
+    } catch (_) {
+      const cachedCatalog = readSkillsCatalogCache('codex')
+      const fallback = filterSkillsCatalog(cachedCatalog, opts)
+      if (fallback.skills.length) {
+        return fallback
+      }
+      return { version: '0', skills: [] }
+    }
   }
 
   function codexScanSkillsDirs(systemDir, projectDir) {
@@ -3644,5 +3692,8 @@ module.exports = {
     finalizeCodexSessionDoneState,
     closeCodexSessionRun,
     markCodexSessionDoneSent,
+    parseSimpleTomlContent,
+    buildRuntimeConfigFromToml,
+    selectCodexTomlProvider,
   },
 }

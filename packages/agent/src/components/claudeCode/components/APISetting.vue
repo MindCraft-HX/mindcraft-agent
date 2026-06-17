@@ -120,6 +120,8 @@
           <div class="sp-left">
             <div class="sp-list-header">{{ $t('settings.configList') }}<button class="import-legacy-btn" @click="importFromLegacy" :title="$t('settings.importFromMindCraftHint')">
                   <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.importFromMindCraft') }}</button>
+                  <button class="import-legacy-btn repair" @click="repairClaudeSettingsJson" :title="tr('settings.claudeRepairConfigHint', '备份并用当前 Provider 修复 ~/.claude/settings.json', 'Back up and repair ~/.claude/settings.json from the current provider')">
+                    <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 7 A4 4 0 1 0 4 2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M4 2 H1 V5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 7 L5.5 8.5 L8.5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ tr('settings.claudeRepairConfig', '修复 ClaudeCode 配置', 'Repair ClaudeCode Config') }}</button>
               </div>
             <div class="sp-list">
               <div v-for="(p, i) in settingsForm.providers" :key="i"
@@ -165,7 +167,7 @@ import { ElMessage } from 'element-plus'
 import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
-const { t } = useI18n()
+const { t, te, locale } = useI18n()
 
 const confirmDialogRef = ref(null)
 
@@ -223,6 +225,11 @@ const tierItems = [
   { key: 'opus', label: 'Opus', defaultModel: '' },
   { key: 'reasoning', label: 'Reasoning', defaultModel: '' },
 ]
+
+function tr(key, zh, en) {
+  if (te(key)) return t(key)
+  return String(locale.value || '').toLowerCase().startsWith('zh') ? zh : en
+}
 
 function ensureProviderConfig(provider) {
   if (!provider || typeof provider !== 'object') return
@@ -541,6 +548,94 @@ async function applyAndActivate(activeIdx, opts = {}) {
     console.warn('[APISetting] applyAndActivate failed:', e?.message || e)
     ElMessage.error(t('settings.saveFailed') + (e?.message || t('system.unknownError')))
     return false
+  }
+}
+
+function buildClaudeSettingsFromProvider(provider) {
+  const base = (fullSettingsJson.value && typeof fullSettingsJson.value === 'object')
+    ? JSON.parse(JSON.stringify(fullSettingsJson.value))
+    : {}
+  const env = {
+    ...(base.env && typeof base.env === 'object' ? base.env : {}),
+    ...(provider?.config?.env && typeof provider.config.env === 'object' ? provider.config.env : {}),
+  }
+  const key = String(provider?.key || env.ANTHROPIC_AUTH_TOKEN || base.primaryApiKey || base.apiKey || '').trim()
+  const url = String(provider?.url || env.ANTHROPIC_BASE_URL || base.baseURL || base.apiBaseUrl || '').trim()
+  const tiers = provider?.tierModels || {}
+
+  if (key) env.ANTHROPIC_AUTH_TOKEN = key
+  if (url) env.ANTHROPIC_BASE_URL = url
+  for (const [tier, envKey] of Object.entries({
+    haiku: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    sonnet: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
+    opus: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    reasoning: 'ANTHROPIC_REASONING_MODEL',
+  })) {
+    const value = String(tiers[tier] || env[envKey] || '').trim()
+    if (value) env[envKey] = value
+    else delete env[envKey]
+  }
+
+  base.env = env
+  base.model = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(settingsSelectedTierKey.value)
+    ? settingsSelectedTierKey.value
+    : 'sonnet'
+  if (key) base.primaryApiKey = key
+  delete base.apiKey
+  delete base.baseURL
+  delete base.apiBaseUrl
+  delete base.permissionPolicy
+  delete base.pathToClaudeCodeExecutable
+  delete base.gitMirrorUrl
+  delete base.theme
+  if (['zh-CN', 'en-US'].includes(base.language)) delete base.language
+  if (base.effortLevel === 'max') base.effortLevel = 'xhigh'
+  if (base.skipWebFetchPreflight !== false) base.skipWebFetchPreflight = true
+  return base
+}
+
+async function repairClaudeSettingsJson() {
+  const idx = settingsForm.value.activeIdx >= 0 ? settingsForm.value.activeIdx : settingsForm.value.selectedIdx
+  if (idx < 0 || idx >= settingsForm.value.providers.length) {
+    ElMessage.warning(tr('settings.claudeRepairNoKey', '当前 Provider 没有可写入的 API Key，无法修复 ClaudeCode 配置', 'The current provider has no API key to write, so ClaudeCode config cannot be repaired'))
+    return
+  }
+  const p = settingsForm.value.providers[idx]
+  if (!String(p?.key || '').trim()) {
+    ElMessage.warning(tr('settings.claudeRepairNoKey', '当前 Provider 没有可写入的 API Key，无法修复 ClaudeCode 配置', 'The current provider has no API key to write, so ClaudeCode config cannot be repaired'))
+    return
+  }
+
+  const ok = await confirmDialogRef.value?.open({
+    message: tr(
+      'settings.claudeRepairConfigMsg',
+      '将用当前启用的 Provider 修复 ~/.claude/settings.json，并在写入前自动备份。\n\n此操作会写入 API Key、Base URL、模型分级和 WebFetch 预检设置，并清理 MindCraft 旧字段；MCP、插件和未知自定义配置会保留。继续？',
+      'This will repair ~/.claude/settings.json from the currently enabled provider and create a backup before writing.\n\nIt writes API key, Base URL, tier models, and WebFetch preflight settings, and removes old MindCraft-owned fields. MCP, plugins, and unknown custom settings are preserved. Continue?',
+    ),
+    okText: tr('settings.claudeRepairConfig', '修复 ClaudeCode 配置', 'Repair ClaudeCode Config'),
+    cancelText: t('common.cancel'),
+  })
+  if (!ok) return
+
+  try {
+    const latest = await window.electronAPI?.claudeReadSettingsJson?.()
+    fullSettingsJson.value = (latest && typeof latest === 'object') ? latest : {}
+    const repaired = buildClaudeSettingsFromProvider(p)
+    const res = await window.electronAPI?.claudeRepairSettingsJson?.(repaired)
+    if (!res?.ok) {
+      ElMessage.error(tr('settings.claudeRepairFailed', '修复 ClaudeCode 配置失败：', 'Failed to repair ClaudeCode config: ') + (res?.message || t('system.unknownError')))
+      return
+    }
+    p.config = repaired
+    ensureProviderConfig(p)
+    settingsForm.value.providers.splice(idx, 1, p)
+    await persistProviders()
+    fullSettingsJson.value = repaired
+    ElMessage.success(res.changed
+      ? tr('settings.claudeRepairDone', 'ClaudeCode 配置已修复', 'ClaudeCode config repaired')
+      : tr('settings.claudeRepairNoChange', 'ClaudeCode 配置无需修复', 'ClaudeCode config does not need repair'))
+  } catch (e) {
+    ElMessage.error(tr('settings.claudeRepairFailed', '修复 ClaudeCode 配置失败：', 'Failed to repair ClaudeCode config: ') + (e?.message || e || t('system.unknownError')))
   }
 }
 
@@ -1040,6 +1135,8 @@ async function removeProvider(i) {
   display: inline-flex; align-items: center; gap: 4px;
   transition: background .2s, color .2s;
   &:hover { background: var(--cc-warning, #e6a23c); color: #fff; }
+  &.repair { margin-left: 0; border-color: var(--cc-primary); color: var(--cc-primary); }
+  &.repair:hover { background: var(--cc-primary); color: #fff; }
 }
 .sp-list {
   flex: 1; overflow-y: auto; padding: 6px;

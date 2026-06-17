@@ -274,7 +274,14 @@
 		"codexRepairNoKey": "当前 Provider 没有可写入的 API Key，无法修复 Codex CLI 配置",
 		"codexRepairDone": "Codex CLI 配置已修复",
 		"codexRepairNoChange": "Codex CLI 配置无需修复",
-		"codexRepairFailed": "修复 Codex CLI 配置失败："
+		"codexRepairFailed": "修复 Codex CLI 配置失败：",
+		"claudeRepairConfig": "修复 ClaudeCode 配置",
+		"claudeRepairConfigHint": "备份并用当前 Provider 修复 ~/.claude/settings.json，保留 MCP/插件等自定义配置",
+		"claudeRepairConfigMsg": "将用当前启用的 Provider 修复 ~/.claude/settings.json，并在写入前自动备份。\n\n此操作会写入 API Key、Base URL、模型分级和 WebFetch 预检设置，并清理 MindCraft 旧字段；MCP、插件和未知自定义配置会保留。继续？",
+		"claudeRepairNoKey": "当前 Provider 没有可写入的 API Key，无法修复 ClaudeCode 配置",
+		"claudeRepairDone": "ClaudeCode 配置已修复",
+		"claudeRepairNoChange": "ClaudeCode 配置无需修复",
+		"claudeRepairFailed": "修复 ClaudeCode 配置失败："
 	},
 	"chat": {
 		"newChat": "新对话",

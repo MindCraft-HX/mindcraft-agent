@@ -359,6 +359,7 @@ const { t, locale } = useI18n()
 
 const props = defineProps({
   apiPrefix: { type: String, default: 'skills' },
+  cwd: { type: String, default: '' },
 })
 const emit = defineEmits(['skills-changed'])
 
@@ -380,6 +381,36 @@ function mapAPISkill(s) {
     gitUrl: s.githubUrl || '',
     subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
     installs: s.stars || 0,
+  }
+}
+
+async function loadCatalogFallback({ query = '', page = 1, limit = 30 } = {}) {
+  try {
+    const catalog = await api('GetCatalog')?.()
+    let skills = Array.isArray(catalog?.skills) ? catalog.skills : []
+    const q = query.trim().toLowerCase()
+    if (q) {
+      skills = skills.filter((skill) => {
+        const haystack = [
+          skill.name,
+          skill.displayName,
+          skill.description,
+          skill.author,
+          skill.category,
+          ...(Array.isArray(skill.tags) ? skill.tags : []),
+        ].join(' ').toLowerCase()
+        return haystack.includes(q)
+      })
+    }
+    const start = Math.max(0, page - 1) * limit
+    const items = skills.slice(start, start + limit)
+    return {
+      items,
+      total: skills.length,
+      hasNext: start + items.length < skills.length,
+    }
+  } catch (_) {
+    return { items: [], total: 0, hasNext: false }
   }
 }
 
@@ -464,7 +495,7 @@ const recSearchError = ref('')
 async function loadState() {
   loading.value = true
   try {
-    const state = await api('GetState')?.()
+    const state = await api('GetState')?.(props.cwd || '')
     const skills = Array.isArray(state?.skills) ? state.skills : []
     // 按 name 去重：同名 skill 保留安装量最高的
     const seen = new Map()
@@ -514,7 +545,18 @@ async function searchRecommended() {
       _busy: false,
     }))
   } catch (e) {
-    recSearchError.value = e?.message || t('agent.netErrorFallback')
+    const fallback = await loadCatalogFallback({ query: q, limit: 30 })
+    if (fallback.items.length) {
+      recSearchResults.value = fallback.items.map(s => ({
+        ...s,
+        installed: allSkills.value.some(a => a.installed && a.name === s.name),
+        scope: allSkills.value.find(a => a.installed && a.name === s.name)?.scope || null,
+        _busy: false,
+      }))
+      recSearchError.value = ''
+    } else {
+      recSearchError.value = e?.message || t('agent.netErrorFallback')
+    }
   } finally {
     recSearchLoading.value = false
   }
@@ -526,7 +568,7 @@ async function installSkill(skill) {
   startInstallProgress()
   const loadingMsg = ElMessage({ message: t('agent.installingSkill', { name }), type: 'info', duration: 0 })
   try {
-    const res = await api('Install')?.({ skillName: skill.name, scope: installScope.value, gitUrl: skill.gitUrl, subPath: skill.subPath })
+    const res = await api('Install')?.({ skillName: skill.name, scope: installScope.value, cwd: props.cwd || '', gitUrl: skill.gitUrl, subPath: skill.subPath })
     loadingMsg.close()
     clearInstallProgress()
     if (res?.ok === false) {
@@ -550,7 +592,7 @@ async function installSkill(skill) {
 async function uninstallSkill(skill) {
   skill._busy = true
   try {
-    const res = await api('Uninstall')?.({ skillName: skill.name, scope: skill.scope })
+    const res = await api('Uninstall')?.({ skillName: skill.name, scope: skill.scope, cwd: props.cwd || '' })
     if (res?.ok === false) {
       ElMessage.error(t('agent.uninstallError', { message: res.error || t('system.unknownError') }))
     } else {
@@ -625,16 +667,48 @@ async function searchMarket(reset) {
     const result = await response.json()
     marketSearched.value = true
     const newItems = (result.skills || []).map(mapAPISkill)
+    const existingNames = new Set(reset ? [] : marketItems.value.map(item => item.name))
+    const uniqueNewItems = []
+    for (const item of newItems) {
+      if (existingNames.has(item.name)) continue
+      existingNames.add(item.name)
+      uniqueNewItems.push(item)
+    }
     if (reset) {
-      marketItems.value = newItems
-    } else {
-      marketItems.value = [...marketItems.value, ...newItems]
+      marketItems.value = uniqueNewItems
+    } else if (uniqueNewItems.length) {
+      marketItems.value = [...marketItems.value, ...uniqueNewItems]
     }
     marketTotal.value = result.total || 0
-    marketHasMore.value = result.hasNext ?? (marketItems.value.length < marketTotal.value)
-    if (newItems.length) marketPage.value++
+    marketHasMore.value = uniqueNewItems.length > 0 && (result.hasNext ?? (!marketTotal.value || marketItems.value.length < marketTotal.value))
+    if (newItems.length && (reset || uniqueNewItems.length)) marketPage.value++
   } catch (e) {
-    marketError.value = t('agent.searchMarketFailed', { message: e?.message || t('agent.netErrorFallback') })
+    const fallback = await loadCatalogFallback({
+      query: marketQuery.value.trim(),
+      page: marketPage.value + 1,
+      limit: 30,
+    })
+    if (fallback.items.length) {
+      marketSearched.value = true
+      const existingNames = new Set(reset ? [] : marketItems.value.map(item => item.name))
+      const uniqueNewItems = []
+      for (const item of fallback.items) {
+        if (existingNames.has(item.name)) continue
+        existingNames.add(item.name)
+        uniqueNewItems.push(item)
+      }
+      if (reset) {
+        marketItems.value = uniqueNewItems
+      } else if (uniqueNewItems.length) {
+        marketItems.value = [...marketItems.value, ...uniqueNewItems]
+      }
+      marketTotal.value = fallback.total || 0
+      marketHasMore.value = uniqueNewItems.length > 0 && fallback.hasNext
+      if (reset || uniqueNewItems.length) marketPage.value++
+      marketError.value = ''
+    } else {
+      marketError.value = t('agent.searchMarketFailed', { message: e?.message || t('agent.netErrorFallback') })
+    }
   } finally {
     marketLoading.value = false
   }
@@ -649,6 +723,7 @@ async function installMarketSkill(skill, scope) {
     const res = await api('MarketInstall')?.({
       skillName: skill.name,
       scope: scope || marketInstallScope.value,
+      cwd: props.cwd || '',
       gitUrl: skill.gitUrl,
     })
     loadingMsg.close()

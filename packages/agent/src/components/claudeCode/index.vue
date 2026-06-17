@@ -214,7 +214,12 @@
 
       <ConfirmDialog ref="confirmDialogRef" />
       <ManagePlugins ref="managePluginsRef" api-prefix="plugins" @plugin-toggled="refreshSlashCommands(true)" />
-      <ManageSkills ref="manageSkillsRef" api-prefix="skills" @skills-changed="refreshSlashCommands(true)" />
+      <ManageSkills
+        ref="manageSkillsRef"
+        api-prefix="skills"
+        :cwd="activeProject?.cwd || ''"
+        @skills-changed="refreshSlashCommands(true)"
+      />
       <!-- <AgentPicker :visible="showAgentPicker" @close="showAgentPicker = false" @select="onAgentPicked" /> -->
       <AskQuestionDialog
         ref="askDialogRef"

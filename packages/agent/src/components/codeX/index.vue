@@ -39,7 +39,7 @@
       <div class="cc-main">
         <APISetting ref="apiSettingRef"></APISetting>
         <ManagePlugins ref="codexPluginsRef" api-prefix="codexPlugins" />
-        <ManageSkills ref="codexSkillsRef" api-prefix="codexSkills" />
+        <ManageSkills ref="codexSkillsRef" api-prefix="codexSkills" :cwd="activeProject?.cwd || ''" />
 
         <CodexToolbar
           :cwd="activeProject?.cwd || ''"

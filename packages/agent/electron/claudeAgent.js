@@ -10,6 +10,18 @@ const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
+const {
+  cloneWithFallback: cloneSkillRepoWithFallback,
+  normalizeGithubSkillSource,
+  resolveRelativeSourceDir,
+  resolveSkillTargetDir,
+  safeTempDir,
+} = require('./skillsSecurity')
+const {
+  filterSkillsCatalog,
+  readSkillsCatalogCache,
+  writeSkillsCatalogCache,
+} = require('./skillsCatalogCache')
 
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
 
@@ -553,16 +565,29 @@ function mapAPISkill(s) {
 }
 
 async function fetchSkillsFromAPI(opts = {}) {
-  if (_skillsFetchCache) return _skillsFetchCache
+  const isDefaultCatalog = !opts.page && !opts.search
+  if (isDefaultCatalog && _skillsFetchCache) return _skillsFetchCache
   try {
-    const params = new URLSearchParams({ limit: '100', sortBy: 'stars' })
+    const params = new URLSearchParams({ limit: String(opts.limit || 100), sortBy: 'stars' })
     if (opts.page) params.set('page', String(opts.page))
+    if (opts.search) params.set('search', String(opts.search))
     const resp = await fetch(`${SKILLS_API}?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
-    _skillsFetchCache = { version: '1', skills: (data.skills || []).map(mapAPISkill) }
-    return _skillsFetchCache
-  } catch (_) { return { version: '0', skills: [] } }
+    const catalog = { version: '1', skills: (data.skills || []).map(mapAPISkill) }
+    if (isDefaultCatalog) {
+      _skillsFetchCache = catalog
+      writeSkillsCatalogCache('claude', catalog)
+    }
+    return catalog
+  } catch (_) {
+    const cachedCatalog = readSkillsCatalogCache('claude')
+    const fallback = filterSkillsCatalog(cachedCatalog, opts)
+    if (fallback.skills.length) {
+      return fallback
+    }
+    return { version: '0', skills: [] }
+  }
 }
 
 function scanSkillsDirs(systemDir, projectDir) {
@@ -1513,8 +1538,9 @@ function setupClaudeHandlers() {
   ipcMain.handle('claude-read-settings-json', () => {
     try {
       const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
-      if (!fs.existsSync(settingsPath)) return null
-      return JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      const settings = fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, 'utf8')) : {}
+      const gitMirrorUrl = internalConf.get('gitMirrorUrl', settings.gitMirrorUrl || '')
+      return { ...settings, gitMirrorUrl }
     } catch (_) {
       return null
     }
@@ -1523,6 +1549,12 @@ function setupClaudeHandlers() {
   // 局部更新 ~/.claude/settings.json（只合并传入的字段，不覆盖其他）
   ipcMain.handle('claude-patch-settings-json', (_, patch) => {
     try {
+      if (Object.prototype.hasOwnProperty.call(patch || {}, 'gitMirrorUrl')) {
+        internalConf.set('gitMirrorUrl', String(patch.gitMirrorUrl || '').trim())
+        const { gitMirrorUrl, ...rest } = patch || {}
+        patch = rest
+        if (!Object.keys(patch).length) return { ok: true }
+      }
       const claudeDir = path.join(os.homedir(), '.claude')
       if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
       const settingsPath = path.join(claudeDir, 'settings.json')
@@ -1541,6 +1573,45 @@ function setupClaudeHandlers() {
         try { fs.unlinkSync(tmp) } catch (_) {}
       }
       return { ok: true }
+    } catch (e) {
+      return { ok: false, message: e?.message || String(e) }
+    }
+  })
+
+  ipcMain.handle('claude-repair-settings-json', (_, content) => {
+    try {
+      const claudeDir = path.join(os.homedir(), '.claude')
+      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
+      const settingsPath = path.join(claudeDir, 'settings.json')
+      const previous = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath, 'utf8') : ''
+      let next
+      if (typeof content === 'string') {
+        next = JSON.parse(content)
+      } else if (content && typeof content === 'object') {
+        next = content
+      } else {
+        next = {}
+      }
+      if (!next || typeof next !== 'object' || Array.isArray(next)) {
+        throw new Error('Invalid settings.json content')
+      }
+      const finalContent = JSON.stringify(next, null, 2) + '\n'
+      if (previous === finalContent) return { ok: true, changed: false, backupPath: '' }
+      let backupPath = ''
+      if (previous) {
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
+        backupPath = path.join(claudeDir, `settings.json.mindcraft-bak-${stamp}`)
+        fs.copyFileSync(settingsPath, backupPath)
+      }
+      const tmp = `${settingsPath}.${process.pid}.tmp`
+      fs.writeFileSync(tmp, finalContent, 'utf8')
+      try {
+        fs.renameSync(tmp, settingsPath)
+      } catch (_) {
+        fs.copyFileSync(tmp, settingsPath)
+        try { fs.unlinkSync(tmp) } catch (_) {}
+      }
+      return { ok: true, changed: true, backupPath }
     } catch (e) {
       return { ok: false, message: e?.message || String(e) }
     }
@@ -3122,12 +3193,13 @@ function setupClaudeHandlers() {
   })
 
   ipcMain.handle('claude-list-local-skills', async (_, { cwd }) => {
+    const hasProjectCwd = !!String(cwd || '').trim()
     const result = {
       system: [],
       project: [],
       paths: {
         system: path.join(os.homedir(), '.claude', 'skills'),
-        project: path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills'),
+        project: hasProjectCwd ? path.join(path.resolve(cwd), '.claude', 'skills') : '',
       },
     }
 
@@ -3205,7 +3277,7 @@ function setupClaudeHandlers() {
       const catalog = await fetchSkillsFromAPI()
 
       const systemDir = path.join(os.homedir(), '.claude', 'skills')
-      const projectDir = path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills')
+      const projectDir = String(cwd || '').trim() ? path.join(path.resolve(cwd), '.claude', 'skills') : ''
       const installed = scanSkillsDirs(systemDir, projectDir)
 
       const skills = (catalog.skills || []).map(s => {
@@ -3251,99 +3323,45 @@ function setupClaudeHandlers() {
   // ─── Git 镜像 + 异步 clone（Skill 安装用）────────────────
   function getGitMirrorUrl() {
     try {
+      const internal = internalConf.get('gitMirrorUrl', '')
+      if (internal) return internal
       const s = readGlobalSettings()
       return s.gitMirrorUrl || ''
     } catch (_) { return '' }
   }
 
-  function resolveGitUrl(originalUrl) {
-    const mirror = getGitMirrorUrl()
-    if (!mirror || !originalUrl) return originalUrl
-    // 只对 github.com 的 URL 应用镜像
-    if (originalUrl.includes('github.com')) {
-      return mirror.replace(/\/+$/, '') + '/' + originalUrl
+  async function resolveCatalogSkillSource(skillName) {
+    const catalog = await fetchSkillsFromAPI()
+    let item = (catalog.skills || []).find(s => s.name === skillName)
+    if (!item) {
+      const searchCatalog = await fetchSkillsFromAPI({ search: skillName, limit: 30 })
+      item = (searchCatalog.skills || []).find(s => s.name === skillName)
     }
-    return originalUrl
-  }
-
-  /** async git clone with progress events → sender */
-  function cloneWithProgress(gitUrl, targetDir, sender) {
-    return new Promise((resolve, reject) => {
-      const { exec } = require('child_process')
-      const child = exec(`git clone --depth 1 --progress "${gitUrl}" "${targetDir}"`, {
-        timeout: 120000, windowsHide: true,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
-      })
-      let stderr = ''
-      child.stderr.on('data', (chunk) => {
-        const text = chunk.toString()
-        stderr += text
-        // 解析 git clone 的 progress 输出
-        const match = text.match(/Receiving objects:\s+(\d+)%/)
-        const match2 = text.match(/Resolving deltas:\s+(\d+)%/)
-        if (match || match2) {
-          const pct = match ? parseInt(match[1]) : (match2 ? parseInt(match2[1]) : 0)
-          if (sender && !sender.isDestroyed()) {
-            sender.send('skills-install-progress', { phase: 'clone', percent: Math.min(pct, 100) })
-          }
-        }
-      })
-      child.on('close', (code) => {
-        if (code === 0) return resolve()
-        reject(new Error(stderr.slice(-500) || `git clone exit code ${code}`))
-      })
-      child.on('error', reject)
-    })
-  }
-
-  /** cloneWithFallback：先尝试镜像 URL，失败后自动回退到原始 URL 直连 */
-  async function cloneWithFallback(originalUrl, targetDir, sender) {
-    const cloneUrl = resolveGitUrl(originalUrl)
-    try {
-      await cloneWithProgress(cloneUrl, targetDir, sender)
-    } catch (mirrorErr) {
-      // 如果镜像 URL 与原始 URL 相同（无镜像），直接抛错
-      if (cloneUrl === originalUrl) throw mirrorErr
-      // 镜像失败，清理临时目录后回退直连
-      try { fs.rmSync(targetDir, { recursive: true, force: true }) } catch (_) {}
-      console.warn('[skills] 镜像 clone 失败，回退直连:', mirrorErr?.message?.slice(0, 120))
-      if (sender && !sender.isDestroyed()) {
-        sender.send('skills-install-progress', { phase: 'clone', percent: 0, fallback: true })
-      }
-      try {
-        await cloneWithProgress(originalUrl, targetDir, sender)
-      } catch (directErr) {
-        // 两种方式都失败，合并错误信息让用户知道镜像已尝试
-        const mirrorMsg = mirrorErr?.message?.replace(/\n/g, ' ').slice(0, 200) || '未知错误'
-        const directMsg = directErr?.message?.replace(/\n/g, ' ').slice(0, 200) || '未知错误'
-        throw new Error(`镜像和直连均失败。\n镜像 (${cloneUrl.slice(0, 60)}…): ${mirrorMsg}\n直连: ${directMsg}`)
-      }
-    }
+    if (!item?.gitUrl) throw new Error('该 skill 无可信安装源（GitHub URL）')
+    return normalizeGithubSkillSource(item.gitUrl, item.subPath || '')
   }
 
   ipcMain.handle('skills-install', async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
     try {
-      if (!gitUrl) return { ok: false, error: '该 skill 无安装源（GitHub URL）' }
-
-      const targetDir = scope === 'system'
-        ? path.join(os.homedir(), '.claude', 'skills', skillName)
-        : path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills', skillName)
+      const target = resolveSkillTargetDir({ agentName: 'claude', scope, cwd, skillName })
+      const source = await resolveCatalogSkillSource(target.skillName)
 
       const sender = event.sender
-      const tmpDir = path.join(os.tmpdir(), `skill-${skillName}-${Date.now()}`)
+      const tmpDir = safeTempDir('skill', target.skillName)
       try {
-        await cloneWithFallback(gitUrl, tmpDir, sender)
-        const sourceDir = subPath ? path.join(tmpDir, subPath) : tmpDir
+        await cloneSkillRepoWithFallback({ originalUrl: source.gitUrl, targetDir: tmpDir, sender, mirrorUrl: getGitMirrorUrl() })
+        const sourceDir = resolveRelativeSourceDir(tmpDir, source.subPath)
         if (!fs.existsSync(sourceDir)) {
-          return { ok: false, error: `源目录不存在: ${subPath || '/'}` }
+          return { ok: false, error: `源目录不存在: ${source.subPath || '/'}` }
         }
-        fs.mkdirSync(path.dirname(targetDir), { recursive: true })
-        fs.cpSync(sourceDir, targetDir, { recursive: true })
+        fs.mkdirSync(path.dirname(target.targetDir), { recursive: true })
+        fs.rmSync(target.targetDir, { recursive: true, force: true })
+        fs.cpSync(sourceDir, target.targetDir, { recursive: true })
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null
         _skillsFetchCache = null
-        return { ok: true, path: targetDir, scope }
+        return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
         const msg = e?.stderr ? String(e.stderr).slice(0, 300) : (e?.message || String(e))
@@ -3359,12 +3377,10 @@ function setupClaudeHandlers() {
 
   ipcMain.handle('skills-uninstall', async (_, { skillName, scope, cwd }) => {
     try {
-      const targetDir = scope === 'system'
-        ? path.join(os.homedir(), '.claude', 'skills', skillName)
-        : path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills', skillName)
+      const target = resolveSkillTargetDir({ agentName: 'claude', scope, cwd, skillName })
 
-      if (fs.existsSync(targetDir)) {
-        fs.rmSync(targetDir, { recursive: true, force: true })
+      if (fs.existsSync(target.targetDir)) {
+        fs.rmSync(target.targetDir, { recursive: true, force: true })
       }
       _skillsStateCache = null
       return { ok: true }
@@ -3378,16 +3394,14 @@ function setupClaudeHandlers() {
 
   ipcMain.handle('skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
     try {
-      if (!gitUrl) return { ok: false, error: '该 skill 无安装源（GitHub URL）' }
-      const skillsDir = scope === 'system'
-        ? path.join(os.homedir(), '.claude', 'skills')
-        : path.join(path.resolve(cwd || process.cwd()), '.claude', 'skills')
+      const target = resolveSkillTargetDir({ agentName: 'claude', scope, cwd, skillName })
+      const source = await resolveCatalogSkillSource(target.skillName)
 
       // 克隆到临时目录，再复制到 skills 目录（支持镜像 + 进度 + 自动回退）
-      const tmpDir = path.join(os.tmpdir(), `skill-mkt-${skillName}-${Date.now()}`)
+      const tmpDir = safeTempDir('skill-mkt', target.skillName)
       const sender = event.sender
       try {
-        await cloneWithFallback(gitUrl, tmpDir, sender)
+        await cloneSkillRepoWithFallback({ originalUrl: source.gitUrl, targetDir: tmpDir, sender, mirrorUrl: getGitMirrorUrl() })
 
         // 查找 SKILL.md 所在的子目录路径（agent-skills-cli 的行为）
         const { findSkillMdSubPath } = await import('agent-skills-cli').catch(() => ({}))
@@ -3418,13 +3432,13 @@ function setupClaudeHandlers() {
           if (found) sourceDir = found
         }
 
-        const targetDir = path.join(skillsDir, skillName)
-        fs.mkdirSync(path.dirname(targetDir), { recursive: true })
-        fs.cpSync(sourceDir, targetDir, { recursive: true })
+        fs.mkdirSync(path.dirname(target.targetDir), { recursive: true })
+        fs.rmSync(target.targetDir, { recursive: true, force: true })
+        fs.cpSync(sourceDir, target.targetDir, { recursive: true })
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null
-        return { ok: true }
+        return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
         throw e

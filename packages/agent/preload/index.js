@@ -34,6 +34,7 @@ function createAgentBridge(ipcRenderer) {
   claudeBrowseExecutable: () => ipcRenderer.invoke('claude-browse-executable'),
   claudeReadSettingsJson: () => ipcRenderer.invoke('claude-read-settings-json'),
   claudePatchSettingsJson: (patch) => ipcRenderer.invoke('claude-patch-settings-json', patch),
+  claudeRepairSettingsJson: (content) => ipcRenderer.invoke('claude-repair-settings-json', content),
   claudeFreezeDiagGetEnabled: () => ipcRenderer.invoke('claude-freeze-diag-get-enabled'),
   claudeFreezeDiagSetEnabled: (enabled) => ipcRenderer.invoke('claude-freeze-diag-set-enabled', { enabled }),
   claudeGetSkipWebFetchPreflight: () => ipcRenderer.invoke('claude-get-skip-webfetch-preflight'),

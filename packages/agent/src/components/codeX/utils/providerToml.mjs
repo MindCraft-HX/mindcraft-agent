@@ -1,5 +1,6 @@
 const DEFAULT_PROVIDER_NAME = 'mindcraft'
 const VALID_REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh'])
+const BARE_TOML_KEY_RE = /^[A-Za-z0-9_-]+$/
 
 export function normalizeCodexReasoningEffort(value) {
   const effort = String(value || '').trim().toLowerCase()
@@ -8,7 +9,7 @@ export function normalizeCodexReasoningEffort(value) {
   return VALID_REASONING_EFFORTS.has(effort) ? effort : ''
 }
 
-function normalizeProviderName(name) {
+export function normalizeProviderName(name) {
   const value = String(name || '').trim()
   return value || DEFAULT_PROVIDER_NAME
 }
@@ -16,6 +17,41 @@ function normalizeProviderName(name) {
 function quoteTomlString(value) {
   const text = String(value ?? '')
   return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+function quoteTomlKey(key) {
+  const text = String(key ?? '')
+  return BARE_TOML_KEY_RE.test(text) ? text : quoteTomlString(text)
+}
+
+function readTomlDottedKey(pathText) {
+  const parts = []
+  let current = ''
+  let quoted = false
+  let escaped = false
+  for (const ch of String(pathText || '').trim()) {
+    if (escaped) {
+      current += ch
+      escaped = false
+      continue
+    }
+    if (quoted && ch === '\\') {
+      escaped = true
+      continue
+    }
+    if (ch === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (!quoted && ch === '.') {
+      parts.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  if (current || pathText) parts.push(current.trim())
+  return parts
 }
 
 function parseTomlStringValue(rawValue) {
@@ -56,6 +92,11 @@ function readTomlAssignments(lines, startIndex = 0, endIndex = lines.length) {
   return result
 }
 
+function findFirstSectionIndex(lines) {
+  const index = lines.findIndex(line => /^\[.*\]$/.test(String(line || '').trim()))
+  return index >= 0 ? index : lines.length
+}
+
 function findManagedProviderSection(lines, preferredProviderKey = '') {
   let providerKey = ''
   let start = -1
@@ -63,11 +104,13 @@ function findManagedProviderSection(lines, preferredProviderKey = '') {
 
   for (let i = 0; i < lines.length; i += 1) {
     const trimmed = String(lines[i] || '').trim()
-    const match = trimmed.match(/^\[model_providers\.(.+)\]$/)
-    if (!match) continue
-    if (preferred && match[1] !== preferred) continue
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/)
+    if (!sectionMatch) continue
+    const keys = readTomlDottedKey(sectionMatch[1])
+    if (keys.length !== 2 || keys[0] !== 'model_providers') continue
+    if (preferred && keys[1] !== preferred) continue
     start = i
-    providerKey = match[1]
+    providerKey = keys[1]
     break
   }
 
@@ -97,7 +140,7 @@ export function buildManagedProviderToml(provider = {}) {
   out.push(`model = ${quoteTomlString(model)}`)
   out.push(`model_provider = ${quoteTomlString(name)}`)
   out.push('')
-  out.push(`[model_providers.${name}]`)
+  out.push(`[model_providers.${quoteTomlKey(name)}]`)
   out.push(`name = ${quoteTomlString(name)}`)
   out.push(`base_url = ${quoteTomlString(url)}`)
   if (apiKey) out.push(`experimental_bearer_token = ${quoteTomlString(apiKey)}`)
@@ -107,7 +150,7 @@ export function buildManagedProviderToml(provider = {}) {
 
 export function extractProviderDraftFromToml(tomlText = '') {
   const lines = String(tomlText || '').split('\n')
-  const root = readTomlAssignments(lines)
+  const root = readTomlAssignments(lines, 0, findFirstSectionIndex(lines))
   const section = findManagedProviderSection(lines, root.model_provider)
   const providerFields = section.start >= 0
     ? readTomlAssignments(lines, section.start + 1, section.end)
@@ -130,11 +173,11 @@ export function mergeManagedProviderToml(existingToml = '', providerToml = '') {
   if (!current.trim()) return `${nextBlock}\n`
 
   const nextLines = nextBlock.split('\n')
-  const nextRoot = readTomlAssignments(nextLines)
+  const nextRoot = readTomlAssignments(nextLines, 0, findFirstSectionIndex(nextLines))
   const nextSection = findManagedProviderSection(nextLines, nextRoot.model_provider)
   const managedProviderKey = String(nextRoot.model_provider || nextSection.providerKey || '').trim()
   const lines = current.split('\n')
-  const currentRoot = readTomlAssignments(lines)
+  const currentRoot = readTomlAssignments(lines, 0, findFirstSectionIndex(lines))
   const currentProviderKey = String(currentRoot.model_provider || '').trim()
   const replaceProviderKeys = new Set([managedProviderKey, currentProviderKey].filter(Boolean))
 
@@ -146,8 +189,9 @@ export function mergeManagedProviderToml(existingToml = '', providerToml = '') {
     const line = String(rawLine || '').replace(/\r$/, '')
     const trimmed = line.trim()
 
-    const providerMatch = trimmed.match(/^\[model_providers\.(.+)\]$/)
-    if (providerMatch && replaceProviderKeys.has(providerMatch[1])) {
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/)
+    const sectionKeys = sectionMatch ? readTomlDottedKey(sectionMatch[1]) : []
+    if (sectionKeys.length === 2 && sectionKeys[0] === 'model_providers' && replaceProviderKeys.has(sectionKeys[1])) {
       skipManagedSection = true
       inTopLevel = false
       continue

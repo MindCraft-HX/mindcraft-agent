@@ -274,7 +274,14 @@
 		"codexRepairNoKey": "The current provider has no API key to write, so Codex CLI config cannot be repaired",
 		"codexRepairDone": "Codex CLI config repaired",
 		"codexRepairNoChange": "Codex CLI config does not need repair",
-		"codexRepairFailed": "Failed to repair Codex CLI config: "
+		"codexRepairFailed": "Failed to repair Codex CLI config: ",
+		"claudeRepairConfig": "Repair ClaudeCode Config",
+		"claudeRepairConfigHint": "Back up and repair ~/.claude/settings.json from the current provider while preserving MCP/plugins/custom settings",
+		"claudeRepairConfigMsg": "This will repair ~/.claude/settings.json from the currently enabled provider and create a backup before writing.\n\nIt writes API key, Base URL, tier models, and WebFetch preflight settings, and removes old MindCraft-owned fields. MCP, plugins, and unknown custom settings are preserved. Continue?",
+		"claudeRepairNoKey": "The current provider has no API key to write, so ClaudeCode config cannot be repaired",
+		"claudeRepairDone": "ClaudeCode config repaired",
+		"claudeRepairNoChange": "ClaudeCode config does not need repair",
+		"claudeRepairFailed": "Failed to repair ClaudeCode config: "
 	},
 	"chat": {
 		"newChat": "New Chat",
