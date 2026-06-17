@@ -43,12 +43,14 @@ dev-plugins/
 # 忽略 package-lock.json
 package-lock.json
 
-# 文档（不提交）
-docs/
+# 文档本地草稿 / 私密记录（不提交）
+docs/local/
+docs/private/
+docs/tmp/
 
-# Claude Code 工作指南（个人化，不提交）
-CLAUDE.md
-AGENTS.md
+# 本地个人覆盖（不提交）；AGENTS.md / CLAUDE.md 是项目规则，需提交
+CLAUDE.local.md
+AGENTS.local.md
 
 __pycache__/
 _test/

@@ -1,0 +1,233 @@
+# SDK 未集成功能全景分析
+
+> 创建：2026-06-16
+> SDK 版本：`@anthropic-ai/claude-agent-sdk` v0.2.117 / `@openai/codex-sdk` v0.135.0
+> 验证依据：SDK 源码类型定义（`sdk.d.ts`、`dist/index.d.ts`），非网络文档
+> 关联：`docs/agent-architecture.md` §11-14（已做部分 SDK 接口核对）
+
+## 一、Claude Code SDK — 未集成功能
+
+### 1.1 SDK 入口函数（5/10 未用）
+
+| API | 状态 | 用途 | 优先级 |
+|-----|:---:|------|:---:|
+| `startup()` | ❌ 未用 | 预热 CLI 子进程，首次查询快 ~20 倍 | M |
+| `deleteSession()` | ❌ 未用 | SDK 原生删除。当前用 `fs.unlinkSync` 手写 | H |
+| `listSessions({dir,limit,offset})` | ❌ 未用 | 分页列会话。当前手写 ~200 行 JSONL 扫描 | **H** |
+| `getSessionInfo(sessionId)` | ❌ 未用 | 读单个会话元数据，无需全扫 JSONL | **H** |
+| `getSessionMessages(sessionId)` | ❌ 未用 | 读对话全文。当前用自定义 `claude-read-session-file` IPC | **H** |
+| `forkSession(sessionId)` | ❌ 未用 | 分支会话（新 UUID + 重映射消息 ID） | H |
+| `getSubagentMessages()` | ❌ 未用 | 读子 agent 对话 | L |
+| `listSubagents()` | ❌ 未用 | 列出会话子 agent ID | L |
+| `connectRemoteControl()` | ❌ 未用 | Alpha 远程会话控制 | L |
+| `createSdkMcpServer()` | ❌ 未用 | 进程内 MCP server + 自定义 tool | **H** |
+| `query()` | ✅ 在用 | 启动对话 | — |
+| `resume()` | ✅ 在用 | 恢复会话 | — |
+| `supportedCommands()` | ✅ 在用 | 读取 slash commands | — |
+
+**收益**：`listSessions`/`getSessionInfo`/`getSessionMessages`/`deleteSession`/`forkSession` 可消除数百行手写 JSONL 扫描/解析/操作代码。
+
+### 1.2 Query Options（~40 total，约 28 未用）
+
+| Option | 用途 | 优先级 |
+|--------|------|:---:|
+| `thinking`（新） | 现代 thinking 控制：`adaptive/enabled/disabled`。替代已弃用的 `maxThinkingTokens` | **H** |
+| `mcpServers` | 逐会话传入 MCP server 配置（stdio/SSE/HTTP/SDK） | **H** |
+| `agents` / `agent` | 定义自定义子 agent + 设主线程 agent | **H** |
+| `plugins` | 加载插件目录：`[{ type: 'local', path }]` | **H** |
+| `outputFormat` | 结构化 JSON 输出（JSON Schema） | M |
+| `taskBudget` | API 侧 token 预算（Alpha） | M |
+| `enableFileCheckpointing` | 启用 `rewindFiles()` 回退文件到任意用户消息 | M |
+| `promptSuggestions` | 每轮后 AI 预测下一步提示 | M |
+| `agentProgressSummaries` | 后台子 agent 定期进度摘要 | L |
+| `includeHookEvents` | 输出流中 emit hook 生命周期事件 | L |
+| `sandbox` | OS 级沙箱（文件系统/网络限制） | L |
+| `settings` | 内联 settings 对象或 JSON 路径 | L |
+| `onElicitation` | 处理 MCP server 用户输入请求 | L |
+| `toolConfig` | 逐工具配置（如 `askUserQuestion.previewFormat: 'html'`） | L |
+| `spawnClaudeCodeProcess` | 自定义子进程 spawn（VM/容器执行） | L |
+| `sessionStore` | 外部 transcript 镜像（Alpha） | L |
+
+### 1.3 Query 运行时控制方法（22 total，~19 未用）
+
+| 方法 | 用途 | 优先级 |
+|------|------|:---:|
+| `setModel(model)` | 中途切换模型，无需重建 query | **H** |
+| `setPermissionMode(mode)` | 中途切换权限模式 | **H** |
+| `applyFlagSettings(settings)` | 运行时合并 settings | **H** |
+| `getContextUsage()` | 精确上下文窗口分解（system prompt/tools/messages/MCP/memory 各占多少） | **H** |
+| `interrupt()` | 优雅中断当前执行 | M |
+| `supportedModels()` | 列出可用模型 + 能力标识（effort 支持、adaptive thinking、fast mode） | M |
+| `supportedAgents()` | 列出可用子 agent | M |
+| `mcpServerStatus()` | MCP server 连接状态 | M |
+| `setMcpServers(servers)` | 动态增删 MCP server | M |
+| `toggleMcpServer(name, enabled)` | 启/停单个 MCP server | M |
+| `reconnectMcpServer(name)` | 重连断开 MCP server | M |
+| `reloadPlugins()` | 重新加载插件 | L |
+| `initializationResult()` | 完整 init 响应（commands/models/account/output styles） | L |
+| `accountInfo()` | 认证账号信息 | L |
+| `rewindFiles(msgId)` | 回退追踪文件到指定消息 | L |
+| `seedReadState(path, mtime)` | 预热 readFileState 缓存 | L |
+| `stopTask(taskId)` | 停止运行中的后台 task | L |
+| `streamInput()` | ✅ 在用 | 流式输入 | — |
+| `supportedCommands()` | ✅ 在用 | 读取 slash commands | — |
+| `close()` | ✅ 在用 | 关闭会话 | — |
+
+### 1.4 Hooks 系统（28 events，当前仅用 1）
+
+**当前仅 `PostCompact` 在用。** 完整 28 事件体系：
+
+| Hook 事件 | 可阻塞？ | 典型用途 | 优先级 |
+|-----------|:---:|------|:---:|
+| `PreToolUse` | ✅ | 门控 tool 调用、修改入参、自动 approve/deny | **H** |
+| `PermissionRequest` | ✅ | 编程式权限处理 | **H** |
+| `UserPromptSubmit` | ✅ | 门控/增强用户 prompt | **H** |
+| `SessionStart` | ❌ | 注入启动上下文、设置 session title | **H** |
+| `PostToolUse` | ✅ | 后处理 tool 结果 | M |
+| `PostToolUseFailure` | ❌ | 遥测失败 tool | M |
+| `Notification` | ❌ | 观察系统通知 | M |
+| `UserPromptExpansion` | ❌ | 观察 slash command / MCP prompt 展开 | L |
+| `SessionEnd` | ❌ | 清理、通知外部系统 | M |
+| `Stop` | ✅ | 门控 end-of-turn | M |
+| `StopFailure` | ❌ | 观察失败 stop | L |
+| `SubagentStart` | ❌ | 注入子 agent 上下文 | L |
+| `SubagentStop` | ✅ | 门控子 agent 完成 | L |
+| `PreCompact` | ❌ | 压缩前通知 | L |
+| `PostCompact` | ❌ | **✅ 当前唯一使用的 hook** | — |
+| `PermissionDenied` | ❌ | 权限拒绝后跟进 | L |
+| `Setup` | ❌ | Init/维护 hook | L |
+| `TeammateIdle` | ❌ | 观察 teammate 空闲 | L |
+| `TaskCreated` | ✅ | 门控 task 创建 | L |
+| `TaskCompleted` | ✅ | 门控 task 完成 | L |
+| `Elicitation` | ✅ | 自动响应 MCP 用户输入请求 | L |
+| `ElicitationResult` | ✅ | 覆写 elicitation 响应 | L |
+| `ConfigChange` | ✅ | 门控配置变更 | L |
+| `WorktreeCreate` | ❌ | 观察 git worktree 创建 | L |
+| `WorktreeRemove` | ❌ | 观察 git worktree 删除 | L |
+| `InstructionsLoaded` | ❌ | 观察指令/memory 文件加载 | L |
+| `CwdChanged` | ❌ | 观察工作目录变更 | L |
+| `FileChanged` | ❌ | 观察文件变更 | L |
+
+### 1.5 MCP 集成（零接入）
+
+SDK 的 MCP 能力完全未使用：
+
+| 能力 | SDK 支持 |
+|------|------|
+| Server 传输 | stdio、SSE、HTTP、进程内 SDK server |
+| 动态管理 | `setMcpServers()`、`toggleMcpServer()`、`reconnectMcpServer()` |
+| Elicitation | `onElicitation` 回调 + `Elicitation`/`ElicitationResult` hooks |
+| Server 状态 | `mcpServerStatus()` 返回逐 server 连接状态 + tool 列表 |
+| 逐 tool 策略 | `McpServerToolPolicy`：`always_allow/always_ask/always_deny` |
+| 进程内 server | `createSdkMcpServer()` + `tool()` helper |
+| 安全控制 | `allowedMcpServers`、`deniedMcpServers`、`allowManagedMcpServersOnly` |
+
+**优先级：H** — MCP 是 Claude Code SDK 的核心差异化能力，当前完全未接入。
+
+### 1.6 插件/Marketplace 系统（零接入）
+
+| 能力 | SDK 支持 |
+|------|------|
+| `plugins` option | 加载插件目录：`[{ type: 'local', path }]` |
+| `reloadPlugins()` | 运行时重新加载 |
+| Plugin config | `pluginConfigs`：逐插件 MCP server 配置 + options |
+| Marketplace | 7 种 source 类型：url/github/git/npm/file/directory/settings |
+| 安全控制 | `strictKnownMarketplaces`、`blockedMarketplaces`、`strictPluginOnlyCustomization` |
+| 启用插件 | `enabledPlugins` setting（`plugin-id@marketplace-id` 格式） |
+
+**注**：App 有自定义 `dev-plugins/` 系统（realm-observer、hello-world），与 SDK 插件系统独立。
+
+**优先级：L-M** — SDK 插件比自定义系统更丰富，但当前自定义系统可用。
+
+### 1.7 Permissions/PermissionMode（部分接入）
+
+| SDK 能力 | 接入状态 |
+|------|:---:|
+| `permissionMode: 'plan'` | 当前用 `canUseTool` 拒绝所有来模拟 |
+| `permissionMode: 'acceptEdits'` | 当前用 `canUseTool` 实现 |
+| `permissionMode: 'auto'` | 未接入（模型分类器决定 approve/deny） |
+| `permissionMode: 'dontAsk'` | 未接入 |
+| `permissionPromptToolName` | 未接入（路由权限提示到自定义 MCP tool） |
+| `PermissionRequest` hook | 未接入 |
+
+---
+
+## 二、Codex SDK — 未集成功能
+
+Codex SDK (v0.135.0) API 面较小，App 已用 `startThread()`/`resumeThread()`/`runStreamed()`。缺口：
+
+### 2.1 ThreadOptions 缺口
+
+| Option | 状态 | 用途 |
+|--------|:---:|------|
+| `webSearchEnabled` (boolean) | ❌ 未用 | 独立于 `webSearchMode` 控制 Web 搜索 |
+| `skipGitRepoCheck` | ❌ 未用 | 允许在非 git 目录使用 |
+| `outputSchema` (TurnOptions) | ❌ 未用 | 逐轮 JSON Schema 结构化输出 |
+| `signal` (TurnOptions) | ❌ 未用 | 逐轮 AbortSignal 取消 |
+
+### 2.2 SDK 架构缺口
+
+| 能力 | 状态 | 用途 |
+|------|:---:|------|
+| `Thread.run()` (非流式) | ❌ 未用 | 阻塞执行返回完成的 `Turn` |
+| `CodexOptions.config` | ❌ 未用 | 嵌套 config 对象自动扁平化为 `--config key=value` CLI 参数 |
+| `CodexOptions.env` | ❌ 未用 | 自定义环境变量传给 Codex CLI 子进程 |
+
+### 2.3 Thread Event 类型未完全处理
+
+| Event 类型 | 当前处理 |
+|------|------|
+| `todo_list` items | 可能未渲染到 UI |
+| `web_search` items | 可能未渲染到 UI |
+| `mcp_tool_call` items | 未处理（除非配置了 MCP） |
+
+### 2.4 Codex 较新功能
+
+| 功能 | 版本 | 描述 |
+|------|:---:|------|
+| `excludeTurns` 参数 | 近期 | 分页友好的 resume/fork（排除指定 turn） |
+| Unix socket 传输 | 近期 | app-server 集成 |
+| Permission profiles | 近期 | 跨 session 权限 profile 持久化 |
+| Reasoning token 报告 | 近期 | `codex exec --json` 报告 reasoning-token 用量 |
+
+---
+
+## 三、推荐优先级路线图
+
+### Tier 1：消除手写代码（HIGH impact）
+
+| 项目 | 收益 |
+|------|------|
+| `listSessions()` / `getSessionInfo()` / `getSessionMessages()` | ~200 行 JSONL 扫描消除 |
+| `deleteSession()` / `forkSession()` | 替换 `fs.unlinkSync`，增加 fork 能力 |
+| `getContextUsage()` | 精确上下文分解，替代手动估算 |
+| `setModel()` / `setPermissionMode()` | 中途切换无需重建 query |
+
+### Tier 2：新增核心能力（HIGH-MEDIUM impact）
+
+| 项目 | 收益 |
+|------|------|
+| **MCP 集成** (`mcpServers`, `setMcpServers`, `createSdkMcpServer`) | 连接 GitHub/Slack/Jira/DB/自定义 tool |
+| **Hooks 系统** (`PreToolUse`, `SessionStart`, `UserPromptSubmit`) | 编程式 tool 门控、session 初始化、prompt 预处理 |
+| **Agent 定义** (`agents` option) | 自定义子 agent（tool 限制、system prompt、model override） |
+| `outputFormat` | 结构化 JSON 响应 |
+| `thinking` 新 API | 迁移 `effort` → 现代 `ThinkingConfig` |
+
+### Tier 3：打磨与高级功能（LOWER priority）
+
+| 项目 | 收益 |
+|------|------|
+| `promptSuggestions` | AI 预测下一条 prompt |
+| `enableFileCheckpointing` + `rewindFiles()` | 回退文件到任意消息 |
+| `includePartialMessages` | 流式部分消息 delta |
+| CodeX `outputSchema` | Codex 结构化输出 |
+| 插件/Marketplace 系统 | SDK 插件生态 |
+| V2 alpha APIs | 多轮会话管理 |
+
+---
+
+## 四、补充说明
+
+1. **`agent-architecture.md` §11-14** 已有逐字段状态表（2026-06-15 生成），本文件为面向决策的提炼版。
+2. **所有信息基于 SDK 源码类型定义验证**（`sdk.d.ts` 和 `dist/index.d.ts`），未依赖第三方文档。
+3. **优先级标注**：H=消除手写代码或新增核心能力；M=显著改善体验或简化架构；L=锦上添花。
