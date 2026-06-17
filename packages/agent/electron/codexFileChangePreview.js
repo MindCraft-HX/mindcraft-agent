@@ -4,6 +4,8 @@ const { execFileSync } = require('child_process')
 
 const DEFAULT_MAX_DIFF_LINES = 400
 const DEFAULT_MAX_NEW_FILE_BYTES = 256 * 1024
+const DEFAULT_GIT_TIMEOUT_MS = 1000
+const DEFAULT_MAX_PREVIEW_CHANGES = 8
 
 function trimUnifiedDiff(diffText, maxLines = DEFAULT_MAX_DIFF_LINES) {
   const text = String(diffText || '')
@@ -24,7 +26,7 @@ function resolveProjectRelativePath(cwd, candidatePath) {
   return rel.split(path.sep).join('/')
 }
 
-function runGit(cwd, args, { execFileSyncImpl = execFileSync, timeout = 5000 } = {}) {
+function runGit(cwd, args, { execFileSyncImpl = execFileSync, timeout = DEFAULT_GIT_TIMEOUT_MS } = {}) {
   return execFileSyncImpl('git', args, {
     cwd: path.resolve(cwd),
     encoding: 'utf8',
@@ -143,13 +145,23 @@ function normalizeFileChangePreview(change, cwd, opts = {}) {
 
 function normalizeFileChangeItemPreviews(item, cwd, opts = {}) {
   if (!item || item.type !== 'file_change' || !Array.isArray(item.changes) || !item.changes.length) return item
-  const changes = item.changes.map(change => normalizeFileChangePreview(change, cwd, opts))
+  const maxPreviewChanges = Number.isFinite(Number(opts.maxPreviewChanges))
+    ? Math.max(0, Number(opts.maxPreviewChanges))
+    : DEFAULT_MAX_PREVIEW_CHANGES
+  const changes = item.changes.map((change, index) => {
+    if (index >= maxPreviewChanges && !change?.unified_diff) {
+      return { ...change, _noDiffReason: 'preview_limit' }
+    }
+    return normalizeFileChangePreview(change, cwd, opts)
+  })
   return { ...item, changes }
 }
 
 module.exports = {
+  DEFAULT_GIT_TIMEOUT_MS,
   DEFAULT_MAX_DIFF_LINES,
   DEFAULT_MAX_NEW_FILE_BYTES,
+  DEFAULT_MAX_PREVIEW_CHANGES,
   trimUnifiedDiff,
   resolveProjectRelativePath,
   readGitDiffForPath,

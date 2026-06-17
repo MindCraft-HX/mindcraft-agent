@@ -5,6 +5,7 @@ const path = require('node:path')
 const test = require('node:test')
 
 const {
+  DEFAULT_GIT_TIMEOUT_MS,
   buildNewFileUnifiedDiff,
   normalizeFileChangeItemPreviews,
   readNewTextFileDiff,
@@ -52,6 +53,42 @@ test('normalizeFileChangeItemPreviews uses git diff before file fallback', (t) =
   assert.equal(out.changes[0]._diffSource, 'git')
   assert.match(out.changes[0].unified_diff, /\+tracked/)
   assert.equal(calls[0][0], 'diff')
+})
+
+test('normalizeFileChangeItemPreviews limits expensive preview generation', () => {
+  let calls = 0
+  const execFileSyncImpl = (_cmd, args) => {
+    calls += 1
+    if (args[0] === 'check-ignore') throw Object.assign(new Error('not ignored'), { status: 1 })
+    if (args[0] === 'ls-files') throw Object.assign(new Error('not tracked'), { status: 1 })
+    return ''
+  }
+  const item = {
+    type: 'file_change',
+    changes: [
+      { path: 'a.js' },
+      { path: 'b.js' },
+      { path: 'c.js', unified_diff: 'diff --git a/c.js b/c.js\n+c\n' },
+    ],
+  }
+
+  const out = normalizeFileChangeItemPreviews(item, process.cwd(), { execFileSyncImpl, maxPreviewChanges: 1 })
+
+  assert.equal(out.changes[0]._noDiffReason, 'file_missing')
+  assert.equal(out.changes[1]._noDiffReason, 'preview_limit')
+  assert.equal(out.changes[2].unified_diff, item.changes[2].unified_diff)
+  assert.equal(calls, 4)
+})
+
+test('normalizeFileChangeItemPreviews uses short git timeout by default', () => {
+  const timeouts = []
+  const execFileSyncImpl = (_cmd, _args, options) => {
+    timeouts.push(options.timeout)
+    return ''
+  }
+  normalizeFileChangeItemPreviews({ type: 'file_change', changes: [{ path: 'src/a.js' }] }, process.cwd(), { execFileSyncImpl })
+  assert.ok(timeouts.length >= 1)
+  assert.ok(timeouts.every(timeout => timeout === DEFAULT_GIT_TIMEOUT_MS))
 })
 
 test('readNewTextFileDiff renders untracked non-ignored text files', (t) => {

@@ -13,6 +13,7 @@ const {
   setSessionInstruction,
   syncPanelStateSessions,
   upsertRuntimeByProvider,
+  normalizeSessionInstructionInput,
 } = require('./sessionRegistry')
 
 function makeTempUserData() {
@@ -217,4 +218,60 @@ test('getSessionInstruction reads legacy instruction record as fallback', () => 
   assert.equal(instruction.description, 'Legacy description')
   assert.equal(instruction.content, 'Legacy instruction content.')
   assert.deepEqual(instruction.attachments, ['legacy.md'])
+})
+
+test('getSessionInstruction preserves legacy inline instruction title as description', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-inline-title',
+        name: 'Inline title session',
+        instruction: {
+          enabled: true,
+          title: 'Inline legacy title',
+          content: 'Inline content',
+        },
+      }],
+    }],
+  }, { userDataDir })
+
+  const instruction = getSessionInstruction('chat-key-inline-title', { userDataDir })
+
+  assert.equal(instruction.enabled, true)
+  assert.equal(instruction.description, 'Inline legacy title')
+  assert.equal(instruction.content, 'Inline content')
+})
+
+test('setSessionInstruction rejects oversized content without overwriting existing data', () => {
+  const userDataDir = makeTempUserData()
+  const initial = setSessionInstruction('chat-key-limit', {
+    enabled: true,
+    description: 'Initial',
+    content: 'short',
+  }, { userDataDir })
+  assert.equal(initial.ok, true)
+
+  const rejected = setSessionInstruction('chat-key-limit', {
+    enabled: true,
+    description: 'Initial',
+    content: 'x'.repeat(100001),
+  }, { userDataDir })
+
+  assert.deepEqual(rejected, { ok: false, error: 'content_too_large' })
+  const instruction = getSessionInstruction('chat-key-limit', { userDataDir })
+  assert.equal(instruction.content, 'short')
+})
+
+test('normalizeSessionInstructionInput rejects oversized attachment payloads', () => {
+  assert.deepEqual(
+    normalizeSessionInstructionInput({ attachments: ['x'.repeat(4097)] }),
+    { ok: false, error: 'attachment_too_large' },
+  )
+  assert.deepEqual(
+    normalizeSessionInstructionInput({ attachments: Array.from({ length: 21 }, (_, i) => `a-${i}`) }),
+    { ok: false, error: 'attachments_too_many' },
+  )
 })

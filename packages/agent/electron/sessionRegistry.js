@@ -1,13 +1,17 @@
 const fs = require('fs')
 const path = require('path')
-const { app } = require('electron')
+const { getMindCraftUserDataDir } = require('./userDataPath')
 
 const REGISTRY_DIR_NAME = 'session-registry'
 const SCHEMA_VERSION = 1
+const MAX_INSTRUCTION_DESCRIPTION_CHARS = 1000
+const MAX_INSTRUCTION_CONTENT_CHARS = 100000
+const MAX_INSTRUCTION_ATTACHMENTS = 20
+const MAX_INSTRUCTION_ATTACHMENT_CHARS = 4096
 
 function getUserDataDir(options = {}) {
   if (options.userDataDir) return options.userDataDir
-  return app.getPath('userData')
+  return getMindCraftUserDataDir(options)
 }
 
 function getSessionRegistryRoot(options = {}) {
@@ -118,6 +122,10 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
     instruction: {
       enabled: Boolean(chat.instruction?.enabled),
       instructionId: normalizeString(chat.instruction?.instructionId),
+      title: normalizeString(chat.instruction?.title),
+      description: normalizeString(chat.instruction?.description),
+      content: typeof chat.instruction?.content === 'string' ? chat.instruction.content : '',
+      attachments: Array.isArray(chat.instruction?.attachments) ? chat.instruction.attachments.filter(Boolean) : [],
     },
     createdAt,
     updatedAt,
@@ -135,6 +143,51 @@ function normalizeInstructionRecord(data = {}) {
     attachments: Array.isArray(data.attachments) ? data.attachments.filter(Boolean) : [],
     createdAt: normalizeTimestamp(data.createdAt) || Date.now(),
     updatedAt: normalizeTimestamp(data.updatedAt) || Date.now(),
+  }
+}
+
+function normalizeInstructionAttachments(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const item of value) {
+    if (!item) continue
+    if (out.length >= MAX_INSTRUCTION_ATTACHMENTS) {
+      const error = new Error('too many attachments')
+      error.code = 'attachments_too_many'
+      throw error
+    }
+    const serialized = typeof item === 'string' ? item : JSON.stringify(item)
+    if (serialized.length > MAX_INSTRUCTION_ATTACHMENT_CHARS) {
+      const error = new Error('attachment too large')
+      error.code = 'attachment_too_large'
+      throw error
+    }
+    out.push(item)
+  }
+  return out
+}
+
+function normalizeSessionInstructionInput(data = {}) {
+  const description = normalizeString(data.description) || normalizeString(data.summary) || normalizeString(data.title)
+  const content = typeof data.content === 'string' ? data.content : ''
+  if (description.length > MAX_INSTRUCTION_DESCRIPTION_CHARS) {
+    return { ok: false, error: 'description_too_large' }
+  }
+  if (content.length > MAX_INSTRUCTION_CONTENT_CHARS) {
+    return { ok: false, error: 'content_too_large' }
+  }
+  try {
+    return {
+      ok: true,
+      value: {
+        enabled: Boolean(data.enabled),
+        description,
+        content,
+        attachments: normalizeInstructionAttachments(data.attachments),
+      },
+    }
+  } catch (err) {
+    return { ok: false, error: err?.code || 'invalid_attachments' }
   }
 }
 
@@ -283,39 +336,48 @@ function getSessionInstruction(chatKey, options = {}) {
   const instructionId = normalizeString(session?.instruction?.instructionId)
   const legacyInstruction = instructionId ? readInstructionRecord(instructionId, options) : null
   const sessionInstruction = session?.instruction || {}
-  const legacyDescription = legacyInstruction?.title || legacyInstruction?.description || ''
+  const legacyDescription = normalizeString(sessionInstruction.description)
+    || normalizeString(sessionInstruction.title)
+    || legacyInstruction?.title
+    || legacyInstruction?.description
+    || ''
   const sessionContent = typeof sessionInstruction.content === 'string' ? sessionInstruction.content : ''
   const sessionAttachments = Array.isArray(sessionInstruction.attachments)
     ? sessionInstruction.attachments.filter(Boolean)
     : null
+  const attachments = sessionAttachments && (sessionAttachments.length || !instructionId)
+    ? sessionAttachments
+    : (legacyInstruction?.attachments || [])
   return {
     enabled: Boolean(sessionInstruction.enabled),
     instructionId,
     description: normalizeString(session?.description) || legacyDescription,
     content: sessionContent || legacyInstruction?.content || '',
-    attachments: sessionAttachments || legacyInstruction?.attachments || [],
+    attachments,
   }
 }
 
 function setSessionInstruction(chatKey, data = {}, options = {}) {
   const resolvedChatKey = normalizeString(chatKey)
   if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
+  const normalizedInput = normalizeSessionInstructionInput(data)
+  if (!normalizedInput.ok) return normalizedInput
+  const instructionInput = normalizedInput.value
   const now = Date.now()
   const existing = readJson(getSessionRecordPath(resolvedChatKey, options), {})
-  const description = normalizeString(data.description) || normalizeString(data.summary) || normalizeString(data.title)
   const sessionRecord = {
     ...(existing || {}),
     schemaVersion: SCHEMA_VERSION,
     chatKey: resolvedChatKey,
     agent: normalizeAgent(existing?.agent),
-    description,
+    description: instructionInput.description,
     provider: existing?.provider || {},
     runtime: existing?.runtime || {},
     instruction: {
-      enabled: Boolean(data.enabled),
+      enabled: instructionInput.enabled,
       instructionId: '',
-      content: typeof data.content === 'string' ? data.content : '',
-      attachments: Array.isArray(data.attachments) ? data.attachments.filter(Boolean) : [],
+      content: instructionInput.content,
+      attachments: instructionInput.attachments,
       updatedAt: now,
     },
     createdAt: existing?.createdAt || now,
@@ -378,6 +440,7 @@ module.exports = {
   listSessionRecords,
   setSessionInstruction,
   syncPanelStateSessions,
+  normalizeSessionInstructionInput,
   upsertRuntimeByProvider,
   upsertSessionRecord,
 }

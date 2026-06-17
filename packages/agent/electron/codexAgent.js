@@ -1,9 +1,10 @@
-const { ipcMain, dialog, app } = require('electron')
+const { ipcMain, dialog } = require('electron')
 const { Conf } = require('electron-conf')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { execSync, execFileSync, exec, execFile } = require('child_process')
+const { getMindCraftUserDataDir } = require('./userDataPath')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
@@ -43,13 +44,6 @@ function sendMetrics(sender, payload) {
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
 const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
 const SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
-
-function getMindCraftUserDataDir() {
-  try {
-    if (app && typeof app.getPath === 'function') return app.getPath('userData')
-  } catch (_) {}
-  return path.join(os.tmpdir(), 'mindcraft-agent-userData')
-}
 
 function getCodexUploadsDir() {
   return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')

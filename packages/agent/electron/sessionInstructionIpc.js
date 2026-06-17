@@ -2,11 +2,19 @@ const { getSessionInstruction, setSessionInstruction } = require('./sessionRegis
 
 function registerSessionInstructionIpc(ipcMain) {
   ipcMain.handle('agent-get-session-instruction', (_, { chatKey } = {}) => {
-    return getSessionInstruction(chatKey)
+    try {
+      return getSessionInstruction(chatKey)
+    } catch (err) {
+      return { enabled: false, instructionId: '', description: '', content: '', attachments: [], error: err?.message || 'read failed' }
+    }
   })
 
   ipcMain.handle('agent-set-session-instruction', (_, { chatKey, instruction } = {}) => {
-    return setSessionInstruction(chatKey, instruction || {})
+    try {
+      return setSessionInstruction(chatKey, instruction || {})
+    } catch (err) {
+      return { ok: false, error: err?.message || 'write failed' }
+    }
   })
 }
 
