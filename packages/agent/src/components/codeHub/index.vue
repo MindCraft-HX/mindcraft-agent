@@ -125,6 +125,48 @@ const sharedSettingsRef = ref(null)
 const showAgentPicker = ref(false)
 const activeTabId = ref(null)
 const tabOrder = ref(loadTabOrder())
+const CODEHUB_TAB_DEBUG = import.meta.env?.DEV
+let lastTabDebugSignature = ''
+
+function tabDebugSnapshot(extra = {}) {
+  const mounted = Object.fromEntries(Object.keys(mountedMap).map(key => [key, Boolean(mountedMap[key])]))
+  const panelState = Object.fromEntries(agentKeys.value.map(key => {
+    const panel = panelRefs[key]
+    return [key, {
+      hasPanel: Boolean(panel),
+      ready: Boolean(panel?.ready),
+      activeProjectId: panel?.activeProjectId?.value || null,
+      projectTabs: Array.isArray(panel?.projectTabData) ? panel.projectTabData.length : null,
+    }]
+  }))
+  return {
+    initDone: initDone.value,
+    activeTabId: activeTabId.value,
+    activeAgent: activeAgent.value,
+    tabIds: unifiedTabs.value.map(t => t.id),
+    tabOrder: [...tabOrder.value],
+    mounted,
+    panelState,
+    ...extra,
+  }
+}
+
+function debugCodeHubTabs(event, extra = {}, { force = false } = {}) {
+  if (!CODEHUB_TAB_DEBUG) return
+  const snapshot = tabDebugSnapshot(extra)
+  const signature = JSON.stringify({
+    event,
+    initDone: snapshot.initDone,
+    activeTabId: snapshot.activeTabId,
+    tabIds: snapshot.tabIds,
+    tabOrder: snapshot.tabOrder,
+    mounted: snapshot.mounted,
+    panelState: snapshot.panelState,
+  })
+  if (!force && signature === lastTabDebugSignature) return
+  lastTabDebugSignature = signature
+  console.log(`[codehub-tabs] ${event}`, snapshot)
+}
 
 function loadTabOrder() {
   try {
@@ -218,6 +260,7 @@ const showEmptyOverlay = computed(() => {
 // ── 激活 Tab（核心：同步 activeTabId + 调用 switchProject）──
 let _tabActivationInit = true  // 首次恢复时不刷，避免初始 toast
 function activateTab(tab, preferredChat = null) {
+  debugCodeHubTabs('activateTab:start', { tabId: tab?.id, preferredChat }, { force: true })
   activeTabId.value = tab.id
   localStorage.setItem('codehub_active_tab', tab.id)
 
@@ -232,7 +275,16 @@ function activateTab(tab, preferredChat = null) {
 
 function doSwitchProject(tab, preferredChat = null) {
   const panel = getPanel(tab.agentType)
-  if (!panel) return
+  if (!panel) {
+    debugCodeHubTabs('switchProject:missing-panel', { tabId: tab?.id, agentType: tab?.agentType }, { force: true })
+    return
+  }
+  debugCodeHubTabs('switchProject:start', {
+    tabId: tab?.id,
+    projectId: tab?.projectId,
+    agentType: tab?.agentType,
+    preferredChat,
+  }, { force: true })
   panel.switchProject(tab.projectId, preferredChat)
   if (!_tabActivationInit) {
     nextTick(() => panel.refreshSessions?.())
@@ -252,6 +304,7 @@ function preferredChatFromQuery() {
 function restoreActiveTab() {
   const tabs = unifiedTabs.value
   if (!tabs.length) {
+    debugCodeHubTabs('restoreActiveTab:empty', {}, { force: true })
     showAgentPicker.value = true
     return
   }
@@ -263,11 +316,19 @@ function restoreActiveTab() {
   // 优先匹配 query 指定的 projectId + agent 组合
   if (requestedProjectId && requestedAgent) {
     const exact = tabs.find(t => t.agentType === requestedAgent && String(t.projectId) === String(requestedProjectId))
-    if (exact) { activateTab(exact, preferredChatFromQuery()); return }
+    if (exact) {
+      debugCodeHubTabs('restoreActiveTab:query-exact', { tabId: exact.id }, { force: true })
+      activateTab(exact, preferredChatFromQuery())
+      return
+    }
   }
   if (requestedProjectId) {
     const byProject = tabs.find(t => String(t.projectId) === String(requestedProjectId))
-    if (byProject) { activateTab(byProject, preferredChatFromQuery()); return }
+    if (byProject) {
+      debugCodeHubTabs('restoreActiveTab:query-project', { tabId: byProject.id }, { force: true })
+      activateTab(byProject, preferredChatFromQuery())
+      return
+    }
   }
 
   const match = pickInitialCodeHubTab({
@@ -277,8 +338,10 @@ function restoreActiveTab() {
   })
 
   if (match) {
+    debugCodeHubTabs('restoreActiveTab:matched', { tabId: match.id, saved, requestedAgent }, { force: true })
     activateTab(match)
   } else {
+    debugCodeHubTabs('restoreActiveTab:fallback-last', { tabId: tabs[tabs.length - 1]?.id, saved, requestedAgent }, { force: true })
     activateTab(tabs[tabs.length - 1])
   }
 }
@@ -303,6 +366,7 @@ onMounted(() => {
     const allReady = pending.every(k => getPanel(k)?.ready)
     if (allReady) {
       initDone.value = true
+      debugCodeHubTabs('init:all-ready', { pending }, { force: true })
       if (_initTimer) { clearTimeout(_initTimer); _initTimer = null }
       nextTick(() => {
         if (unifiedTabs.value.length > 0) {
@@ -319,6 +383,7 @@ onMounted(() => {
     if (initDone.value) return
     initDone.value = true
     stopWatch()
+    debugCodeHubTabs('init:timeout', {}, { force: true })
     if (unifiedTabs.value.length > 0) {
       nextTick(() => restoreActiveTab())
     } else {
@@ -355,7 +420,9 @@ watch(() => [route.query?.agent, route.query?.projectId, route.query?.chatId, ro
 // ── watch tabs 变化：自动 fallback（仅在初始化完成后） ──
 watch(() => unifiedTabs.value.length, (len) => {
   if (!initDone.value) return
+  debugCodeHubTabs('tabs:length-change', { len })
   if (len === 0) {
+    debugCodeHubTabs('tabs:empty-after-init', {}, { force: true })
     activeTabId.value = null
     return
   }
@@ -376,6 +443,7 @@ watch(
       pruneMissing: true,
     })
     if (JSON.stringify(next) === JSON.stringify(tabOrder.value)) return
+    debugCodeHubTabs('tabOrder:reconcile', { ids, next }, { force: true })
     tabOrder.value = next
     saveTabOrder()
   },
@@ -396,6 +464,12 @@ watchEffect(() => {
   })
 
   if (!syncedTabId || syncedTabId === activeTabId.value) return
+  debugCodeHubTabs('activeTab:sync', {
+    from: activeTabId.value,
+    to: syncedTabId,
+    agentType,
+    activeProjectId,
+  }, { force: true })
   activeTabId.value = syncedTabId
   localStorage.setItem('codehub_active_tab', syncedTabId)
 })
