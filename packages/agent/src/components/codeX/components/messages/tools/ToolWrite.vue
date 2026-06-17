@@ -5,7 +5,7 @@
       <span v-if="summaryText" class="tool-kind-summary">{{ summaryText }}</span>
     </div>
     <!-- 单文件：直接展示 diff -->
-    <template v-if="!(isFileChange || isApplyPatch) || fileChanges.length <= 1">
+    <template v-if="!(isFileChange || isApplyPatch) || renderFileChanges.length <= 1">
       <div class="tool-file-label" @dblclick.stop="$emit('expand')">{{ msg.filePath }}
         <span v-if="effectiveDiffLines.length" class="diff-expand-btn" @click.stop="$emit('expand')">⤢</span>
       </div>
@@ -20,15 +20,12 @@
     </template>
     <!-- 多文件变更：展示文件列表 + 各文件 diff -->
     <template v-else-if="isFileChange || isApplyPatch">
-      <div v-for="(fc, i) in fileChanges" :key="i" class="file-change-block">
+      <div v-for="(fc, i) in renderFileChanges" :key="i" class="file-change-block">
         <div class="tool-file-label" @dblclick.stop="openModal(i)">{{ fc.path }}
-          <span v-if="fc.diffLines.length || fc._diffHunks?.length || fc.unified_diff" class="diff-expand-btn" @click.stop="openModal(i)">⤢</span>
+          <span v-if="fc._renderDiffLines.length" class="diff-expand-btn" @click.stop="openModal(i)">⤢</span>
         </div>
-        <div v-if="fc.diffLines.length" @dblclick.stop="openModal(i)" style="cursor:pointer">
-          <DiffSplitView :diffLines="fc.diffLines" :filePath="fc.path" />
-        </div>
-        <div v-else-if="fc._diffHunks?.length" @dblclick.stop="openModal(i)" style="cursor:pointer">
-          <DiffSplitView :diffLines="fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))" :filePath="fc.path" />
+        <div v-if="fc._renderDiffLines.length" @dblclick.stop="openModal(i)" style="cursor:pointer">
+          <DiffSplitView :diffLines="fc._renderDiffLines" :filePath="fc.path" />
         </div>
       </div>
     </template>
@@ -100,6 +97,11 @@ const fileChanges = computed(() => {
   }
   return []
 })
+
+const renderFileChanges = computed(() => fileChanges.value.map(fc => ({
+  ...fc,
+  _renderDiffLines: computeFileChangeDiffsSync(fc),
+})))
 
 /** file_change: 从 _fileChanges 取 unified_diff 或 diffLines */
 const summaryText = computed(() => {
