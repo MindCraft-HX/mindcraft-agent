@@ -66,8 +66,8 @@ const label = computed(() => labels[props.status] || props.status)
   color: var(--cc-success);
 }
 .badge-pending {
-  background: var(--cc-warning-bg);
-  color: var(--cc-primary);
+  background: var(--cc-attention-bg, rgba(56, 189, 248, 0.1));
+  color: var(--cc-attention-text, var(--cc-attention, #38bdf8));
 }
 .badge-denied {
   background: var(--cc-error-bg);

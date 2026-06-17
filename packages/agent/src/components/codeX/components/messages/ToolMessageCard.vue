@@ -282,7 +282,8 @@ const modalFilePath = computed(() => {
   box-shadow: 0 0 0 1px var(--cc-border-hover);
 }
 .tool-running { border-color: var(--cc-success-border); }
-.tool-pending { border-color: var(--cc-warning-border); }
+.tool-pending { border-color: var(--cc-attention-border, #164e63); }
+.tool-pending::before { background: var(--cc-attention, #38bdf8); }
 .tool-denied { border-color: var(--cc-error-border); opacity: 0.7; }
 .tool-error { border-color: var(--cc-error-border); }
 .tool-header {

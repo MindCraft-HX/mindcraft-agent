@@ -538,8 +538,9 @@ watch(
   z-index: 1;
 }
 .codehub-tab.session-pending {
-  color: var(--cc-warning);
-  border-bottom: 2px solid var(--cc-warning);
+  color: var(--cc-attention-text, var(--cc-attention, #38bdf8));
+  border-bottom: 2px solid var(--cc-attention, #38bdf8);
+  background: var(--cc-attention-bg, rgba(56, 189, 248, 0.1));
 }
 .codehub-tab.task-done {
   color: var(--cc-warning);
@@ -548,6 +549,12 @@ watch(
 }
 .codehub-tab.task-done .codehub-tab-name {
   font-weight: 600;
+}
+.codehub-tab.session-pending.task-done {
+  color: var(--cc-attention-text, var(--cc-attention, #38bdf8));
+  border-bottom-color: var(--cc-attention, #38bdf8);
+  background: var(--cc-attention-bg, rgba(56, 189, 248, 0.1));
+  animation: none;
 }
 @keyframes tab-done-pulse {
   0%, 100% { background: var(--cc-bg-secondary); }
@@ -596,7 +603,7 @@ watch(
 /* 等待用户响应小圆点 */
 .codehub-tab-name .pending-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--cc-warning); margin-right: 6px; flex-shrink: 0;
+  background: var(--cc-attention, #38bdf8); margin-right: 6px; flex-shrink: 0;
   animation: pending-pulse 1.4s ease-in-out infinite;
 }
 @keyframes pending-pulse {

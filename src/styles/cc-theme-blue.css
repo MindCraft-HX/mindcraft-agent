@@ -97,6 +97,10 @@
   --cc-warning: #e0b050;
   --cc-warning-bg: #1a180c;
   --cc-warning-border: #353015;
+  --cc-attention: #5eead4;
+  --cc-attention-bg: rgba(94, 234, 212, 0.1);
+  --cc-attention-border: #155e75;
+  --cc-attention-text: #99f6e4;
   --cc-error: #e07070;
   --cc-error-bg: #1a0e0e;
   --cc-error-border: #351a1a;

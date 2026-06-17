@@ -225,7 +225,7 @@ function onDrop(e, toIndex) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--cc-warning);
+  background: var(--cc-attention, #38bdf8);
   margin-right: 6px;
   flex-shrink: 0;
   animation: pending-pulse 1.4s ease-in-out infinite;
@@ -235,8 +235,9 @@ function onDrop(e, toIndex) {
   50% { opacity: 1; transform: scale(1.15); }
 }
 .project-tab.session-pending {
-  color: var(--cc-warning);
-  border-bottom: 2px solid var(--cc-warning);
+  color: var(--cc-attention-text, var(--cc-attention, #38bdf8));
+  border-bottom: 2px solid var(--cc-attention, #38bdf8);
+  background: var(--cc-attention-bg, rgba(56, 189, 248, 0.1));
 }
 .project-tab-close {
   width: 18px;
@@ -270,6 +271,12 @@ function onDrop(e, toIndex) {
 }
 .project-tab.task-done .project-tab-title {
   font-weight: 600;
+}
+.project-tab.session-pending.task-done {
+  color: var(--cc-attention-text, var(--cc-attention, #38bdf8));
+  border-bottom-color: var(--cc-attention, #38bdf8);
+  background: var(--cc-attention-bg, rgba(56, 189, 248, 0.1));
+  animation: none;
 }
 @keyframes tab-done-pulse {
   0%, 100% { background: var(--cc-bg-secondary); }

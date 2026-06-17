@@ -97,6 +97,10 @@
   --cc-warning: #c2680a;
   --cc-warning-bg: #fdf4e3;
   --cc-warning-border: #f0d89a;
+  --cc-attention: #0284c7;
+  --cc-attention-bg: #e0f2fe;
+  --cc-attention-border: #7dd3fc;
+  --cc-attention-text: #0369a1;
   --cc-error: #c51e1e;
   --cc-error-bg: #fce8e8;
   --cc-error-border: #f0b8b8;
