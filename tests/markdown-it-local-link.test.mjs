@@ -12,4 +12,14 @@ assert.ok(/data-path-candidate="docs\/TODO\.md"/.test(html), 'plain strong local
 assert.ok(html.includes('href="https://example.com"'), 'external links should stay external')
 assert.ok(html.includes('target="_blank"'), 'external links should preserve target blank behavior')
 
+const rawHtml = renderHtml(`<script>docs/TODO.md</script>
+
+<code>src/main.js</code>
+
+Regular docs/TODO.md`)
+
+assert.ok(rawHtml.includes('<script>docs/TODO.md</script>'), 'raw script contents should not be linkified')
+assert.ok(rawHtml.includes('<code>src/main.js</code>'), 'raw code tag contents should not be linkified')
+assert.equal((rawHtml.match(/data-path-candidate=/g) || []).length, 1, 'only ordinary text outside protected tags should be linkified')
+
 console.log('markdown it local link test passed')

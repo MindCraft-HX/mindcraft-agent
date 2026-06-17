@@ -3,6 +3,7 @@
     class="doc-viewer"
     :data-path-context-cwd="currentContextDir"
     :data-path-context-workspace-root="currentContextDir"
+    data-path-context-source="document-viewer"
     @dragover.prevent
     @drop.prevent="onDrop"
   >
@@ -41,6 +42,7 @@
     <div v-if="currentTab" class="doc-body" :class="{ 'is-loading': currentTab.isLoading }">
       <component
         :is="currentViewer"
+        :key="currentViewerKey"
         v-bind="currentViewerProps"
         @openExternal="confirmOpenExternal(currentTab)"
       />
@@ -91,6 +93,9 @@ const MAX_SEEN_PAYLOAD_KEYS = 200
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
+const currentViewerKey = computed(() => currentTab.value
+  ? `${currentTab.value.id}:${currentTab.value.viewerType}:${currentTab.value.filePath || currentTab.value.name}`
+  : '')
 const currentViewerProps = computed(() => currentTab.value ? {
   text: currentTab.value.text,
   binary: currentTab.value.binary,
@@ -296,8 +301,8 @@ async function confirmOpenExternal(tab) {
   if (!tab?.filePath) return
   try {
     await ElMessageBox.confirm(
-      `鏆備笉鏀寔棰勮璇ユ枃浠剁被鍨嬨€傛槸鍚︿娇鐢ㄧ郴缁熼粯璁ょ▼搴忔墦寮€锛焅n${tab.filePath}`,
-      i18n.global.t('home.browseDocs'),
+      `${i18n.global.t('doc.openExternalConfirm')}\n\n${tab.filePath}`,
+      i18n.global.t('doc.openExternal'),
       {
         confirmButtonText: i18n.global.t('common.ok'),
         cancelButtonText: i18n.global.t('common.cancel'),

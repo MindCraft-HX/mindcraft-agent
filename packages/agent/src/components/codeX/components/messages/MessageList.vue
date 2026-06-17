@@ -3,6 +3,7 @@
     ref="listRef"
     :data-path-context-cwd="tab.cwd || projectCwd || ''"
     :data-path-context-workspace-root="tab.cwd || projectCwd || ''"
+    data-path-context-source="agent-message"
   >
     <div class="history-top-sentinel" :ref="setHistoryTopSentinelRef"></div>
 

@@ -166,3 +166,45 @@ test('openDocumentCandidate falls back to system default for unsupported files',
   assert.equal(opened.length, 1)
   assert.equal(normalize(opened[0]), normalize('D:\\repo\\assets\\logo.png'))
 })
+
+test('openDocumentCandidate blocks agent-message absolute paths outside workspace', async () => {
+  const payloads = []
+  const opened = []
+  const result = await openDocumentCandidate({
+    rawText: 'C:\\Users\\alice\\.ssh\\id_rsa',
+    workspaceRoot: 'D:\\repo',
+    cwd: 'D:\\repo\\src',
+    source: 'agent-message',
+    pathExists: (value) => normalize(value) === normalize('C:\\Users\\alice\\.ssh\\id_rsa'),
+    searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
+    openMdPayload: async (payload) => payloads.push(payload),
+    openWithDefault: async (filePath) => {
+      opened.push(filePath)
+      return ''
+    },
+  })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.reason, 'outside-workspace-absolute-path')
+  assert.equal(payloads.length, 0)
+  assert.equal(opened.length, 0)
+})
+
+test('openDocumentCandidate allows agent-message absolute paths inside workspace', async () => {
+  const payloads = []
+  const result = await openDocumentCandidate({
+    rawText: 'D:\\repo\\docs\\TODO.md',
+    workspaceRoot: 'D:\\repo',
+    cwd: 'D:\\repo\\src',
+    source: 'agent-message',
+    pathExists: (value) => normalize(value) === normalize('D:\\repo\\docs\\TODO.md'),
+    searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
+    openMdPayload: async (payload) => payloads.push(payload),
+    openWithDefault: async () => '',
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.openMode, 'mdViewer')
+  assert.equal(payloads.length, 1)
+  assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\TODO.md'))
+})

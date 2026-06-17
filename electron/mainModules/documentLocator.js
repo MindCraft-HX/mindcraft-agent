@@ -75,6 +75,22 @@ function toAbsoluteIfExists(candidatePath, pathExists) {
   return pathExists(resolved) ? resolved : ''
 }
 
+function isPathInside(parent, child) {
+  if (!parent || !child) return false
+  const parentResolved = path.resolve(parent)
+  const childResolved = path.resolve(child)
+  const relative = path.relative(parentResolved, childResolved)
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+function isAgentMessageSource(source = '') {
+  return String(source || '') === 'agent-message'
+}
+
+function isAgentAbsolutePathAllowed(filePath, workspaceRoot, cwd) {
+  return [workspaceRoot, cwd].some(base => base && isPathInside(base, filePath))
+}
+
 function joinIfPresent(baseDir, relativePath, pathExists) {
   if (!baseDir || !relativePath) return ''
   return toAbsoluteIfExists(path.resolve(baseDir, relativePath), pathExists)
@@ -174,6 +190,7 @@ async function openDocumentCandidate({
   rawText,
   workspaceRoot,
   cwd,
+  source = '',
   pathExists = fs.existsSync,
   searchFiles = listFiles,
   openMdPayload,
@@ -188,6 +205,19 @@ async function openDocumentCandidate({
   })
 
   if (!resolved.ok) return resolved
+  if (
+    isAgentMessageSource(source) &&
+    resolved.matchType === 'absolute' &&
+    !isAgentAbsolutePathAllowed(resolved.filePath, workspaceRoot, cwd)
+  ) {
+    return {
+      ok: false,
+      reason: 'outside-workspace-absolute-path',
+      filePath: resolved.filePath,
+      matchType: resolved.matchType,
+      rawText: resolved.rawText,
+    }
+  }
 
   const openMode = inferOpenMode(resolved.filePath)
   if (openMode === 'mdViewer' || openMode === 'textViewer') {
@@ -235,6 +265,8 @@ module.exports = {
   __test__: {
     normalizeCandidate,
     isAbsoluteFilePath,
+    isPathInside,
+    isAgentAbsolutePathAllowed,
     resolveCandidatePath,
     inferOpenMode,
     pickFallbackMatches,

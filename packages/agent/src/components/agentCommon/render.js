@@ -5,6 +5,7 @@ function getPathContext(target) {
   return {
     cwd: container?.getAttribute?.('data-path-context-cwd') || '',
     workspaceRoot: container?.getAttribute?.('data-path-context-workspace-root') || '',
+    source: container?.getAttribute?.('data-path-context-source') || '',
   }
 }
 
@@ -20,11 +21,12 @@ function getDocumentOpenErrorMessage(result) {
   if (result.reason === 'multiple-matches') return '找到多个候选文件，请补全路径后再试'
   if (result.reason === 'not-found') return '未找到对应文件，请确认路径是否正确'
   if (result.reason === 'empty-candidate') return '未识别到可打开的路径'
+  if (result.reason === 'outside-workspace-absolute-path') return 'Absolute paths outside the workspace are blocked'
   if (result.openMode === 'system-default' && result.shellResult) return result.shellResult
   return '文档打开失败'
 }
 
-async function openPathCandidateFromElement(target, source = 'agent-message') {
+async function openPathCandidateFromElement(target, source = '') {
   const rawText = target?.getAttribute?.('data-path-candidate') || ''
   if (!rawText) return
   const context = getPathContext(target)
@@ -32,7 +34,7 @@ async function openPathCandidateFromElement(target, source = 'agent-message') {
     rawText,
     workspaceRoot: context.workspaceRoot,
     cwd: context.cwd,
-    source,
+    source: source || context.source || 'agent-message',
   })
   if (!result?.ok) {
     dispatchPathOpenToast(getDocumentOpenErrorMessage(result))
@@ -122,10 +124,47 @@ function linkifyStrongLocalPaths(input = '') {
 }
 
 function linkifyHtmlTextNodes(html = '') {
-  return String(html || '')
-    .split(/(<[^>]+>)/g)
-    .map((part) => part.startsWith('<') ? part : linkifyStrongLocalPaths(part))
-    .join('')
+  const source = String(html || '')
+  const out = []
+  const rawTextStack = []
+  const skipTextStack = []
+  const tagRe = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\/?([A-Za-z][\w:-]*)(?:\s[^<>]*)?>/g
+  const rawTextTags = new Set(['script', 'style'])
+  const skipTextTags = new Set(['a', 'code', 'pre', 'textarea', 'kbd', 'samp'])
+  let lastIndex = 0
+
+  for (const match of source.matchAll(tagRe)) {
+    const text = source.slice(lastIndex, match.index)
+    out.push(rawTextStack.length || skipTextStack.length ? text : linkifyStrongLocalPaths(text))
+
+    const tag = match[0]
+    out.push(tag)
+    const tagName = String(match[1] || '').toLowerCase()
+    if (tagName) {
+      const isClosing = /^<\//.test(tag)
+      const isSelfClosing = /\/>$/.test(tag)
+      if (rawTextTags.has(tagName)) {
+        if (isClosing) {
+          const idx = rawTextStack.lastIndexOf(tagName)
+          if (idx >= 0) rawTextStack.splice(idx, 1)
+        } else if (!isSelfClosing) {
+          rawTextStack.push(tagName)
+        }
+      } else if (skipTextTags.has(tagName)) {
+        if (isClosing) {
+          const idx = skipTextStack.lastIndexOf(tagName)
+          if (idx >= 0) skipTextStack.splice(idx, 1)
+        } else if (!isSelfClosing) {
+          skipTextStack.push(tagName)
+        }
+      }
+    }
+    lastIndex = match.index + tag.length
+  }
+
+  const tail = source.slice(lastIndex)
+  out.push(rawTextStack.length || skipTextStack.length ? tail : linkifyStrongLocalPaths(tail))
+  return out.join('')
 }
 
 function quickHighlight(code) {

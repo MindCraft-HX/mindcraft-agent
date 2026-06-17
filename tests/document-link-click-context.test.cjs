@@ -29,7 +29,17 @@ for (const relativePath of [
     source.includes("tab.cwd || projectCwd || ''"),
     `${relativePath} should resolve path context from tab cwd first, then project cwd`
   )
+  assert.ok(
+    source.includes('data-path-context-source="agent-message"'),
+    `${relativePath} should mark rendered paths as agent-message sourced`
+  )
 }
+
+const mdViewerSource = read('src/components/mdViewer/index.vue')
+assert.ok(
+  mdViewerSource.includes('data-path-context-source="document-viewer"'),
+  'mdViewer should not mark local markdown links as agent-message sourced'
+)
 
 for (const relativePath of [
   'packages/agent/src/components/claudeCode/index.vue',

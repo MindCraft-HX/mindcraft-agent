@@ -11,28 +11,33 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps({
   binary: { type: [Uint8Array, Object, Array], default: null },
 })
 
-let currentObjectUrl = ''
+const objectUrl = ref('')
 
-const objectUrl = computed(() => {
-  if (currentObjectUrl) return currentObjectUrl
+function revokeObjectUrl() {
+  if (objectUrl.value) {
+    URL.revokeObjectURL(objectUrl.value)
+    objectUrl.value = ''
+  }
+}
+
+function updateObjectUrl() {
+  revokeObjectUrl()
   const raw = props.binary
-  if (!raw) return ''
+  if (!raw) return
   const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw.data || raw)
-  currentObjectUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
-  return currentObjectUrl
-})
+  objectUrl.value = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+watch(() => props.binary, updateObjectUrl, { immediate: true })
 
 onBeforeUnmount(() => {
-  if (currentObjectUrl) {
-    URL.revokeObjectURL(currentObjectUrl)
-    currentObjectUrl = ''
-  }
+  revokeObjectUrl()
 })
 </script>
 
