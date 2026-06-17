@@ -23,7 +23,7 @@ export function useClaudeTabs({
       name: '新对话',
       sessionId: `session-${id}-${Date.now()}`,
       cwd: getLastProjectCwd?.() || '',
-      runMode: 'ask_before_edits',
+      runMode: 'edit_automatically',
       thinking: false,
       messages: [],
       currentAssistantId: null,

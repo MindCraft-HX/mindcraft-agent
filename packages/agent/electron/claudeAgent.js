@@ -2416,7 +2416,7 @@ function setupClaudeHandlers() {
     const permissionPolicy = readPermissionPolicy()
     const mode = ['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)
       ? runMode
-      : 'ask_before_edits'
+      : 'edit_automatically'
 
     function buildContent(text, imgs) {
       const blocks = []

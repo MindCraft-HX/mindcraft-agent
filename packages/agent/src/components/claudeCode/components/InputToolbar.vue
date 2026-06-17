@@ -72,7 +72,7 @@
 <script setup>
 defineProps({
   disabled: { type: Boolean, default: false },
-  runMode: { type: String, default: 'ask_before_edits' },
+  runMode: { type: String, default: 'edit_automatically' },
 })
 
 defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:runMode', 'openPlugins', 'openSkills'])

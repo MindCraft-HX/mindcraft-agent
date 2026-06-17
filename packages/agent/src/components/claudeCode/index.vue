@@ -1358,11 +1358,11 @@ function normalizeFlatSessionMessagesToUiMessages(rawData, { recoverDanglingTool
   return out
 }
 const activeRunMode = computed({
-  get: () => activeTab.value?.runMode || 'ask_before_edits',
+  get: () => activeTab.value?.runMode || 'edit_automatically',
   set: (v) => {
     const tab = activeTab.value
     if (!tab) return
-    tab.runMode = v || 'ask_before_edits'
+    tab.runMode = v || 'edit_automatically'
     // 通知主进程实时更新运行中的 session 模式
     if (tab.sessionId) {
       window.electronAPI.claudeAgentUpdateRunMode(tab.sessionId, tab.runMode)
@@ -1645,7 +1645,7 @@ function createChat() {
     fileSize: null,
     model: claudeDefaultModel.value || null,
     effort: claudeDefaultEffort.value || 'medium',
-    runMode: 'ask_before_edits',
+    runMode: 'edit_automatically',
     thinking: false,
     messages: [],
     currentAssistantId: null,
@@ -1822,7 +1822,7 @@ async function refreshProjectSessionsInBackground(p) {
           fileSize: s.fileSize || null,
           model: s.model || activeChat?.model || claudeDefaultModel.value || null,
           effort: normalizeClaudeEffort(s.effort || activeChat?.effort || claudeDefaultEffort.value) || 'medium',
-          runMode: activeChat?.runMode || 'ask_before_edits',
+          runMode: activeChat?.runMode || 'edit_automatically',
           thinking: false,
           messages: [],
           currentAssistantId: null,
@@ -2166,7 +2166,7 @@ async function selectDir(project, onAfterSelect) {
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
-          runMode: 'ask_before_edits',
+          runMode: 'edit_automatically',
           thinking: false,
           messages: [],
           currentAssistantId: null,
@@ -2597,7 +2597,7 @@ async function sendMessage() {
       sessionId: tab.sessionId,
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
-      runMode: tab.runMode || 'ask_before_edits',
+      runMode: tab.runMode || 'edit_automatically',
     })
     return
   }
@@ -2883,7 +2883,7 @@ async function sendMessage() {
       sessionId: tab.sessionId,
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
-      runMode: tab.runMode || 'ask_before_edits',
+      runMode: tab.runMode || 'edit_automatically',
     }
     const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
     await window.electronAPI.claudeAgentQuery(payload)
