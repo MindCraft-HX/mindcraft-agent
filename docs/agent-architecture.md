@@ -309,7 +309,7 @@ session record 关键字段：
 2. 建立 `sessionRegistry.js`，让 Claude / CodeX 新会话同步写 registry。
 3. Claude per-session model/effort 从 `.meta.json` sidecar 迁到 registry，旧 sidecar 只作为 fallback。
 4. 实现 Session Instruction，内容和附件引用写入 registry，不写 provider 官方目录。
-5. 诊断日志和其他残留 MindCraft 数据迁回 `{userData}/diagnostics/` 等 app 自有路径。
+5. 诊断日志和其他残留 MindCraft 数据迁回 `{userData}/diagnostics/` 等 app 自有路径；官方 transcript、settings/config、plugins/skills 仍保留在官方目录。
 
 ---
 

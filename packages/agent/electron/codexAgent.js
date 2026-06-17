@@ -43,8 +43,21 @@ function sendMetrics(sender, payload) {
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
 const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
 const SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
-const CODEX_UPLOADS_DIR = path.join(CODEX_CONFIG_DIR, 'tmp_uploads')
-const SESSION_LOAD_LOG_FILE = path.join(CODEX_CONFIG_DIR, 'codex-session-load.log')
+
+function getMindCraftUserDataDir() {
+  try {
+    if (app && typeof app.getPath === 'function') return app.getPath('userData')
+  } catch (_) {}
+  return path.join(os.tmpdir(), 'mindcraft-agent-userData')
+}
+
+function getCodexUploadsDir() {
+  return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')
+}
+
+function getSessionLoadLogFile() {
+  return path.join(getMindCraftUserDataDir(), 'diagnostics', 'codex-session-load.log')
+}
 
 // Codex debug 输出开关（需要查看详细日志时改为 true）
 const CODEX_DEBUG = false
@@ -86,8 +99,9 @@ function dataUrlToTempImagePath(img = {}) {
   const ext = extMap[String(mediaType).toLowerCase()] || '.png'
 
   try {
-    ensureDirSync(CODEX_UPLOADS_DIR)
-    const tmpPath = path.join(CODEX_UPLOADS_DIR, `codex-upload-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`)
+    const uploadsDir = getCodexUploadsDir()
+    ensureDirSync(uploadsDir)
+    const tmpPath = path.join(uploadsDir, `codex-upload-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`)
     fs.writeFileSync(tmpPath, Buffer.from(base64, 'base64'))
     return tmpPath
   } catch (_) {
@@ -521,12 +535,14 @@ function collectSessionTailRiskSummary(filePath, maxLines = 80) {
 
 function appendSessionLoadDiagnostic(entry = {}) {
   try {
-    if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
+    const logFile = getSessionLoadLogFile()
+    const logDir = path.dirname(logFile)
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
     const line = JSON.stringify({
       ts: new Date().toISOString(),
       ...entry,
     }) + '\n'
-    fs.appendFileSync(SESSION_LOAD_LOG_FILE, line, 'utf8')
+    fs.appendFileSync(logFile, line, 'utf8')
   } catch (_) {}
 }
 

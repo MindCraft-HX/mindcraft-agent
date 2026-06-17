@@ -1,10 +1,18 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { app } = require('electron')
+
+function getMindCraftUserDataDir() {
+  try {
+    if (app && typeof app.getPath === 'function') return app.getPath('userData')
+  } catch (_) {}
+  return path.join(os.tmpdir(), 'mindcraft-agent-userData')
+}
 
 function defaultCacheFile(agentName = 'skills') {
   const safeName = String(agentName || 'skills').replace(/[^A-Za-z0-9._-]/g, '_')
-  return path.join(os.homedir(), '.mindcraft-agent', `${safeName}-skills-catalog-cache.json`)
+  return path.join(getMindCraftUserDataDir(), 'skills-cache', `${safeName}-skills-catalog-cache.json`)
 }
 
 function normalizeString(value) {

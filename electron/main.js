@@ -403,9 +403,11 @@ app.whenReady().then(async () => {
     if (win) win.flashFrame(true)
   })
 
-  // 任务追踪诊断日志 → 写入 ~/.claude/task-diag.log
+  // MindCraft-owned diagnostics live under app userData, not provider directories.
   ipcMain.handle('append-task-log', (_event, line) => {
-    const logPath = path.join(require('os').homedir(), '.claude', 'task-diag.log')
+    const logDir = path.join(app.getPath('userData'), 'diagnostics')
+    fs.mkdirSync(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'task-diag.log')
     const ts = new Date().toISOString()
     fs.appendFileSync(logPath, `${ts} ${line}\n`)
   })

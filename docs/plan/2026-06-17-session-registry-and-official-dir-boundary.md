@@ -242,15 +242,25 @@ MindCraft 的会话身份分三层：
 
 ### Phase 5：诊断日志和残留整理
 
+状态：✅ 已完成（2026-06-17，本轮可安全迁移项）
+
 目标：
 
 - MindCraft 诊断日志统一写 `{userData}/diagnostics/`
 - 清理新增写入官方目录的代码路径。
 - 保留官方 settings/config 的合法修复入口。
 
+实现：
+
+- `append-task-log` 从 `~/.claude/task-diag.log` 迁到 `{userData}/diagnostics/task-diag.log`。
+- CodeX session load diagnostic 从 `~/.codex/codex-session-load.log` 迁到 `{userData}/diagnostics/codex-session-load.log`。
+- CodeX data URL 图片临时上传从 `~/.codex/tmp_uploads/` 迁到 `{userData}/codex-tmp-uploads/`。
+- skills catalog cache 从 `~/.mindcraft-agent/*-skills-catalog-cache.json` 迁到 `{userData}/skills-cache/`。
+- 保留官方目录合法写入：Claude `settings.json` 修复/官方字段、CodeX `config.toml`/`providers.json`/`auth.json` 修复入口、官方 transcript JSONL 删除、官方 plugins/skills 安装目录。
+
 验收：
 
-- `rg "~/.claude|~/.codex"` 所有写路径都有明确注释：官方 schema 写入 / 官方 transcript / legacy fallback。
+- `rg "~/.claude|~/.codex"` 剩余写路径归类为官方 schema/config、官方 transcript、官方 plugins/skills，或 legacy fallback/repair。
 
 ## 风险控制
 
