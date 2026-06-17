@@ -4,7 +4,7 @@
 <style>.logo-cuts { fill: none; stroke: #ACACA4; stroke-width: 0.13px; stroke-linejoin: round; stroke-linecap: round; }</style>
 <rect x="10" y="10" width="236" height="236" rx="48" fill="#0D1117"/>
 <rect x="15" y="15" width="226" height="226" rx="43" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
-<g class="logo-mark" transform="translate(24 38) scale(9.5) translate(-3 -5)">
+<g class="logo-mark" transform="translate(14 27) scale(10.4) translate(-3 -5)">
 <g>
 <polygon class="a3" points="24,13.4 17.9,13.4 18.6,14.6 23.3,14.6"/>
 <polygon class="a4" points="23.3,14.6 18.6,14.6 19.4,16 22.5,16"/>

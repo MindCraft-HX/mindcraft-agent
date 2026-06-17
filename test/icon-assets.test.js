@@ -4,6 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
+const appIconSvgPath = path.join(root, 'public/logos/v3/white-app-icon.svg');
 
 function readPngHeader(filePath) {
   const buffer = fs.readFileSync(filePath);
@@ -15,9 +16,18 @@ function readPngHeader(filePath) {
   };
 }
 
+function parseLogoTransform(svg) {
+  const match = svg.match(/<g class="logo-mark" transform="translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)\) translate\(-3 -5\)">/);
+  assert.ok(match, 'logo-mark transform should keep the expected generated format');
+  return {
+    x: Number(match[1]),
+    y: Number(match[2]),
+    scale: Number(match[3]),
+  };
+}
+
 test('app icon svg keeps the white logo on a neutral dark tile', () => {
-  const svgPath = path.join(root, 'public/logos/v3/white-app-icon.svg');
-  const svg = fs.readFileSync(svgPath, 'utf8');
+  const svg = fs.readFileSync(appIconSvgPath, 'utf8');
 
   assert.match(svg, /viewBox="0 0 256 256"/);
   assert.match(svg, /fill="#0D1117"/);
@@ -28,6 +38,15 @@ test('app icon svg keeps the white logo on a neutral dark tile', () => {
   assert.doesNotMatch(svg, /\.logo-mark \*/);
   assert.match(svg, /points="24,13\.4 17\.9,13\.4 18\.6,14\.6 23\.3,14\.6"/);
   assert.doesNotMatch(svg, /#00D1B7|#44ECD6|#005DE1|#2F89FF/i);
+});
+
+test('app icon mark is scaled for taskbar visibility', () => {
+  const svg = fs.readFileSync(appIconSvgPath, 'utf8');
+  const transform = parseLogoTransform(svg);
+
+  assert.equal(transform.x, 14);
+  assert.equal(transform.y, 27);
+  assert.equal(transform.scale, 10.4);
 });
 
 test('generated app icon pngs have expected square dimensions', () => {

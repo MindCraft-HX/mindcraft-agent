@@ -24,6 +24,7 @@ const APP_ICON_COLORS = {
 const APP_ICON_CUTS = `<g class="logo-cuts" aria-hidden="true">
 <path d="M4.6 14.4 L9.3 6.2 L18.7 6.2 L23.4 14.4 L17.9 23.9"/>
 </g>`;
+const LOGO_MARK_TRANSFORM = 'translate(14 27) scale(10.4) translate(-3 -5)';
 
 function extractLogoParts(svg) {
   const style = svg.match(/<style[^>]*>[\s\S]*?<\/style>/)?.[0];
@@ -50,7 +51,7 @@ function buildAppIconSvg() {
 ${appIconStyle}
 <rect x="10" y="10" width="236" height="236" rx="48" fill="#0D1117"/>
 <rect x="15" y="15" width="226" height="226" rx="43" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
-<g class="logo-mark" transform="translate(24 38) scale(9.5) translate(-3 -5)">
+<g class="logo-mark" transform="${LOGO_MARK_TRANSFORM}">
 ${body}
 ${APP_ICON_CUTS}
 </g>
