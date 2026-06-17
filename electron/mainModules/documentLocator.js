@@ -83,12 +83,27 @@ function isPathInside(parent, child) {
   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
+function realpathIfExists(filePath, realpath = fs.realpathSync.native) {
+  try {
+    return realpath(filePath)
+  } catch (_) {
+    return ''
+  }
+}
+
+function isRealPathInside(parent, child, realpath = fs.realpathSync.native) {
+  const parentReal = realpathIfExists(parent, realpath)
+  const childReal = realpathIfExists(child, realpath)
+  if (!parentReal || !childReal) return false
+  return isPathInside(parentReal, childReal)
+}
+
 function isAgentMessageSource(source = '') {
   return String(source || '') === 'agent-message'
 }
 
-function isAgentAbsolutePathAllowed(filePath, workspaceRoot, cwd) {
-  return [workspaceRoot, cwd].some(base => base && isPathInside(base, filePath))
+function isAgentAbsolutePathAllowed(filePath, workspaceRoot, cwd, realpath = fs.realpathSync.native) {
+  return [workspaceRoot, cwd].some(base => base && isRealPathInside(base, filePath, realpath))
 }
 
 function joinIfPresent(baseDir, relativePath, pathExists) {
@@ -195,6 +210,7 @@ async function openDocumentCandidate({
   searchFiles = listFiles,
   openMdPayload,
   openWithDefault,
+  realpath = fs.realpathSync.native,
 } = {}) {
   const resolved = await resolveCandidatePath({
     rawText,
@@ -208,7 +224,7 @@ async function openDocumentCandidate({
   if (
     isAgentMessageSource(source) &&
     resolved.matchType === 'absolute' &&
-    !isAgentAbsolutePathAllowed(resolved.filePath, workspaceRoot, cwd)
+    !isAgentAbsolutePathAllowed(resolved.filePath, workspaceRoot, cwd, realpath)
   ) {
     return {
       ok: false,
@@ -266,6 +282,7 @@ module.exports = {
     normalizeCandidate,
     isAbsoluteFilePath,
     isPathInside,
+    isRealPathInside,
     isAgentAbsolutePathAllowed,
     resolveCandidatePath,
     inferOpenMode,

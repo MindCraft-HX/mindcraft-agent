@@ -37,6 +37,21 @@ function isPathInside(parent, child) {
   return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel))
 }
 
+function realpathIfExists(filePath) {
+  try {
+    return fs.realpathSync.native(filePath)
+  } catch (_) {
+    return ''
+  }
+}
+
+function isRealPathInside(parent, child) {
+  const parentReal = realpathIfExists(parent)
+  const childReal = realpathIfExists(child)
+  if (!parentReal || !childReal) return false
+  return isPathInside(parentReal, childReal)
+}
+
 function resolveSkillTargetDir({ agentName, scope, cwd, skillName }) {
   const root = resolveSkillsRoot({ agentName, scope, cwd })
   const name = assertSafeSkillName(skillName)
@@ -51,7 +66,55 @@ function resolveRelativeSourceDir(rootDir, subPath = '') {
   if (/[\0\r\n]/.test(rel) || path.isAbsolute(rel)) throw new Error('Invalid skill subPath')
   const sourceDir = path.resolve(rootDir, rel)
   if (!isPathInside(rootDir, sourceDir)) throw new Error('Skill subPath escapes cloned repository')
+  if (fs.existsSync(sourceDir) && !isRealPathInside(rootDir, sourceDir)) {
+    throw new Error('Skill subPath resolves outside cloned repository')
+  }
   return sourceDir
+}
+
+function assertNoSymlinks(dir) {
+  const root = path.resolve(dir)
+  const walk = (current) => {
+    const entries = fs.readdirSync(current, { withFileTypes: true })
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name)
+      if (entry.isSymbolicLink()) throw new Error('Skill package contains unsupported symlink')
+      if (entry.isDirectory()) walk(entryPath)
+    }
+  }
+  walk(root)
+}
+
+function copySkillDirAtomic(sourceDir, targetDir, skillName) {
+  if (!fs.existsSync(sourceDir)) throw new Error('Skill source directory does not exist')
+  assertNoSymlinks(sourceDir)
+
+  const parentDir = path.dirname(targetDir)
+  fs.mkdirSync(parentDir, { recursive: true })
+  const safeName = assertSafeSkillName(skillName || path.basename(targetDir))
+  const tempPrefix = path.join(parentDir, `.${safeName}.install-`)
+  const stagingDir = fs.mkdtempSync(tempPrefix)
+  const backupDir = fs.existsSync(targetDir) ? fs.mkdtempSync(path.join(parentDir, `.${safeName}.backup-`)) : ''
+  let movedExisting = false
+  try {
+    fs.cpSync(sourceDir, stagingDir, { recursive: true, dereference: false })
+    if (backupDir) {
+      fs.renameSync(targetDir, backupDir)
+      movedExisting = true
+    }
+    fs.renameSync(stagingDir, targetDir)
+    if (backupDir) fs.rmSync(backupDir, { recursive: true, force: true })
+  } catch (error) {
+    try { fs.rmSync(stagingDir, { recursive: true, force: true }) } catch (_) {}
+    if (movedExisting && backupDir && !fs.existsSync(targetDir)) {
+      try { fs.renameSync(backupDir, targetDir) } catch (_) {}
+    }
+    throw error
+  } finally {
+    if (backupDir) {
+      try { fs.rmSync(backupDir, { recursive: true, force: true }) } catch (_) {}
+    }
+  }
 }
 
 function validateGithubUrl(gitUrl) {
@@ -188,6 +251,7 @@ module.exports = {
   resolveSkillsRoot,
   resolveSkillTargetDir,
   resolveRelativeSourceDir,
+  copySkillDirAtomic,
   validateGithubUrl,
   normalizeGithubSkillSource,
   applyGitMirror,
@@ -195,5 +259,7 @@ module.exports = {
   safeTempDir,
   __test__: {
     isPathInside,
+    isRealPathInside,
+    assertNoSymlinks,
   },
 }

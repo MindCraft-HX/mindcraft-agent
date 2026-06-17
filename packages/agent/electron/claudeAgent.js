@@ -12,6 +12,7 @@ const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
+  copySkillDirAtomic,
   normalizeGithubSkillSource,
   resolveRelativeSourceDir,
   resolveSkillTargetDir,
@@ -3354,9 +3355,7 @@ function setupClaudeHandlers() {
         if (!fs.existsSync(sourceDir)) {
           return { ok: false, error: `源目录不存在: ${source.subPath || '/'}` }
         }
-        fs.mkdirSync(path.dirname(target.targetDir), { recursive: true })
-        fs.rmSync(target.targetDir, { recursive: true, force: true })
-        fs.cpSync(sourceDir, target.targetDir, { recursive: true })
+        copySkillDirAtomic(sourceDir, target.targetDir, target.skillName)
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null
@@ -3432,9 +3431,7 @@ function setupClaudeHandlers() {
           if (found) sourceDir = found
         }
 
-        fs.mkdirSync(path.dirname(target.targetDir), { recursive: true })
-        fs.rmSync(target.targetDir, { recursive: true, force: true })
-        fs.cpSync(sourceDir, target.targetDir, { recursive: true })
+        copySkillDirAtomic(sourceDir, target.targetDir, target.skillName)
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null

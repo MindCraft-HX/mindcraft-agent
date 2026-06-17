@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 
@@ -6,6 +8,7 @@ const {
   assertSafeSkillName,
   resolveRelativeSourceDir,
   resolveSkillTargetDir,
+  copySkillDirAtomic,
   validateGithubUrl,
   normalizeGithubSkillSource,
   applyGitMirror,
@@ -39,6 +42,47 @@ test('source subPath cannot escape cloned repository', () => {
   assert.equal(resolveRelativeSourceDir(root, 'nested/skill'), path.resolve(root, 'nested/skill'))
   assert.throws(() => resolveRelativeSourceDir(root, '../outside'), /escapes cloned repository/)
   assert.throws(() => resolveRelativeSourceDir(root, 'C:\\outside'), /Invalid skill subPath|escapes cloned repository/)
+})
+
+test('source subPath cannot resolve through symlink outside cloned repository', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-realpath-'))
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  const root = path.join(tmp, 'clone')
+  const outside = path.join(tmp, 'outside')
+  const link = path.join(root, 'linked')
+  fs.mkdirSync(root, { recursive: true })
+  fs.mkdirSync(outside, { recursive: true })
+  try {
+    fs.symlinkSync(outside, link, 'junction')
+  } catch (_) {
+    t.skip('symlink creation is not permitted in this environment')
+    return
+  }
+
+  assert.throws(() => resolveRelativeSourceDir(root, 'linked'), /resolves outside cloned repository/)
+})
+
+test('copySkillDirAtomic rejects symlinks and keeps existing target', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-copy-'))
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  const source = path.join(tmp, 'source')
+  const outside = path.join(tmp, 'outside')
+  const target = path.join(tmp, 'target')
+  fs.mkdirSync(source, { recursive: true })
+  fs.mkdirSync(outside, { recursive: true })
+  fs.mkdirSync(target, { recursive: true })
+  fs.writeFileSync(path.join(source, 'SKILL.md'), '# demo\n')
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'secret\n')
+  fs.writeFileSync(path.join(target, 'SKILL.md'), '# old\n')
+  try {
+    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(source, 'secret-link.txt'), 'file')
+  } catch (_) {
+    t.skip('symlink creation is not permitted in this environment')
+    return
+  }
+
+  assert.throws(() => copySkillDirAtomic(source, target, 'demo'), /unsupported symlink/)
+  assert.equal(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8'), '# old\n')
 })
 
 test('only https github skill sources are accepted', () => {

@@ -198,6 +198,12 @@ test('openDocumentCandidate allows agent-message absolute paths inside workspace
     cwd: 'D:\\repo\\src',
     source: 'agent-message',
     pathExists: (value) => normalize(value) === normalize('D:\\repo\\docs\\TODO.md'),
+    realpath: (value) => {
+      if (normalize(value) === normalize('D:\\repo')) return normalize('D:\\repo')
+      if (normalize(value) === normalize('D:\\repo\\src')) return normalize('D:\\repo\\src')
+      if (normalize(value) === normalize('D:\\repo\\docs\\TODO.md')) return normalize('D:\\repo\\docs\\TODO.md')
+      throw new Error('missing path')
+    },
     searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
     openMdPayload: async (payload) => payloads.push(payload),
     openWithDefault: async () => '',
@@ -207,4 +213,29 @@ test('openDocumentCandidate allows agent-message absolute paths inside workspace
   assert.equal(result.openMode, 'mdViewer')
   assert.equal(payloads.length, 1)
   assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\TODO.md'))
+})
+
+test('openDocumentCandidate blocks agent-message symlink targets outside workspace', async () => {
+  const payloads = []
+  const linkPath = 'D:\\repo\\linked\\.ssh\\id_rsa'
+  const outsidePath = 'C:\\Users\\alice\\.ssh\\id_rsa'
+  const result = await openDocumentCandidate({
+    rawText: linkPath,
+    workspaceRoot: 'D:\\repo',
+    cwd: 'D:\\repo',
+    source: 'agent-message',
+    pathExists: (value) => normalize(value) === normalize(linkPath),
+    realpath: (value) => {
+      if (normalize(value) === normalize('D:\\repo')) return normalize('D:\\repo')
+      if (normalize(value) === normalize(linkPath)) return normalize(outsidePath)
+      throw new Error('missing path')
+    },
+    searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
+    openMdPayload: async (payload) => payloads.push(payload),
+    openWithDefault: async () => '',
+  })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.reason, 'outside-workspace-absolute-path')
+  assert.equal(payloads.length, 0)
 })
