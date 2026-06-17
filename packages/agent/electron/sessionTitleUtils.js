@@ -122,6 +122,8 @@ function extractClaudeSessionTitle(filePath) {
 
 function extractCodexSessionSummary(filePath, collectSessionTailRiskSummary) {
   let meta = null
+  let model = ''
+  let reasoningEffort = ''
   let firstUserText = ''
   let lastAgentText = ''
   let headCustomTitle = ''
@@ -132,6 +134,13 @@ function extractCodexSessionSummary(filePath, collectSessionTailRiskSummary) {
     if (row.type === 'custom-title' && row.customTitle && !headCustomTitle) headCustomTitle = clipTitle(row.customTitle)
     const parsed = extractCodexHeadCandidate(row)
     if (parsed.meta && !meta) meta = parsed.meta
+    const payload = row.payload || {}
+    if ((row.type === 'session_meta' || row.type === 'turn_context') && payload) {
+      if (!model && payload.model) model = String(payload.model || '').trim()
+      if (!reasoningEffort) {
+        reasoningEffort = String(payload.model_reasoning_effort || payload.reasoning_effort || payload.reason_effort || '').trim()
+      }
+    }
     if (parsed.firstUserText && !firstUserText) firstUserText = parsed.firstUserText
     if (parsed.lastAgentText) lastAgentText = parsed.lastAgentText
   }
@@ -149,6 +158,8 @@ function extractCodexSessionSummary(filePath, collectSessionTailRiskSummary) {
     updatedAt: stat.mtime.toISOString(),
     fileSize: stat.size,
     filePath,
+    model,
+    reasoningEffort,
     historyLoadGuard: collectSessionTailRiskSummary(filePath),
   }
 }

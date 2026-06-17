@@ -88,19 +88,19 @@ function cancel() {
   close()
 }
 
-async function open() {
+async function open(opts = {}) {
   const [currentModel, currentEffort] = await Promise.all([
     window.electronAPI?.codexGetModel?.() || Promise.resolve(''),
     window.electronAPI?.codexGetReasoningEffort?.() || Promise.resolve(''),
   ])
 
-  const model = (currentModel || '').trim()
+  const model = (opts.model || currentModel || '').trim()
   // 匹配当前模型，若不在列表里则高亮第一个
   const matched = modelOptions.find(m => m.id === model)
   hoveredId.value = matched ? model : modelOptions[0].id
   initialModel.value = model || ''
 
-  const effortStr = normalizeCodexReasoningEffort(currentEffort) || 'medium'
+  const effortStr = normalizeCodexReasoningEffort(opts.reasoningEffort || currentEffort) || 'medium'
   const idx = efforts.findIndex(e => e.key === effortStr)
   effortIndex.value = idx >= 0 ? idx : 2
 

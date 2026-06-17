@@ -165,6 +165,50 @@ function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
   fs.rmSync(dir, { recursive: true, force: true })
 }
 
+function runSessionMetaReadWriteTest() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-cwd-'))
+  const cliSessionId = '22222222-2222-2222-2222-222222222222'
+
+  assert.equal(__test__.writeClaudeSessionMeta(cwd, cliSessionId, {
+    model: 'claude-sonnet-4-20250514',
+    effort: 'max',
+  }), true)
+
+  assert.deepEqual(__test__.readClaudeSessionMeta(cwd, cliSessionId), {
+    model: 'claude-sonnet-4-20250514',
+    effort: 'xhigh',
+  })
+
+  const projectDir = path.dirname(__test__.buildClaudeAgentDonePayload({ cwd, cliSessionId }).filePath)
+  fs.rmSync(projectDir, { recursive: true, force: true })
+  fs.rmSync(cwd, { recursive: true, force: true })
+}
+
+function runScanSessionsIncludesMetaTest() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-scan-cwd-'))
+  const cliSessionId = '33333333-3333-3333-3333-333333333333'
+  const payload = __test__.buildClaudeAgentDonePayload({ cwd, cliSessionId })
+  const projectDir = path.dirname(payload.filePath)
+  fs.mkdirSync(projectDir, { recursive: true })
+  fs.writeFileSync(payload.filePath, JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: 'hello' },
+  }) + '\n', 'utf8')
+  assert.equal(__test__.writeClaudeSessionMeta(cwd, cliSessionId, {
+    model: 'claude-opus-4-20250514',
+    effort: 'high',
+  }), true)
+
+  const sessions = __test__.scanCliSessionsForProject(cwd)
+  const session = sessions.find(s => s.cliSessionId === cliSessionId)
+
+  assert.equal(session.model, 'claude-opus-4-20250514')
+  assert.equal(session.effort, 'high')
+
+  fs.rmSync(projectDir, { recursive: true, force: true })
+  fs.rmSync(cwd, { recursive: true, force: true })
+}
+
 function run() {
   runDonePayloadDefaultReasonTest()
   runDonePayloadFallbackPathTest()
@@ -174,6 +218,8 @@ function run() {
   runJsonlIntegrityFileTest()
   runJsonlIntegrityMultipleToolUseTest()
   runDeleteSessionArtifactsDeletesMetaSidecarTest()
+  runSessionMetaReadWriteTest()
+  runScanSessionsIncludesMetaTest()
   console.log('claude agent done payload tests passed')
 }
 

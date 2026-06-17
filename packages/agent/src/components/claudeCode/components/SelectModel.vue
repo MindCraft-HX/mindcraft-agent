@@ -90,7 +90,7 @@ function cancel() {
   close()
 }
 
-async function open() {
+async function open(opts = {}) {
   const [tierModels, currentModel, currentEffort] = await Promise.all([
     window.electronAPI?.claudeGetTierModels?.() || Promise.resolve({}),
     window.electronAPI?.claudeGetModel?.() || Promise.resolve(''),
@@ -103,14 +103,15 @@ async function open() {
     reasoning: (tierModels.reasoning || '').trim(),
   }
 
-  const model = currentModel.trim()
+  const model = String(opts.model || currentModel || '').trim()
   let storedTier = ''
   try {
     storedTier = (await window.electronAPI?.claudeGetSelectedTier?.()) || ''
   } catch (e) {
     console.warn('[SelectModel] claudeGetSelectedTier failed:', e?.message || e)
   }
-  let inferred = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(storedTier) ? storedTier : ''
+  let inferred = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(opts.tier) ? opts.tier : ''
+  if (!inferred) inferred = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(storedTier) ? storedTier : ''
   if (!inferred) {
     inferred = 'sonnet'
     if (model) {
@@ -133,7 +134,7 @@ async function open() {
   initialTier.value = inferred
 
   // 读取当前 effort 并匹配到索引
-  const effortStr = String(currentEffort || 'medium').trim().toLowerCase()
+  const effortStr = String(opts.effort || currentEffort || 'medium').trim().toLowerCase()
   const idx = efforts.findIndex(e => e.key === effortStr)
   effortIndex.value = idx >= 0 ? idx : 1
 

@@ -494,6 +494,22 @@ const apiSettingRef = ref(null)
 const selectModelRef = ref(null)
 const managePluginsRef = ref(null)
 const manageSkillsRef = ref(null)
+const claudeDefaultModel = ref('')
+const claudeDefaultEffort = ref('medium')
+
+async function loadClaudeModelDefaults() {
+  try {
+    const [model, effort] = await Promise.all([
+      window.electronAPI?.claudeGetModel?.() || Promise.resolve(''),
+      window.electronAPI?.claudeGetEffortLevel?.() || Promise.resolve('medium'),
+    ])
+    claudeDefaultModel.value = String(model || '').trim()
+    claudeDefaultEffort.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
+  } catch (_) {
+    claudeDefaultModel.value = ''
+    claudeDefaultEffort.value = 'medium'
+  }
+}
 
 // ---- StatusBar Metrics ----
 const metricsData = ref({
@@ -538,6 +554,32 @@ function resetMetrics() {
   })
 }
 
+function normalizeClaudeEffort(value) {
+  const effort = String(value || '').trim().toLowerCase()
+  if (effort === 'max') return 'xhigh'
+  return ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : ''
+}
+
+function getClaudeTabModel(tab) {
+  return String(tab?.model || tab?.metrics?.model || claudeDefaultModel.value || '').trim()
+}
+
+function getClaudeTabEffort(tab) {
+  return normalizeClaudeEffort(tab?.effort) || claudeDefaultEffort.value || 'medium'
+}
+
+function persistClaudeTabMeta(tab, project = activeProject.value) {
+  if (!tab || !project?.cwd || !tab.cliSessionId) return
+  window.electronAPI?.claudeWriteSessionMeta?.({
+    cwd: project.cwd,
+    cliSessionId: tab.cliSessionId,
+    data: {
+      model: getClaudeTabModel(tab),
+      effort: getClaudeTabEffort(tab),
+    },
+  })
+}
+
 async function refreshMetricsForChat(chat) {
   if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
   metricsLiveDurationMs.value = 0
@@ -545,10 +587,10 @@ async function refreshMetricsForChat(chat) {
   try {
     const result = await window.electronAPI.claudeAgentQueryMetrics?.({
       cliSessionId: chat.cliSessionId,
-      model: metricsData.value.model || '',
+      model: getClaudeTabModel(chat),
     })
     if (result) {
-      if (!result.model) result.model = metricsData.value.model || ''
+      if (!result.model) result.model = getClaudeTabModel(chat)
       result.thinking = Boolean(chat.thinking)
       resetMetrics()
       Object.assign(metricsData.value, result)
@@ -1507,8 +1549,16 @@ async function openModelPicker() {
   resetSlashSuggestions()
   inputText.value = ''
   const tab = activeTab.value
-  const result = await selectModelRef.value?.open?.()
+  const result = await selectModelRef.value?.open?.({
+    model: getClaudeTabModel(tab),
+    effort: getClaudeTabEffort(tab),
+  })
   if (result && tab) {
+    tab.model = result.model
+    tab.effort = normalizeClaudeEffort(result.effort) || getClaudeTabEffort(tab)
+    claudeDefaultModel.value = result.model || claudeDefaultModel.value
+    claudeDefaultEffort.value = tab.effort || claudeDefaultEffort.value
+    persistClaudeTabMeta(tab)
     metricsData.value.model = result.model
     const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
     pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
@@ -1560,6 +1610,8 @@ const {
       messages: msgs.slice(-n),
       thinking: false,
       currentAssistantId: null,
+      model: c.model || null,
+      effort: normalizeClaudeEffort(c.effort) || null,
       taskState: ensureTaskState({ taskState: c.taskState }),
       _taskToolUseIds: new Set(),
     }
@@ -1591,6 +1643,8 @@ function createChat() {
     sessionId: `session-${id}-${Date.now()}`,
     createdAt: Date.now(),
     fileSize: null,
+    model: claudeDefaultModel.value || null,
+    effort: claudeDefaultEffort.value || 'medium',
     runMode: 'ask_before_edits',
     thinking: false,
     messages: [],
@@ -1766,6 +1820,8 @@ async function refreshProjectSessionsInBackground(p) {
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
+          model: s.model || activeChat?.model || claudeDefaultModel.value || null,
+          effort: normalizeClaudeEffort(s.effort || activeChat?.effort || claudeDefaultEffort.value) || 'medium',
           runMode: activeChat?.runMode || 'ask_before_edits',
           thinking: false,
           messages: [],
@@ -1794,6 +1850,10 @@ async function refreshProjectSessionsInBackground(p) {
         changedCount++
         // fileSize 变化：更新 fileSize、updatedAt 和 name
         cached.fileSize = s.fileSize
+        cached.model = s.model || cached.model || cached.metrics?.model || null
+        cached.effort = normalizeClaudeEffort(s.effort || cached.effort) || null
+        cached.model = s.model || cached.model || cached.metrics?.model || null
+        cached.effort = normalizeClaudeEffort(s.effort || cached.effort) || null
         if (s.updatedAt) cached.updatedAt = s.updatedAt
         if (!cached._userRenamed) {
           cached.name = name
@@ -2535,6 +2595,8 @@ async function sendMessage() {
       prompt: promptToSend, images: imgs,
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
+      model: getClaudeTabModel(tab),
+      effort: getClaudeTabEffort(tab),
       runMode: tab.runMode || 'ask_before_edits',
     })
     return
@@ -2559,8 +2621,16 @@ async function sendMessage() {
       return
     }
     if (cmd === '/model') {
-      const result = await selectModelRef.value?.open?.()
+      const result = await selectModelRef.value?.open?.({
+        model: getClaudeTabModel(tab),
+        effort: getClaudeTabEffort(tab),
+      })
       if (result) {
+        tab.model = result.model
+        tab.effort = normalizeClaudeEffort(result.effort) || getClaudeTabEffort(tab)
+        claudeDefaultModel.value = result.model || claudeDefaultModel.value
+        claudeDefaultEffort.value = tab.effort || claudeDefaultEffort.value
+        persistClaudeTabMeta(tab)
         metricsData.value.model = result.model
         const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
         pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) + effortNote })
@@ -2811,6 +2881,8 @@ async function sendMessage() {
       prompt: promptToSend, images: imgs,
       cwd: activeProject.value?.cwd || undefined,
       sessionId: tab.sessionId,
+      model: getClaudeTabModel(tab),
+      effort: getClaudeTabEffort(tab),
       runMode: tab.runMode || 'ask_before_edits',
     }
     const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
@@ -3236,8 +3308,10 @@ onMounted(() => {
     scrollBottom(tab.id)
   })
   window.electronAPI.onClaudeAgentMetrics?.(onMetricsUpdate)
+  loadClaudeModelDefaults()
   // 默认模型初始化（非阻塞）
   window.electronAPI.claudeGetModel?.().then(m => {
+    if (m) claudeDefaultModel.value = String(m || '').trim()
     if (m && !metricsData.value.model) metricsData.value.model = m
   })
   refreshSlashCommands(false)

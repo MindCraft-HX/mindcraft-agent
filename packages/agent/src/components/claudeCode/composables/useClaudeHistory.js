@@ -79,6 +79,8 @@ export function useClaudeHistory({
           name: c.name,
           sessionId: c.sessionId,
           runMode: c.runMode,
+          model: c.model || null,
+          effort: c.effort || null,
           messages: isStreaming ? [] : c.filePath ? [] : (c.messages || []),
           cliSessionId: c.cliSessionId,
           filePath: c.filePath,

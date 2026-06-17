@@ -485,6 +485,7 @@ function scanCliSessionsForProject(cwd) {
       const titleResult = extractClaudeSessionTitle(file.filePath)
       const title = titleResult?.title || ''
       const isCustomTitle = titleResult?.isCustomTitle || false
+      const meta = readClaudeSessionMetaByFilePath(file.filePath)
       console.log('[scanCliSessionsForProject] title:', title || '(empty)', 'isCustomTitle:', isCustomTitle, 'file:', file.filePath)
       result.push({
         // `id` is kept for renderer compatibility; new code should read cliSessionId.
@@ -496,10 +497,60 @@ function scanCliSessionsForProject(cwd) {
         fileSize: file.fileSize,
         title,
         isCustomTitle,
+        model: meta.model || null,
+        effort: meta.effort || null,
       })
     }
   } catch (_) {}
   return result
+}
+
+function normalizeClaudeSessionMeta(data = {}) {
+  const validEfforts = new Set(['low', 'medium', 'high', 'xhigh'])
+  const model = typeof data.model === 'string' ? data.model.trim() : ''
+  const effortRaw = typeof data.effort === 'string' ? data.effort.trim().toLowerCase() : ''
+  const effort = effortRaw === 'max' ? 'xhigh' : effortRaw
+  return {
+    model,
+    effort: validEfforts.has(effort) ? effort : '',
+  }
+}
+
+function getClaudeSessionMetaPath(cwd, cliSessionId) {
+  const sessionId = String(cliSessionId || '').trim()
+  if (!cwd || !sessionId) return ''
+  return path.join(getClaudeProjectsRootDir(cwd), `${sessionId}.meta.json`)
+}
+
+function readClaudeSessionMetaByFilePath(filePath) {
+  try {
+    if (!filePath || !String(filePath).toLowerCase().endsWith('.jsonl')) return {}
+    const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
+    if (!fs.existsSync(metaPath)) return {}
+    return normalizeClaudeSessionMeta(JSON.parse(fs.readFileSync(metaPath, 'utf8')))
+  } catch (_) {
+    return {}
+  }
+}
+
+function readClaudeSessionMeta(cwd, cliSessionId) {
+  const metaPath = getClaudeSessionMetaPath(cwd, cliSessionId)
+  if (!metaPath) return {}
+  return readClaudeSessionMetaByFilePath(metaPath.replace(/\.meta\.json$/i, '.jsonl'))
+}
+
+function writeClaudeSessionMeta(cwd, cliSessionId, data = {}) {
+  const meta = normalizeClaudeSessionMeta(data)
+  const metaPath = getClaudeSessionMetaPath(cwd, cliSessionId)
+  if (!metaPath) return false
+  try {
+    fs.mkdirSync(path.dirname(metaPath), { recursive: true })
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8')
+    return true
+  } catch (e) {
+    console.warn('[claude-session-meta] write failed:', e?.message || e)
+    return false
+  }
 }
 
 function deleteClaudeSessionArtifacts(filePath) {
@@ -765,6 +816,13 @@ function setupClaudeHandlers() {
 
   ipcMain.handle('claude-load-code-panel-state', () => readClaudeCodePanelState())
   ipcMain.handle('claude-scanner-projects-sessions', (_, { cwd }) => scanCliSessionsForProject(cwd))
+  ipcMain.handle('claude-read-session-meta', (_, { cwd, cliSessionId, filePath } = {}) => {
+    if (filePath) return readClaudeSessionMetaByFilePath(filePath)
+    return readClaudeSessionMeta(cwd, cliSessionId)
+  })
+  ipcMain.handle('claude-write-session-meta', (_, { cwd, cliSessionId, data } = {}) => {
+    return writeClaudeSessionMeta(cwd, cliSessionId, data)
+  })
   ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
@@ -2322,6 +2380,7 @@ function setupClaudeHandlers() {
   const slowNoticeSent = new Set() // chatKey 已提示"响应较慢"
   const slashCommandsCache = new Map() // key -> { ts, commands }
   const compactSummaries = new Map() // chatKey -> { summary, trigger, updatedAt }
+  const pendingSessionMetaByChatKey = new Map() // chatKey -> meta waiting for first cliSessionId
 
   function resetAgentRuntime(_reason) {
     for (const [sid, session] of agentSessions.entries()) {
@@ -2335,16 +2394,25 @@ function setupClaudeHandlers() {
     slowNoticeSent.clear()
     slashCommandsCache.clear()
     compactSummaries.clear()
+    pendingSessionMetaByChatKey.clear()
     sdkModulePromise = null
     resetSystemClaudeCache()
   }
 
-  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode }) => {
+  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride }) => {
     const chatKey = sessionId
     const runtime = readRuntimeConfigFromUserSettingsFile()
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL
-    const model = runtime.model
+    const cliSessionIdForMeta = cliSessionIds.get(chatKey) || ''
+    const sessionMeta = cliSessionIdForMeta ? readClaudeSessionMeta(cwd, cliSessionIdForMeta) : {}
+    const requestedMeta = normalizeClaudeSessionMeta({
+      model: modelOverride || sessionMeta.model || runtime.model,
+      effort: effortOverride || sessionMeta.effort || readEffortLevel(),
+    })
+    const model = requestedMeta.model || runtime.model
+    const effort = requestedMeta.effort || readEffortLevel()
+    pendingSessionMetaByChatKey.set(chatKey, { model, effort })
     const permissionPolicy = readPermissionPolicy()
     const mode = ['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)
       ? runMode
@@ -2492,7 +2560,7 @@ function setupClaudeHandlers() {
               thinking: internalConf.get('claudeThinkingEnabled', true)
                 ? { type: 'adaptive' }
                 : { type: 'disabled' },
-              effort: readEffortLevel(),
+              effort,
               skipWebFetchPreflight: true,
               systemPrompt: (() => {
                 const parts = [
@@ -2678,10 +2746,14 @@ function setupClaudeHandlers() {
             if (msg?.session_id) {
               if (!cliSessionIds.has(chatKey)) {
                 cliSessionIds.set(chatKey, msg.session_id)
+                const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
+                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta)
                 safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.session_id })
               }
             } else if (msg?.uuid && !cliSessionIds.has(chatKey)) {
               cliSessionIds.set(chatKey, msg.uuid)
+              const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
+              if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta)
               safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
             }
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
@@ -2708,6 +2780,8 @@ function setupClaudeHandlers() {
               if (msg.session_id) {
                 cliSessionIds.set(chatKey, msg.session_id)
                 sessionModels.set(chatKey, model)
+                const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
+                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta)
               }
               // 发送最终 metrics
               const usage = msg.usage || {}
@@ -2828,6 +2902,8 @@ function setupClaudeHandlers() {
                   if (candidate) {
                     finalCliSessionId = candidate.id
                     cliSessionIds.set(chatKey, finalCliSessionId)
+                    const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
+                    if (pendingMeta) writeClaudeSessionMeta(s.cwd || resolvedCwd, finalCliSessionId, pendingMeta)
                     console.log(`[Claude] fallback scan found cliSessionId: ${finalCliSessionId.slice(0,8)}...`)
                   }
                 }
@@ -2852,6 +2928,7 @@ function setupClaudeHandlers() {
             safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
           }
           agentSessions.delete(chatKey)
+          pendingSessionMetaByChatKey.delete(chatKey)
           resolve(exitCode)
         }
       })()
@@ -2865,6 +2942,7 @@ function setupClaudeHandlers() {
       try { s.abortController?.abort?.() } catch (_) {}
       try { s.query?.close?.() } catch (_) {}
       agentSessions.delete(chatKey)
+      pendingSessionMetaByChatKey.delete(chatKey)
       safeSend(s.event?.sender, 'claude-agent-done', buildClaudeAgentDonePayload({
         sessionId,
         cliSessionId: cliSessionIds.get(chatKey) || '',
@@ -3558,8 +3636,11 @@ module.exports = {
     deleteClaudeSessionArtifacts,
     finalizeClaudeDoneReason,
     getClaudeProjectsRootDir,
+    readClaudeSessionMeta,
+    readClaudeSessionMetaByFilePath,
     resolveClaudeDoneReasonFromError,
     scanCliSessionsForProject,
+    writeClaudeSessionMeta,
   },
 }
 

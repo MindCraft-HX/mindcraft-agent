@@ -265,6 +265,22 @@ const themeClass = computed(() => `cc-theme-${themeStore.theme}`)
 const router = useRouter()
 const { t } = useI18n()
 const codexSafeModeEnabled = ref(false)
+const codexDefaultModel = ref('')
+const codexDefaultReasoningEffort = ref('')
+
+async function loadCodexModelDefaults() {
+  try {
+    const [model, effort] = await Promise.all([
+      window.electronAPI?.codexGetModel?.() || Promise.resolve(''),
+      window.electronAPI?.codexGetReasoningEffort?.() || Promise.resolve(''),
+    ])
+    codexDefaultModel.value = String(model || '').trim()
+    codexDefaultReasoningEffort.value = normalizeCodexReasoningEffort(effort) || ''
+  } catch (_) {
+    codexDefaultModel.value = ''
+    codexDefaultReasoningEffort.value = ''
+  }
+}
 
 async function loadGlobalCodexSafeMode() {
   try {
@@ -1018,7 +1034,8 @@ function makeRestoredChat(c, messages) {
     id: c.id, name: c.name, sessionId: c.sessionId,
     thinking: false, messages: msgs, currentAssistantId: null,
     metrics: c.metrics || null,
-    model: c.model || null,
+    model: c.model || c.metrics?.model || null,
+    reasoningEffort: normalizeCodexReasoningEffort(c.reasoningEffort) || null,
     sandboxMode: resolveRestoredSandboxMode(c),
     networkAccessEnabled: resolveRestoredNetworkAccess(c),
     webSearchMode: resolveRestoredWebSearch(c),
@@ -1211,6 +1228,8 @@ function createNewChat() {
     createdAt: Date.now(),
     thinking: false, messages: [], currentAssistantId: null,
     metrics: null,
+    model: codexDefaultModel.value || null,
+    reasoningEffort: codexDefaultReasoningEffort.value || null,
     sandboxMode: codexConfigStore.sandboxMode,
     networkAccessEnabled: codexConfigStore.defaultNetworkAccess,
     webSearchMode: codexConfigStore.defaultWebSearch,
@@ -1237,6 +1256,8 @@ async function buildChatFromSessionSummary(summary) {
     createdAt: summary.createdAt,
     updatedAt: summary.updatedAt,
     fileSize: summary.fileSize,
+    model: summary.model || null,
+    reasoningEffort: summary.reasoningEffort || null,
     historyLoadGuard: summary.historyLoadGuard,
     metrics: null,
     _thinkingStart: null,
@@ -1277,6 +1298,8 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
       cached.filePath = summary.filePath || ''
       cached.cliSessionId = summary.cliSessionId || summary.id || cached.cliSessionId
       cached.sessionId = cached.sessionId || summary.sessionId || summary.id
+      cached.model = cached.model || summary.model || cached.metrics?.model || null
+      cached.reasoningEffort = normalizeCodexReasoningEffort(cached.reasoningEffort || summary.reasoningEffort) || null
       cached.historyLoadGuard = buildHistoryLoadGuard({
         fileSize: summary.fileSize,
         ...(summary.historyLoadGuard || {}),
@@ -1361,6 +1384,8 @@ async function refreshProjectSessionsInBackground(project) {
         cached.filePath = summary.filePath || ''
         cached.cliSessionId = summary.cliSessionId || summary.id || cached.cliSessionId
         cached.sessionId = cached.sessionId || summary.sessionId || summary.id
+        cached.model = cached.model || summary.model || cached.metrics?.model || null
+        cached.reasoningEffort = normalizeCodexReasoningEffort(cached.reasoningEffort || summary.reasoningEffort) || null
         cached.historyLoadGuard = buildHistoryLoadGuard({
           fileSize: summary.fileSize,
           ...(summary.historyLoadGuard || {}),
@@ -1849,6 +1874,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (!tab.sandboxMode) tab.sandboxMode = codexConfigStore.sandboxMode
   if (tab.networkAccessEnabled === undefined) tab.networkAccessEnabled = codexConfigStore.defaultNetworkAccess
   if (!tab.webSearchMode) tab.webSearchMode = codexConfigStore.defaultWebSearch
+  if (!tab.model) tab.model = codexDefaultModel.value || null
+  if (!tab.reasoningEffort) tab.reasoningEffort = codexDefaultReasoningEffort.value || null
 
   if (isCodexTurnLocked(tab)) {
     tab._queuedInput = text
@@ -1959,7 +1986,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     sandboxMode: tab.sandboxMode,
     networkAccessEnabled: tab.networkAccessEnabled,
     webSearchMode: tab.webSearchMode,
-    model: (tab.model || tab.metrics?.model || ''),
+    model: tab.model || '',
     reasoningEffort: normalizeCodexReasoningEffort(tab.reasoningEffort),
     additionalDirectories: ownerProject?.additionalDirectories || [],
   }
@@ -1988,7 +2015,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
       tab.metrics = {
         ...buildNewTurnMetrics(tab),
         sessionId: tab.sessionId,
-        model: tab.metrics?.model || metricsData.value.model || '',
+        model: tab.model || tab.metrics?.model || metricsData.value.model || '',
         thinking: true,
       }
       if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
@@ -1999,6 +2026,9 @@ async function sendMessage(textOverride = null, targetTab = null) {
           if (!tab._queuedInput) return
           const retryText = tab._queuedInput
           tab._queuedInput = ''
+          tab._awaitingDone = false
+          tab.thinking = false
+          tab._thinkingStart = null
           await sendMessage(retryText, tab)
         }, 1200)
         queuedRetryTimers.set(tab.sessionId, timer)
@@ -2029,14 +2059,17 @@ async function sendMessage(textOverride = null, targetTab = null) {
 async function openModelPicker() {
   inputText.value = ''
   slashSuggestions.value = []
-  const result = await selectModelRef.value?.open?.()
-  if (!result) return
   const tab = activeTab.value
+  const result = await selectModelRef.value?.open?.({
+    model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',
+    reasoningEffort: tab?.reasoningEffort || codexDefaultReasoningEffort.value || '',
+  })
+  if (!result) return
   if (tab) {
     tab.model = result.model
     tab.reasoningEffort = normalizeCodexReasoningEffort(result.effort)
-    const prev = activeProject.value?.chats?.filter(c => c.id !== tab.id) || []
-    prev.forEach(c => { c.model = result.model; c.reasoningEffort = normalizeCodexReasoningEffort(result.effort) }) // sync all tabs
+    codexDefaultModel.value = result.model
+    codexDefaultReasoningEffort.value = tab.reasoningEffort || ''
     slashModelName.value = result.label || result.model
     slashEffortLevel.value = normalizeCodexReasoningEffort(result.effort) || slashEffortLevel.value
     metricsData.value.model = result.model
@@ -2050,6 +2083,7 @@ function setSlashEffortLevel(level) {
   const effort = normalizeCodexReasoningEffort(level)
   slashEffortLevel.value = effort
   window.electronAPI?.codexSetReasoningEffort?.(effort)
+  codexDefaultReasoningEffort.value = effort
   const tab = activeTab.value
   if (tab) {
     tab.reasoningEffort = effort
@@ -2514,6 +2548,7 @@ onMounted(async () => {
   codexConfigStore.loadSandboxMode()
   codexConfigStore.loadDefaultNetworkAccess()
   codexConfigStore.loadDefaultWebSearch()
+  await loadCodexModelDefaults()
   await loadGlobalCodexSafeMode()
   window.addEventListener('beforeunload', flushOnUnload)
   window.addEventListener('codex-open-plugins', () => { codexPluginsRef.value?.open?.() })
@@ -2541,6 +2576,7 @@ onMounted(async () => {
 
   window.electronAPI.codexGetModel?.().then(m => {
     if (!m) return
+    codexDefaultModel.value = String(m || '').trim()
     const tab = activeTab.value
     if (!tab) return
     tab.metrics = { ...(tab.metrics || {}), sessionId: tab.sessionId, model: tab.metrics?.model || m }
