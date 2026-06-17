@@ -838,7 +838,7 @@
 		"copyCode": "代码已复制",
 		"saveFailed": "保存失败",
 		"unknownError": "未知错误",
-		"bothFailed": "镜像和直连均失败。\n镜像 ({mirror})...\n直连: {direct}",
+		"bothFailed": "镜像和直连均失败。\n镜像 ({mirror}): {mirrorErr}\n直连: {directErr}",
 		"hide": "隐藏",
 		"remove": "移除",
 		"show": "显示"

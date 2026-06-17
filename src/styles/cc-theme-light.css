@@ -143,6 +143,16 @@
   --cc-user-code-border: rgba(0, 0, 0, 0.12);
   --cc-user-code-text: #fff;
   --cc-user-heading: #fff;
+  --cc-user-link: #fff3b0;
+  --cc-user-hljs-keyword: #ffd6ff;
+  --cc-user-hljs-built-in: #b9f6ca;
+  --cc-user-hljs-string: #ffe0b2;
+  --cc-user-hljs-number: #d7ffb8;
+  --cc-user-hljs-comment: rgba(255, 255, 255, 0.65);
+  --cc-user-hljs-function: #fff3b0;
+  --cc-user-hljs-params: #c8e1ff;
+  --cc-user-hljs-tag: #c8e1ff;
+  --cc-user-hljs-operator: var(--cc-user-code-text);
 
   /* assistant bubble */
   --cc-assistant-bg: #f4f3f1;

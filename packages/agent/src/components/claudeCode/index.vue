@@ -1852,8 +1852,6 @@ async function refreshProjectSessionsInBackground(p) {
         cached.fileSize = s.fileSize
         cached.model = s.model || cached.model || cached.metrics?.model || null
         cached.effort = normalizeClaudeEffort(s.effort || cached.effort) || null
-        cached.model = s.model || cached.model || cached.metrics?.model || null
-        cached.effort = normalizeClaudeEffort(s.effort || cached.effort) || null
         if (s.updatedAt) cached.updatedAt = s.updatedAt
         if (!cached._userRenamed) {
           cached.name = name

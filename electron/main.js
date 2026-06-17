@@ -510,9 +510,19 @@ ipcMain.on('open-new-window', (event, arg) => {
   baseWin.loadURL(arg); // 加载传入的 URL
 });
 //  打开外部弹窗
+function isHttpExternalUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
 ipcMain.on('open-external-window', (event, arg) => {
   event.preventDefault();
-  shell.openExternal(arg);
+  if (!isHttpExternalUrl(arg)) return;
+  shell.openExternal(String(arg).trim());
 });
 
 // 打开一个单例窗口
