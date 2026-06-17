@@ -8,7 +8,12 @@ const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
 const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { deleteSessionRecordsByProvider, syncPanelStateSessions } = require('./sessionRegistry')
+const {
+  deleteSessionRecordsByProvider,
+  findSessionRecordByProvider,
+  syncPanelStateSessions,
+  upsertRuntimeByProvider,
+} = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const {
@@ -26,6 +31,7 @@ const {
 } = require('./skillsCatalogCache')
 
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
+let sessionRegistryOptionsForTest = null
 
 function getMindCraftSettingsPath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -525,6 +531,10 @@ function getClaudeSessionMetaPath(cwd, cliSessionId) {
 
 function readClaudeSessionMetaByFilePath(filePath) {
   try {
+    const registryRecord = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
+    const registryMeta = normalizeClaudeSessionMeta(registryRecord?.runtime || {})
+    if (registryMeta.model || registryMeta.effort) return registryMeta
+
     if (!filePath || !String(filePath).toLowerCase().endsWith('.jsonl')) return {}
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     if (!fs.existsSync(metaPath)) return {}
@@ -535,30 +545,32 @@ function readClaudeSessionMetaByFilePath(filePath) {
 }
 
 function readClaudeSessionMeta(cwd, cliSessionId) {
+  const registryRecord = findSessionRecordByProvider({ agent: 'claude', cliSessionId }, sessionRegistryOptionsForTest || {})
+  const registryMeta = normalizeClaudeSessionMeta(registryRecord?.runtime || {})
+  if (registryMeta.model || registryMeta.effort) return registryMeta
+
   const metaPath = getClaudeSessionMetaPath(cwd, cliSessionId)
   if (!metaPath) return {}
   return readClaudeSessionMetaByFilePath(metaPath.replace(/\.meta\.json$/i, '.jsonl'))
 }
 
-function writeClaudeSessionMeta(cwd, cliSessionId, data = {}) {
+function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePath } = {}) {
   const meta = normalizeClaudeSessionMeta(data)
-  const metaPath = getClaudeSessionMetaPath(cwd, cliSessionId)
-  if (!metaPath) return false
-  try {
-    fs.mkdirSync(path.dirname(metaPath), { recursive: true })
-    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8')
-    return true
-  } catch (e) {
-    console.warn('[claude-session-meta] write failed:', e?.message || e)
-    return false
-  }
+  return upsertRuntimeByProvider({
+    agent: 'claude',
+    chatKey,
+    cwd,
+    cliSessionId,
+    filePath,
+    runtime: meta,
+  }, sessionRegistryOptionsForTest || {})
 }
 
 function deleteClaudeSessionArtifacts(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return false
     fs.unlinkSync(filePath)
-    deleteSessionRecordsByProvider({ agent: 'claude', filePath })
+    deleteSessionRecordsByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     try {
       if (metaPath !== filePath && fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
@@ -825,8 +837,8 @@ function setupClaudeHandlers() {
     if (filePath) return readClaudeSessionMetaByFilePath(filePath)
     return readClaudeSessionMeta(cwd, cliSessionId)
   })
-  ipcMain.handle('claude-write-session-meta', (_, { cwd, cliSessionId, data } = {}) => {
-    return writeClaudeSessionMeta(cwd, cliSessionId, data)
+  ipcMain.handle('claude-write-session-meta', (_, { cwd, cliSessionId, filePath, chatKey, sessionId, data } = {}) => {
+    return writeClaudeSessionMeta(cwd, cliSessionId, data, { chatKey: chatKey || sessionId, filePath })
   })
   ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
@@ -2752,13 +2764,13 @@ function setupClaudeHandlers() {
               if (!cliSessionIds.has(chatKey)) {
                 cliSessionIds.set(chatKey, msg.session_id)
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta)
+                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
                 safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.session_id })
               }
             } else if (msg?.uuid && !cliSessionIds.has(chatKey)) {
               cliSessionIds.set(chatKey, msg.uuid)
               const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-              if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta)
+              if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
               safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
             }
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
@@ -2786,7 +2798,7 @@ function setupClaudeHandlers() {
                 cliSessionIds.set(chatKey, msg.session_id)
                 sessionModels.set(chatKey, model)
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta)
+                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
               }
               // 发送最终 metrics
               const usage = msg.usage || {}
@@ -2908,7 +2920,7 @@ function setupClaudeHandlers() {
                     finalCliSessionId = candidate.id
                     cliSessionIds.set(chatKey, finalCliSessionId)
                     const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                    if (pendingMeta) writeClaudeSessionMeta(s.cwd || resolvedCwd, finalCliSessionId, pendingMeta)
+                    if (pendingMeta) writeClaudeSessionMeta(s.cwd || resolvedCwd, finalCliSessionId, pendingMeta, { chatKey })
                     console.log(`[Claude] fallback scan found cliSessionId: ${finalCliSessionId.slice(0,8)}...`)
                   }
                 }
@@ -3645,6 +3657,7 @@ module.exports = {
     readClaudeSessionMetaByFilePath,
     resolveClaudeDoneReasonFromError,
     scanCliSessionsForProject,
+    setSessionRegistryOptionsForTest: (options) => { sessionRegistryOptionsForTest = options || null },
     writeClaudeSessionMeta,
   },
 }

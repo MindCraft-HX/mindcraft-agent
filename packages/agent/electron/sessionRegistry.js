@@ -186,6 +186,44 @@ function listSessionRecords(options = {}) {
   return records
 }
 
+function findSessionRecordByProvider({ agent, filePath, cliSessionId } = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const normalizedFilePath = normalizeString(filePath)
+  const normalizedCliSessionId = normalizeString(cliSessionId)
+  if (!normalizedFilePath && !normalizedCliSessionId) return null
+
+  for (const record of listSessionRecords(options)) {
+    if (normalizedAgent !== 'unknown' && record.agent !== normalizedAgent) continue
+    const provider = record.provider || {}
+    const sameFile = normalizedFilePath && normalizeString(provider.filePath) === normalizedFilePath
+    const sameCliSession = normalizedCliSessionId && normalizeString(provider.cliSessionId) === normalizedCliSessionId
+    if (sameFile || sameCliSession) return record
+  }
+  return null
+}
+
+function upsertRuntimeByProvider({ agent, filePath, cliSessionId, chatKey, cwd, runtime } = {}, options = {}) {
+  const existing = findSessionRecordByProvider({ agent, filePath, cliSessionId }, options)
+  const resolvedChatKey = existing?.chatKey || normalizeString(chatKey)
+  if (!resolvedChatKey) return false
+  return upsertSessionRecord({
+    ...(existing || {}),
+    chatKey: resolvedChatKey,
+    agent: normalizeAgent(agent),
+    cwd: normalizeString(cwd) || existing?.cwd || '',
+    provider: {
+      ...(existing?.provider || {}),
+      cliSessionId: normalizeString(cliSessionId) || existing?.provider?.cliSessionId || '',
+      filePath: normalizeString(filePath) || existing?.provider?.filePath || '',
+    },
+    runtime: {
+      ...(existing?.runtime || {}),
+      ...(runtime || {}),
+    },
+    updatedAt: Date.now(),
+  }, options)
+}
+
 function deleteSessionRecord(chatKey, options = {}) {
   const filePath = getSessionRecordPath(chatKey, options)
   if (!filePath) return false
@@ -252,9 +290,11 @@ module.exports = {
   buildSessionRecordFromChat,
   deleteSessionRecord,
   deleteSessionRecordsByProvider,
+  findSessionRecordByProvider,
   getSessionRecordPath,
   getSessionRegistryRoot,
   listSessionRecords,
   syncPanelStateSessions,
+  upsertRuntimeByProvider,
   upsertSessionRecord,
 }

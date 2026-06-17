@@ -9,7 +9,7 @@
 
 | 编号 | 分类 | 说明 | 优先级 | 状态 |
 |------|------|------|:------:|------|
-| T134 | refactor | **Session Registry 与官方 Agent 目录边界重构**：MindCraft 自有数据禁止污染 `~/.claude` / `~/.codex`；建立 `{userData}/session-registry/` 保存 chat/session title、description、instruction、模型/effort、chatKey↔cliSessionId 映射和编排元数据。官方 JSONL transcript 不迁移；CodeX panel state 已迁到 `{userData}/codex-panel-state.json`（读旧写新，不删旧文件）；Session Registry 已建立并旁路同步 Claude/CodeX panel state 映射；Claude `.meta.json` sidecar、诊断日志后续分阶段迁回。详见 `docs/plan/2026-06-17-session-registry-and-official-dir-boundary.md`。 | P1 | ✅ Phase 2 完成 |
+| T134 | refactor | **Session Registry 与官方 Agent 目录边界重构**：MindCraft 自有数据禁止污染 `~/.claude` / `~/.codex`；建立 `{userData}/session-registry/` 保存 chat/session title、description、instruction、模型/effort、chatKey↔cliSessionId 映射和编排元数据。官方 JSONL transcript 不迁移；CodeX panel state 已迁到 `{userData}/codex-panel-state.json`（读旧写新，不删旧文件）；Session Registry 已建立并旁路同步 Claude/CodeX panel state 映射；Claude per-session model/effort 新写入已迁到 registry，旧 `.meta.json` 只读 fallback。详见 `docs/plan/2026-06-17-session-registry-and-official-dir-boundary.md`。 | P1 | ✅ Phase 3 完成 |
 | T133 | tech-debt | **review follow-up：重复 helper 收敛评估**：`documentLocator.js` 与 `skillsSecurity.js` 各自保留 `isRealPathInside`，当前跨 host/agent 边界且测试覆盖安全行为，暂不为去重引入新共享模块；后续若再出现第三份实现，再抽到明确的 shared electron utility。`normalizeReasoningEffort.mjs/.cjs` 双份是为避开 Vite dev 导入 CJS 白屏的有意折中，后续可用生成脚本或双入口 package export 收敛。 | P3 | ⏸️ 记录 |
 | T130 | refactor | **Claude 会话身份模型收敛（T089/T090/T091 前置）**：明确 `chatKey`（当前 legacy 字段 `chat.sessionId`）、`cliSessionId`、`filePath` 三层身份边界；抽统一 identity helpers；清理 `sessionId` 命名混用；收紧磁盘 artifact 只使用 `cliSessionId/filePath`。已完成专题文档、`claudeSessionIdentity.mjs`、pending/adoption 与 history dedupe 判断集中化、核心注释、stream/main 局部 `chatKey` 命名、scan 显式返回 `cliSessionId`、delete `.jsonl` 同步删除 `.meta.json`。后续可进入 T089 per-session model 实现。 | P1 | ✅ Phase 3 完成 |
 | T129 | security | **路径边界 realpath 校验**：`documentLocator.js` 的 agent-message 绝对路径打开已补 `fs.realpathSync.native()` 边界校验；`skillsSecurity.js` 的 skill subPath 也会拒绝 realpath 指向 clone 外部的路径。新增 document-locator/skillsSecurity 回归测试。 | P1 | ✅ 已修复 — 2026-06-17 |
@@ -23,7 +23,7 @@
 | T118 | housekeeping | **settings.json 污染清理**：将 `permissionPolicy`/`pathToClaudeCodeExecutable`/`gitMirrorUrl` 从 `~/.claude/settings.json` 迁移到 `claude-internal.json`；分离 App UI `language` 与 SDK `language`（语义冲突）；删除 `writeSettingsJson()` 死代码和 `claude-write-settings-json` handler；`effortLevel` 中 `max`→`xhigh`（SDK Settings interface 不含 `max`）；统一用 `confSet`/`confGet` 读写；启动时一次性清理 settings.json 中历史脏数据。详见 `docs/settings-json-pollution.md`。 | P0 | ✅ 已修复 (2026-06-16) |
 | T119 | housekeeping | **CLAUDE.md 红线修正**：从 settings.json 禁令中移除 `autoCompactWindow`（经 SDK 源码验证是合法字段，`sdk.d.ts:4632`）；补充 `effortLevel` 值域规范（仅 `low/medium/high/xhigh`，`Settings` interface 不含 `max`）。 | P1 | ✅ 已修复 (2026-06-16) |
 | T116 | bug | **Claude 会话中断后 dangling tool_use 恢复**：JSONL 末尾只有 assistant `tool_use`，没有 `tool_result/result`，恢复后 UI 卡在 pending/running，且 `done` 仍可能被标成 completed。已识别孤儿工具轮次、在历史恢复时收口为 interrupted，原会话可继续输入。 | P0 | ✅ 已修复 (`71a0693`) |
-| T089 | feature | **Per-session 模型选择**：Claude 侧已将模型/effort 下沉到 session/tab 级别，bound 会话写入同名 `.meta.json`，draft 首轮由主进程在拿到 `cliSessionId` 后延迟落盘；CodeX 已确认 SDK 支持 per-thread `model/modelReasoningEffort` 并收敛为 tab 级模型状态。人工回归已通过：Claude 以识图/非识图模型验证，CodeX 因模型均可识图，按状态持久化与 per-thread 参数链路验证。 | P1 | ✅ 已完成 |
+| T089 | feature | **Per-session 模型选择**：Claude 侧已将模型/effort 下沉到 session/tab 级别；历史版本写同名 `.meta.json`，T134 Phase 3 后新写入已迁到 `{userData}/session-registry/`，旧 `.meta.json` 只读 fallback；CodeX 已确认 SDK 支持 per-thread `model/modelReasoningEffort` 并收敛为 tab 级模型状态。人工回归已通过：Claude 以识图/非识图模型验证，CodeX 因模型均可识图，按状态持久化与 per-thread 参数链路验证。 | P1 | ✅ 已完成 |
 | T090 | feature | ~~**forkSession() 分支探索**：从当前会话一键分叉到新 UUID。~~ **决定不做了**：多 tab 架构下重描述一句即可，fork 价值不大；且会重新引入会话身份/历史恢复边界复杂度。 | — | ❌ 暂不处理 |
 | T091 | feature | ~~**setModel() 运行时切模型**：不用 abort→重建，运行中直接切换模型。~~ **决定不做了**：① T089 per-session 模型已覆盖”非运行中切换，下轮 query 用新模型”的场景；② 运行时原生 setModel 改动有风险（之前 300 行改坏项目的教训）；③ 使用概率低。 | — | ❌ 暂不处理 |
 | T092 | feature | ~~**Worktree 多分支隔离**：每个 session 绑定独立 git worktree。~~ **决定不做了**：SDK 只有 worktree hook，不等于完整产品能力；App 层实现接近“给 session 开新目录”，跟新建项目区别不大，成本远超收益。 | — | ❌ 暂不处理 |
@@ -731,7 +731,7 @@ MindCraft 自己扫描 `~/.claude/projects/<cwd-hash>/` 目录、手动读 JSONL
 
 风险点：
 
-- T089 的 per-session 模型依赖同名 `.meta.json` sidecar，SDK list/delete 不知道这层状态，仍需要本地文件 join 和 sidecar 删除。
+- T089 的 per-session 模型历史上依赖同名 `.meta.json` sidecar；T134 Phase 3 后新写入迁到 registry，但 SDK list/delete 仍不知道 MindCraft registry 状态，替换主路径仍需要 join 和删除联动。
 - 当前前端刷新包含 pending/draft chat adoption 防重复逻辑，直接换 listSessions 仍要维护 `cliSessionId/filePath/chatKey` 匹配。
 - 历史恢复不仅是读消息，还包含分页、UI message normalize、dangling tool_use recovery、工具结果拼接等 App 兼容逻辑。
 - 刚完成 T130/T089 会话身份收敛，此时替换扫描/删除/历史读取属于高回归风险，收益主要是“减少维护”，不值得现在冒险。
@@ -743,8 +743,8 @@ MindCraft 自己扫描 `~/.claude/projects/<cwd-hash>/` 目录、手动读 JSONL
 
 - 新增只读 adapter，对比 `scanCliSessionsForProject(cwd)` 与 `listSessions({ dir: cwd, includeWorktrees: false })` 的结果差异。
 - adapter 输出必须补齐现有字段：`cliSessionId/filePath/createdAt/updatedAt/fileSize/title/isCustomTitle/model/effort`。
-- 删除仍必须保证 `.jsonl` 与 `.meta.json` 同步删除；除非 SDK delete 后额外删除 sidecar 并有测试覆盖。
-- 在测试覆盖 pending adoption、重复会话、历史分页、dangling recovery、sidecar meta 后，再考虑局部替换。
+- 删除仍必须保证 `.jsonl`、registry record、历史 `.meta.json` fallback 同步处理；除非 SDK delete 后额外清理 registry/legacy sidecar 并有测试覆盖。
+- 在测试覆盖 pending adoption、重复会话、历史分页、dangling recovery、registry meta/legacy sidecar 后，再考虑局部替换。
 
 ### 原方案（不再直接执行）
 

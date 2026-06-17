@@ -573,6 +573,8 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
   window.electronAPI?.claudeWriteSessionMeta?.({
     cwd: project.cwd,
     cliSessionId: tab.cliSessionId,
+    filePath: tab.filePath || '',
+    chatKey: tab.sessionId,
     data: {
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),

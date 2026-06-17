@@ -6,9 +6,11 @@ const path = require('node:path')
 const {
   buildSessionRecordFromChat,
   deleteSessionRecordsByProvider,
+  findSessionRecordByProvider,
   getSessionRecordPath,
   listSessionRecords,
   syncPanelStateSessions,
+  upsertRuntimeByProvider,
 } = require('./sessionRegistry')
 
 function makeTempUserData() {
@@ -92,4 +94,36 @@ test('deleteSessionRecordsByProvider removes matching provider filePath records'
 
   assert.equal(deleted, 1)
   assert.deepEqual(listSessionRecords({ userDataDir }), [])
+})
+
+test('upsertRuntimeByProvider updates runtime for an existing provider mapping', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Runtime update',
+        cliSessionId: 'cli-1',
+        filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
+        model: 'old-model',
+        effort: 'medium',
+      }],
+    }],
+  }, { userDataDir })
+
+  const updated = upsertRuntimeByProvider({
+    agent: 'claude',
+    cliSessionId: 'cli-1',
+    runtime: {
+      model: 'new-model',
+      effort: 'xhigh',
+    },
+  }, { userDataDir })
+
+  assert.equal(updated, true)
+  const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
+  assert.equal(record.runtime.model, 'new-model')
+  assert.equal(record.runtime.effort, 'xhigh')
 })

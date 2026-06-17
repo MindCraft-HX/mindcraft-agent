@@ -153,39 +153,70 @@ function runJsonlIntegrityMultipleToolUseTest() {
 
 function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-session-artifacts-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-delete-userdata-'))
   const filePath = path.join(dir, '11111111-1111-1111-1111-111111111111.jsonl')
   const metaPath = path.join(dir, '11111111-1111-1111-1111-111111111111.meta.json')
   fs.writeFileSync(filePath, '{}\n', 'utf8')
   fs.writeFileSync(metaPath, '{"model":"claude-sonnet"}\n', 'utf8')
 
+  __test__.setSessionRegistryOptionsForTest({ userDataDir })
   assert.equal(__test__.deleteClaudeSessionArtifacts(filePath), true)
   assert.equal(fs.existsSync(filePath), false)
   assert.equal(fs.existsSync(metaPath), false)
 
+  __test__.setSessionRegistryOptionsForTest(null)
+  fs.rmSync(userDataDir, { recursive: true, force: true })
   fs.rmSync(dir, { recursive: true, force: true })
 }
 
 function runSessionMetaReadWriteTest() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-cwd-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-userdata-'))
   const cliSessionId = '22222222-2222-2222-2222-222222222222'
+  __test__.setSessionRegistryOptionsForTest({ userDataDir })
 
   assert.equal(__test__.writeClaudeSessionMeta(cwd, cliSessionId, {
     model: 'claude-sonnet-4-20250514',
     effort: 'max',
-  }), true)
+  }, { chatKey: 'chat-key-222' }), true)
 
   assert.deepEqual(__test__.readClaudeSessionMeta(cwd, cliSessionId), {
     model: 'claude-sonnet-4-20250514',
     effort: 'xhigh',
   })
 
-  const projectDir = path.dirname(__test__.buildClaudeAgentDonePayload({ cwd, cliSessionId }).filePath)
-  fs.rmSync(projectDir, { recursive: true, force: true })
+  const metaPath = __test__.buildClaudeAgentDonePayload({ cwd, cliSessionId }).filePath.replace(/\.jsonl$/i, '.meta.json')
+  assert.equal(fs.existsSync(metaPath), false)
+
+  __test__.setSessionRegistryOptionsForTest(null)
+  fs.rmSync(userDataDir, { recursive: true, force: true })
+  fs.rmSync(cwd, { recursive: true, force: true })
+}
+
+function runSessionMetaLegacySidecarFallbackTest() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-legacy-cwd-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-legacy-userdata-'))
+  const cliSessionId = '44444444-4444-4444-4444-444444444444'
+  const payload = __test__.buildClaudeAgentDonePayload({ cwd, cliSessionId })
+  const metaPath = payload.filePath.replace(/\.jsonl$/i, '.meta.json')
+  fs.mkdirSync(path.dirname(metaPath), { recursive: true })
+  fs.writeFileSync(metaPath, JSON.stringify({ model: 'legacy-model', effort: 'max' }), 'utf8')
+  __test__.setSessionRegistryOptionsForTest({ userDataDir })
+
+  assert.deepEqual(__test__.readClaudeSessionMeta(cwd, cliSessionId), {
+    model: 'legacy-model',
+    effort: 'xhigh',
+  })
+
+  __test__.setSessionRegistryOptionsForTest(null)
+  fs.rmSync(path.dirname(payload.filePath), { recursive: true, force: true })
+  fs.rmSync(userDataDir, { recursive: true, force: true })
   fs.rmSync(cwd, { recursive: true, force: true })
 }
 
 function runScanSessionsIncludesMetaTest() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-scan-cwd-'))
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-scan-userdata-'))
   const cliSessionId = '33333333-3333-3333-3333-333333333333'
   const payload = __test__.buildClaudeAgentDonePayload({ cwd, cliSessionId })
   const projectDir = path.dirname(payload.filePath)
@@ -194,10 +225,11 @@ function runScanSessionsIncludesMetaTest() {
     type: 'user',
     message: { role: 'user', content: 'hello' },
   }) + '\n', 'utf8')
+  __test__.setSessionRegistryOptionsForTest({ userDataDir })
   assert.equal(__test__.writeClaudeSessionMeta(cwd, cliSessionId, {
     model: 'claude-opus-4-20250514',
     effort: 'high',
-  }), true)
+  }, { chatKey: 'chat-key-333', filePath: payload.filePath }), true)
 
   const sessions = __test__.scanCliSessionsForProject(cwd)
   const session = sessions.find(s => s.cliSessionId === cliSessionId)
@@ -205,7 +237,9 @@ function runScanSessionsIncludesMetaTest() {
   assert.equal(session.model, 'claude-opus-4-20250514')
   assert.equal(session.effort, 'high')
 
+  __test__.setSessionRegistryOptionsForTest(null)
   fs.rmSync(projectDir, { recursive: true, force: true })
+  fs.rmSync(userDataDir, { recursive: true, force: true })
   fs.rmSync(cwd, { recursive: true, force: true })
 }
 
@@ -219,6 +253,7 @@ function run() {
   runJsonlIntegrityMultipleToolUseTest()
   runDeleteSessionArtifactsDeletesMetaSidecarTest()
   runSessionMetaReadWriteTest()
+  runSessionMetaLegacySidecarFallbackTest()
   runScanSessionsIncludesMetaTest()
   console.log('claude agent done payload tests passed')
 }

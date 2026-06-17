@@ -190,11 +190,22 @@ MindCraft 的会话身份分三层：
 
 ### Phase 3：迁移 Claude `.meta.json` sidecar
 
+状态：✅ 已完成（2026-06-17）
+
 目标：
 
 - 新写入的 per-session model/effort 存 registry。
 - 读取顺序：registry → 旧 `.meta.json` → 默认配置。
 - 删除 chat 时删除 registry record；旧 `.meta.json` 可选清理，但不能作为唯一状态来源。
+
+实现：
+
+- `claude-read-session-meta` 先按 provider `cliSessionId/filePath` 查 registry runtime，再 fallback 到旧 `.meta.json`。
+- `claude-write-session-meta` 只写 registry runtime，不再创建新的 `.meta.json` sidecar。
+- 首轮 pending meta 在拿到 `cliSessionId` 时带 `chatKey` 写入 registry，避免依赖旧 sidecar。
+- 前端 `persistClaudeTabMeta()` 传入 `chatKey/filePath`，支持手动切换模型后直接更新 registry。
+- 扫描旧会话仍可读历史 `.meta.json`，保证已有会话模型/effort 显示不丢。
+- 更新 `claude-agent-done-payload.test.cjs`，覆盖 registry 写入、无新 sidecar、旧 sidecar fallback。
 
 验收：
 
