@@ -111,6 +111,7 @@ import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import SharedSettings from './SharedSettings.vue'
 import { normalizeRequestedAgent, pickInitialCodeHubTab } from './agentRoutePreference.mjs'
 import { resolveCodeHubSyncedTabId } from './activeTabSync.mjs'
+import { orderCodeHubTabs, reconcileCodeHubTabOrder } from './tabOrder.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 
 const claudeTheme = useClaudeThemeStore()
@@ -202,28 +203,7 @@ const unifiedTabs = computed(() => {
       }
     }
   }
-
-  // 将新 tab 补充到排序列表中
-  const order = tabOrder.value
-  const existingIds = new Set(order)
-  for (const t of tabs) {
-    if (!existingIds.has(t.id)) order.push(t.id)
-  }
-  // 清理已不存在的 tab ID
-  const validIds = new Set(tabs.map(t => t.id))
-  tabOrder.value = order.filter(id => validIds.has(id))
-  if (tabOrder.value.length !== order.length) saveTabOrder()
-
-  // 按 tabOrder 排序，不在 order 中的按 createdAt 排后面
-  const orderMap = new Map(tabOrder.value.map((id, i) => [id, i]))
-  return [...tabs].sort((a, b) => {
-    const ai = orderMap.get(a.id)
-    const bi = orderMap.get(b.id)
-    if (ai != null && bi != null) return ai - bi
-    if (ai != null) return -1
-    if (bi != null) return 1
-    return (a.createdAt || 0) - (b.createdAt || 0)
-  })
+  return orderCodeHubTabs(tabs, tabOrder.value)
 })
 
 const activeAgent = computed(() => {
@@ -385,6 +365,22 @@ watch(() => unifiedTabs.value.length, (len) => {
     if (last) activateTab(last)
   }
 })
+
+watch(
+  () => unifiedTabs.value.map(t => t.id),
+  (ids) => {
+    if (!initDone.value) return
+    const next = reconcileCodeHubTabOrder({
+      currentOrder: tabOrder.value,
+      visibleTabIds: ids,
+      pruneMissing: true,
+    })
+    if (JSON.stringify(next) === JSON.stringify(tabOrder.value)) return
+    tabOrder.value = next
+    saveTabOrder()
+  },
+  { flush: 'post' }
+)
 
 watchEffect(() => {
   if (!initDone.value) return
