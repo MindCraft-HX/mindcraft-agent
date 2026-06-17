@@ -6,23 +6,28 @@ const { registerLocalSearchIpc } = require('./localSearch')
 const { setupHomeMetricsHandlers } = require('./homeMetrics')
 const { setLocale } = require('./localeHelper')
 
-const localeConf = new Conf({ configName: 'app-config' })
+let localeConf = null
 
-function registerAgentIPCs(ipcMain) {
+function getLocaleConf() {
+  if (!localeConf) localeConf = new Conf({ configName: 'app-config' })
+  return localeConf
+}
+
+function registerAgentIPCs(targetIpcMain = ipcMain) {
   setupClaudeHandlers()
   setupCodexSdkHandlers()
-  registerLocalSearchIpc(ipcMain)
-  setupHomeMetricsHandlers(ipcMain)
+  registerLocalSearchIpc(targetIpcMain)
+  setupHomeMetricsHandlers(targetIpcMain)
 
   // Locale persistence
-  ipcMain.handle('load-locale', () => {
-    const loc = localeConf.get('locale')
+  targetIpcMain.handle('load-locale', () => {
+    const loc = getLocaleConf().get('locale')
     if (loc === 'zh' || loc === 'en') setLocale(loc)
     return loc || null
   })
-  ipcMain.on('save-locale', (_e, loc) => {
+  targetIpcMain.on('save-locale', (_e, loc) => {
     if (loc === 'zh' || loc === 'en') {
-      localeConf.set('locale', loc)
+      getLocaleConf().set('locale', loc)
       setLocale(loc)
     }
   })

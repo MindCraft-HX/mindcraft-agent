@@ -4,7 +4,7 @@
   "main": "electron/main.js",
   "scripts": {
     "predev": "node -e \"var c=require('child_process');try{var o=c.execSync('netstat -ano|findstr :16288|findstr LISTENING',{encoding:'utf8'});o.split(/\\r?\\n/).filter(Boolean).forEach(l=>{var p=l.trim().split(/\\s+/).pop();if(/^\\d+$/.test(p))try{c.execSync('taskkill /F /PID '+p)}catch(e){}})}catch(e){};console.log('predev done')\"",
-    "test": "node --test packages/agent/electron/pluginState.test.js",
+    "test": "node --test packages/agent/electron/pluginState.test.js packages/agent/electron/skillsSecurity.test.js packages/agent/electron/skillsCatalogCache.test.js packages/agent/electron/codexRuntimeConfig.test.js tests/document-locator.test.cjs tests/codex-provider-toml.test.mjs tests/markdown-it-local-link.test.mjs tests/agent-public-renderer-boundary.test.cjs tests/agent-runtime-boundary.test.cjs tests/agent-shared-entrypoints.test.cjs tests/agent-shared-imports.test.cjs tests/agent-vue-import-boundary.test.cjs",
     "dev": "cross-env NODE_ENV=development vite --mode dev",
     "dev-ios": "cross-env NODE_ENV=development vite --mode devIos",
     "build": "vite build",
@@ -81,7 +81,7 @@
     "productName": "MindCraft-Agent",
     "copyright": "Copyright © 2025 GENITOP",
     "releaseInfo": {
-      "releaseNotesFile": "release/release-1.0.1.md"
+      "releaseNotesFile": "release/release-1.0.11.md"
     },
     "extraMetadata": {
       "mode": "testing",
