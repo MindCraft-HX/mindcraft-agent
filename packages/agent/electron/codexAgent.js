@@ -9,6 +9,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
+const { deleteSessionRecordsByProvider, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
@@ -2416,6 +2417,7 @@ function setupCodexSdkHandlers() {
     try {
       if (!filePath || !fs.existsSync(filePath)) return false
       fs.unlinkSync(filePath)
+      deleteSessionRecordsByProvider({ agent: 'codex', filePath })
       return true
     } catch (e) {
       console.warn('[codex-delete-session-file] failed:', e?.message || e)
@@ -3023,6 +3025,7 @@ function setupCodexSdkHandlers() {
       const tmp = `${PANEL_STATE_FILE}.${process.pid}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
       fs.renameSync(tmp, PANEL_STATE_FILE)
+      syncPanelStateSessions('codex', payload)
     } catch (e) {
       console.warn('[codex] writePanelState failed:', e?.message || e, 'file=', PANEL_STATE_FILE)
     }

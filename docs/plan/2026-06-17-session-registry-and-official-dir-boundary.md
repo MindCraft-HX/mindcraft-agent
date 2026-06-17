@@ -159,11 +159,28 @@ MindCraft 的会话身份分三层：
 
 ### Phase 2：建立 session registry 基础
 
+状态：✅ 已完成（2026-06-17）
+
 目标：
 
 - 新增主进程模块：`sessionRegistry.js`
 - 支持 get/upsert/delete session record。
 - Claude/CodeX panel state 仍保留 UI 展示字段，但 provider 映射开始同步写 registry。
+
+实现：
+
+- 新增 `packages/agent/electron/sessionRegistry.js`，registry 根目录为 `{userData}/session-registry/`。
+- `sessions/<chatKey>.json` 保存 `chatKey`、agent、project/cwd、title/description、`provider.cliSessionId/filePath`、runtime model/effort/reasoningEffort、instruction 绑定。
+- `index.json` 保存轻量索引，便于后续按 chatKey/provider 映射查找。
+- Claude/CodeX 保存 panel state 后旁路同步 registry；现有 panel state 仍是 UI 恢复来源。
+- Claude/CodeX 删除官方 JSONL transcript 后，按 provider `filePath` 清理 registry record。
+- 新增 `sessionRegistry.test.js`，覆盖 record 构建、panel state 同步、按 filePath 删除。
+
+风险控制：
+
+- Phase 2 不读取 registry 参与 resume，不改变现有恢复主路径。
+- registry 写入失败只记录 warn，不应阻断 panel state 保存。
+- 不移动、不重命名、不批量删除官方 JSONL transcript。
 
 验收：
 

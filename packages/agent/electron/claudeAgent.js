@@ -8,6 +8,7 @@ const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
 const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
 const { augmentEnvWithBundledRg } = require('./localSearch')
+const { deleteSessionRecordsByProvider, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const {
@@ -557,6 +558,7 @@ function deleteClaudeSessionArtifacts(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return false
     fs.unlinkSync(filePath)
+    deleteSessionRecordsByProvider({ agent: 'claude', filePath })
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     try {
       if (metaPath !== filePath && fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
@@ -611,6 +613,9 @@ function writeClaudeCodePanelState(payload) {
     fs.copyFileSync(tmp, fp)
     try { fs.unlinkSync(tmp) } catch (_) {}
   }
+  syncPanelStateSessions('claude', {
+    projects: projects || tabs || [],
+  })
 }
 
 const CLAUDE_PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins')
