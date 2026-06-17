@@ -215,6 +215,8 @@ MindCraft 的会话身份分三层：
 
 ### Phase 4：Session Instruction
 
+状态：✅ 已完成（2026-06-17，文本 instruction；`.md` 附件暂缓）
+
 目标：
 
 - instruction 存 `{userData}/session-registry/instructions/*.json`
@@ -222,12 +224,21 @@ MindCraft 的会话身份分三层：
 - Claude 注入 `systemPrompt`
 - CodeX 以固定上下文块拼到 prompt 前
 
+实现：
+
+- 新增 `sessionInstructionIpc.js` 和 preload bridge，提供 `getSessionInstruction(chatKey)` / `setSessionInstruction(payload)`。
+- `sessionRegistry.js` 新增 instruction record 读写；保存 instruction 时只更新 session record 的 `instruction.enabled/instructionId`，不覆盖 provider/runtime 映射。
+- Claude/CodeX 输入工具栏在 skills 按钮右侧新增会话指令入口。
+- 新增 `SessionInstructionDialog.vue`，支持启用开关、标题和文本内容编辑。
+- Claude query 将 enabled instruction 追加到 `systemPrompt`；CodeX 在发送前将 enabled instruction 作为固定 XML 块前置到用户 prompt。
+- 新增 `sessionRegistry.test.js` 覆盖 instruction 保存和 session mapping 保留。
+
 验收：
 
 - 同一个 instruction 可复用多个 session。
 - 中途修改 instruction 后，下次发送生效。
-- 附件 `.md` 发送前读取最新内容。
-- 附件路径做 realpath 边界/存在性检查，不读敏感路径。
+- 附件 `.md` 发送前读取最新内容。暂缓，后续单独做 realpath 边界和 UI 交互。
+- 附件路径做 realpath 边界/存在性检查，不读敏感路径。暂缓。
 
 ### Phase 5：诊断日志和残留整理
 

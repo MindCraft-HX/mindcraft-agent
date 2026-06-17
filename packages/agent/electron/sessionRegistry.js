@@ -18,6 +18,10 @@ function getSessionsDir(options = {}) {
   return path.join(getSessionRegistryRoot(options), 'sessions')
 }
 
+function getInstructionsDir(options = {}) {
+  return path.join(getSessionRegistryRoot(options), 'instructions')
+}
+
 function getIndexPath(options = {}) {
   return path.join(getSessionRegistryRoot(options), 'index.json')
 }
@@ -30,6 +34,12 @@ function getSessionRecordPath(chatKey, options = {}) {
   const safeName = encodeRecordName(chatKey)
   if (!safeName) return ''
   return path.join(getSessionsDir(options), `${safeName}.json`)
+}
+
+function getInstructionRecordPath(instructionId, options = {}) {
+  const safeName = encodeRecordName(instructionId)
+  if (!safeName) return ''
+  return path.join(getInstructionsDir(options), `${safeName}.json`)
 }
 
 function ensureDir(dir) {
@@ -111,6 +121,25 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
     },
     createdAt,
     updatedAt,
+  }
+}
+
+function buildDefaultInstructionId(chatKey) {
+  const normalized = normalizeString(chatKey)
+  return normalized ? `instruction-${normalized}` : ''
+}
+
+function normalizeInstructionRecord(data = {}) {
+  const id = normalizeString(data.id)
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id,
+    title: normalizeString(data.title),
+    description: normalizeString(data.description),
+    content: typeof data.content === 'string' ? data.content : '',
+    attachments: Array.isArray(data.attachments) ? data.attachments.filter(Boolean) : [],
+    createdAt: normalizeTimestamp(data.createdAt) || Date.now(),
+    updatedAt: normalizeTimestamp(data.updatedAt) || Date.now(),
   }
 }
 
@@ -244,6 +273,79 @@ function deleteSessionRecord(chatKey, options = {}) {
   return deleted
 }
 
+function readInstructionRecord(instructionId, options = {}) {
+  const filePath = getInstructionRecordPath(instructionId, options)
+  if (!filePath) return null
+  const record = readJson(filePath, null)
+  if (!record?.id) return null
+  return normalizeInstructionRecord(record)
+}
+
+function upsertInstructionRecord(data = {}, options = {}) {
+  const normalized = normalizeInstructionRecord(data)
+  if (!normalized.id) return null
+  const filePath = getInstructionRecordPath(normalized.id, options)
+  const existing = readJson(filePath, null)
+  const next = normalizeInstructionRecord({
+    ...(existing || {}),
+    ...normalized,
+    createdAt: existing?.createdAt || normalized.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  })
+  writeJsonAtomic(filePath, next)
+  return next
+}
+
+function getSessionInstruction(chatKey, options = {}) {
+  const recordPath = getSessionRecordPath(chatKey, options)
+  const session = readJson(recordPath, null)
+  const instructionId = normalizeString(session?.instruction?.instructionId)
+  const instruction = instructionId ? readInstructionRecord(instructionId, options) : null
+  return {
+    enabled: Boolean(session?.instruction?.enabled),
+    instructionId,
+    title: instruction?.title || '',
+    description: instruction?.description || '',
+    content: instruction?.content || '',
+    attachments: instruction?.attachments || [],
+  }
+}
+
+function setSessionInstruction(chatKey, data = {}, options = {}) {
+  const resolvedChatKey = normalizeString(chatKey)
+  if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
+  const instructionId = normalizeString(data.instructionId) || buildDefaultInstructionId(resolvedChatKey)
+  if (!instructionId) return { ok: false, error: 'missing instructionId' }
+  const now = Date.now()
+  const instruction = upsertInstructionRecord({
+    id: instructionId,
+    title: data.title || '',
+    description: data.description || '',
+    content: typeof data.content === 'string' ? data.content : '',
+    attachments: Array.isArray(data.attachments) ? data.attachments : [],
+    updatedAt: now,
+  }, options)
+  if (!instruction) return { ok: false, error: 'write instruction failed' }
+
+  const existing = readJson(getSessionRecordPath(resolvedChatKey, options), {})
+  const sessionRecord = {
+    ...(existing || {}),
+    schemaVersion: SCHEMA_VERSION,
+    chatKey: resolvedChatKey,
+    agent: normalizeAgent(existing?.agent),
+    provider: existing?.provider || {},
+    runtime: existing?.runtime || {},
+    instruction: {
+      enabled: Boolean(data.enabled),
+      instructionId,
+    },
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  }
+  upsertSessionRecord(sessionRecord, options)
+  return { ok: true, instruction: getSessionInstruction(resolvedChatKey, options) }
+}
+
 function syncPanelStateSessions(agent, panelState = {}, options = {}) {
   const projects = Array.isArray(panelState?.projects) ? panelState.projects : []
   let count = 0
@@ -291,9 +393,11 @@ module.exports = {
   deleteSessionRecord,
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
+  getSessionInstruction,
   getSessionRecordPath,
   getSessionRegistryRoot,
   listSessionRecords,
+  setSessionInstruction,
   syncPanelStateSessions,
   upsertRuntimeByProvider,
   upsertSessionRecord,

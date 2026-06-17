@@ -200,6 +200,7 @@
           @triggerSlash="triggerSlashMenu"
           @openPlugins="openPlugins"
           @openSkills="openSkills"
+          @openInstruction="openSessionInstruction"
           @update:runMode="activeRunMode = $event"
         />
         <input ref="fileInputRef" type="file" multiple style="display:none" @change="onFileSelect" />
@@ -220,6 +221,7 @@
         :cwd="activeProject?.cwd || ''"
         @skills-changed="refreshSlashCommands(true)"
       />
+      <SessionInstructionDialog ref="sessionInstructionRef" />
       <!-- <AgentPicker :visible="showAgentPicker" @close="showAgentPicker = false" @select="onAgentPicked" /> -->
       <AskQuestionDialog
         ref="askDialogRef"
@@ -300,6 +302,7 @@ import ProjectTabs from './components/ProjectTabs.vue'
 import SlashPopup from './components/SlashPopup.vue'
 import MentionPopup from './components/MentionPopup.vue'
 import InputToolbar from './components/InputToolbar.vue'
+import SessionInstructionDialog from '../agentCommon/components/SessionInstructionDialog.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import APISetting from './components/APISetting.vue'
 import SelectModel from './components/SelectModel.vue'
@@ -494,6 +497,7 @@ const apiSettingRef = ref(null)
 const selectModelRef = ref(null)
 const managePluginsRef = ref(null)
 const manageSkillsRef = ref(null)
+const sessionInstructionRef = ref(null)
 const claudeDefaultModel = ref('')
 const claudeDefaultEffort = ref('medium')
 
@@ -1577,6 +1581,22 @@ function openSkills() {
   manageSkillsRef.value?.open?.()
 }
 
+function openSessionInstruction() {
+  if (!activeTab.value?.sessionId) return
+  sessionInstructionRef.value?.open?.(activeTab.value.sessionId)
+}
+
+async function loadSessionInstructionForTab(tab) {
+  if (!tab?.sessionId) return null
+  try {
+    const instruction = await window.electronAPI?.getSessionInstruction?.(tab.sessionId)
+    if (!instruction?.enabled || !String(instruction.content || '').trim()) return null
+    return instruction
+  } catch (_) {
+    return null
+  }
+}
+
 /** 仍在等待首条助手回复（含首次冷启动），用于提示与限制切换对话/目录 */
 const firstAwaitingAssistant = computed(() => {
   const t = activeTab.value
@@ -2598,6 +2618,7 @@ async function sendMessage() {
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
       runMode: tab.runMode || 'edit_automatically',
+      sessionInstruction: await loadSessionInstructionForTab(tab),
     })
     return
   }
@@ -2884,6 +2905,7 @@ async function sendMessage() {
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
       runMode: tab.runMode || 'edit_automatically',
+      sessionInstruction: await loadSessionInstructionForTab(tab),
     }
     const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
     await window.electronAPI.claudeAgentQuery(payload)

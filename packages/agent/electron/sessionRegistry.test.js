@@ -7,8 +7,10 @@ const {
   buildSessionRecordFromChat,
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
+  getSessionInstruction,
   getSessionRecordPath,
   listSessionRecords,
+  setSessionInstruction,
   syncPanelStateSessions,
   upsertRuntimeByProvider,
 } = require('./sessionRegistry')
@@ -126,4 +128,56 @@ test('upsertRuntimeByProvider updates runtime for an existing provider mapping',
   const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
   assert.equal(record.runtime.model, 'new-model')
   assert.equal(record.runtime.effort, 'xhigh')
+})
+
+test('setSessionInstruction stores instruction without losing session mapping', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Mapped session',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+        model: 'gpt-5.1-codex',
+        reasoningEffort: 'high',
+      }],
+    }],
+  }, { userDataDir })
+
+  const result = setSessionInstruction('chat-key-1', {
+    enabled: true,
+    title: 'Customer A',
+    content: 'Use customer A macro mapping.',
+  }, { userDataDir })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.instruction.enabled, true)
+  assert.equal(result.instruction.title, 'Customer A')
+  assert.equal(result.instruction.content, 'Use customer A macro mapping.')
+
+  const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.equal(record.chatKey, 'chat-key-1')
+  assert.equal(record.title, 'Mapped session')
+  assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
+  assert.equal(record.runtime.model, 'gpt-5.1-codex')
+  assert.equal(record.runtime.reasoningEffort, 'high')
+  assert.equal(record.instruction.enabled, true)
+  assert.equal(record.instruction.instructionId, 'instruction-chat-key-1')
+})
+
+test('getSessionInstruction returns disabled empty state for unknown chat', () => {
+  const userDataDir = makeTempUserData()
+  const instruction = getSessionInstruction('missing-chat', { userDataDir })
+
+  assert.deepEqual(instruction, {
+    enabled: false,
+    instructionId: '',
+    title: '',
+    description: '',
+    content: '',
+    attachments: [],
+  })
 })

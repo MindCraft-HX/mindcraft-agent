@@ -554,6 +554,20 @@ function readClaudeSessionMeta(cwd, cliSessionId) {
   return readClaudeSessionMetaByFilePath(metaPath.replace(/\.meta\.json$/i, '.jsonl'))
 }
 
+function buildSessionInstructionPrompt(instruction = {}) {
+  if (!instruction?.enabled) return ''
+  const content = typeof instruction.content === 'string' ? instruction.content.trim() : ''
+  if (!content) return ''
+  const title = typeof instruction.title === 'string' && instruction.title.trim()
+    ? `: ${instruction.title.trim()}`
+    : ''
+  return [
+    `<mindcraft_session_instruction${title}>`,
+    content,
+    '</mindcraft_session_instruction>',
+  ].join('\n')
+}
+
 function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePath } = {}) {
   const meta = normalizeClaudeSessionMeta(data)
   return upsertRuntimeByProvider({
@@ -2416,7 +2430,7 @@ function setupClaudeHandlers() {
     resetSystemClaudeCache()
   }
 
-  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride }) => {
+  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, sessionInstruction }) => {
     const chatKey = sessionId
     const runtime = readRuntimeConfigFromUserSettingsFile()
     const apiKey = runtime.apiKey
@@ -2582,6 +2596,7 @@ function setupClaudeHandlers() {
               systemPrompt: (() => {
                 const parts = [
                   buildSystemPrompt(resolvedCwd),
+                  buildSessionInstructionPrompt(sessionInstruction),
                   mode === 'plan_mode'
                     ? '当前模式为 Plan mode：在执行任何文件写入、修改或命令执行之前，必须先输出一份清晰的实施计划（包含步骤、涉及文件、预期效果）。计划输出后，可以按步骤逐步执行，不要一次性批量修改。'
                     : '',

@@ -173,6 +173,7 @@
             @triggerSlash="triggerSlashMenu"
             @openPlugins="() => codexPluginsRef?.open?.()"
             @openSkills="() => codexSkillsRef?.open?.()"
+            @openInstruction="openSessionInstruction"
             @update:networkAccess="setSessionNetworkAccess"
             @update:webSearch="setSessionWebSearch"
             @update:sandboxMode="setSessionSandbox"
@@ -185,6 +186,7 @@
         <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" />
         <ConfirmDialog ref="confirmDialogRef" />
         <SelectModel ref="selectModelRef" />
+        <SessionInstructionDialog ref="sessionInstructionRef" />
       </div>
     </div>
   </div>
@@ -220,6 +222,7 @@ import ManageSkills from '../claudeCode/components/ManageSkills.vue'
 import MentionPopup from './components/MentionPopup.vue'
 import SlashPopup from './components/SlashPopup.vue'
 import SelectModel from './components/SelectModel.vue'
+import SessionInstructionDialog from '../agentCommon/components/SessionInstructionDialog.vue'
 import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
 import ImageLightbox from '../agentCommon/components/ImageLightbox.vue'
 import MessageList from './components/messages/MessageList.vue'
@@ -1857,6 +1860,39 @@ function openSettings() {
   }
 }
 
+function openSessionInstruction() {
+  if (!activeTab.value?.sessionId) return
+  sessionInstructionRef.value?.open?.(activeTab.value.sessionId)
+}
+
+async function loadSessionInstructionForTab(tab) {
+  if (!tab?.sessionId) return null
+  try {
+    const instruction = await window.electronAPI?.getSessionInstruction?.(tab.sessionId)
+    if (!instruction?.enabled || !String(instruction.content || '').trim()) return null
+    return instruction
+  } catch (_) {
+    return null
+  }
+}
+
+function prependSessionInstruction(prompt, instruction) {
+  const content = String(instruction?.content || '').trim()
+  if (!content) return prompt
+  const title = String(instruction?.title || '').trim()
+  const header = title
+    ? `<mindcraft_session_instruction: ${title}>`
+    : '<mindcraft_session_instruction>'
+  return [
+    header,
+    content,
+    '</mindcraft_session_instruction>',
+    '',
+    '用户当前请求：',
+    prompt,
+  ].join('\n')
+}
+
 async function sendMessage(textOverride = null, targetTab = null) {
   if (isComposing.value) return
   const tab = targetTab || activeTab.value
@@ -1978,6 +2014,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
   // 计划模式：注入 plan mode 指令（/init /review 等特殊 prompt 不叠加）
   if (planModeActive.value && dispatched?.action !== 'inject' && dispatched?.action !== 'inject_async') {
     finalPrompt = `${PLAN_MODE_INSTRUCTIONS}\n\n---\n\n${finalPrompt}`
+  }
+  const sessionInstruction = await loadSessionInstructionForTab(tab)
+  if (sessionInstruction) {
+    finalPrompt = prependSessionInstruction(finalPrompt, sessionInstruction)
   }
 
   // 防御 Vue reactive Proxy → contextBridge structured clone 失败
@@ -2293,6 +2333,7 @@ function onMetricsUpdate(data) {
 const apiSettingRef = ref(null)
 const codexPluginsRef = ref(null)
 const codexSkillsRef = ref(null)
+const sessionInstructionRef = ref(null)
 const canSend = computed(() => {
   if (!activeProject.value?.cwdLocked || !activeTab.value) return false
   if (isActiveTabHistoryDeferred.value) return false

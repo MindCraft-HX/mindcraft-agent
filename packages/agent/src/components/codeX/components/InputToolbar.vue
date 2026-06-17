@@ -55,6 +55,15 @@
           <polygon points="8,1.5 10.5,6.5 16,7.5 12,11.5 13,17 8,14.5 3,17 4,11.5 0,7.5 5.5,6.5"/>
         </svg>
       </button>
+      <button
+        type="button"
+        class="toolbar-btn"
+        :disabled="disabled"
+        :title="$t('agent.sessionInstruction')"
+        @click="$emit('openInstruction')"
+      >
+        <span class="toolbar-char">i</span>
+      </button>
     </div>
     <div class="toolbar-right">
       <!-- 网络访问开关 -->
@@ -106,7 +115,7 @@ defineProps({
   sandboxMode: { type: String, default: 'danger-full-access' },
 })
 
-defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:networkAccess', 'update:webSearch', 'update:sandboxMode', 'openPlugins', 'openSkills'])
+defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:networkAccess', 'update:webSearch', 'update:sandboxMode', 'openPlugins', 'openSkills', 'openInstruction'])
 </script>
 
 <style scoped>

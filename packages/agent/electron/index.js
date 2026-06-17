@@ -4,6 +4,7 @@ const { setupClaudeHandlers } = require('./claudeAgent')
 const { setupCodexSdkHandlers, resetCodexSdkRuntime } = require('./codexAgent')
 const { registerLocalSearchIpc } = require('./localSearch')
 const { setupHomeMetricsHandlers } = require('./homeMetrics')
+const { registerSessionInstructionIpc } = require('./sessionInstructionIpc')
 const { setLocale } = require('./localeHelper')
 
 let localeConf = null
@@ -18,6 +19,7 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
   setupCodexSdkHandlers()
   registerLocalSearchIpc(targetIpcMain)
   setupHomeMetricsHandlers(targetIpcMain)
+  registerSessionInstructionIpc(targetIpcMain)
 
   // Locale persistence
   targetIpcMain.handle('load-locale', () => {
