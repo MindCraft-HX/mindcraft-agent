@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const os = require('os')
 const { app } = require('electron')
+const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 
 // ==================== 工具函数 ====================
 
@@ -377,8 +378,8 @@ function getRecentProject() {
 
   // 读取 Codex panel state
   try {
-    const codexStatePath = path.join(os.homedir(), '.codex', 'codex-panel-state.json')
-    if (fs.existsSync(codexStatePath)) {
+    const codexStatePath = getCodexPanelStateReadCandidates().find(candidate => fs.existsSync(candidate))
+    if (codexStatePath) {
       const raw = fs.readFileSync(codexStatePath, 'utf8')
       const state = JSON.parse(raw)
       const projects = state?.projects || []

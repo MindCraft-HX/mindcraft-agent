@@ -134,12 +134,22 @@ MindCraft 的会话身份分三层：
 
 ### Phase 1：低风险迁移 CodeX panel state
 
+状态：✅ 已完成（2026-06-17）
+
 目标：
 
 - 新路径：`{userData}/codex-panel-state.json`
 - 读取顺序：新路径 → 旧 `~/.codex/codex-panel-state.json`
 - 写入顺序：只写新路径
 - 不删除旧文件
+
+实现：
+
+- `packages/agent/electron/codexPanelStatePaths.js` 统一定义新旧路径。
+- `codex-load-code-panel-state` 优先读取 `{userData}/codex-panel-state.json`，旧文件存在且新文件不存在时自动导入到新路径。
+- `codex-save-code-panel-state` / sync 保存只写新路径。
+- 首页最近项目读取同样使用新路径优先、旧路径 fallback。
+- 新增 `codexPanelStatePaths.test.js`，并纳入 `npm test`。
 
 验收：
 

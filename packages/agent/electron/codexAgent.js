@@ -7,6 +7,7 @@ const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
+const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
@@ -2978,31 +2979,42 @@ function setupCodexSdkHandlers() {
     return result.filePaths[0]
   })
 
-  // 面板状态持久化
-  const PANEL_STATE_FILE = path.join(os.homedir(), '.codex', 'codex-panel-state.json')
+  // 面板状态持久化：MindCraft 自有 UI 状态写入 userData；旧 ~/.codex 文件只作为迁移 fallback。
+  const { primary: PANEL_STATE_FILE, legacy: LEGACY_PANEL_STATE_FILE } = getCodexPanelStatePaths()
   const AUTH_JSON_FILE = path.join(CODEX_CONFIG_DIR, 'auth.json')
   const DEFAULT_PANEL_STATE = { lastCwd: '', projects: [] }
 
-  function readPanelState() {
-    try {
-      if (!fs.existsSync(PANEL_STATE_FILE)) return { ...DEFAULT_PANEL_STATE }
-      const parsed = JSON.parse(fs.readFileSync(PANEL_STATE_FILE, 'utf8'))
-      if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_PANEL_STATE }
-      const projects = Array.isArray(parsed.projects) ? parsed.projects.map(project => ({
-        ...project,
-        chats: Array.isArray(project?.chats) ? project.chats.map(chat => ({
-          ...chat,
-          messages: chat?.filePath ? [] : (Array.isArray(chat?.messages) ? chat.messages : []),
-        })) : [],
-      })) : []
-      return {
-        lastCwd: typeof parsed.lastCwd === 'string' ? parsed.lastCwd : '',
-        projects,
-      }
-    } catch (e) {
-      console.warn('[codex] readPanelState failed:', e?.message || e, 'file=', PANEL_STATE_FILE)
-      return { ...DEFAULT_PANEL_STATE }
+  function normalizePanelState(parsed) {
+    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_PANEL_STATE }
+    const projects = Array.isArray(parsed.projects) ? parsed.projects.map(project => ({
+      ...project,
+      chats: Array.isArray(project?.chats) ? project.chats.map(chat => ({
+        ...chat,
+        messages: chat?.filePath ? [] : (Array.isArray(chat?.messages) ? chat.messages : []),
+      })) : [],
+    })) : []
+    return {
+      lastCwd: typeof parsed.lastCwd === 'string' ? parsed.lastCwd : '',
+      projects,
     }
+  }
+
+  function readPanelState() {
+    for (const candidate of getCodexPanelStateReadCandidates()) {
+      try {
+        if (!fs.existsSync(candidate)) continue
+        const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'))
+        if (!parsed || typeof parsed !== 'object') continue
+        const normalized = normalizePanelState(parsed)
+        if (candidate === LEGACY_PANEL_STATE_FILE && !fs.existsSync(PANEL_STATE_FILE)) {
+          writePanelState(normalized)
+        }
+        return normalized
+      } catch (e) {
+        console.warn('[codex] readPanelState failed:', e?.message || e, 'file=', candidate)
+      }
+    }
+    return { ...DEFAULT_PANEL_STATE }
   }
   function writePanelState(payload) {
     try {
