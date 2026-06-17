@@ -454,6 +454,7 @@
 		"writeNew": "新建或整段写入",
 		"diffView": "基于差异展示修改",
 		"editView": "展示编辑后的代码",
+		"noDiffPreview": "暂无 diff 预览",
 		"nFiles": "{n} 个文件",
 		"planEntered": "已进入计划模式",
 		"planExited": "已退出计划模式",

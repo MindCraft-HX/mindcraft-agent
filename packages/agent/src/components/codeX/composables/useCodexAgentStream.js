@@ -5,6 +5,19 @@ import { findChatBySessionId } from '../utils/sessionRouting.mjs'
 import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs'
 const CODEX_DEBUG = false
 
+function normalizeIncomingFileChange(c = {}) {
+  return {
+    path: c?.path || '',
+    operation: c?.operation || c?.kind || '',
+    unified_diff: c?.unified_diff || '',
+    _diffSource: c?._diffSource || '',
+    _noDiffReason: c?._noDiffReason || '',
+    _oldStr: c?._oldStr || '',
+    _newStr: c?._newStr || '',
+    diffLines: Array.isArray(c?.diffLines) ? c.diffLines : [],
+  }
+}
+
 function pushMessage(tab, onNewMessage, msg) {
   tab.messages.push(msg)
   onNewMessage?.()
@@ -43,14 +56,7 @@ function normalizeToolStatus(itemStatus, isFinal) {
 function mapPatchChangesToFileChanges(changes) {
   // 数组格式（electron 富化后的 file_change.changes）
   if (Array.isArray(changes)) {
-    return changes.map(c => ({
-      path: c?.path || '',
-      operation: c?.operation || c?.kind || '',
-      unified_diff: c?.unified_diff || '',
-      _oldStr: '',
-      _newStr: '',
-      diffLines: [],
-    }))
+    return changes.map(normalizeIncomingFileChange)
   }
   // 对象格式 {path: {type, unified_diff, move_path, ...}}（SDK 原始 patch_apply_end.changes）
   if (changes && typeof changes === 'object') {
@@ -64,6 +70,8 @@ function mapPatchChangesToFileChanges(changes) {
             ? 'rename'
             : 'modify',
       unified_diff: info?.unified_diff || '',
+      _diffSource: info?._diffSource || '',
+      _noDiffReason: info?._noDiffReason || '',
       _oldStr: '',
       _newStr: '',
       diffLines: [],
@@ -198,6 +206,8 @@ function mergeFileChangePreview(existingChanges, nextChanges) {
       _diffHunks: Array.isArray(change?._diffHunks) && change._diffHunks.length
         ? change._diffHunks
         : (existing?._diffHunks || []),
+      _diffSource: change?._diffSource || existing?._diffSource || '',
+      _noDiffReason: change?._noDiffReason || existing?._noDiffReason || '',
       diffLines: Array.isArray(change?.diffLines) && change.diffLines.length
         ? change.diffLines
         : (existing?.diffLines || []),
@@ -308,27 +318,13 @@ const ITEM_TOOL_HANDLERS = {
       const changes = Array.isArray(item.changes) ? item.changes : []
       const filePath = changes.map(c => c.path).filter(Boolean).join('\n')
       // 构建 _fileChanges 数组，每项包含 _diffInput 供 ToolWrite.vue 计算 diff
-      const _fileChanges = changes.map(c => ({
-        path: c.path || '',
-        operation: c.operation || '',
-        unified_diff: c.unified_diff || '',
-        _oldStr: '',
-        _newStr: '',
-        diffLines: [],
-      }))
+      const _fileChanges = changes.map(normalizeIncomingFileChange)
       return { expanded: true, newContent: '', diffLines: [], filePath, _fileChanges }
     },
     mergeProps: (item, existing) => {
       const changes = Array.isArray(item.changes) ? item.changes : []
       const filePath = changes.map(c => c.path).filter(Boolean).join('\n')
-      const nextFileChanges = changes.map(c => ({
-        path: c.path || '',
-        operation: c.operation || c.kind || '',
-        unified_diff: c.unified_diff || '',
-        _oldStr: '',
-        _newStr: '',
-        diffLines: [],
-      }))
+      const nextFileChanges = changes.map(normalizeIncomingFileChange)
       const _fileChanges = hasRichFileChangePreview(existing?._fileChanges)
         ? mergeFileChangePreview(existing?._fileChanges, nextFileChanges)
         : nextFileChanges

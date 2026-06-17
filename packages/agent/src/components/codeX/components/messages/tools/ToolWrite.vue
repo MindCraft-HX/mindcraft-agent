@@ -17,6 +17,7 @@
       <template v-else-if="msg.newContent">
         <pre class="tool-code"><code v-html="highlight(msg.newContent, msg.filePath)"></code></pre>
       </template>
+      <div v-else-if="isFileChange || isApplyPatch" class="diff-empty-note">{{ t('agent.noDiffPreview') }}</div>
     </template>
     <!-- 多文件变更：展示文件列表 + 各文件 diff -->
     <template v-else-if="isFileChange || isApplyPatch">
@@ -27,6 +28,7 @@
         <div v-if="fc._renderDiffLines.length" @dblclick.stop="openModal(i)" style="cursor:pointer">
           <DiffSplitView :diffLines="fc._renderDiffLines" :filePath="fc.path" />
         </div>
+        <div v-else class="diff-empty-note">{{ t('agent.noDiffPreview') }}</div>
       </div>
     </template>
   </div>
@@ -88,6 +90,8 @@ const fileChanges = computed(() => {
           path: c.path || '',
           operation: c.operation || c.kind || '',
           unified_diff: c.unified_diff || '',
+          _diffSource: c._diffSource || '',
+          _noDiffReason: c._noDiffReason || '',
           _oldStr: '',
           _newStr: '',
           diffLines: [],
@@ -371,6 +375,11 @@ watch(() => props.msg._fileChanges, () => { computeFileChangeDiffs() }, { deep: 
   margin: 0; padding: 7px 10px; font-size: 11px; color: var(--cc-tool-output);
   font-family: 'Cascadia Code', Consolas, monospace;
   overflow: auto; max-height: 320px; white-space: pre;
+}
+.diff-empty-note {
+  padding: 7px 10px 9px;
+  font-size: 11px;
+  color: var(--cc-text-dim);
 }
 .diff-expand-btn {
   float: right; cursor: pointer; font-size: 14px;

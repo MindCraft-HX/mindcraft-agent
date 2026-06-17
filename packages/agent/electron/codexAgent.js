@@ -12,6 +12,7 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const { deleteSessionRecordsByProvider, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
+const { normalizeFileChangeItemPreviews } = require('./codexFileChangePreview')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
@@ -928,15 +929,6 @@ function getCodexActivityLabel(toolName) {
   if (['mcp_tool'].includes(n)) return '插件'
   if (['error'].includes(n)) return 'Error'
   return 'Tool'
-}
-
-function trimUnifiedDiff(diffText, maxLines = 400) {
-  const text = String(diffText || '')
-  if (!text) return ''
-  const lines = text.split('\n')
-  if (lines.length <= maxLines) return text
-  const head = lines.slice(0, maxLines).join('\n')
-  return `${head}\n... (diff truncated, ${lines.length - maxLines} more lines)`
 }
 
 function buildMessageDedupKey(role, text, content) {
@@ -2129,6 +2121,9 @@ function setupCodexSdkHandlers() {
                   const enrichedChanges = toFileChangeChangesFromPatchEnd(patchEnd)
                   if (enrichedChanges.length) forwardItem = { ...forwardItem, changes: enrichedChanges }
                 }
+              }
+              if (forwardItem?.type === 'file_change') {
+                forwardItem = normalizeFileChangeItemPreviews(forwardItem, resolvedCwd)
               }
               if (item?.type === 'patch_apply_end' || forwardItem?.type === 'file_change') {
                 if (CODEX_DEBUG) {

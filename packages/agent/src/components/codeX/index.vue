@@ -939,6 +939,8 @@ function normalizeFileChangeMessages(messages) {
         path: c.path || '',
         operation: c.operation || c.kind || '',
         unified_diff: c.unified_diff || '',
+        _diffSource: c._diffSource || '',
+        _noDiffReason: c._noDiffReason || '',
         _oldStr: '',
         _newStr: '',
         diffLines: [],
