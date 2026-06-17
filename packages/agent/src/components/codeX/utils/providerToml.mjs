@@ -1,13 +1,7 @@
 const DEFAULT_PROVIDER_NAME = 'mindcraft'
-const VALID_REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh'])
 const BARE_TOML_KEY_RE = /^[A-Za-z0-9_-]+$/
 
-export function normalizeCodexReasoningEffort(value) {
-  const effort = String(value || '').trim().toLowerCase()
-  if (!effort) return ''
-  if (effort === 'extra_high' || effort === 'max') return 'xhigh'
-  return VALID_REASONING_EFFORTS.has(effort) ? effort : ''
-}
+export { normalizeCodexReasoningEffort } from './normalizeReasoningEffort.cjs'
 
 export function normalizeProviderName(name) {
   const value = String(name || '').trim()

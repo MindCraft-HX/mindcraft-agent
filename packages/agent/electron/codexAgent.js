@@ -10,6 +10,7 @@ const { getGitInfo } = require('./claudeMetrics')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
+const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
@@ -269,13 +270,6 @@ function readRuntimeConfig() {
   } catch (_) {}
 
   return buildRuntimeConfigFromToml(toml, userRuntime)
-}
-
-function normalizeCodexReasoningEffort(value) {
-  const effort = String(value || '').trim().toLowerCase()
-  if (!effort) return ''
-  if (effort === 'extra_high' || effort === 'max') return 'xhigh'
-  return ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : ''
 }
 
 /** CodeX SDK 原生 sandboxMode 值 */

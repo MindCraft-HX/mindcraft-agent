@@ -36,6 +36,13 @@ export default defineConfig({
   externals: {
     'electron-screenshots': 'require("electron-screenshots")',
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern',
+      },
+    },
+  },
   envDir: './config',
   base: './',
   build: {
