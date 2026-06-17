@@ -226,7 +226,7 @@ function getImageSrc(source) {
 .user-bubble :deep(.md-h3),
 .user-bubble :deep(.md-h4),
 .user-bubble :deep(.md-strong-line) { color: var(--cc-user-heading); }
-.user-bubble :deep(.md-link) { color: #fff3b0; }
+.user-bubble :deep(.md-link) { color: var(--cc-user-link, #fff3b0); }
 .user-bubble :deep(a.inline-code.md-file-link) {
   color: var(--cc-user-code-text);
   border-bottom-color: currentColor;
@@ -257,20 +257,20 @@ function getImageSrc(source) {
 .user-bubble :deep(.md-table td:last-child) { border-right: none; }
 
 /* highlight.js token（偏浅色，保证在用户气泡里可读） */
-.user-bubble :deep(.hljs-keyword)  { color: #ffd6ff; }
-.user-bubble :deep(.hljs-built_in) { color: #b9f6ca; }
-.user-bubble :deep(.hljs-string)   { color: #ffe0b2; }
-.user-bubble :deep(.hljs-number)   { color: #d7ffb8; }
-.user-bubble :deep(.hljs-comment)  { color: rgba(255, 255, 255, 0.65); font-style: italic; }
-.user-bubble :deep(.hljs-function) { color: #fff3b0; }
-.user-bubble :deep(.hljs-title)    { color: #fff3b0; }
-.user-bubble :deep(.hljs-params)   { color: #c8e1ff; }
-.user-bubble :deep(.hljs-variable) { color: #c8e1ff; }
-.user-bubble :deep(.hljs-attr)     { color: #c8e1ff; }
-.user-bubble :deep(.hljs-name)     { color: #b9f6ca; }
-.user-bubble :deep(.hljs-tag)      { color: #c8e1ff; }
-.user-bubble :deep(.hljs-type)     { color: #b9f6ca; }
-.user-bubble :deep(.hljs-literal)  { color: #c8e1ff; }
-.user-bubble :deep(.hljs-operator) { color: var(--cc-user-code-text); }
-.user-bubble :deep(.hljs-punctuation) { color: var(--cc-user-code-text); }
+.user-bubble :deep(.hljs-keyword)  { color: var(--cc-user-hljs-keyword, #ffd6ff); }
+.user-bubble :deep(.hljs-built_in) { color: var(--cc-user-hljs-built-in, #b9f6ca); }
+.user-bubble :deep(.hljs-string)   { color: var(--cc-user-hljs-string, #ffe0b2); }
+.user-bubble :deep(.hljs-number)   { color: var(--cc-user-hljs-number, #d7ffb8); }
+.user-bubble :deep(.hljs-comment)  { color: var(--cc-user-hljs-comment, rgba(255, 255, 255, 0.65)); font-style: italic; }
+.user-bubble :deep(.hljs-function) { color: var(--cc-user-hljs-function, #fff3b0); }
+.user-bubble :deep(.hljs-title)    { color: var(--cc-user-hljs-function, #fff3b0); }
+.user-bubble :deep(.hljs-params)   { color: var(--cc-user-hljs-params, #c8e1ff); }
+.user-bubble :deep(.hljs-variable) { color: var(--cc-user-hljs-params, #c8e1ff); }
+.user-bubble :deep(.hljs-attr)     { color: var(--cc-user-hljs-params, #c8e1ff); }
+.user-bubble :deep(.hljs-name)     { color: var(--cc-user-hljs-built-in, #b9f6ca); }
+.user-bubble :deep(.hljs-tag)      { color: var(--cc-user-hljs-tag, #c8e1ff); }
+.user-bubble :deep(.hljs-type)     { color: var(--cc-user-hljs-built-in, #b9f6ca); }
+.user-bubble :deep(.hljs-literal)  { color: var(--cc-user-hljs-tag, #c8e1ff); }
+.user-bubble :deep(.hljs-operator) { color: var(--cc-user-hljs-operator, var(--cc-user-code-text)); }
+.user-bubble :deep(.hljs-punctuation) { color: var(--cc-user-hljs-operator, var(--cc-user-code-text)); }
 </style>

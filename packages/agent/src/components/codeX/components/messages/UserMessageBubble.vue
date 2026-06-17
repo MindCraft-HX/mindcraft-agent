@@ -162,7 +162,7 @@ function getImageSrc(block) {
 .user-bubble :deep(.md-h3),
 .user-bubble :deep(.md-h4),
 .user-bubble :deep(.md-strong-line) { color: var(--cc-user-heading); }
-.user-bubble :deep(.md-link) { color: #fff3b0; }
+.user-bubble :deep(.md-link) { color: var(--cc-user-link, #fff3b0); }
 .user-bubble :deep(a.inline-code.md-file-link) {
   color: var(--cc-user-code-text);
   border-bottom-color: currentColor;
