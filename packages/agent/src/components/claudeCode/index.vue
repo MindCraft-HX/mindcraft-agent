@@ -346,6 +346,11 @@ import {
   findPendingClaudeSessionForAdoption,
   hasUnboundClaudeSessionPendingAdoption,
 } from './utils/pendingSessionBinding.mjs'
+import {
+  getClaudeChatKey,
+  getClaudeCliSessionId,
+  getClaudeSessionFilePath,
+} from './utils/claudeSessionIdentity.mjs'
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 const router = useRouter()
@@ -1578,6 +1583,8 @@ function resetTabSession(tab) {
 
 function createChat() {
   const id = nextChatId()
+  // T130: `sessionId` is the legacy renderer/runtime chat key. It exists before
+  // Claude creates a real CLI session; disk artifacts must use cliSessionId/filePath.
   return {
     id,
     name: t('chat.newChat'),
@@ -1702,8 +1709,10 @@ async function refreshProjectSessionsInBackground(p) {
     const cacheByPath = {}
     const cacheBySid = {}
     for (const c of p.chats || []) {
-      if (c.filePath) cacheByPath[c.filePath.replace(/\\/g, '/')] = c
-      if (c.cliSessionId) cacheBySid[c.cliSessionId] = c
+      const sessionFilePath = getClaudeSessionFilePath(c)
+      const cliSessionId = getClaudeCliSessionId(c)
+      if (sessionFilePath) cacheByPath[sessionFilePath] = c
+      if (cliSessionId) cacheBySid[cliSessionId] = c
     }
 
     // 处理新增文件 和 fileSize 变化的文件（不再读文件，标题来自 scan）
@@ -1715,14 +1724,15 @@ async function refreshProjectSessionsInBackground(p) {
     let hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
     for (const s of scanned) {
       if (p.id !== activeProjectId.value) return
+      const scannedCliSessionId = s.cliSessionId || s.id || ''
       const normalizedPath = (s.filePath || '').replace(/\\/g, '/')
-      const cached = cacheByPath[normalizedPath] || cacheBySid[s.id] || null
+      const cached = cacheByPath[normalizedPath] || cacheBySid[scannedCliSessionId] || null
       const rawTitle = s.title || ''
       const name = rawTitle
         ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
-        : `${t('chat.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
+        : `${t('chat.sessionPrefix')}${String(scannedCliSessionId || '').slice(0, 8)}`
       const pendingChat = !cached
-        ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value, scannedSessionId: s.id })
+        ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value, scannedSessionId: scannedCliSessionId })
         : null
 
       if (!cached) {
@@ -1735,8 +1745,10 @@ async function refreshProjectSessionsInBackground(p) {
           if (pendingChat.id === activeChatId.value) {
             pendingChat.messages = []
           }
-          if (pendingChat.sessionId && pendingChat.cliSessionId) {
-            window.electronAPI?.claudeRegisterCliSessions?.({ [pendingChat.sessionId]: pendingChat.cliSessionId })
+          const pendingChatKey = getClaudeChatKey(pendingChat)
+          const pendingCliSessionId = getClaudeCliSessionId(pendingChat)
+          if (pendingChatKey && pendingCliSessionId) {
+            window.electronAPI?.claudeRegisterCliSessions?.({ [pendingChatKey]: pendingCliSessionId })
           }
           // 领养后重新计算 pending 状态，避免过时的 hasPendingNewChat 阻止后续合法 JSONL
           hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
@@ -1749,8 +1761,8 @@ async function refreshProjectSessionsInBackground(p) {
         const newChat = {
           id: nextChatId(),
           name,
-          sessionId: s.id || `session-${Date.now()}`,
-          cliSessionId: s.id || null,
+          sessionId: scannedCliSessionId || `session-${Date.now()}`,
+          cliSessionId: scannedCliSessionId || null,
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
@@ -1773,8 +1785,10 @@ async function refreshProjectSessionsInBackground(p) {
         })
         if (insertAt === -1) p.chats.push(newChat)
         else p.chats.splice(insertAt, 0, newChat)
-        if (newChat.sessionId && newChat.cliSessionId) {
-          window.electronAPI?.claudeRegisterCliSessions?.({ [newChat.sessionId]: newChat.cliSessionId })
+        const newChatKey = getClaudeChatKey(newChat)
+        const newCliSessionId = getClaudeCliSessionId(newChat)
+        if (newChatKey && newCliSessionId) {
+          window.electronAPI?.claudeRegisterCliSessions?.({ [newChatKey]: newCliSessionId })
         }
       } else if (s.fileSize != null && cached.fileSize !== s.fileSize) {
         changedCount++
@@ -2082,30 +2096,35 @@ async function selectDir(project, onAfterSelect) {
   try {
     const sessions = await loadProjectSessions(dir)
     if (Array.isArray(sessions) && sessions.length) {
-      project.chats = sessions.map(s => ({
-        id: nextChatId(),
-        name: s.name || `${t('chat.sessionPrefix')}${String(s.id || '').slice(0, 8)}`,
-        sessionId: s.id || `session-${Date.now()}`,
-        cliSessionId: s.id || null,
-        createdAt: s.createdAt || null,
-        updatedAt: s.updatedAt || null,
-        fileSize: s.fileSize || null,
-        runMode: 'ask_before_edits',
-        thinking: false,
-        messages: [],
-        currentAssistantId: null,
-        filePath: s.filePath || '',
-        _pendingSessionBinding: false,
-        _userRenamed: Boolean(s._userRenamed),
-        taskState: createEmptyTaskState(),
-        _taskToolUseIds: new Set(),
-      }))
+      project.chats = sessions.map(s => {
+        const cliSessionId = s.cliSessionId || s.id || ''
+        return {
+          id: nextChatId(),
+          name: s.name || `${t('chat.sessionPrefix')}${String(cliSessionId || '').slice(0, 8)}`,
+          sessionId: cliSessionId || `session-${Date.now()}`,
+          cliSessionId: cliSessionId || null,
+          createdAt: s.createdAt || null,
+          updatedAt: s.updatedAt || null,
+          fileSize: s.fileSize || null,
+          runMode: 'ask_before_edits',
+          thinking: false,
+          messages: [],
+          currentAssistantId: null,
+          filePath: s.filePath || '',
+          _pendingSessionBinding: false,
+          _userRenamed: Boolean(s._userRenamed),
+          taskState: createEmptyTaskState(),
+          _taskToolUseIds: new Set(),
+        }
+      })
       const firstChatId = project.chats[0]?.id || null
       if (firstChatId) switchChat(firstChatId)
       // 注册 cliSessionId 到主进程，使得在历史对话上发送消息时能 resume 旧会话
       const sessionMap = {}
       for (const c of project.chats) {
-        if (c.sessionId && c.cliSessionId) sessionMap[c.sessionId] = c.cliSessionId
+        const chatKey = getClaudeChatKey(c)
+        const cliSessionId = getClaudeCliSessionId(c)
+        if (chatKey && cliSessionId) sessionMap[chatKey] = cliSessionId
       }
       if (Object.keys(sessionMap).length) {
         window.electronAPI?.claudeRegisterCliSessions?.(sessionMap)
@@ -2135,11 +2154,13 @@ async function loadProjectSessions(cwd) {
     if (Array.isArray(sessions)) {
       return sessions.map(s => {
         const rawTitle = s.title || ''
+        const cliSessionId = s.cliSessionId || s.id || ''
         const name = rawTitle
           ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
-          : `${t('chat.sessionPrefix')}${String(s.id || '').slice(0, 8)}`
+          : `${t('chat.sessionPrefix')}${String(cliSessionId || '').slice(0, 8)}`
         return {
-          id: s.id || nextSessionId(),
+          id: cliSessionId || nextSessionId(),
+          cliSessionId: cliSessionId || null,
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
           filePath: s.filePath || '',
@@ -2405,8 +2426,10 @@ function handleProviderActivated() {
       // 清 currentAssistantId，避免 abort 后残存的流式消息追加到旧气泡
       chat.currentAssistantId = null
       chat.thinking = false
-      if (chat.sessionId && chat.cliSessionId) {
-        allRegistrations[chat.sessionId] = chat.cliSessionId
+      const chatKey = getClaudeChatKey(chat)
+      const cliSessionId = getClaudeCliSessionId(chat)
+      if (chatKey && cliSessionId) {
+        allRegistrations[chatKey] = cliSessionId
       }
     }
   }
@@ -2909,6 +2932,7 @@ const {
   onNewMessage: bumpScrollCount,
   trimMessages,
   onTaskDone: playDoneSound,
+  onPendingApproval: playAskSound,
   onBackgroundTaskDone() {
     // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
     if (codehubHasNotification) codehubHasNotification.value = true
@@ -3248,7 +3272,9 @@ function initNonCritical() {
       activeChatId.value = restoredSelection.activeChatId
       const sessionMap = {}
       for (const c of projects.value.flatMap(pp => pp.chats || [])) {
-        if (c.sessionId && c.cliSessionId) sessionMap[c.sessionId] = c.cliSessionId
+        const chatKey = getClaudeChatKey(c)
+        const cliSessionId = getClaudeCliSessionId(c)
+        if (chatKey && cliSessionId) sessionMap[chatKey] = cliSessionId
       }
       if (Object.keys(sessionMap).length) window.electronAPI?.claudeRegisterCliSessions?.(sessionMap)
       nextTick(() => scrollBottom())

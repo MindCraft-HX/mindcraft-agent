@@ -111,15 +111,16 @@ export function useClaudeAgentStream({
   trimMessages,
   onTaskDone,
   onBackgroundTaskDone,
+  onPendingApproval,
 }) {
-  function onAgentMessage({ sessionId: sid, msg }) {
-    const tab = tabs.value.find(t => t.sessionId === sid)
+  function onAgentMessage({ sessionId: chatKey, msg }) {
+    const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
 
     // 诊断日志：记录所有 task 相关消息
     if (msg.type === 'system' && (msg.subtype || '').startsWith('task_')) {
       console.log('[task-diag] event', {
-        sid: sid.slice(-8),
+        chatKey: chatKey.slice(-8),
         type: msg.type,
         subtype: msg.subtype,
         taskId: msg.task_id || '',
@@ -162,7 +163,7 @@ export function useClaudeAgentStream({
               now: Date.now(),
             })
             console.log('[task-diag] tool_use applied', {
-              sid: sid.slice(-8),
+              chatKey: chatKey.slice(-8),
               toolName: name,
               toolUseId: block.id || '',
               changed: syncMeta.changed,
@@ -269,7 +270,7 @@ export function useClaudeAgentStream({
           now: Date.now(),
         })
         console.log('[task-diag] task_started applied', {
-          sid: sid.slice(-8),
+          chatKey: chatKey.slice(-8),
           taskId: msg.task_id || '',
           toolUseId: msg.tool_use_id || '',
           created: meta.created,
@@ -289,7 +290,7 @@ export function useClaudeAgentStream({
           now: Date.now(),
         })
         console.log('[task-diag] task_updated applied', {
-          sid: sid.slice(-8),
+          chatKey: chatKey.slice(-8),
           taskId: msg.task_id || '',
           patch: msg.patch || {},
           created: meta.created,
@@ -471,8 +472,8 @@ export function useClaudeAgentStream({
     throttledSaveHistory(saveHistory)
   }
 
-  function onAgentPermission({ sessionId: sid, msg }) {
-    const tab = tabs.value.find(t => t.sessionId === sid)
+  function onAgentPermission({ sessionId: chatKey, msg }) {
+    const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
     if (!tab.thinking) tab.thinking = true
     const toolName = msg.tool_name || msg.tool || 'permission'
@@ -485,7 +486,7 @@ export function useClaudeAgentStream({
       status: 'pending',
       toolUseId: null,
       requestId,
-      sessionId: sid,
+      sessionId: chatKey,
       permDesc: msg.description || `是否允许 Claude 执行 ${toolName}？`,
       filePath,
       bashCmd,
@@ -494,15 +495,16 @@ export function useClaudeAgentStream({
       diffLines: [],
       expanded: true,
     }))
+    onPendingApproval?.()
     scrollBottom(tab.id)
   }
 
-  function onAgentDone({ sessionId: sid, cliSessionId, filePath, reason = 'completed' }) {
-    const tab = tabs.value.find(t => t.sessionId === sid)
+  function onAgentDone({ sessionId: chatKey, cliSessionId, filePath, reason = 'completed' }) {
+    const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
     if (cliSessionId) {
       tab.cliSessionId = cliSessionId
-      window.electronAPI.claudeRegisterCliSessions?.({ [sid]: cliSessionId })
+      window.electronAPI.claudeRegisterCliSessions?.({ [chatKey]: cliSessionId })
     }
     if (filePath) {
       tab.filePath = filePath
@@ -533,7 +535,7 @@ export function useClaudeAgentStream({
     }
 
     if (projects && getActiveProjectId) {
-      const ownerProject = projects.value.find(p => (p.chats || []).some(c => c.sessionId === sid))
+      const ownerProject = projects.value.find(p => (p.chats || []).some(c => c.sessionId === chatKey))
       if (ownerProject && reason === 'completed') {
         // 提示音：任何任务完成都响，不受窗口焦点/活跃 Tab 影响
         onTaskDone?.()
@@ -558,8 +560,8 @@ export function useClaudeAgentStream({
     saveHistory()
   }
 
-  function onAgentAskQuestion({ sessionId: sid, requestId, questions }) {
-    const tab = tabs.value.find(t => t.sessionId === sid)
+  function onAgentAskQuestion({ sessionId: chatKey, requestId, questions }) {
+    const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
     if (!tab.thinking) tab.thinking = true
     pushMessage(tab, onNewMessage, createToolMessage({
@@ -567,7 +569,7 @@ export function useClaudeAgentStream({
       status: 'pending',
       toolUseId: null,
       requestId,
-      sessionId: sid,
+      sessionId: chatKey,
       permDesc: '',
       filePath: '',
       bashCmd: '',
@@ -581,8 +583,8 @@ export function useClaudeAgentStream({
 
   // 主进程在流式首条消息时推送到此事件，提前告知 cliSessionId，
   // 让扫描器能精确匹配 pending chat 到对应的 JSONL 文件，无需盲猜
-  function onEarlyCliSession({ sessionId: sid, cliSessionId }) {
-    const tab = tabs.value.find(t => t.sessionId === sid)
+  function onEarlyCliSession({ sessionId: chatKey, cliSessionId }) {
+    const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (tab && !tab.cliSessionId) {
       tab._expectedCliSessionId = cliSessionId
     }

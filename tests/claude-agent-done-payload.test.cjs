@@ -151,6 +151,20 @@ function runJsonlIntegrityMultipleToolUseTest() {
   fs.rmSync(dir, { recursive: true, force: true })
 }
 
+function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-session-artifacts-'))
+  const filePath = path.join(dir, '11111111-1111-1111-1111-111111111111.jsonl')
+  const metaPath = path.join(dir, '11111111-1111-1111-1111-111111111111.meta.json')
+  fs.writeFileSync(filePath, '{}\n', 'utf8')
+  fs.writeFileSync(metaPath, '{"model":"claude-sonnet"}\n', 'utf8')
+
+  assert.equal(__test__.deleteClaudeSessionArtifacts(filePath), true)
+  assert.equal(fs.existsSync(filePath), false)
+  assert.equal(fs.existsSync(metaPath), false)
+
+  fs.rmSync(dir, { recursive: true, force: true })
+}
+
 function run() {
   runDonePayloadDefaultReasonTest()
   runDonePayloadFallbackPathTest()
@@ -159,6 +173,7 @@ function run() {
   runDoneReasonFinalizationTest()
   runJsonlIntegrityFileTest()
   runJsonlIntegrityMultipleToolUseTest()
+  runDeleteSessionArtifactsDeletesMetaSidecarTest()
   console.log('claude agent done payload tests passed')
 }
 

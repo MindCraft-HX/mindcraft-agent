@@ -1,23 +1,20 @@
+import {
+  getClaudeChatBindingKey,
+  getClaudeSessionFilePath,
+  usesLegacyCliSessionAsChatKey,
+} from './claudeSessionIdentity.mjs'
+
 function toTime(value) {
   const time = new Date(value || 0).getTime()
   return Number.isFinite(time) ? time : 0
 }
 
-function normalizePath(value) {
-  return typeof value === 'string' ? value.replace(/\\/g, '/') : ''
-}
-
-function getChatBindingKey(chat) {
-  if (!chat) return ''
-  if (chat.cliSessionId) return `sid:${chat.cliSessionId}`
-  const filePath = normalizePath(chat.filePath)
-  return filePath ? `path:${filePath.toLowerCase()}` : ''
-}
-
 function scoreBoundChat(chat) {
   let score = 0
-  if (chat?.cliSessionId && chat?.sessionId === chat.cliSessionId) score += 1000000000000000
-  if (chat?.filePath) score += 1000000000000
+  // Older restored chats may have used the CLI UUID as renderer sessionId.
+  // Prefer those entries when deduping with placeholder renderer keys.
+  if (usesLegacyCliSessionAsChatKey(chat)) score += 1000000000000000
+  if (getClaudeSessionFilePath(chat)) score += 1000000000000
   if (chat?.cliSessionId) score += 1000000000
   score += Number(chat?.fileSize || 0)
   score += toTime(chat?.updatedAt || chat?.createdAt)
@@ -29,7 +26,7 @@ function dedupeProjectChats(chats = []) {
   const boundIndexByKey = new Map()
 
   for (const chat of Array.isArray(chats) ? chats : []) {
-    const key = getChatBindingKey(chat)
+    const key = getClaudeChatBindingKey(chat)
     if (!key) {
       output.push(chat)
       continue

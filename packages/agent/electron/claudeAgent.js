@@ -457,7 +457,7 @@ function scanCliSessionsForProject(cwd) {
       for (const entry of entries) {
         if (entry.isFile() && entry.name.endsWith('.jsonl')) {
           const fullPath = path.join(projectDir, entry.name)
-          const sessionId = path.basename(entry.name, '.jsonl')
+          const cliSessionId = path.basename(entry.name, '.jsonl')
           let createdAt = null
           let updatedAt = null
           let fileSize = null
@@ -467,7 +467,7 @@ function scanCliSessionsForProject(cwd) {
             updatedAt = stats.mtime
             fileSize = stats.size
           } catch (_) {}
-          jsonlFiles.push({ sessionId, filePath: fullPath, createdAt, updatedAt, fileSize })
+          jsonlFiles.push({ cliSessionId, filePath: fullPath, createdAt, updatedAt, fileSize })
         }
       }
     } catch (_) {}
@@ -487,7 +487,9 @@ function scanCliSessionsForProject(cwd) {
       const isCustomTitle = titleResult?.isCustomTitle || false
       console.log('[scanCliSessionsForProject] title:', title || '(empty)', 'isCustomTitle:', isCustomTitle, 'file:', file.filePath)
       result.push({
-        id: file.sessionId,
+        // `id` is kept for renderer compatibility; new code should read cliSessionId.
+        id: file.cliSessionId,
+        cliSessionId: file.cliSessionId,
         createdAt: file.createdAt,
         updatedAt: file.updatedAt,
         filePath: file.filePath,
@@ -498,6 +500,23 @@ function scanCliSessionsForProject(cwd) {
     }
   } catch (_) {}
   return result
+}
+
+function deleteClaudeSessionArtifacts(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return false
+    fs.unlinkSync(filePath)
+    const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
+    try {
+      if (metaPath !== filePath && fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
+    } catch (e) {
+      console.warn('[claude-delete-session-file] meta delete failed:', e?.message || e)
+    }
+    return true
+  } catch (e) {
+    console.warn('[claude-delete-session-file] failed:', e?.message || e)
+    return false
+  }
 }
 
 function readClaudeCodePanelState() {
@@ -1000,14 +1019,7 @@ function setupClaudeHandlers() {
     }
   })
   ipcMain.handle('claude-delete-session-file', (_, { filePath }) => {
-    try {
-      if (!filePath || !fs.existsSync(filePath)) return false
-      fs.unlinkSync(filePath)
-      return true
-    } catch (e) {
-      console.warn('[claude-delete-session-file] failed:', e?.message || e)
-      return false
-    }
+    return deleteClaudeSessionArtifacts(filePath)
   })
   ipcMain.handle('claude-save-code-panel-state', (_, payload) => {
     try {
@@ -2299,13 +2311,17 @@ function setupClaudeHandlers() {
   })
 
   // Claude Agent SDK 会话管理
-  const agentSessions = new Map()  // sessionId -> { query, event, abortController, model, cwd }
-  const cliSessionIds = new Map()  // sessionId -> SDK session_id (for resume)
-  const sessionModels = new Map()  // sessionId -> model used by last completed query
-  const metricsPollers = new Map() // sessionId -> { interval, startTime, lastCliSessionId }
-  const slowNoticeSent = new Set() // sessionId 已提示"响应较慢"
+  //
+  // 这里的 `sessionId` 是 renderer/runtime chat key（T130 中称为 chatKey），
+  // 不是 Claude SDK 的 CLI session UUID。真实 CLI UUID 存在 cliSessionIds 中，
+  // 并对应磁盘上的 `<cliSessionId>.jsonl`。磁盘 artifact 不应使用 chatKey 定位。
+  const agentSessions = new Map()  // chatKey -> { query, event, abortController, model, cwd }
+  const cliSessionIds = new Map()  // chatKey -> SDK session_id (for resume)
+  const sessionModels = new Map()  // chatKey -> model used by last completed query
+  const metricsPollers = new Map() // chatKey -> { interval, startTime, lastCliSessionId }
+  const slowNoticeSent = new Set() // chatKey 已提示"响应较慢"
   const slashCommandsCache = new Map() // key -> { ts, commands }
-  const compactSummaries = new Map() // sessionId -> { summary, trigger, updatedAt }
+  const compactSummaries = new Map() // chatKey -> { summary, trigger, updatedAt }
 
   function resetAgentRuntime(_reason) {
     for (const [sid, session] of agentSessions.entries()) {
@@ -2313,7 +2329,7 @@ function setupClaudeHandlers() {
       try { session.query?.close?.() } catch (_) {}
       agentSessions.delete(sid)
     }
-    // 注意：不清理 cliSessionIds。它们是 SDK 会话 UUID → renderer sessionId 的映射，
+    // 注意：不清理 cliSessionIds。它们是 renderer chatKey -> SDK 会话 UUID 的映射，
     // 仅用于 resume 查询，不依赖当前 SDK 实例。Provider 切换后 renderer 会重新注册所有聊天。
     sessionModels.clear()
     slowNoticeSent.clear()
@@ -2324,6 +2340,7 @@ function setupClaudeHandlers() {
   }
 
   ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode }) => {
+    const chatKey = sessionId
     const runtime = readRuntimeConfigFromUserSettingsFile()
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL
@@ -2346,7 +2363,7 @@ function setupClaudeHandlers() {
     }
 
     // 复用仍在运行的 Query（首轮 result 后 SDK 可能仍保持会话，需要 streamInput 续写）
-    const existing = agentSessions.get(sessionId)
+    const existing = agentSessions.get(chatKey)
     if (existing && existing.query) {
       // 当前会话正在运行时若切换了模型，关闭旧会话并按新模型重新创建。
       const runtimeChanged = (
@@ -2358,10 +2375,10 @@ function setupClaudeHandlers() {
         try { existing.abortController?.abort?.() } catch (_) {}
         try { existing.query?.close?.() } catch (_) {}
         // 只清除 SDK Query 对象，保留 cliSessionIds 以便 resume 对话历史。
-        agentSessions.delete(sessionId)
-        console.log(`[Claude] 检测到运行时配置变更，sessionId=${sessionId.slice(-8)}，已中止旧查询。` +
+        agentSessions.delete(chatKey)
+        console.log(`[Claude] 检测到运行时配置变更，chatKey=${chatKey.slice(-8)}，已中止旧查询。` +
           `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
-          `cliSessionId: ${cliSessionIds.get(sessionId) || '(none)'}`)
+          `cliSessionId: ${cliSessionIds.get(chatKey) || '(none)'}`)
         // 不 return，继续执行后续逻辑以创建新查询并 resume
       } else {
       existing.event = event
@@ -2377,7 +2394,7 @@ function setupClaudeHandlers() {
         try {
           await existing.query.streamInput((async function* () { yield userMsg })())
         } catch (err) {
-          const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+          const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
           safeSend(sender,'claude-agent-message', {
             sessionId,
             msg: {
@@ -2392,19 +2409,19 @@ function setupClaudeHandlers() {
     }
 
     return new Promise((resolve) => {
-      const previousModel = sessionModels.get(sessionId)
-      const previousCliSessionId = cliSessionIds.get(sessionId)
+      const previousModel = sessionModels.get(chatKey)
+      const previousCliSessionId = cliSessionIds.get(chatKey)
       // 允许 resume 的条件：有 cliSessionId 且为有效 UUID 格式（CLI --resume 要求 UUID）
       const isValidUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
       const resumedSessionId = (previousCliSessionId && isValidUuid(previousCliSessionId)) ? previousCliSessionId : undefined
 
       // 记录模型切换和 resume 状态
       if (previousModel && previousModel !== model) {
-        console.log(`[Claude] 检测到模型切换 ${previousModel} → ${model}，sessionId=${sessionId.slice(-8)}，` +
+        console.log(`[Claude] 检测到模型切换 ${previousModel} → ${model}，chatKey=${chatKey.slice(-8)}，` +
           `cliSessionId=${previousCliSessionId || '(none)'}，` +
           `将${resumedSessionId ? 'resume 历史记录' : '创建新会话（无可用的 cliSessionId）'}`)
       } else if (resumedSessionId) {
-        console.log(`[Claude] 继续会话，sessionId=${sessionId.slice(-8)}，cliSessionId=${resumedSessionId}，model=${model}`)
+        console.log(`[Claude] 继续会话，chatKey=${chatKey.slice(-8)}，cliSessionId=${resumedSessionId}，model=${model}`)
       }
       const abortController = new AbortController()
       let gotAnyMessage = false
@@ -2414,9 +2431,9 @@ function setupClaudeHandlers() {
       const extraDirs = additionalDirsFromUserText(resolvedCwd, prompt || '')
       const bootWatch = setTimeout(() => {
         if (!gotAnyMessage) {
-          if (slowNoticeSent.has(sessionId)) return
-          slowNoticeSent.add(sessionId)
-          const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+          if (slowNoticeSent.has(chatKey)) return
+          slowNoticeSent.add(chatKey)
+          const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
           safeSend(sender,'claude-agent-message', {
             sessionId,
             msg: {
@@ -2527,7 +2544,7 @@ function setupClaudeHandlers() {
                 }
                 // AskUserQuestion：发给前端让用户选择，等待回答后继续
                 if (nameLower === 'askuserquestion' || nameLower === 'ask_user_question') {
-                  const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+                  const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                   const answers = await new Promise((resolve) => {
                     pendingPermissionResolvers.set(requestId, resolve)
@@ -2541,7 +2558,7 @@ function setupClaudeHandlers() {
                 }
                 // ExitPlanMode：专用计划审查流程（不论 runMode 是什么，始终让用户审查）
                 if (nameLower === 'exitplanmode' || nameLower === 'exit_plan_mode') {
-                  const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+                  const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                   const plan = input.plan || ''
                   const planFilePath = input.planFilePath || ''
@@ -2567,7 +2584,7 @@ function setupClaudeHandlers() {
                   }
                   return { behavior: 'allow', updatedInput }
                 }
-                if (agentSessions.get(sessionId)?.runMode === 'edit_automatically') {
+                if (agentSessions.get(chatKey)?.runMode === 'edit_automatically') {
                   return { behavior: 'allow', updatedInput: input }
                 }
                 if (permissionPolicy === 'allow_all') {
@@ -2576,7 +2593,7 @@ function setupClaudeHandlers() {
                 if (permissionPolicy === 'read_only') {
                   return { behavior: 'deny', message: lt('perm.readonly') }
                 }
-                const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+                const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
                 const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                 const msg = {
                   id: requestId,
@@ -2604,12 +2621,12 @@ function setupClaudeHandlers() {
                   hooks: [async (hookInput) => {
                     const summary = hookInput?.compact_summary || ''
                     if (summary && typeof summary === 'string') {
-                      compactSummaries.set(sessionId, {
+                      compactSummaries.set(chatKey, {
                         summary,
                         trigger: hookInput?.trigger || 'manual',
                         updatedAt: Date.now(),
                       })
-                      const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+                      const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
                       safeSend(sender,'claude-agent-message', {
                         sessionId,
                         msg: {
@@ -2628,7 +2645,7 @@ function setupClaudeHandlers() {
               abortController,
             },
           })
-          agentSessions.set(sessionId, {
+          agentSessions.set(chatKey, {
             query: q,
             event,
             abortController,
@@ -2641,9 +2658,9 @@ function setupClaudeHandlers() {
           // 启动 metrics 轮询器
           const pollStart = Date.now()
           const pollInterval = setInterval(async () => {
-            const s = agentSessions.get(sessionId)
+            const s = agentSessions.get(chatKey)
             if (!s) { clearInterval(pollInterval); return }
-            const cliId = cliSessionIds.get(sessionId)
+            const cliId = cliSessionIds.get(chatKey)
             if (!cliId) return
             const metrics = await claudeMetrics.pollMetrics(cliId, s.cwd, s.model, true)
             if (metrics) {
@@ -2651,20 +2668,20 @@ function setupClaudeHandlers() {
               safeSend(s.event?.sender, 'claude-agent-metrics', metrics)
             }
           }, 3000)
-          metricsPollers.set(sessionId, { interval: pollInterval, startTime: pollStart })
+          metricsPollers.set(chatKey, { interval: pollInterval, startTime: pollStart })
 
           for await (const msg of q) {
-            if (!agentSessions.has(sessionId)) break
-            const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+            if (!agentSessions.has(chatKey)) break
+            const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
             gotAnyMessage = true
             // 尽早注册 cliSessionId，并通知渲染进程用于精确匹配 pending chat
             if (msg?.session_id) {
-              if (!cliSessionIds.has(sessionId)) {
-                cliSessionIds.set(sessionId, msg.session_id)
+              if (!cliSessionIds.has(chatKey)) {
+                cliSessionIds.set(chatKey, msg.session_id)
                 safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.session_id })
               }
-            } else if (msg?.uuid && !cliSessionIds.has(sessionId)) {
-              cliSessionIds.set(sessionId, msg.uuid)
+            } else if (msg?.uuid && !cliSessionIds.has(chatKey)) {
+              cliSessionIds.set(chatKey, msg.uuid)
               safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
             }
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
@@ -2689,8 +2706,8 @@ function setupClaudeHandlers() {
             safeSend(sender,'claude-agent-message', { sessionId, msg })
             if (msg.type === 'result') {
               if (msg.session_id) {
-                cliSessionIds.set(sessionId, msg.session_id)
-                sessionModels.set(sessionId, model)
+                cliSessionIds.set(chatKey, msg.session_id)
+                sessionModels.set(chatKey, model)
               }
               // 发送最终 metrics
               const usage = msg.usage || {}
@@ -2718,8 +2735,8 @@ function setupClaudeHandlers() {
               // result 到达即视为本 turn 结束：SDK 生成器会 return，query 对象已无法再接收 streamInput。
               // 立即清出 agentSessions，避免下一条消息命中 existing 分支后塞进死 query 导致静默 hang。
               // 历史靠 cliSessionIds + resume 保留，不会断。
-              const sessionCwd = agentSessions.get(sessionId)?.cwd || resolvedCwd
-              agentSessions.delete(sessionId)
+              const sessionCwd = agentSessions.get(chatKey)?.cwd || resolvedCwd
+              agentSessions.delete(chatKey)
               const donePayload = buildClaudeAgentDonePayload({
                 sessionId,
                 cliSessionId: msg.session_id,
@@ -2736,13 +2753,13 @@ function setupClaudeHandlers() {
           await runQuery(resumedSessionId)
         } catch (err) {
           exitCode = -1
-          const sender = agentSessions.get(sessionId)?.event?.sender || event.sender
+          const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
           const errMsg = err?.message || String(err)
           if (err?.message?.includes('No conversation found') && resumedSessionId) {
             // session 失效，自动重试（不带 resume）
-            console.log(`[Claude] resume 失败 (No conversation found)，sessionId=${sessionId.slice(-8)}，cliSessionId=${resumedSessionId}，将创建新会话`)
-            cliSessionIds.delete(sessionId)
-            sessionModels.delete(sessionId)
+            console.log(`[Claude] resume 失败 (No conversation found)，chatKey=${chatKey.slice(-8)}，cliSessionId=${resumedSessionId}，将创建新会话`)
+            cliSessionIds.delete(chatKey)
+            sessionModels.delete(chatKey)
             try {
               await runQuery(undefined)
               exitCode = 0
@@ -2758,8 +2775,8 @@ function setupClaudeHandlers() {
             }
           } else if (errMsg.includes('maximum number of turns') || errMsg.includes('maxTurns')) {
             // maxTurns 耗尽：清除旧 session 避免后续 resume 死循环
-            cliSessionIds.delete(sessionId)
-            sessionModels.delete(sessionId)
+            cliSessionIds.delete(chatKey)
+            sessionModels.delete(chatKey)
             safeSend(sender,'claude-agent-message', {
               sessionId,
               msg: {
@@ -2781,14 +2798,14 @@ function setupClaudeHandlers() {
         } finally {
           clearTimeout(bootWatch)
           // 停止 metrics 轮询器
-          const poller = metricsPollers.get(sessionId)
+          const poller = metricsPollers.get(chatKey)
           if (poller) {
             clearInterval(poller.interval)
-            metricsPollers.delete(sessionId)
+            metricsPollers.delete(chatKey)
           }
-          const s = agentSessions.get(sessionId)
+          const s = agentSessions.get(chatKey)
           if (!resultReceived && s) {
-            const fallbackCliSessionId = cliSessionIds.get(sessionId) || ''
+            const fallbackCliSessionId = cliSessionIds.get(chatKey) || ''
             // 如果错误发生在流式首条消息之前，cliSessionId 未注册。
             // 兜底扫描项目目录，按修改时间找本次查询创建的 .jsonl（误差窗口 60s）。
             let finalCliSessionId = fallbackCliSessionId
@@ -2810,7 +2827,7 @@ function setupClaudeHandlers() {
                     .sort((a, b) => b.mtime - a.mtime)[0]
                   if (candidate) {
                     finalCliSessionId = candidate.id
-                    cliSessionIds.set(sessionId, finalCliSessionId)
+                    cliSessionIds.set(chatKey, finalCliSessionId)
                     console.log(`[Claude] fallback scan found cliSessionId: ${finalCliSessionId.slice(0,8)}...`)
                   }
                 }
@@ -2834,7 +2851,7 @@ function setupClaudeHandlers() {
             })
             safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
           }
-          agentSessions.delete(sessionId)
+          agentSessions.delete(chatKey)
           resolve(exitCode)
         }
       })()
@@ -2842,14 +2859,15 @@ function setupClaudeHandlers() {
   })
 
   ipcMain.handle('claude-agent-abort', (_, sessionId) => {
-    const s = agentSessions.get(sessionId)
+    const chatKey = sessionId
+    const s = agentSessions.get(chatKey)
     if (s) {
       try { s.abortController?.abort?.() } catch (_) {}
       try { s.query?.close?.() } catch (_) {}
-      agentSessions.delete(sessionId)
+      agentSessions.delete(chatKey)
       safeSend(s.event?.sender, 'claude-agent-done', buildClaudeAgentDonePayload({
         sessionId,
-        cliSessionId: cliSessionIds.get(sessionId) || '',
+        cliSessionId: cliSessionIds.get(chatKey) || '',
         cwd: s.cwd || '',
         reason: 'aborted',
       }))
@@ -2858,7 +2876,8 @@ function setupClaudeHandlers() {
 
   // 运行时更新 runMode（用户在运行中途切换模式时生效）
   ipcMain.handle('claude-agent-update-runmode', (_, { sessionId, runMode }) => {
-    const s = agentSessions.get(sessionId)
+    const chatKey = sessionId
+    const s = agentSessions.get(chatKey)
     if (!s) return
     if (['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)) {
       s.runMode = runMode
@@ -2931,7 +2950,8 @@ function setupClaudeHandlers() {
   })
 
   ipcMain.handle('claude-permission-response', (_, { sessionId, requestId, allowed }) => {
-    const s = agentSessions.get(sessionId)
+    const chatKey = sessionId
+    const s = agentSessions.get(chatKey)
     if (!s) return
     if (!requestId) return
     const clearPending = pendingPermissionResolvers.get(requestId)
@@ -3054,6 +3074,7 @@ function setupClaudeHandlers() {
   }
 
   ipcMain.handle('claude-list-slash-commands', async (_, { cwd, sessionId }) => {
+    const chatKey = sessionId
     const { apiKey, baseURL, model, tierEnv } = readSlashCommandsEnvFromUserSettingsFile()
     const resolvedCwd = path.resolve(cwd || process.cwd())
     const cacheKey = `${resolvedCwd}::${model}`
@@ -3063,7 +3084,7 @@ function setupClaudeHandlers() {
       return cached.commands
     }
     try {
-      const active = sessionId ? agentSessions.get(sessionId) : null
+      const active = sessionId ? agentSessions.get(chatKey) : null
       if (active && active.query && active.model === model && active.cwd === resolvedCwd) {
         const activeCommands = await active.query.supportedCommands()
         const normalizedActive = (activeCommands || []).map(c => ({
@@ -3534,8 +3555,11 @@ module.exports = {
   __test__: {
     analyzeClaudeJsonlFileIntegrity,
     buildClaudeAgentDonePayload,
+    deleteClaudeSessionArtifacts,
     finalizeClaudeDoneReason,
     getClaudeProjectsRootDir,
     resolveClaudeDoneReasonFromError,
+    scanCliSessionsForProject,
   },
 }
+

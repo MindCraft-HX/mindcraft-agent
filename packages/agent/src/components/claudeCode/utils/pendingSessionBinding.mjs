@@ -1,3 +1,8 @@
+import { isPendingClaudeSessionBindingCandidate } from './claudeSessionIdentity.mjs'
+
+// scan/adopt handles the transition from a draft renderer chat to a bound
+// Claude CLI session. The renderer chat key is not the CLI UUID; exact adoption
+// is only available after early-cli-session stores `_expectedCliSessionId`.
 function toTimestamp(value) {
   const n = Number(value)
   if (Number.isFinite(n) && n > 0) return n
@@ -6,11 +11,7 @@ function toTimestamp(value) {
 }
 
 export function isPendingClaudeSessionBinding(chat) {
-  if (!chat || chat.cliSessionId || chat.filePath) return false
-  if (chat._pendingSessionBinding) return true
-  if (typeof chat.sessionId !== 'string' || !chat.sessionId.startsWith('session-chat-')) return false
-  const messages = Array.isArray(chat.messages) ? chat.messages : []
-  return messages.some(message => message?.role === 'user')
+  return isPendingClaudeSessionBindingCandidate(chat)
 }
 
 export function shouldDeferClaudeSessionMessageTitle(chat) {
