@@ -1,7 +1,9 @@
 const DEFAULT_PROVIDER_NAME = 'mindcraft'
 const BARE_TOML_KEY_RE = /^[A-Za-z0-9_-]+$/
 
-export { normalizeCodexReasoningEffort } from './normalizeReasoningEffort.cjs'
+import { normalizeCodexReasoningEffort } from './normalizeReasoningEffort.mjs'
+
+export { normalizeCodexReasoningEffort }
 
 export function normalizeProviderName(name) {
   const value = String(name || '').trim()
