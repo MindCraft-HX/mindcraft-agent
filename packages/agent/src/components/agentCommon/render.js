@@ -41,6 +41,13 @@ async function openPathCandidateFromElement(target, source = '') {
   }
 }
 
+function openExternalLinkFromElement(target) {
+  const href = String(target?.getAttribute?.('href') || '').trim()
+  if (!/^https?:\/\//i.test(href)) return false
+  window.electronAPI?.openExternalWindow?.(href)
+  return true
+}
+
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.__mindcraftPathCandidateBound) {
   window.__mindcraftPathCandidateBound = true
   document.addEventListener('click', (event) => {
@@ -48,6 +55,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
     if (!target) return
     event.preventDefault()
     void openPathCandidateFromElement(target)
+  })
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.__mindcraftExternalLinkBound) {
+  window.__mindcraftExternalLinkBound = true
+  document.addEventListener('click', (event) => {
+    const target = event.target?.closest?.('a.md-link[href]')
+    if (!target || target.hasAttribute('data-path-candidate')) return
+    if (!openExternalLinkFromElement(target)) return
+    event.preventDefault()
   })
 }
 
