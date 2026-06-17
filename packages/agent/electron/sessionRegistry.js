@@ -124,11 +124,6 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
   }
 }
 
-function buildDefaultInstructionId(chatKey) {
-  const normalized = normalizeString(chatKey)
-  return normalized ? `instruction-${normalized}` : ''
-}
-
 function normalizeInstructionRecord(data = {}) {
   const id = normalizeString(data.id)
   return {
@@ -189,6 +184,7 @@ function upsertSessionRecord(record, options = {}) {
     projectId: next.projectId,
     cwd: next.cwd,
     title: next.title,
+    description: next.description || '',
     cliSessionId: next.provider?.cliSessionId || '',
     filePath: next.provider?.filePath || '',
     updatedAt: next.updatedAt,
@@ -281,63 +277,46 @@ function readInstructionRecord(instructionId, options = {}) {
   return normalizeInstructionRecord(record)
 }
 
-function upsertInstructionRecord(data = {}, options = {}) {
-  const normalized = normalizeInstructionRecord(data)
-  if (!normalized.id) return null
-  const filePath = getInstructionRecordPath(normalized.id, options)
-  const existing = readJson(filePath, null)
-  const next = normalizeInstructionRecord({
-    ...(existing || {}),
-    ...normalized,
-    createdAt: existing?.createdAt || normalized.createdAt || Date.now(),
-    updatedAt: Date.now(),
-  })
-  writeJsonAtomic(filePath, next)
-  return next
-}
-
 function getSessionInstruction(chatKey, options = {}) {
   const recordPath = getSessionRecordPath(chatKey, options)
   const session = readJson(recordPath, null)
   const instructionId = normalizeString(session?.instruction?.instructionId)
-  const instruction = instructionId ? readInstructionRecord(instructionId, options) : null
+  const legacyInstruction = instructionId ? readInstructionRecord(instructionId, options) : null
+  const sessionInstruction = session?.instruction || {}
+  const legacyDescription = legacyInstruction?.title || legacyInstruction?.description || ''
+  const sessionContent = typeof sessionInstruction.content === 'string' ? sessionInstruction.content : ''
+  const sessionAttachments = Array.isArray(sessionInstruction.attachments)
+    ? sessionInstruction.attachments.filter(Boolean)
+    : null
   return {
-    enabled: Boolean(session?.instruction?.enabled),
+    enabled: Boolean(sessionInstruction.enabled),
     instructionId,
-    title: instruction?.title || '',
-    description: instruction?.description || '',
-    content: instruction?.content || '',
-    attachments: instruction?.attachments || [],
+    description: normalizeString(session?.description) || legacyDescription,
+    content: sessionContent || legacyInstruction?.content || '',
+    attachments: sessionAttachments || legacyInstruction?.attachments || [],
   }
 }
 
 function setSessionInstruction(chatKey, data = {}, options = {}) {
   const resolvedChatKey = normalizeString(chatKey)
   if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
-  const instructionId = normalizeString(data.instructionId) || buildDefaultInstructionId(resolvedChatKey)
-  if (!instructionId) return { ok: false, error: 'missing instructionId' }
   const now = Date.now()
-  const instruction = upsertInstructionRecord({
-    id: instructionId,
-    title: data.title || '',
-    description: data.description || '',
-    content: typeof data.content === 'string' ? data.content : '',
-    attachments: Array.isArray(data.attachments) ? data.attachments : [],
-    updatedAt: now,
-  }, options)
-  if (!instruction) return { ok: false, error: 'write instruction failed' }
-
   const existing = readJson(getSessionRecordPath(resolvedChatKey, options), {})
+  const description = normalizeString(data.description) || normalizeString(data.summary) || normalizeString(data.title)
   const sessionRecord = {
     ...(existing || {}),
     schemaVersion: SCHEMA_VERSION,
     chatKey: resolvedChatKey,
     agent: normalizeAgent(existing?.agent),
+    description,
     provider: existing?.provider || {},
     runtime: existing?.runtime || {},
     instruction: {
       enabled: Boolean(data.enabled),
-      instructionId,
+      instructionId: '',
+      content: typeof data.content === 'string' ? data.content : '',
+      attachments: Array.isArray(data.attachments) ? data.attachments.filter(Boolean) : [],
+      updatedAt: now,
     },
     createdAt: existing?.createdAt || now,
     updatedAt: now,

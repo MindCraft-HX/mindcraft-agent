@@ -558,11 +558,8 @@ function buildSessionInstructionPrompt(instruction = {}) {
   if (!instruction?.enabled) return ''
   const content = typeof instruction.content === 'string' ? instruction.content.trim() : ''
   if (!content) return ''
-  const title = typeof instruction.title === 'string' && instruction.title.trim()
-    ? `: ${instruction.title.trim()}`
-    : ''
   return [
-    `<mindcraft_session_instruction${title}>`,
+    '<mindcraft_session_instruction>',
     content,
     '</mindcraft_session_instruction>',
   ].join('\n')

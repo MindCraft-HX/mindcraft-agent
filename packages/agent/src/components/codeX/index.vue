@@ -168,12 +168,14 @@
             :network-access="activeTab?.networkAccessEnabled ?? codexConfigStore.defaultNetworkAccess"
             :web-search="activeTab?.webSearchMode ?? codexConfigStore.defaultWebSearch"
             :sandbox-mode="activeTab?.sandboxMode ?? codexConfigStore.sandboxMode"
+            :instruction-enabled="activeSessionInstructionEnabled"
             @addFile="addImageClick"
             @triggerMention="triggerMention"
             @triggerSlash="triggerSlashMenu"
             @openPlugins="() => codexPluginsRef?.open?.()"
             @openSkills="() => codexSkillsRef?.open?.()"
             @openInstruction="openSessionInstruction"
+            @toggleInstruction="setActiveSessionInstructionEnabled"
             @update:networkAccess="setSessionNetworkAccess"
             @update:webSearch="setSessionWebSearch"
             @update:sandboxMode="setSessionSandbox"
@@ -186,7 +188,7 @@
         <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" />
         <ConfirmDialog ref="confirmDialogRef" />
         <SelectModel ref="selectModelRef" />
-        <SessionInstructionDialog ref="sessionInstructionRef" />
+        <SessionInstructionDialog ref="sessionInstructionRef" :theme-class="themeClass" @saved="refreshActiveSessionInstructionState" />
       </div>
     </div>
   </div>
@@ -1149,6 +1151,10 @@ function dismissPlanOverview(messageId) {
   dismissedPlanOverviewSourceMessageId.value = messageId ?? null
 }
 
+watch(() => activeTab.value?.sessionId, () => {
+  void refreshActiveSessionInstructionState()
+}, { immediate: true })
+
 watch(
   () => rawCurrentPlanOverview.value?.sourceMessageId ?? null,
   (nextSourceMessageId) => {
@@ -1876,15 +1882,44 @@ async function loadSessionInstructionForTab(tab) {
   }
 }
 
+async function refreshActiveSessionInstructionState() {
+  const chatKey = activeTab.value?.sessionId
+  if (!chatKey) {
+    activeSessionInstructionEnabled.value = false
+    return
+  }
+  try {
+    const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
+    activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
+  } catch (_) {
+    activeSessionInstructionEnabled.value = false
+  }
+}
+
+async function setActiveSessionInstructionEnabled(enabled) {
+  const chatKey = activeTab.value?.sessionId
+  if (!chatKey) return
+  activeSessionInstructionEnabled.value = Boolean(enabled)
+  try {
+    const current = await window.electronAPI?.getSessionInstruction?.(chatKey)
+    await window.electronAPI?.setSessionInstruction?.({
+      chatKey,
+      instruction: {
+        ...(current || {}),
+        enabled: Boolean(enabled),
+      },
+    })
+    await refreshActiveSessionInstructionState()
+  } catch (_) {
+    await refreshActiveSessionInstructionState()
+  }
+}
+
 function prependSessionInstruction(prompt, instruction) {
   const content = String(instruction?.content || '').trim()
   if (!content) return prompt
-  const title = String(instruction?.title || '').trim()
-  const header = title
-    ? `<mindcraft_session_instruction: ${title}>`
-    : '<mindcraft_session_instruction>'
   return [
-    header,
+    '<mindcraft_session_instruction>',
     content,
     '</mindcraft_session_instruction>',
     '',
@@ -2334,6 +2369,7 @@ const apiSettingRef = ref(null)
 const codexPluginsRef = ref(null)
 const codexSkillsRef = ref(null)
 const sessionInstructionRef = ref(null)
+const activeSessionInstructionEnabled = ref(false)
 const canSend = computed(() => {
   if (!activeProject.value?.cwdLocked || !activeTab.value) return false
   if (isActiveTabHistoryDeferred.value) return false

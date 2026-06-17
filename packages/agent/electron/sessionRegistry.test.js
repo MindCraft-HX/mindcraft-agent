@@ -149,23 +149,25 @@ test('setSessionInstruction stores instruction without losing session mapping', 
 
   const result = setSessionInstruction('chat-key-1', {
     enabled: true,
-    title: 'Customer A',
+    description: 'Customer A macro session',
     content: 'Use customer A macro mapping.',
   }, { userDataDir })
 
   assert.equal(result.ok, true)
   assert.equal(result.instruction.enabled, true)
-  assert.equal(result.instruction.title, 'Customer A')
+  assert.equal(result.instruction.description, 'Customer A macro session')
   assert.equal(result.instruction.content, 'Use customer A macro mapping.')
 
   const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
   assert.equal(record.chatKey, 'chat-key-1')
   assert.equal(record.title, 'Mapped session')
+  assert.equal(record.description, 'Customer A macro session')
   assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
   assert.equal(record.runtime.model, 'gpt-5.1-codex')
   assert.equal(record.runtime.reasoningEffort, 'high')
   assert.equal(record.instruction.enabled, true)
-  assert.equal(record.instruction.instructionId, 'instruction-chat-key-1')
+  assert.equal(record.instruction.instructionId, '')
+  assert.equal(record.instruction.content, 'Use customer A macro mapping.')
 })
 
 test('getSessionInstruction returns disabled empty state for unknown chat', () => {
@@ -175,9 +177,44 @@ test('getSessionInstruction returns disabled empty state for unknown chat', () =
   assert.deepEqual(instruction, {
     enabled: false,
     instructionId: '',
-    title: '',
     description: '',
     content: '',
     attachments: [],
   })
+})
+
+test('getSessionInstruction reads legacy instruction record as fallback', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-legacy',
+        name: 'Legacy mapped session',
+        instruction: {
+          enabled: true,
+          instructionId: 'instruction-legacy',
+        },
+      }],
+    }],
+  }, { userDataDir })
+
+  const legacyDir = path.join(userDataDir, 'session-registry', 'instructions')
+  fs.mkdirSync(legacyDir, { recursive: true })
+  fs.writeFileSync(path.join(legacyDir, 'instruction-legacy.json'), JSON.stringify({
+    schemaVersion: 1,
+    id: 'instruction-legacy',
+    title: 'Legacy description',
+    content: 'Legacy instruction content.',
+    attachments: ['legacy.md'],
+  }), 'utf8')
+
+  const instruction = getSessionInstruction('chat-key-legacy', { userDataDir })
+
+  assert.equal(instruction.enabled, true)
+  assert.equal(instruction.instructionId, 'instruction-legacy')
+  assert.equal(instruction.description, 'Legacy description')
+  assert.equal(instruction.content, 'Legacy instruction content.')
+  assert.deepEqual(instruction.attachments, ['legacy.md'])
 })

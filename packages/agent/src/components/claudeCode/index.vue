@@ -195,12 +195,14 @@
         <InputToolbar
           :disabled="!activeProject?.cwdLocked || !activeTab"
           :runMode="activeRunMode"
+          :instruction-enabled="activeSessionInstructionEnabled"
           @addFile="addImageClick"
           @triggerMention="triggerMention"
           @triggerSlash="triggerSlashMenu"
           @openPlugins="openPlugins"
           @openSkills="openSkills"
           @openInstruction="openSessionInstruction"
+          @toggleInstruction="setActiveSessionInstructionEnabled"
           @update:runMode="activeRunMode = $event"
         />
         <input ref="fileInputRef" type="file" multiple style="display:none" @change="onFileSelect" />
@@ -221,7 +223,7 @@
         :cwd="activeProject?.cwd || ''"
         @skills-changed="refreshSlashCommands(true)"
       />
-      <SessionInstructionDialog ref="sessionInstructionRef" />
+      <SessionInstructionDialog ref="sessionInstructionRef" :theme-class="themeClass" @saved="refreshActiveSessionInstructionState" />
       <!-- <AgentPicker :visible="showAgentPicker" @close="showAgentPicker = false" @select="onAgentPicked" /> -->
       <AskQuestionDialog
         ref="askDialogRef"
@@ -498,6 +500,7 @@ const selectModelRef = ref(null)
 const managePluginsRef = ref(null)
 const manageSkillsRef = ref(null)
 const sessionInstructionRef = ref(null)
+const activeSessionInstructionEnabled = ref(false)
 const claudeDefaultModel = ref('')
 const claudeDefaultEffort = ref('medium')
 
@@ -684,7 +687,12 @@ function toggleActiveTaskBarCollapsed() {
 // 同步活跃消息容器 ref 给 useScrollBottom hook
 watch(activeChatId, (id) => {
   activeMsgContainer.value = id ? msgRefs[id] : null
+  void refreshActiveSessionInstructionState()
 })
+
+watch(() => activeTab.value?.sessionId, () => {
+  void refreshActiveSessionInstructionState()
+}, { immediate: true })
 
 // 同步 tab._compacting 到 metricsData，驱动状态栏圆环动画
 watch(() => activeTab.value?._compacting, (val) => {
@@ -1594,6 +1602,39 @@ async function loadSessionInstructionForTab(tab) {
     return instruction
   } catch (_) {
     return null
+  }
+}
+
+async function refreshActiveSessionInstructionState() {
+  const chatKey = activeTab.value?.sessionId
+  if (!chatKey) {
+    activeSessionInstructionEnabled.value = false
+    return
+  }
+  try {
+    const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
+    activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
+  } catch (_) {
+    activeSessionInstructionEnabled.value = false
+  }
+}
+
+async function setActiveSessionInstructionEnabled(enabled) {
+  const chatKey = activeTab.value?.sessionId
+  if (!chatKey) return
+  activeSessionInstructionEnabled.value = Boolean(enabled)
+  try {
+    const current = await window.electronAPI?.getSessionInstruction?.(chatKey)
+    await window.electronAPI?.setSessionInstruction?.({
+      chatKey,
+      instruction: {
+        ...(current || {}),
+        enabled: Boolean(enabled),
+      },
+    })
+    await refreshActiveSessionInstructionState()
+  } catch (_) {
+    await refreshActiveSessionInstructionState()
   }
 }
 

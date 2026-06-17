@@ -55,15 +55,29 @@
           <polygon points="8,1.5 10.5,6.5 16,7.5 12,11.5 13,17 8,14.5 3,17 4,11.5 0,7.5 5.5,6.5"/>
         </svg>
       </button>
-      <button
-        type="button"
-        class="toolbar-btn"
-        :disabled="disabled"
-        :title="$t('agent.sessionInstruction')"
-        @click="$emit('openInstruction')"
-      >
-        <span class="toolbar-char">i</span>
-      </button>
+      <div class="instruction-control">
+        <button
+          type="button"
+          class="toolbar-btn instruction-edit-btn"
+          :disabled="disabled"
+          :title="$t('agent.sessionInstruction')"
+          @click="$emit('openInstruction')"
+        >
+          <span class="instruction-label">{{ $t('agent.sessionInstructionShort') }}</span>
+        </button>
+        <button
+          type="button"
+          class="instruction-toggle"
+          :class="{ active: instructionEnabled }"
+          :disabled="disabled"
+          role="switch"
+          :aria-checked="instructionEnabled ? 'true' : 'false'"
+          :title="instructionEnabled ? $t('agent.sessionInstructionActive') : $t('agent.sessionInstructionInactive')"
+          @click.stop="$emit('toggleInstruction', !instructionEnabled)"
+        >
+          <span class="instruction-knob"></span>
+        </button>
+      </div>
     </div>
     <select
       :value="runMode"
@@ -82,9 +96,10 @@
 defineProps({
   disabled: { type: Boolean, default: false },
   runMode: { type: String, default: 'edit_automatically' },
+  instructionEnabled: { type: Boolean, default: false },
 })
 
-defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:runMode', 'openPlugins', 'openSkills', 'openInstruction'])
+defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:runMode', 'openPlugins', 'openSkills', 'openInstruction', 'toggleInstruction'])
 </script>
 
 <style scoped>
@@ -104,6 +119,7 @@ defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:runMode', 'ope
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   width: 28px;
   height: 24px;
   border: 1px solid var(--cc-border-strong);
@@ -119,6 +135,11 @@ defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:runMode', 'ope
   background: var(--cc-border);
   border-color: var(--cc-primary);
 }
+.toolbar-btn.active {
+  color: var(--cc-dialog-confirm-text);
+  background: var(--cc-primary);
+  border-color: var(--cc-primary);
+}
 .toolbar-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -130,6 +151,66 @@ defineEmits(['addFile', 'triggerMention', 'triggerSlash', 'update:runMode', 'ope
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
   line-height: 1;
   display: block;
+}
+.instruction-control {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid var(--cc-border-strong);
+  border-radius: 5px;
+  background: var(--cc-bg-tertiary);
+  overflow: hidden;
+}
+.instruction-edit-btn {
+  width: auto;
+  min-width: 36px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 6px;
+  background: transparent;
+}
+.instruction-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.instruction-toggle {
+  width: 30px;
+  height: 18px;
+  margin-right: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--cc-border-strong);
+  background: var(--cc-border-strong);
+  position: relative;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.instruction-knob {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  top: 1px;
+  left: 1px;
+  border-radius: 50%;
+  background: var(--cc-bg-tertiary);
+  transition: transform 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.instruction-toggle.active {
+  background: var(--cc-primary);
+  border-color: var(--cc-primary);
+}
+.instruction-toggle.active .instruction-knob {
+  transform: translateX(12px);
+  background: var(--cc-dialog-confirm-text, #fff);
+}
+.instruction-toggle:disabled,
+.instruction-edit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .mode-select {
