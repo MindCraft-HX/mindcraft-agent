@@ -40,7 +40,7 @@ MindCraft 同时集成 Claude Code 和 CodeX。两者都有自己的官方数据
 |------|----------|----------|------|
 | CodeX panel state | `~/.codex/codex-panel-state.json` | `{userData}/codex-panel-state.json` 或 registry | 低 |
 | Claude per-session model sidecar | `~/.claude/projects/<cwd-hash>/<cliSessionId>.meta.json` | `{userData}/session-registry/sessions/<chatKey>.json` | 中 |
-| session instruction | 新功能 | `{userData}/session-registry/instructions/*.json` | 低 |
+| session instruction | 新功能 | `{userData}/session-registry/sessions/<chatKey>.json` 内联 `instruction` | 低 |
 | chat title/description/角色/编排元数据 | 分散在 panel state | `{userData}/session-registry/sessions/*.json` | 中 |
 | 诊断日志 | 部分仍在 `~/.claude` | `{userData}/diagnostics/` | 低 |
 
@@ -53,8 +53,6 @@ MindCraft 同时集成 Claude Code 和 CodeX。两者都有自己的官方数据
   index.json
   sessions/
     <chatKey>.json
-  instructions/
-    <instructionId>.json
 ```
 
 ### session record
@@ -79,32 +77,30 @@ MindCraft 同时集成 Claude Code 和 CodeX。两者都有自己的官方数据
   },
   "instruction": {
     "enabled": true,
-    "instructionId": "instruction-xxx"
+    "content": "本会话只按客户A配置解释代码...",
+    "attachments": [
+      {
+        "path": "D:/repo/docs/customer-a-macros.md",
+        "name": "customer-a-macros.md",
+        "type": "text/markdown",
+        "enabled": true,
+        "addedAt": 0
+      }
+    ],
+    "updatedAt": 0
   },
   "createdAt": 0,
   "updatedAt": 0
 }
 ```
 
-### instruction record
+说明：
 
-```json
-{
-  "schemaVersion": 1,
-  "id": "instruction-xxx",
-  "title": "客户A宏映射",
-  "description": "客户A固件需求开发上下文",
-  "content": "本会话只按客户A配置解释代码...",
-  "attachments": [
-    {
-      "type": "markdown",
-      "path": "D:/repo/docs/customer-a-macros.md"
-    }
-  ],
-  "createdAt": 0,
-  "updatedAt": 0
-}
-```
+- `title` 是会话显示名，仍由现有 chat/session 标题逻辑维护。
+- `description` 是会话描述，用于人工识别和未来上层 agent 调度参考，不注入模型。
+- `instruction.content` 是会话指令正文，只有启用后才注入模型。
+- `instruction.attachments` 只保存本地文件引用，不复制文件到 `userData`，不写 Claude/CodeX 官方目录。
+- 历史 `session-registry/instructions/*.json` 仅作为只读 fallback，不再作为新写入目标。
 
 ## 映射原则
 
@@ -215,30 +211,92 @@ MindCraft 的会话身份分三层：
 
 ### Phase 4：Session Instruction
 
-状态：✅ 已完成（2026-06-17，文本 instruction；`.md` 附件暂缓）
+状态：✅ 已完成（2026-06-18，文本 instruction；附件见 Phase 4b）
 
 目标：
 
-- instruction 存 `{userData}/session-registry/instructions/*.json`
-- chat record 只保存 `instructionId` 和 `enabled`
+- `session.description` 存会话描述，用于识别和未来 agent 调度，不注入模型。
+- `session.instruction.content` 存会话指令正文。
+- `session.instruction.enabled` 由工具栏外部 switch 控制。
+- 新写入统一落到 `{userData}/session-registry/sessions/<chatKey>.json`，不再新增 `instructions/*.json`。
 - Claude 注入 `systemPrompt`
 - CodeX 以固定上下文块拼到 prompt 前
 
 实现：
 
 - 新增 `sessionInstructionIpc.js` 和 preload bridge，提供 `getSessionInstruction(chatKey)` / `setSessionInstruction(payload)`。
-- `sessionRegistry.js` 新增 instruction record 读写；保存 instruction 时只更新 session record 的 `instruction.enabled/instructionId`，不覆盖 provider/runtime 映射。
-- Claude/CodeX 输入工具栏在 skills 按钮右侧新增会话指令入口。
-- 新增 `SessionInstructionDialog.vue`，支持启用开关、标题和文本内容编辑。
+- `sessionRegistry.js` 在 session record 内保存 `description`、`instruction.content`、`instruction.attachments` 和 `instruction.enabled`；旧 `instructions/*.json` 只读 fallback。
+- Claude/CodeX 输入工具栏在 skills 按钮右侧新增会话指令入口和启用 switch。
+- `SessionInstructionDialog.vue` 支持会话描述和指令正文编辑；弹窗内不再放启用开关，避免状态入口分裂。
 - Claude query 将 enabled instruction 追加到 `systemPrompt`；CodeX 在发送前将 enabled instruction 作为固定 XML 块前置到用户 prompt。
-- 新增 `sessionRegistry.test.js` 覆盖 instruction 保存和 session mapping 保留。
+- `sessionRegistry.test.js` 覆盖 instruction 保存、legacy fallback、字段上限和 session mapping 保留。
 
 验收：
 
-- 同一个 instruction 可复用多个 session。
+- 每个 session 有独立 description/instruction 状态。
 - 中途修改 instruction 后，下次发送生效。
-- 附件 `.md` 发送前读取最新内容。暂缓，后续单独做 realpath 边界和 UI 交互。
-- 附件路径做 realpath 边界/存在性检查，不读敏感路径。暂缓。
+- 外部 switch 状态可见，且启停不需要进入弹窗。
+- 保存弹窗不改变已有 enabled 状态。
+
+### Phase 4b：Session Instruction 附件
+
+状态：📋 待实现（T136）
+
+目标：
+
+- 在会话指令弹窗内支持添加本地文本文件引用，解决宏映射表、客户配置说明、review checklist 等长文本不适合手动复制的问题。
+- 附件路径存 `session.instruction.attachments`，只保存引用，不复制文件，不写 `~/.claude` / `~/.codex` / 项目 `.claude` / `.codex`。
+- 发送前读取附件最新内容并和 `instruction.content` 一起注入当前会话；路径失效则跳过，不阻断发送。
+
+建议 schema：
+
+```json
+{
+  "path": "D:/repo/docs/customer-a-macros.md",
+  "name": "customer-a-macros.md",
+  "type": "text/markdown",
+  "enabled": true,
+  "addedAt": 0,
+  "lastCheckedAt": 0,
+  "lastError": ""
+}
+```
+
+第一版范围：
+
+- 支持扩展名：`.md`、`.txt`、`.json`、`.yaml`、`.yml`、`.toml`。
+- 单文件大小上限建议 `256KB`，附件总注入上限建议 `1MB`；超限跳过并记录 `lastError`。
+- UI 支持添加文件、显示文件名/路径、移除、启停单个附件、显示缺失/过大/非文本状态。
+- 不做文件内容缓存，发送前读最新内容，保证外部编辑的宏映射文件即时生效。
+- 不做目录附件、glob、远程 URL、二进制解析、PDF/Word 解析。
+
+注入格式建议：
+
+```text
+<mindcraft_session_instruction>
+...instruction.content...
+
+<mindcraft_session_attachment path="D:/repo/docs/customer-a-macros.md" name="customer-a-macros.md">
+...file content...
+</mindcraft_session_attachment>
+</mindcraft_session_instruction>
+```
+
+实现建议：
+
+- 主进程新增附件解析 helper，例如 `sessionInstructionAttachments.js`，负责路径规范化、扩展名检查、大小检查、读取和错误归一化。
+- `getSessionInstruction(chatKey)` 返回附件列表和上次检查状态；`setSessionInstruction(payload)` 只保存附件引用和 UI 状态，不读取文件内容。
+- Claude 注入前调用附件 helper 拼接完整 instruction prompt；CodeX 发送前复用同一 helper，避免两套读取逻辑漂移。
+- 读取失败不 throw 到发送链路；返回 warnings，前端可在下一次刷新或保存后展示。
+- 测试覆盖：有效 `.md` 注入、文件不存在跳过、超限跳过、非支持扩展名跳过、附件保存不丢 provider/runtime/session mapping。
+
+风险控制：
+
+- 不碰官方目录，不改变 transcript/resume 主路径。
+- 不复制用户文件，避免 userData 膨胀和隐私复制问题。
+- 附件内容注入只在 `instruction.enabled === true` 时发生。
+- 附件读取必须有大小上限，避免卡住主进程或把超大配置误塞进上下文。
+- CodeX 当前仍走 user prompt 前缀，附件内容也会进入用户消息文本；如未来 SDK 有正式 system/developer instruction 通道，再统一迁移。
 
 ### Phase 5：诊断日志和残留整理
 
