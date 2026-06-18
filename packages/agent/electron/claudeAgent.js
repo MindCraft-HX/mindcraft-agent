@@ -14,6 +14,7 @@ const {
   syncPanelStateSessions,
   upsertRuntimeByProvider,
 } = require('./sessionRegistry')
+const { buildFullInstructionPrompt } = require('./sessionInstructionAttachments')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const {
@@ -554,15 +555,8 @@ function readClaudeSessionMeta(cwd, cliSessionId) {
   return readClaudeSessionMetaByFilePath(metaPath.replace(/\.meta\.json$/i, '.jsonl'))
 }
 
-function buildSessionInstructionPrompt(instruction = {}) {
-  if (!instruction?.enabled) return ''
-  const content = typeof instruction.content === 'string' ? instruction.content.trim() : ''
-  if (!content) return ''
-  return [
-    '<mindcraft_session_instruction>',
-    content,
-    '</mindcraft_session_instruction>',
-  ].join('\n')
+async function buildSessionInstructionPrompt(instruction = {}) {
+  return buildFullInstructionPrompt(instruction)
 }
 
 function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePath } = {}) {
@@ -2574,6 +2568,7 @@ function setupClaudeHandlers() {
               writeGlobalSettings(s)
             }
           })()
+          const sessionInstructionPrompt = await buildSessionInstructionPrompt(sessionInstruction)
           const q = query({
             prompt: (async function* () { yield userMsg })(),
             options: {
@@ -2593,7 +2588,7 @@ function setupClaudeHandlers() {
               systemPrompt: (() => {
                 const parts = [
                   buildSystemPrompt(resolvedCwd),
-                  buildSessionInstructionPrompt(sessionInstruction),
+                  sessionInstructionPrompt,
                   mode === 'plan_mode'
                     ? '当前模式为 Plan mode：在执行任何文件写入、修改或命令执行之前，必须先输出一份清晰的实施计划（包含步骤、涉及文件、预期效果）。计划输出后，可以按步骤逐步执行，不要一次性批量修改。'
                     : '',
