@@ -171,6 +171,51 @@ test('setSessionInstruction stores instruction without losing session mapping', 
   assert.equal(record.instruction.content, 'Use customer A macro mapping.')
 })
 
+test('syncPanelStateSessions preserves existing instruction data (no overwrite)', () => {
+  const userDataDir = makeTempUserData()
+  // 1. Create a session via sync
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Keep my instruction',
+        cliSessionId: 'cli-1',
+        filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  // 2. Set instruction
+  const result = setSessionInstruction('chat-key-1', {
+    enabled: true,
+    description: 'My session',
+    content: 'Important instruction content',
+  }, { userDataDir })
+  assert.equal(result.ok, true)
+  assert.equal(result.instruction.enabled, true)
+
+  // 3. Sync panel state again (simulates tab switch / panel state save)
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Keep my instruction',
+        cliSessionId: 'cli-1',
+        filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  // 4. Instruction should still be there
+  const instruction = getSessionInstruction('chat-key-1', { userDataDir })
+  assert.equal(instruction.enabled, true, 'enabled should survive panel state sync')
+  assert.equal(instruction.content, 'Important instruction content', 'content should survive panel state sync')
+})
+
 test('getSessionInstruction returns disabled empty state for unknown chat', () => {
   const userDataDir = makeTempUserData()
   const instruction = getSessionInstruction('missing-chat', { userDataDir })

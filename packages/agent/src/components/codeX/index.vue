@@ -1886,6 +1886,7 @@ async function refreshActiveSessionInstructionState() {
   }
   try {
     const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
+    console.log('[cx] refreshActiveSessionInstructionState:', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
     activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
   } catch (_) {
     activeSessionInstructionEnabled.value = false
@@ -1895,16 +1896,19 @@ async function refreshActiveSessionInstructionState() {
 async function setActiveSessionInstructionEnabled(enabled) {
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) return
+  console.log('[cx] setActiveSessionInstructionEnabled:', { chatKey, enabled: Boolean(enabled) })
   activeSessionInstructionEnabled.value = Boolean(enabled)
   try {
     const current = await window.electronAPI?.getSessionInstruction?.(chatKey)
-    await window.electronAPI?.setSessionInstruction?.({
+    console.log('[cx] setActiveSessionInstructionEnabled current:', { enabled: current?.enabled, contentLen: String(current?.content || '').length })
+    const result = await window.electronAPI?.setSessionInstruction?.({
       chatKey,
       instruction: {
         ...(current || {}),
         enabled: Boolean(enabled),
       },
     })
+    console.log('[cx] setActiveSessionInstructionEnabled result:', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
     await refreshActiveSessionInstructionState()
   } catch (_) {
     await refreshActiveSessionInstructionState()

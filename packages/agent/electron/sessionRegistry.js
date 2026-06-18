@@ -211,6 +211,8 @@ function upsertSessionRecord(record, options = {}) {
   const filePath = getSessionRecordPath(record.chatKey, options)
   if (!filePath) return false
   const existing = readJson(filePath, {})
+  const incomingInst = record.instruction || {}
+  const hasRealInstruction = incomingInst.enabled || String(incomingInst.content || '').trim()
   const next = {
     ...existing,
     ...record,
@@ -222,10 +224,9 @@ function upsertSessionRecord(record, options = {}) {
       ...(existing?.runtime || {}),
       ...(record.runtime || {}),
     },
-    instruction: {
-      ...(existing?.instruction || {}),
-      ...(record.instruction || {}),
-    },
+    instruction: hasRealInstruction
+      ? { ...(existing?.instruction || {}), ...incomingInst }
+      : (existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] }),
     schemaVersion: SCHEMA_VERSION,
     updatedAt: record.updatedAt || Date.now(),
   }

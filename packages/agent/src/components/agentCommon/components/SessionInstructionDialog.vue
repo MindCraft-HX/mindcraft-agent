@@ -64,6 +64,7 @@ function assignDraft(data = {}) {
 async function open(nextChatKey) {
   chatKey.value = nextChatKey || ''
   const data = await window.electronAPI?.getSessionInstruction?.(chatKey.value).catch(() => null)
+  console.log('[si-dialog] open loaded:', { chatKey: chatKey.value, enabled: data?.enabled, hasContent: Boolean(data?.content) })
   assignDraft(data || {})
   visible.value = true
 }
@@ -74,16 +75,18 @@ function close() {
 
 async function save() {
   const plain = toRaw(draft)
-  const hasContent = String(plain.content || '').trim().length > 0
-  await window.electronAPI?.setSessionInstruction?.({
+  const payload = {
     chatKey: chatKey.value,
     instruction: {
-      enabled: hasContent ? true : plain.enabled,
+      enabled: true,
       description: plain.description,
       content: plain.content,
       attachments: plain.attachments,
     },
-  })
+  }
+  console.log('[si-dialog] save payload:', { chatKey: payload.chatKey, enabled: payload.instruction.enabled, contentLen: payload.instruction.content.length })
+  const result = await window.electronAPI?.setSessionInstruction?.(payload)
+  console.log('[si-dialog] save result:', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
   emit('saved', chatKey.value)
   close()
 }
