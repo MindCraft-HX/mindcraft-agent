@@ -26,7 +26,7 @@ const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: regi
 const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
 const { openClaudeWin } = require("./claudeWindow/index.js");
 const { openCodexWin } = require("./codexWindow/index.js");
-const { SideFloatWin } = require("./floatWindow/sideFloatWin.js");
+
 const { initCodeWin } = require("./searchView/index.js");
 const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
 
@@ -59,7 +59,6 @@ if (process.env.VITE_DEV_SERVER_URL) {
       });
   }, 3000);
 }
-let sideFloatWin = null
 let win = null
 let isAppQuitting = false
 let isQuittingForUpdate = false
@@ -413,12 +412,10 @@ app.whenReady().then(async () => {
   })
 
 
-  // 主窗口ready后再创建浮动窗口，避免阻塞
   win.once("ready-to-show", () => {
-    sideFloatWin = new SideFloatWin({initUrl, env: NODE_ENV, platform: NODE_PLATFORM, mainWin: win})
     win.show();
     initCodeWin({win, NODE_ENV})
-  })  
+  })
 
   app.on("activate", function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

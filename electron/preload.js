@@ -96,20 +96,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openSingleWindow:(info) => ipcRenderer.send("open-single-window", info),
   openSystemSettings: () => ipcRenderer.send("open-system-settings"),
 
-  // 浮动窗口
-  openFloat: () => ipcRenderer.send('open-float'),
-  floatOperation: (info) => ipcRenderer.send('float-operation', info),
-  getFloatInfo: (info) => ipcRenderer.invoke('get-float-info', info),
-  setFloatInfo: (info) => ipcRenderer.invoke('set-float-info', info),
-  getSideFloatInfo: (info) => ipcRenderer.invoke('get-side-float-info', info),
-  setSideFloatInfo: (info) => ipcRenderer.invoke('set-side-float-info', info),
-  sidefloatOperation: (info) => ipcRenderer.send('side-float-operation', info),
-  beforeFloatWinClose: (callback) => {
-    ipcRenderer.on('before-float-win-close', async () => {
-      const allowClose = await callback();
-      ipcRenderer.invoke('confirm-close-window', allowClose);
-    });
-  },
 
   // 设置（原生 JSON 存储，替代 electron-conf）
   getSetting: (key) => ipcRenderer.invoke('get-setting', key),
