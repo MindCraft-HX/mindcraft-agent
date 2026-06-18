@@ -28,6 +28,37 @@
           />
         </label>
 
+        <!-- Attachments -->
+        <div class="si-field">
+          <span class="si-label">{{ $t('agent.sessionInstructionAttachments') }}</span>
+          <span class="si-attachment-hint">{{ $t('agent.sessionInstructionAttachmentHint') }}</span>
+          <div class="si-attachment-list">
+            <div
+              v-for="(att, i) in draft.attachments"
+              :key="i"
+              class="si-attachment-item"
+              :class="{ 'si-attachment-disabled': !att.enabled }"
+            >
+              <button
+                type="button"
+                class="si-attachment-toggle"
+                :title="att.enabled ? '禁用' : '启用'"
+                @click="att.enabled = !att.enabled"
+              >{{ att.enabled ? '✓' : '—' }}</button>
+              <span class="si-attachment-name" :title="att.path">{{ att.name }}</span>
+              <button
+                type="button"
+                class="si-attachment-remove"
+                :title="$t('agent.sessionInstructionRemoveAttachment')"
+                @click="draft.attachments.splice(i, 1)"
+              >&times;</button>
+            </div>
+          </div>
+          <button type="button" class="si-attachment-add" @click="addAttachments">
+            + {{ $t('agent.sessionInstructionAddAttachment') }}
+          </button>
+        </div>
+
         <div class="si-actions">
           <button type="button" class="si-btn ghost" @click="close">{{ $t('settings.cancel') }}</button>
           <button type="button" class="si-btn primary" @click="save">{{ $t('settings.save') }}</button>
@@ -71,6 +102,19 @@ async function open(nextChatKey) {
 
 function close() {
   visible.value = false
+}
+
+async function addAttachments() {
+  try {
+    const files = await window.electronAPI?.openSessionAttachmentDialog?.()
+    if (!files?.length) return
+    const existing = new Set(draft.attachments.map(a => a.path))
+    for (const f of files) {
+      if (!existing.has(f.path)) {
+        draft.attachments.push(f)
+      }
+    }
+  } catch (_) {}
 }
 
 async function save() {
@@ -182,6 +226,83 @@ defineExpose({ open })
   line-height: 1.5;
   font-family: inherit;
 }
+.si-attachment-hint {
+  display: block;
+  margin-top: 2px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--cc-text-muted, #888);
+}
+.si-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.si-attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--cc-bg-secondary, #f7f6f4);
+  border: 1px solid var(--cc-border, #d8d4ca);
+  font-size: 12px;
+}
+.si-attachment-disabled {
+  opacity: 0.5;
+}
+.si-attachment-toggle {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 1px solid var(--cc-border, #d8d4ca);
+  border-radius: 4px;
+  background: var(--cc-bg-input, #fff);
+  color: var(--cc-primary, #2f81f7);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+}
+.si-attachment-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cc-text, #222);
+}
+.si-attachment-remove {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc-text-muted, #999);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+.si-attachment-remove:hover {
+  color: #e74c3c;
+}
+.si-attachment-add {
+  display: inline-block;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px dashed var(--cc-border, #d8d4ca);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cc-primary, #2f81f7);
+  cursor: pointer;
+  font-size: 12px;
+}
+.si-attachment-add:hover {
+  border-style: solid;
+  background: var(--cc-bg-secondary, #f0f0f0);
+}
+
 .si-actions {
   margin-top: 12px;
   display: flex;

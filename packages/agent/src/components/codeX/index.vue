@@ -1915,17 +1915,15 @@ async function setActiveSessionInstructionEnabled(enabled) {
   }
 }
 
-function prependSessionInstruction(prompt, instruction) {
-  const content = String(instruction?.content || '').trim()
-  if (!content) return prompt
-  return [
-    '<mindcraft_session_instruction>',
-    content,
-    '</mindcraft_session_instruction>',
-    '',
-    '用户当前请求：',
-    prompt,
-  ].join('\n')
+async function prependSessionInstruction(prompt, instruction) {
+  if (!instruction?.enabled) return prompt
+  try {
+    const block = await window.electronAPI?.buildSessionInstructionPrompt?.(instruction)
+    if (!block) return prompt
+    return [block, '', '用户当前请求：', prompt].join('\n')
+  } catch (_) {
+    return prompt
+  }
 }
 
 async function sendMessage(textOverride = null, targetTab = null) {
@@ -2052,7 +2050,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }
   const sessionInstruction = await loadSessionInstructionForTab(tab)
   if (sessionInstruction) {
-    finalPrompt = prependSessionInstruction(finalPrompt, sessionInstruction)
+    finalPrompt = await prependSessionInstruction(finalPrompt, sessionInstruction)
   }
 
   // 防御 Vue reactive Proxy → contextBridge structured clone 失败
