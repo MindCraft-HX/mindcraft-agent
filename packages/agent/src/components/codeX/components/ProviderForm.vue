@@ -51,6 +51,15 @@
         </div>
 
         <div class="setting-group">
+          <label class="setting-label">{{ $t('agent.apiFormat') }}</label>
+          <div class="setting-tip">{{ $t('agent.proxyHint') }}</div>
+          <select class="setting-input" v-model="apiFormat">
+            <option value="responses">{{ $t('agent.apiFormatResponses') }}</option>
+            <option value="chat">{{ $t('agent.apiFormatChat') }}</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
           <label class="setting-label">auth.json <span class="required">*</span></label>
           <textarea class="json-editor" v-model="authJsonText" spellcheck="false"></textarea>
           <button class="fmt-btn" @click="formatAuthJson">{{ $t('settings.format') }}</button>
@@ -96,6 +105,7 @@ const showKey = ref(false)
 const hydratingFromProps = ref(false)
 const form = reactive({ name: '', key: '', url: '', model: '' })
 const reasoningEffort = ref('')
+const apiFormat = ref('responses')
 const authJsonText = ref('')
 const tomlText = ref('')
 
@@ -119,7 +129,7 @@ watch(() => form.key, (key) => {
 })
 
 watch(
-  () => [form.name, form.url, form.model, reasoningEffort.value],
+  () => [form.name, form.url, form.model, reasoningEffort.value, apiFormat.value],
   () => {
     if (hydratingFromProps.value) return
     syncManagedTomlFromForm()
@@ -138,6 +148,7 @@ function initFromProps() {
   form.url = provider.url || draft.url || ''
   form.model = provider.model || draft.model || ''
   reasoningEffort.value = normalizeCodexReasoningEffort(provider.reasoningEffort || draft.reasoningEffort)
+  apiFormat.value = provider.apiFormat || draft.apiFormat || 'responses'
   authJsonText.value = provider.authJson
     ? JSON.stringify(provider.authJson, null, 2)
     : buildDefaultAuthJson()
@@ -157,6 +168,7 @@ function buildDefaultToml() {
     model: form.model,
     url: form.url,
     reasoningEffort: reasoningEffort.value,
+    apiFormat: apiFormat.value,
     apiKey: form.key,
   })}# [projects.'/absolute/path/to/project']
 # trust_level = "trusted"
@@ -169,6 +181,7 @@ function syncManagedTomlFromForm() {
     model: form.model,
     url: form.url,
     reasoningEffort: reasoningEffort.value,
+    apiFormat: apiFormat.value,
     apiKey: form.key,
   })
   tomlText.value = mergeManagedProviderToml(tomlText.value, managedToml)
@@ -226,7 +239,7 @@ function formatToml() {
 
       for (const comment of topComments) out.push(comment)
 
-      const KEY_ORDER = ['model_reasoning_effort', 'model', 'model_provider', 'name', 'base_url', 'experimental_bearer_token', 'trust_level']
+      const KEY_ORDER = ['model_reasoning_effort', 'model', 'model_provider', 'wire_api', 'api_format', 'name', 'base_url', 'experimental_bearer_token', 'trust_level']
       section.keys.sort((a, b) => {
         const ka = (a.match(/^([a-z_]+)/)?.[1] || '').toLowerCase()
         const kb = (b.match(/^([a-z_]+)/)?.[1] || '').toLowerCase()
@@ -277,6 +290,7 @@ function onSave() {
       url: form.url,
       model: form.model,
       reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort.value),
+      apiFormat: apiFormat.value,
       authJson,
       tomlText: tomlText.value,
     },

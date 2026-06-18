@@ -191,6 +191,8 @@ function createAgentBridge(ipcRenderer) {
   codexSetModel: (model) => ipcRenderer.invoke('codex-set-model', model),
   codexGetReasoningEffort: () => ipcRenderer.invoke('codex-get-reasoning-effort'),
   codexSetReasoningEffort: (effort) => ipcRenderer.invoke('codex-set-reasoning-effort', effort),
+  codexGetApiFormat: () => ipcRenderer.invoke('codex-get-api-format'),
+  codexSetApiFormat: (format) => ipcRenderer.invoke('codex-set-api-format', format),
   codexImportLegacyConfig: (customPath) => ipcRenderer.invoke('codex-import-legacy-config', customPath),
   codexGetSandboxMode: () => ipcRenderer.invoke('codex-get-sandbox-mode'),
   codexSetSandboxMode: (mode) => ipcRenderer.invoke('codex-set-sandbox-mode', mode),

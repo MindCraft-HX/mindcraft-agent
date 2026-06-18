@@ -236,6 +236,7 @@ function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
   let tomlBaseURL = toml.base_url || ''
   let tomlModel = toml.model || ''
   let tomlEffort = toml.model_reasoning_effort || toml.reasoning_effort || toml.reason_effort || ''
+  let tomlApiFormat = toml.api_format || ''
 
   // [model_providers.<id>] 段（第三方 provider 格式，参照 cc-switch）
   if (!tomlApiKey || !tomlBaseURL) {
@@ -243,6 +244,7 @@ function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
     if (provider) {
       if (!tomlApiKey) tomlApiKey = provider.experimental_bearer_token || ''
       if (!tomlBaseURL) tomlBaseURL = provider.base_url || ''
+      if (!tomlApiFormat) tomlApiFormat = provider.api_format || ''
     }
   }
 
@@ -257,13 +259,15 @@ function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
   const userBaseURL = userRuntime.baseURL || ''
   const userModel = userRuntime.model || ''
   const userEffort = userRuntime.reasoningEffort || userRuntime.reasonEffort || ''
+  const userApiFormat = userRuntime.apiFormat || ''
 
   const apiKey = userApiKey || tomlApiKey
   const baseURL = userBaseURL || tomlBaseURL
   const model = userModel || tomlModel
   const reasoningEffort = normalizeCodexReasoningEffort(userEffort || tomlEffort)
+  const apiFormat = userApiFormat || tomlApiFormat || 'responses'
 
-  return { apiKey, baseURL, model, reasoningEffort }
+  return { apiKey, baseURL, model, reasoningEffort, apiFormat }
 }
 
 /** 读取 Codex 运行时配置
@@ -1736,6 +1740,7 @@ function setupCodexSdkHandlers() {
     const baseURL = runtime.baseURL || ''
     const model = modelOverride?.trim() || runtime.model || ''
     const reasoningEffort = String(reasoningEffortOverride?.trim() || runtime.reasoningEffort || '').trim()
+    const apiFormat = String(runtime.apiFormat || '').trim() || 'responses'
     const sandboxMode = frontendSandbox || readSandboxMode()
     const resolvedCwd = path.resolve(cwd || process.cwd())
 
@@ -1844,18 +1849,38 @@ function setupCodexSdkHandlers() {
       let doneSent = false
       let pendingItemIds = new Set()
       let thread = null
+      let proxyServer = null
       ;(async () => {
         try {
           const { Codex } = await loadCodexSdk()
 
+          // 协议转换代理：apiFormat === 'chat' 时启动本地代理
+          let effectiveBaseUrl = baseURL || ''
+          if (apiFormat === 'chat' && baseURL) {
+            try {
+              const { startCodexProxy } = require('./codex/proxyServer')
+              proxyServer = await startCodexProxy({
+                upstreamUrl: baseURL,
+                apiKey,
+                model: model || '',
+                reasoningEffort,
+              })
+              effectiveBaseUrl = `http://127.0.0.1:${proxyServer.port}/v1`
+              console.log('[codex] proxy started:', { port: proxyServer.port, upstream: baseURL })
+            } catch (proxyErr) {
+              console.error('[codex] proxy start failed, falling back to direct:', proxyErr)
+              // 降级：代理启动失败时直连
+            }
+          }
+
           const codex = new Codex({
             codexPathOverride: findGlobalCodexPath(),
             apiKey,
-            ...(baseURL ? { baseUrl: baseURL } : {}),
+            ...(effectiveBaseUrl ? { baseUrl: effectiveBaseUrl } : {}),
             env: augmentEnvWithBundledRg({
               ...process.env,
               OPENAI_API_KEY: apiKey,
-              ...(baseURL ? { OPENAI_BASE_URL: baseURL } : {}),
+              ...(effectiveBaseUrl ? { OPENAI_BASE_URL: effectiveBaseUrl } : {}),
             }),
           })
 
@@ -2298,6 +2323,12 @@ function setupCodexSdkHandlers() {
             })
           }
         } finally {
+          // 关闭协议转换代理
+          if (proxyServer) {
+            try { await proxyServer.close() } catch (_) {}
+            proxyServer = null
+            console.log('[codex] proxy closed')
+          }
           clearTimeout(bootWatch)
           clearTimeout(turnTimeout)
           if (drainTimer) { clearTimeout(drainTimer); drainTimer = null }
@@ -2782,6 +2813,19 @@ function setupCodexSdkHandlers() {
       const c = new Conf({ name: 'mindcraft-codex' })
       const r = c.get('runtime') || {}
       r.reasoningEffort = normalizeCodexReasoningEffort(effort)
+      c.set('runtime', r)
+    } catch (_) {}
+    return true
+  })
+  ipcMain.handle('codex-get-api-format', () => {
+    const rt = readRuntimeConfig()
+    return rt.apiFormat || 'responses'
+  })
+  ipcMain.handle('codex-set-api-format', (_, format) => {
+    try {
+      const c = new Conf({ name: 'mindcraft-codex' })
+      const r = c.get('runtime') || {}
+      r.apiFormat = format === 'chat' ? 'chat' : 'responses'
       c.set('runtime', r)
     } catch (_) {}
     return true

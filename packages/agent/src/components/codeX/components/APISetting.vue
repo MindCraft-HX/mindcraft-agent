@@ -310,11 +310,13 @@ async function loadProviders() {
       const url = await window.electronAPI?.codexGetBaseURL?.() || ''
       const model = await window.electronAPI?.codexGetModel?.() || ''
       const reasoningEffort = await window.electronAPI?.codexGetReasoningEffort?.() || ''
+      const apiFormat = await window.electronAPI?.codexGetApiFormat?.() || 'responses'
       settingsForm.value.providers = [{
         name: 'default',
         key, url, model, reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort),
+        apiFormat,
         authJson: key ? { OPENAI_API_KEY: key } : {},
-        tomlText: buildManagedProviderToml({ name: 'default', model, url, reasoningEffort, apiKey: key }),
+        tomlText: buildManagedProviderToml({ name: 'default', model, url, reasoningEffort, apiFormat, apiKey: key }),
       }]
       settingsForm.value.activeIdx = 0
       settingsForm.value.selectedIdx = 0
@@ -346,6 +348,7 @@ function normalizeProviderRecord(provider = {}) {
     url: provider.url || draft.url || '',
     model: provider.model || draft.model || '',
     reasoningEffort: normalizeCodexReasoningEffort(provider.reasoningEffort || draft.reasoningEffort),
+    apiFormat: provider.apiFormat || draft.apiFormat || 'responses',
     authJson: provider.authJson || (key ? { OPENAI_API_KEY: key } : {}),
   }
 }
@@ -376,6 +379,7 @@ async function repairCodexCliConfig() {
       model: p.model,
       url: p.url,
       reasoningEffort: p.reasoningEffort,
+      apiFormat: p.apiFormat || 'responses',
       apiKey: p.key,
     })
     const mergedToml = mergeManagedProviderToml(currentToml, freshToml)
@@ -407,6 +411,7 @@ async function applyProvider(idx) {
       model: p.model,
       url: p.url,
       reasoningEffort: normalizeCodexReasoningEffort(p.reasoningEffort),
+      apiFormat: p.apiFormat || 'responses',
       apiKey: p.key,
     })
     const currentToml = await window.electronAPI?.codexReadConfigToml?.() || ''
@@ -419,6 +424,7 @@ async function applyProvider(idx) {
     await window.electronAPI?.codexSetBaseURL?.(p.url || '')
     await window.electronAPI?.codexSetModel?.(p.model || '')
     await window.electronAPI?.codexSetReasoningEffort?.(normalizeCodexReasoningEffort(p.reasoningEffort))
+    await window.electronAPI?.codexSetApiFormat?.(p.apiFormat || 'responses')
     return true
   } catch (e) {
     ElMessage.error(t('settings.saveConfigFailed') + (e?.message || t('system.unknownError')))
@@ -486,7 +492,7 @@ async function addProvider() {
   // 从磁盘读取当前 config.toml 作为初始模板，保留已有配置（trust 等）
   let latestToml = ''
   try { latestToml = await window.electronAPI?.codexReadConfigToml?.() || '' } catch (_) {}
-  const p = { name: '', key: '', url: '', model: '', reasoningEffort: '', authJson: {}, tomlText: latestToml || buildManagedProviderToml({}) }
+  const p = { name: '', key: '', url: '', model: '', reasoningEffort: '', apiFormat: 'responses', authJson: {}, tomlText: latestToml || buildManagedProviderToml({}) }
   settingsForm.value.providers.push(p)
   settingsForm.value.selectedIdx = settingsForm.value.providers.length - 1
   editingNewProvider.value = true
@@ -504,13 +510,14 @@ async function copyProvider(i) {
 
 /** 简易 TOML key=value 提取（仅解析 CodeX config.toml 所需字段） */
 function extractTomlFields(tomlText) {
-  const result = { auth_token: '', base_url: '', model: '', reasoning_effort: '' }
+  const result = { auth_token: '', base_url: '', model: '', reasoning_effort: '', api_format: '' }
   if (!tomlText) return result
   const draft = extractProviderDraftFromToml(tomlText)
   result.auth_token = draft.apiKey || ''
   result.base_url = draft.url || ''
   result.model = draft.model || ''
   result.reasoning_effort = draft.reasoningEffort || ''
+  result.api_format = draft.apiFormat || ''
   let inSection = false
   for (const rawLine of tomlText.split('\n')) {
     const line = rawLine.replace(/\r$/, '').trim()
@@ -572,6 +579,7 @@ async function importFromFile(i) {
     p.url = fields.base_url
     p.model = fields.model
     p.reasoningEffort = normalizeCodexReasoningEffort(fields.reasoning_effort)
+    p.apiFormat = fields.api_format || 'responses'
     p.authJson = fields.auth_token ? { OPENAI_API_KEY: fields.auth_token } : {}
     p.tomlText = tomlText
     await persistProviders()

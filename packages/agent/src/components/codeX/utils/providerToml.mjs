@@ -131,10 +131,14 @@ export function buildManagedProviderToml(provider = {}) {
   const apiKey = String(provider.apiKey || '').trim()
   const reasoningEffort = normalizeCodexReasoningEffort(provider.reasoningEffort)
 
+  const apiFormat = String(provider.apiFormat || '').trim()
+
   const out = []
   if (reasoningEffort) out.push(`model_reasoning_effort = ${quoteTomlString(reasoningEffort)}`)
   out.push(`model = ${quoteTomlString(model)}`)
   out.push(`model_provider = ${quoteTomlString(name)}`)
+  out.push(`wire_api = "responses"`)
+  if (apiFormat) out.push(`api_format = ${quoteTomlString(apiFormat)}`)
   out.push('')
   out.push(`[model_providers.${quoteTomlKey(name)}]`)
   out.push(`name = ${quoteTomlString(name)}`)
@@ -158,6 +162,7 @@ export function extractProviderDraftFromToml(tomlText = '') {
     name: providerName,
     model: String(root.model || '').trim(),
     reasoningEffort: normalizeCodexReasoningEffort(root.model_reasoning_effort || root.reasoning_effort),
+    apiFormat: String(providerFields.api_format || root.api_format || '').trim(),
     url: String(providerFields.base_url || root.base_url || '').trim(),
     apiKey: String(providerFields.experimental_bearer_token || root.experimental_bearer_token || root.auth_token || '').trim(),
   }
@@ -197,7 +202,7 @@ export function mergeManagedProviderToml(existingToml = '', providerToml = '') {
     }
     if (skipManagedSection) continue
     if (/^\[.*\]$/.test(trimmed)) inTopLevel = false
-    if (inTopLevel && /^(model|model_provider|model_reasoning_effort)\s*=/.test(trimmed)) continue
+    if (inTopLevel && /^(model|model_provider|model_reasoning_effort|wire_api|api_format)\s*=/.test(trimmed)) continue
 
     if (!skipManagedSection) out.push(line)
   }
