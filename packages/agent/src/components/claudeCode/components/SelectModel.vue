@@ -72,6 +72,7 @@ const activeTier = ref('sonnet')
 const hoveredTier = ref('sonnet')
 const initialTier = ref('sonnet')
 const effortIndex = ref(1)  // 默认 Medium
+const openModelValue = ref('')
 let resolveOpen = null
 
 function displayModel(key) {
@@ -104,14 +105,8 @@ async function open(opts = {}) {
   }
 
   const model = String(opts.model || currentModel || '').trim()
-  let storedTier = ''
-  try {
-    storedTier = (await window.electronAPI?.claudeGetSelectedTier?.()) || ''
-  } catch (e) {
-    console.warn('[SelectModel] claudeGetSelectedTier failed:', e?.message || e)
-  }
+  openModelValue.value = model
   let inferred = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(opts.tier) ? opts.tier : ''
-  if (!inferred) inferred = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(storedTier) ? storedTier : ''
   if (!inferred) {
     inferred = 'sonnet'
     if (model) {
@@ -123,10 +118,6 @@ async function open(opts = {}) {
         }
       }
     }
-  }
-
-  if (model && inferred === 'sonnet' && pickerTierModels.value.sonnet !== model) {
-    pickerTierModels.value.sonnet = model
   }
 
   activeTier.value = inferred
@@ -162,24 +153,10 @@ async function confirmSelection(key) {
     pickerTierModels.value[key] = model
     activeTier.value = key
 
-    const newTierModels = {
-      haiku: (pickerTierModels.value.haiku || '').trim(),
-      sonnet: (pickerTierModels.value.sonnet || '').trim(),
-      opus: (pickerTierModels.value.opus || '').trim(),
-      reasoning: (pickerTierModels.value.reasoning || '').trim(),
-    }
-
-    await window.electronAPI?.claudeSetModel?.(model)
-    await window.electronAPI?.claudeSetTierModels?.(newTierModels)
-    await window.electronAPI?.claudeSetSelectedTier?.(key)
-    await window.electronAPI?.claudePatchSettingsJson?.({ model: key })
-    await window.electronAPI?.claudeSetEffortLevel?.(effort)
-
     resolveOpen?.({ key, label, model, effort, effortLabel })
   } else {
-    // 同一 tier：仅可能更新 effort
-    await window.electronAPI?.claudeSetEffortLevel?.(effort)
-    resolveOpen?.({ key, label, model: displayModel(key), effort, effortLabel })
+    // 同一 tier：仅可能更新当前 session 的 effort
+    resolveOpen?.({ key, label, model: openModelValue.value || displayModel(key), effort, effortLabel })
   }
 
   resolveOpen = null

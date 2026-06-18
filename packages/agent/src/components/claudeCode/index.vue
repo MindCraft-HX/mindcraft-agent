@@ -567,8 +567,13 @@ function normalizeClaudeEffort(value) {
   return ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : ''
 }
 
+function normalizeClaudeModelTier(value) {
+  const tier = String(value || '').trim().toLowerCase()
+  return ['haiku', 'sonnet', 'opus', 'reasoning'].includes(tier) ? tier : ''
+}
+
 function getClaudeTabModel(tab) {
-  return String(tab?.model || tab?.metrics?.model || claudeDefaultModel.value || '').trim()
+  return String(tab?.model || claudeDefaultModel.value || '').trim()
 }
 
 function getClaudeTabEffort(tab) {
@@ -585,6 +590,7 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
     data: {
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
+      modelTier: normalizeClaudeModelTier(tab.modelTier) || null,
     },
   })
 }
@@ -1566,12 +1572,12 @@ async function openModelPicker() {
   const result = await selectModelRef.value?.open?.({
     model: getClaudeTabModel(tab),
     effort: getClaudeTabEffort(tab),
+    tier: normalizeClaudeModelTier(tab?.modelTier),
   })
   if (result && tab) {
     tab.model = result.model
     tab.effort = normalizeClaudeEffort(result.effort) || getClaudeTabEffort(tab)
-    claudeDefaultModel.value = result.model || claudeDefaultModel.value
-    claudeDefaultEffort.value = tab.effort || claudeDefaultEffort.value
+    tab.modelTier = normalizeClaudeModelTier(result.key) || tab.modelTier || null
     persistClaudeTabMeta(tab)
     metricsData.value.model = result.model
     const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
@@ -1680,6 +1686,7 @@ const {
       currentAssistantId: null,
       model: c.model || null,
       effort: normalizeClaudeEffort(c.effort) || null,
+      modelTier: normalizeClaudeModelTier(c.modelTier) || null,
       taskState: ensureTaskState({ taskState: c.taskState }),
       _taskToolUseIds: new Set(),
     }
@@ -1713,6 +1720,7 @@ function createChat() {
     fileSize: null,
     model: claudeDefaultModel.value || null,
     effort: claudeDefaultEffort.value || 'medium',
+    modelTier: null,
     runMode: 'edit_automatically',
     thinking: false,
     messages: [],
@@ -1816,9 +1824,7 @@ async function refreshProjectSessionsInBackground(p) {
     const scanned = await window.electronAPI.claudeScanProjectsSessions(p.cwd)
     if (!Array.isArray(scanned) || !scanned.length) {
       if (!p.chats?.length) {
-        const activeChat = p.chats?.find(c => c.id === activeChatId.value) || null
         const c = createChat()
-        if (activeChat) c.runMode = activeChat.runMode
         p.chats = [c]
         switchChat(p.chats[0].id)
       }
@@ -1878,7 +1884,6 @@ async function refreshProjectSessionsInBackground(p) {
         }
         if (hasPendingNewChat) continue  // 等 onAgentDone 填充 cliSessionId 后再匹配
         newCount++
-        const activeChat = p.chats?.find(c => c.id === activeChatId.value) || null
         // 新增会话：插入到列表中（按最新对话时间倒序）
         const newChat = {
           id: nextChatId(),
@@ -1888,9 +1893,10 @@ async function refreshProjectSessionsInBackground(p) {
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
-          model: s.model || activeChat?.model || claudeDefaultModel.value || null,
-          effort: normalizeClaudeEffort(s.effort || activeChat?.effort || claudeDefaultEffort.value) || 'medium',
-          runMode: activeChat?.runMode || 'edit_automatically',
+          model: s.model || claudeDefaultModel.value || null,
+          effort: normalizeClaudeEffort(s.effort || claudeDefaultEffort.value) || 'medium',
+          modelTier: normalizeClaudeModelTier(s.modelTier) || null,
+          runMode: 'edit_automatically',
           thinking: false,
           messages: [],
           currentAssistantId: null,
@@ -1918,8 +1924,9 @@ async function refreshProjectSessionsInBackground(p) {
         changedCount++
         // fileSize 变化：更新 fileSize、updatedAt 和 name
         cached.fileSize = s.fileSize
-        cached.model = s.model || cached.model || cached.metrics?.model || null
+        cached.model = s.model || cached.model || null
         cached.effort = normalizeClaudeEffort(s.effort || cached.effort) || null
+        cached.modelTier = normalizeClaudeModelTier(s.modelTier) || cached.modelTier || null
         if (s.updatedAt) cached.updatedAt = s.updatedAt
         if (!cached._userRenamed) {
           cached.name = name
@@ -2232,6 +2239,9 @@ async function selectDir(project, onAfterSelect) {
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
           fileSize: s.fileSize || null,
+          model: s.model || claudeDefaultModel.value || null,
+          effort: normalizeClaudeEffort(s.effort || claudeDefaultEffort.value) || 'medium',
+          modelTier: normalizeClaudeModelTier(s.modelTier) || null,
           runMode: 'edit_automatically',
           thinking: false,
           messages: [],
@@ -2291,6 +2301,9 @@ async function loadProjectSessions(cwd) {
           updatedAt: s.updatedAt || null,
           filePath: s.filePath || '',
           fileSize: s.fileSize || null,
+          model: s.model || null,
+          effort: normalizeClaudeEffort(s.effort) || null,
+          modelTier: normalizeClaudeModelTier(s.modelTier) || null,
           messages: [],
           name,
           _userRenamed: Boolean(s.isCustomTitle),
@@ -2663,6 +2676,7 @@ async function sendMessage() {
       sessionId: tab.sessionId,
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
+      modelTier: normalizeClaudeModelTier(tab.modelTier) || undefined,
       runMode: tab.runMode || 'edit_automatically',
       sessionInstruction: await loadSessionInstructionForTab(tab),
     })
@@ -2691,12 +2705,12 @@ async function sendMessage() {
       const result = await selectModelRef.value?.open?.({
         model: getClaudeTabModel(tab),
         effort: getClaudeTabEffort(tab),
+        tier: normalizeClaudeModelTier(tab?.modelTier),
       })
       if (result) {
         tab.model = result.model
         tab.effort = normalizeClaudeEffort(result.effort) || getClaudeTabEffort(tab)
-        claudeDefaultModel.value = result.model || claudeDefaultModel.value
-        claudeDefaultEffort.value = tab.effort || claudeDefaultEffort.value
+        tab.modelTier = normalizeClaudeModelTier(result.key) || tab.modelTier || null
         persistClaudeTabMeta(tab)
         metricsData.value.model = result.model
         const effortNote = result.effortLabel ? t('agent.switchedModelEffort', { effort: result.effortLabel }) : ''
@@ -2950,6 +2964,7 @@ async function sendMessage() {
       sessionId: tab.sessionId,
       model: getClaudeTabModel(tab),
       effort: getClaudeTabEffort(tab),
+      modelTier: normalizeClaudeModelTier(tab.modelTier) || undefined,
       runMode: tab.runMode || 'edit_automatically',
       sessionInstruction: await loadSessionInstructionForTab(tab),
     }

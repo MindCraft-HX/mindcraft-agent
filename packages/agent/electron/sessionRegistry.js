@@ -88,6 +88,7 @@ function normalizeRuntime(agent, chat = {}) {
   return {
     model: normalizeString(chat.model),
     effort: normalizeString(chat.effort),
+    modelTier: normalizeString(chat.modelTier),
     reasoningEffort: null,
   }
 }

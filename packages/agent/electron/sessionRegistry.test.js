@@ -32,6 +32,7 @@ test('buildSessionRecordFromChat normalizes Claude chat mapping', () => {
       filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
       model: 'claude-sonnet',
       effort: 'high',
+      modelTier: 'sonnet',
       createdAt: 100,
       updatedAt: 200,
     },
@@ -43,6 +44,7 @@ test('buildSessionRecordFromChat normalizes Claude chat mapping', () => {
   assert.equal(record.provider.cliSessionId, 'cli-1')
   assert.equal(record.runtime.model, 'claude-sonnet')
   assert.equal(record.runtime.effort, 'high')
+  assert.equal(record.runtime.modelTier, 'sonnet')
 })
 
 test('syncPanelStateSessions writes records under userData session-registry', () => {
@@ -122,6 +124,7 @@ test('upsertRuntimeByProvider updates runtime for an existing provider mapping',
     runtime: {
       model: 'new-model',
       effort: 'xhigh',
+      modelTier: 'reasoning',
     },
   }, { userDataDir })
 
@@ -129,6 +132,7 @@ test('upsertRuntimeByProvider updates runtime for an existing provider mapping',
   const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
   assert.equal(record.runtime.model, 'new-model')
   assert.equal(record.runtime.effort, 'xhigh')
+  assert.equal(record.runtime.modelTier, 'reasoning')
 })
 
 test('setSessionInstruction stores instruction without losing session mapping', () => {

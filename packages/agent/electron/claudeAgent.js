@@ -507,6 +507,7 @@ function scanCliSessionsForProject(cwd) {
         isCustomTitle,
         model: meta.model || null,
         effort: meta.effort || null,
+        modelTier: meta.modelTier || null,
       })
     }
   } catch (_) {}
@@ -515,12 +516,15 @@ function scanCliSessionsForProject(cwd) {
 
 function normalizeClaudeSessionMeta(data = {}) {
   const validEfforts = new Set(['low', 'medium', 'high', 'xhigh'])
+  const validTiers = new Set(['haiku', 'sonnet', 'opus', 'reasoning'])
   const model = typeof data.model === 'string' ? data.model.trim() : ''
   const effortRaw = typeof data.effort === 'string' ? data.effort.trim().toLowerCase() : ''
   const effort = effortRaw === 'max' ? 'xhigh' : effortRaw
+  const modelTier = typeof data.modelTier === 'string' ? data.modelTier.trim().toLowerCase() : ''
   return {
     model,
     effort: validEfforts.has(effort) ? effort : '',
+    modelTier: validTiers.has(modelTier) ? modelTier : '',
   }
 }
 
@@ -534,7 +538,7 @@ function readClaudeSessionMetaByFilePath(filePath) {
   try {
     const registryRecord = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     const registryMeta = normalizeClaudeSessionMeta(registryRecord?.runtime || {})
-    if (registryMeta.model || registryMeta.effort) return registryMeta
+    if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
 
     if (!filePath || !String(filePath).toLowerCase().endsWith('.jsonl')) return {}
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
@@ -548,7 +552,7 @@ function readClaudeSessionMetaByFilePath(filePath) {
 function readClaudeSessionMeta(cwd, cliSessionId) {
   const registryRecord = findSessionRecordByProvider({ agent: 'claude', cliSessionId }, sessionRegistryOptionsForTest || {})
   const registryMeta = normalizeClaudeSessionMeta(registryRecord?.runtime || {})
-  if (registryMeta.model || registryMeta.effort) return registryMeta
+  if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
 
   const metaPath = getClaudeSessionMetaPath(cwd, cliSessionId)
   if (!metaPath) return {}
@@ -1965,17 +1969,31 @@ function setupClaudeHandlers() {
     reasoning: 'ANTHROPIC_REASONING_MODEL',
   }
 
+  function readTierModelsFromSystemSettings() {
+    const sj = readSystemSettingsJson()
+    const env = sj && typeof sj.env === 'object' ? sj.env : {}
+    return {
+      haiku: String(env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').trim(),
+      sonnet: String(env.ANTHROPIC_DEFAULT_SONNET_MODEL || '').trim(),
+      opus: String(env.ANTHROPIC_DEFAULT_OPUS_MODEL || '').trim(),
+      reasoning: String(env.ANTHROPIC_REASONING_MODEL || '').trim(),
+    }
+  }
+
   function readTierModelsFromConf() {
-    let models = confGet('tierModels', { haiku: '', sonnet: '', opus: '', reasoning: '' })
-    // 兜底：从 settings.json 读取
-    if (!models.haiku && !models.sonnet && !models.opus && !models.reasoning) {
-      const sj = readSystemSettingsJson()
-      if (sj?.env) {
-        models.haiku = sj.env.ANTHROPIC_DEFAULT_HAIKU_MODEL || ''
-        models.sonnet = sj.env.ANTHROPIC_DEFAULT_SONNET_MODEL || ''
-        models.opus = sj.env.ANTHROPIC_DEFAULT_OPUS_MODEL || ''
-        models.reasoning = sj.env.ANTHROPIC_REASONING_MODEL || ''
-      }
+    const providersState = confGet('claudeProviders', { providers: [], activeIdx: -1 })
+    const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
+    const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
+    const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
+    const activeModels = active?.tierModels && typeof active.tierModels === 'object' ? active.tierModels : {}
+    const settingsModels = readTierModelsFromSystemSettings()
+    const storedModels = internalConf.get('tierModels', {}) || {}
+
+    const models = {
+      haiku: String(activeModels.haiku || settingsModels.haiku || storedModels.haiku || '').trim(),
+      sonnet: String(activeModels.sonnet || settingsModels.sonnet || storedModels.sonnet || '').trim(),
+      opus: String(activeModels.opus || settingsModels.opus || storedModels.opus || '').trim(),
+      reasoning: String(activeModels.reasoning || settingsModels.reasoning || storedModels.reasoning || '').trim(),
     }
     return models
   }
@@ -2421,7 +2439,7 @@ function setupClaudeHandlers() {
     resetSystemClaudeCache()
   }
 
-  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, sessionInstruction }) => {
+  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, modelTier: modelTierOverride, sessionInstruction }) => {
     const chatKey = sessionId
     const runtime = readRuntimeConfigFromUserSettingsFile()
     const apiKey = runtime.apiKey
@@ -2431,10 +2449,11 @@ function setupClaudeHandlers() {
     const requestedMeta = normalizeClaudeSessionMeta({
       model: modelOverride || sessionMeta.model || runtime.model,
       effort: effortOverride || sessionMeta.effort || readEffortLevel(),
+      modelTier: modelTierOverride || sessionMeta.modelTier || '',
     })
     const model = requestedMeta.model || runtime.model
     const effort = requestedMeta.effort || readEffortLevel()
-    pendingSessionMetaByChatKey.set(chatKey, { model, effort })
+    pendingSessionMetaByChatKey.set(chatKey, { model, effort, modelTier: requestedMeta.modelTier })
     const permissionPolicy = readPermissionPolicy()
     const mode = ['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)
       ? runMode
