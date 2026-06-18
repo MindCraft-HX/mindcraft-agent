@@ -59,6 +59,7 @@ function createAgentBridge(ipcRenderer) {
   claudeSaveCodePanelStateSync: (payload) => ipcRenderer.sendSync('claude-save-code-panel-state-sync', payload),
   getSessionInstruction: (chatKey) => ipcRenderer.invoke('agent-get-session-instruction', { chatKey }),
   setSessionInstruction: (payload) => ipcRenderer.invoke('agent-set-session-instruction', payload),
+  setSessionTitle: (payload) => ipcRenderer.invoke('agent-set-session-title', payload),
   openSessionAttachmentDialog: () => ipcRenderer.invoke('agent-open-session-attachment-dialog'),
   resolveSessionAttachments: (attachments) => ipcRenderer.invoke('agent-resolve-session-attachments', { attachments }),
   buildSessionInstructionPrompt: (instruction) => ipcRenderer.invoke('agent-build-session-instruction-prompt', { instruction }),

@@ -90,6 +90,7 @@ export function useCodexHistory({
           _awaitingDone: Boolean(c._awaitingDone),
           cliSessionId: c.cliSessionId, filePath: c.filePath,
           createdAt: c.createdAt ?? null, updatedAt: c.updatedAt ?? null, fileSize: c.fileSize ?? null,
+          titleSource: c.titleSource || '',
           _userRenamed: Boolean(c._userRenamed),
         })),
       })),

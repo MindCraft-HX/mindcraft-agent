@@ -4,6 +4,7 @@ const { getMindCraftUserDataDir } = require('./userDataPath')
 
 const REGISTRY_DIR_NAME = 'session-registry'
 const SCHEMA_VERSION = 1
+const INDEX_SCHEMA_VERSION = 2
 const MAX_INSTRUCTION_DESCRIPTION_CHARS = 1000
 const MAX_INSTRUCTION_CONTENT_CHARS = 100000
 const MAX_INSTRUCTION_ATTACHMENTS = 20
@@ -66,6 +67,18 @@ function writeJsonAtomic(filePath, data) {
   fs.renameSync(tmp, filePath)
 }
 
+function copyIfExists(src, dest) {
+  if (!src || !fs.existsSync(src)) return false
+  ensureDir(path.dirname(dest))
+  const stat = fs.statSync(src)
+  if (stat.isDirectory()) {
+    fs.cpSync(src, dest, { recursive: true })
+  } else {
+    fs.copyFileSync(src, dest)
+  }
+  return true
+}
+
 function normalizeAgent(agent) {
   const raw = String(agent || '').trim().toLowerCase()
   if (raw === 'claude' || raw === 'claudecode' || raw === 'claude-code') return 'claude'
@@ -75,6 +88,79 @@ function normalizeAgent(agent) {
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeProviderPath(value) {
+  return normalizeString(value).replace(/\\/g, '/').toLowerCase()
+}
+
+function normalizeTitleSource(value) {
+  const raw = normalizeString(value).toLowerCase()
+  if (raw === 'user' || raw === 'auto' || raw === 'provider') return raw
+  return ''
+}
+
+function createRegistryChatKey(agent) {
+  const prefix = normalizeAgent(agent) === 'codex' ? 'codex-session' : 'session'
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createUniqueRegistryChatKey(agent, usedKeys = new Set()) {
+  let next = createRegistryChatKey(agent)
+  while (usedKeys.has(next)) next = createRegistryChatKey(agent)
+  usedKeys.add(next)
+  return next
+}
+
+function inferTitleSource(chat = {}) {
+  const explicit = normalizeTitleSource(chat.titleSource)
+  if (explicit) return explicit
+  if (chat._userRenamed === true) return 'user'
+  return normalizeString(chat.name) ? 'provider' : 'auto'
+}
+
+function makeProviderKeys(agent, { cliSessionId, filePath } = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const keys = []
+  const sid = normalizeString(cliSessionId)
+  const normalizedPath = normalizeProviderPath(filePath)
+  if (sid) keys.push(`${normalizedAgent}:session:${sid}`)
+  if (normalizedPath) keys.push(`${normalizedAgent}:path:${normalizedPath}`)
+  return keys
+}
+
+function getProviderKeysFromRecord(record = {}) {
+  return makeProviderKeys(record.agent, {
+    cliSessionId: record.provider?.cliSessionId,
+    filePath: record.provider?.filePath,
+  })
+}
+
+function isPollutedChatKey(record = {}) {
+  const chatKey = normalizeString(record.chatKey)
+  if (!chatKey) return false
+  const provider = record.provider || {}
+  if (normalizeString(provider.cliSessionId) && chatKey === normalizeString(provider.cliSessionId)) return true
+  const filePath = normalizeString(provider.filePath)
+  if (filePath && chatKey === path.basename(filePath, path.extname(filePath))) return true
+  return false
+}
+
+function chooseTitle(current = {}, incoming = {}) {
+  const currentTitle = normalizeString(current.title)
+  const incomingTitle = normalizeString(incoming.title)
+  const currentSource = normalizeTitleSource(current.titleSource)
+  const incomingSource = normalizeTitleSource(incoming.titleSource)
+  if (currentTitle && currentSource === 'user' && incomingSource !== 'user') {
+    return { title: currentTitle, titleSource: currentSource }
+  }
+  if (incomingTitle) {
+    return { title: incomingTitle, titleSource: incomingSource || 'provider' }
+  }
+  return {
+    title: currentTitle,
+    titleSource: currentSource || (currentTitle ? 'provider' : 'auto'),
+  }
 }
 
 function normalizeRuntime(agent, chat = {}) {
@@ -114,6 +200,7 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
     projectId: normalizeString(project.id),
     cwd: normalizeString(project.cwd),
     title: normalizeString(chat.name),
+    titleSource: inferTitleSource(chat),
     description: normalizeString(chat.description),
     provider: {
       cliSessionId: normalizeString(chat.cliSessionId),
@@ -193,57 +280,129 @@ function normalizeSessionInstructionInput(data = {}) {
 }
 
 function readIndex(options = {}) {
-  const index = readJson(getIndexPath(options), { schemaVersion: SCHEMA_VERSION, sessions: {} })
-  if (!index || typeof index !== 'object') return { schemaVersion: SCHEMA_VERSION, sessions: {} }
+  const index = readJson(getIndexPath(options), { schemaVersion: INDEX_SCHEMA_VERSION, sessions: {}, providers: {} })
+  if (!index || typeof index !== 'object') return { schemaVersion: INDEX_SCHEMA_VERSION, sessions: {}, providers: {} }
   if (!index.sessions || typeof index.sessions !== 'object') index.sessions = {}
-  index.schemaVersion = SCHEMA_VERSION
+  if (!index.providers || typeof index.providers !== 'object') index.providers = {}
+  index.schemaVersion = Number(index.schemaVersion) || SCHEMA_VERSION
   return index
 }
 
 function writeIndex(index, options = {}) {
   writeJsonAtomic(getIndexPath(options), {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: INDEX_SCHEMA_VERSION,
     sessions: index?.sessions && typeof index.sessions === 'object' ? index.sessions : {},
+    providers: index?.providers && typeof index.providers === 'object' ? index.providers : {},
   })
+}
+
+function removeIndexReferences(index, chatKey) {
+  if (!index || !chatKey) return
+  if (index.sessions?.[chatKey]) delete index.sessions[chatKey]
+  for (const [providerKey, mappedChatKey] of Object.entries(index.providers || {})) {
+    if (mappedChatKey === chatKey) delete index.providers[providerKey]
+  }
+}
+
+function rebuildIndexFromRecords(records = [], options = {}) {
+  const index = { schemaVersion: INDEX_SCHEMA_VERSION, sessions: {}, providers: {} }
+  for (const record of records) {
+    if (!record?.chatKey) continue
+    const filePath = getSessionRecordPath(record.chatKey, options)
+    index.sessions[record.chatKey] = {
+      agent: record.agent,
+      projectId: record.projectId || '',
+      cwd: record.cwd || '',
+      title: record.title || '',
+      titleSource: record.titleSource || '',
+      description: record.description || '',
+      cliSessionId: record.provider?.cliSessionId || '',
+      filePath: record.provider?.filePath || '',
+      updatedAt: record.updatedAt || 0,
+      path: path.relative(getSessionRegistryRoot(options), filePath).split(path.sep).join('/'),
+    }
+    for (const key of getProviderKeysFromRecord(record)) {
+      if (!index.providers[key]) index.providers[key] = record.chatKey
+    }
+  }
+  writeIndex(index, options)
+  return index
+}
+
+function findIndexedRecordForProvider(record = {}, index = {}, options = {}) {
+  for (const key of getProviderKeysFromRecord(record)) {
+    const chatKey = index.providers?.[key]
+    if (!chatKey || chatKey === record.chatKey) continue
+    const existing = readJson(getSessionRecordPath(chatKey, options), null)
+    if (existing?.chatKey) return existing
+  }
+  return null
 }
 
 function upsertSessionRecord(record, options = {}) {
   if (!record?.chatKey) return false
-  const filePath = getSessionRecordPath(record.chatKey, options)
+  const index = readIndex(options)
+  const canonicalRecord = findIndexedRecordForProvider(record, index, options)
+  const effectiveRecord = canonicalRecord
+    ? {
+        ...canonicalRecord,
+        ...record,
+        chatKey: canonicalRecord.chatKey,
+        provider: {
+          ...(canonicalRecord.provider || {}),
+          ...(record.provider || {}),
+        },
+        runtime: {
+          ...(canonicalRecord.runtime || {}),
+          ...(record.runtime || {}),
+        },
+      }
+    : record
+  const filePath = getSessionRecordPath(effectiveRecord.chatKey, options)
   if (!filePath) return false
   const existing = readJson(filePath, {})
-  const incomingInst = record.instruction || {}
+  const titleState = chooseTitle(existing, effectiveRecord)
+  const incomingInst = effectiveRecord.instruction || {}
   const hasRealInstruction = incomingInst.enabled || String(incomingInst.content || '').trim()
   const next = {
     ...existing,
-    ...record,
+    ...effectiveRecord,
+    title: titleState.title,
+    titleSource: titleState.titleSource,
     provider: {
       ...(existing?.provider || {}),
-      ...(record.provider || {}),
+      ...(effectiveRecord.provider || {}),
     },
     runtime: {
       ...(existing?.runtime || {}),
-      ...(record.runtime || {}),
+      ...(effectiveRecord.runtime || {}),
     },
     instruction: hasRealInstruction
       ? { ...(existing?.instruction || {}), ...incomingInst }
       : (existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] }),
     schemaVersion: SCHEMA_VERSION,
-    updatedAt: record.updatedAt || Date.now(),
+    updatedAt: effectiveRecord.updatedAt || Date.now(),
   }
   writeJsonAtomic(filePath, next)
 
-  const index = readIndex(options)
+  removeIndexReferences(index, next.chatKey)
+  if (canonicalRecord && record.chatKey && record.chatKey !== canonicalRecord.chatKey) {
+    removeIndexReferences(index, record.chatKey)
+  }
   index.sessions[next.chatKey] = {
     agent: next.agent,
     projectId: next.projectId,
     cwd: next.cwd,
     title: next.title,
+    titleSource: next.titleSource || '',
     description: next.description || '',
     cliSessionId: next.provider?.cliSessionId || '',
     filePath: next.provider?.filePath || '',
     updatedAt: next.updatedAt,
     path: path.relative(getSessionRegistryRoot(options), filePath).split(path.sep).join('/'),
+  }
+  for (const key of getProviderKeysFromRecord(next)) {
+    index.providers[key] = next.chatKey
   }
   writeIndex(index, options)
   return true
@@ -272,6 +431,15 @@ function findSessionRecordByProvider({ agent, filePath, cliSessionId } = {}, opt
   const normalizedCliSessionId = normalizeString(cliSessionId)
   if (!normalizedFilePath && !normalizedCliSessionId) return null
 
+  const index = readIndex(options)
+  for (const key of makeProviderKeys(normalizedAgent, { cliSessionId: normalizedCliSessionId, filePath: normalizedFilePath })) {
+    const chatKey = index.providers?.[key]
+    if (chatKey) {
+      const record = readJson(getSessionRecordPath(chatKey, options), null)
+      if (record?.chatKey) return record
+    }
+  }
+
   for (const record of listSessionRecords(options)) {
     if (normalizedAgent !== 'unknown' && record.agent !== normalizedAgent) continue
     const provider = record.provider || {}
@@ -280,6 +448,10 @@ function findSessionRecordByProvider({ agent, filePath, cliSessionId } = {}, opt
     if (sameFile || sameCliSession) return record
   }
   return null
+}
+
+function resolveSessionByProvider(args = {}, options = {}) {
+  return findSessionRecordByProvider(args, options)
 }
 
 function upsertRuntimeByProvider({ agent, filePath, cliSessionId, chatKey, cwd, runtime } = {}, options = {}) {
@@ -316,11 +488,10 @@ function deleteSessionRecord(chatKey, options = {}) {
   } catch (_) {}
 
   const index = readIndex(options)
-  if (index.sessions?.[chatKey]) {
-    delete index.sessions[chatKey]
-    writeIndex(index, options)
-    deleted = true
-  }
+  const before = JSON.stringify(index)
+  removeIndexReferences(index, chatKey)
+  if (JSON.stringify(index) !== before) deleted = true
+  if (deleted) writeIndex(index, options)
   return deleted
 }
 
@@ -389,6 +560,110 @@ function setSessionInstruction(chatKey, data = {}, options = {}) {
   return { ok: true, instruction: getSessionInstruction(resolvedChatKey, options) }
 }
 
+function setSessionTitle(chatKey, title, options = {}) {
+  const resolvedChatKey = normalizeString(chatKey)
+  const nextTitle = normalizeString(title)
+  if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
+  if (!nextTitle) return { ok: false, error: 'missing title' }
+  const existing = readJson(getSessionRecordPath(resolvedChatKey, options), {})
+  const now = Date.now()
+  const record = {
+    ...(existing || {}),
+    schemaVersion: SCHEMA_VERSION,
+    chatKey: resolvedChatKey,
+    agent: normalizeAgent(existing?.agent),
+    title: nextTitle,
+    titleSource: 'user',
+    provider: existing?.provider || {},
+    runtime: existing?.runtime || {},
+    instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  }
+  upsertSessionRecord(record, options)
+  return { ok: true, record: readJson(getSessionRecordPath(resolvedChatKey, options), null) }
+}
+
+function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const providerSessionId = normalizeString(
+    scanSummary.providerSessionId
+    || scanSummary.cliSessionId
+    || scanSummary.id
+  )
+  const providerTitle = normalizeString(scanSummary.providerTitle || scanSummary.title || scanSummary.name)
+  const existing = resolveSessionByProvider({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)
+  const chatKey = existing?.chatKey || normalizeString(scanSummary.chatKey) || createRegistryChatKey(normalizedAgent)
+  if (!chatKey) return null
+
+  const runtime = scanSummary.runtime && typeof scanSummary.runtime === 'object'
+    ? scanSummary.runtime
+    : {
+        model: normalizeString(scanSummary.model),
+        effort: normalizeString(scanSummary.effort),
+        modelTier: normalizeString(scanSummary.modelTier),
+        reasoningEffort: normalizeString(scanSummary.reasoningEffort),
+      }
+  const titleState = chooseTitle(existing || {}, {
+    title: existing?.title || providerTitle,
+    titleSource: existing?.titleSource || (providerTitle ? 'provider' : 'auto'),
+  })
+  return {
+    ...(existing || {}),
+    schemaVersion: SCHEMA_VERSION,
+    chatKey,
+    agent: normalizedAgent,
+    projectId: normalizeString(project.id) || existing?.projectId || '',
+    cwd: normalizeString(project.cwd) || normalizeString(scanSummary.cwd) || existing?.cwd || '',
+    title: titleState.title,
+    titleSource: titleState.titleSource,
+    description: existing?.description || '',
+    provider: {
+      ...(existing?.provider || {}),
+      cliSessionId: providerSessionId || existing?.provider?.cliSessionId || '',
+      filePath: normalizeString(scanSummary.filePath) || existing?.provider?.filePath || '',
+    },
+    runtime: {
+      ...(existing?.runtime || {}),
+      ...runtime,
+    },
+    instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
+    createdAt: normalizeTimestamp(scanSummary.createdAt) || existing?.createdAt || Date.now(),
+    updatedAt: normalizeTimestamp(scanSummary.updatedAt) || existing?.updatedAt || Date.now(),
+  }
+}
+
+function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
+  const record = buildProviderScanRecord(agent, scanSummary, project, options)
+  if (!record) return null
+  if (!upsertSessionRecord(record, options)) return null
+  return readJson(getSessionRecordPath(record.chatKey, options), null)
+}
+
+function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
+  const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
+  if (!record) return scanSummary
+  return {
+    ...scanSummary,
+    chatKey: record.chatKey,
+    registryTitle: record.title || '',
+    titleSource: record.titleSource || '',
+    title: record.title || scanSummary.title || scanSummary.name || '',
+    name: record.title || scanSummary.name || scanSummary.title || '',
+    providerSessionId: record.provider?.cliSessionId || scanSummary.providerSessionId || scanSummary.cliSessionId || scanSummary.id || '',
+    cliSessionId: record.provider?.cliSessionId || scanSummary.cliSessionId || scanSummary.id || '',
+    filePath: record.provider?.filePath || scanSummary.filePath || '',
+    model: record.runtime?.model || scanSummary.model || '',
+    effort: record.runtime?.effort || scanSummary.effort || '',
+    modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',
+    reasoningEffort: record.runtime?.reasoningEffort || scanSummary.reasoningEffort || '',
+  }
+}
+
 function syncPanelStateSessions(agent, panelState = {}, options = {}) {
   const projects = Array.isArray(panelState?.projects) ? panelState.projects : []
   let count = 0
@@ -431,6 +706,290 @@ function deleteSessionRecordsByProvider({ agent, filePath, cliSessionId, chatKey
   }
 }
 
+function hasMeaningfulInstruction(record = {}) {
+  const instruction = record.instruction || {}
+  return Boolean(
+    instruction.enabled
+    || normalizeString(instruction.content)
+    || (Array.isArray(instruction.attachments) && instruction.attachments.length > 0)
+  )
+}
+
+function hasRuntime(record = {}) {
+  const runtime = record.runtime || {}
+  return Boolean(
+    normalizeString(runtime.model)
+    || normalizeString(runtime.effort)
+    || normalizeString(runtime.modelTier)
+    || normalizeString(runtime.reasoningEffort)
+  )
+}
+
+function scoreRepairCandidate(record = {}) {
+  let score = 0
+  if (!isPollutedChatKey(record)) score += 1000000
+  if (normalizeTitleSource(record.titleSource) === 'user') score += 100000
+  if (hasMeaningfulInstruction(record)) score += 10000
+  if (hasRuntime(record)) score += 1000
+  score += Math.min(normalizeTimestamp(record.updatedAt), 9999999999999) / 100000000000
+  return score
+}
+
+function chooseRepairKeeper(records = [], usedKeys = new Set()) {
+  const sorted = records.slice().sort((a, b) => scoreRepairCandidate(b) - scoreRepairCandidate(a))
+  const keeper = sorted[0] || records[0]
+  if (!keeper) return null
+  const polluted = isPollutedChatKey(keeper)
+  const nonPolluted = sorted.find(record => !isPollutedChatKey(record))
+  const selected = polluted && nonPolluted ? nonPolluted : keeper
+  const selectedKey = normalizeString(selected.chatKey)
+  return {
+    record: selected,
+    chatKey: isPollutedChatKey(selected)
+      ? createUniqueRegistryChatKey(selected.agent, usedKeys)
+      : selectedKey,
+  }
+}
+
+function mergeRepairRecords(records = [], keepChatKey) {
+  const keeper = records.slice().sort((a, b) => scoreRepairCandidate(b) - scoreRepairCandidate(a))[0] || records[0] || {}
+  let merged = {
+    ...(keeper || {}),
+    chatKey: keepChatKey,
+    provider: { ...(keeper.provider || {}) },
+    runtime: { ...(keeper.runtime || {}) },
+    instruction: { ...(keeper.instruction || {}) },
+  }
+  for (const record of records) {
+    if (!record) continue
+    const titleState = chooseTitle(merged, record)
+    merged = {
+      ...merged,
+      title: titleState.title,
+      titleSource: titleState.titleSource,
+      agent: normalizeAgent(merged.agent || record.agent),
+      projectId: merged.projectId || record.projectId || '',
+      cwd: merged.cwd || record.cwd || '',
+      description: merged.description || record.description || '',
+      provider: {
+        cliSessionId: merged.provider?.cliSessionId || record.provider?.cliSessionId || '',
+        filePath: merged.provider?.filePath || record.provider?.filePath || '',
+      },
+      runtime: {
+        model: merged.runtime?.model || record.runtime?.model || '',
+        effort: merged.runtime?.effort || record.runtime?.effort || null,
+        modelTier: merged.runtime?.modelTier || record.runtime?.modelTier || '',
+        reasoningEffort: merged.runtime?.reasoningEffort || record.runtime?.reasoningEffort || null,
+      },
+      instruction: hasMeaningfulInstruction(merged)
+        ? merged.instruction
+        : (hasMeaningfulInstruction(record) ? { ...(record.instruction || {}) } : merged.instruction),
+      createdAt: merged.createdAt && record.createdAt
+        ? Math.min(normalizeTimestamp(merged.createdAt), normalizeTimestamp(record.createdAt)) || merged.createdAt
+        : (merged.createdAt || record.createdAt || Date.now()),
+      updatedAt: Math.max(normalizeTimestamp(merged.updatedAt), normalizeTimestamp(record.updatedAt), Date.now()),
+      schemaVersion: SCHEMA_VERSION,
+    }
+  }
+  if (!merged.instruction || typeof merged.instruction !== 'object') {
+    merged.instruction = { enabled: false, instructionId: '', content: '', attachments: [] }
+  }
+  return merged
+}
+
+function getRepairGroups(records = []) {
+  const parent = new Map()
+  const providerOwner = new Map()
+  const keyOf = record => normalizeString(record.chatKey)
+  const find = (key) => {
+    const current = parent.get(key) || key
+    if (current === key) return key
+    const root = find(current)
+    parent.set(key, root)
+    return root
+  }
+  const union = (a, b) => {
+    const rootA = find(a)
+    const rootB = find(b)
+    if (rootA !== rootB) parent.set(rootB, rootA)
+  }
+
+  for (const record of records) {
+    const chatKey = keyOf(record)
+    if (!chatKey) continue
+    parent.set(chatKey, chatKey)
+    for (const providerKey of getProviderKeysFromRecord(record)) {
+      const prev = providerOwner.get(providerKey)
+      if (prev) union(prev, chatKey)
+      else providerOwner.set(providerKey, chatKey)
+    }
+  }
+
+  const byRoot = new Map()
+  for (const record of records) {
+    const chatKey = keyOf(record)
+    if (!chatKey) continue
+    const root = find(chatKey)
+    if (!byRoot.has(root)) byRoot.set(root, [])
+    byRoot.get(root).push(record)
+  }
+  return Array.from(byRoot.values()).filter(group => group.length > 1 || isPollutedChatKey(group[0]))
+}
+
+function updatePanelStateChatKeys(filePath, keyMap, dryRun = false) {
+  if (!filePath || !fs.existsSync(filePath)) return { changed: false, filePath, updates: 0 }
+  const data = readJson(filePath, null)
+  if (!data || typeof data !== 'object') return { changed: false, filePath, updates: 0 }
+  const projects = Array.isArray(data.projects) ? data.projects : (Array.isArray(data.tabs) ? data.tabs : [])
+  let updates = 0
+  for (const project of projects) {
+    const chats = Array.isArray(project?.chats) ? project.chats : []
+    for (const chat of chats) {
+      const oldKey = normalizeString(chat?.sessionId)
+      const newKey = keyMap.get(oldKey)
+      if (!newKey || newKey === oldKey) continue
+      chat.sessionId = newKey
+      updates += 1
+    }
+  }
+  if (updates > 0 && !dryRun) writeJsonAtomic(filePath, data)
+  return { changed: updates > 0, filePath, updates }
+}
+
+function updatePanelStateProviderKeys(agent, filePath, records = [], dryRun = false) {
+  if (!filePath || !fs.existsSync(filePath)) return { changed: false, filePath, updates: 0 }
+  const normalizedAgent = normalizeAgent(agent)
+  const agentRecords = records.filter(record => normalizeAgent(record?.agent) === normalizedAgent)
+  const data = readJson(filePath, null)
+  if (!data || typeof data !== 'object') return { changed: false, filePath, updates: 0 }
+  const projects = Array.isArray(data.projects) ? data.projects : (Array.isArray(data.tabs) ? data.tabs : [])
+  let updates = 0
+  for (const project of projects) {
+    const chats = Array.isArray(project?.chats) ? project.chats : []
+    for (const chat of chats) {
+      const chatKey = normalizeString(chat?.sessionId)
+      if (!chatKey) continue
+      const record = agentRecords.find(candidate => {
+        const provider = candidate?.provider || {}
+        const sameSession = normalizeString(chat.cliSessionId) && normalizeString(chat.cliSessionId) === normalizeString(provider.cliSessionId)
+        const samePath = normalizeProviderPath(chat.filePath) && normalizeProviderPath(chat.filePath) === normalizeProviderPath(provider.filePath)
+        return sameSession || samePath
+      })
+      if (!record?.chatKey || record.chatKey === chatKey) continue
+      chat.sessionId = record.chatKey
+      updates += 1
+    }
+  }
+  if (updates > 0 && !dryRun) writeJsonAtomic(filePath, data)
+  return { changed: updates > 0, filePath, updates }
+}
+
+function createRepairBackup(options = {}) {
+  const userDataDir = getUserDataDir(options)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupRoot = path.join(userDataDir, 'session-registry-backups', stamp)
+  ensureDir(backupRoot)
+  const copied = []
+  if (copyIfExists(getSessionRegistryRoot(options), path.join(backupRoot, 'session-registry'))) copied.push('session-registry')
+  if (copyIfExists(path.join(userDataDir, 'claude-panel-state.json'), path.join(backupRoot, 'claude-panel-state.json'))) copied.push('claude-panel-state.json')
+  if (copyIfExists(path.join(userDataDir, 'codex-panel-state.json'), path.join(backupRoot, 'codex-panel-state.json'))) copied.push('codex-panel-state.json')
+  return { backupRoot, copied }
+}
+
+function repairSessionRegistry(options = {}) {
+  const dryRun = Boolean(options.dryRun)
+  const records = listSessionRecords(options)
+  const groups = getRepairGroups(records)
+  const keyMap = new Map()
+  const usedKeys = new Set(records.map(record => normalizeString(record.chatKey)).filter(Boolean))
+  const report = {
+    ok: true,
+    dryRun,
+    startedAt: new Date().toISOString(),
+    finishedAt: '',
+    backupPath: '',
+    scannedRecords: records.length,
+    changed: false,
+    repairedGroups: [],
+    panelStateUpdates: [],
+    warnings: [],
+  }
+
+  const nextByChatKey = new Map(records.map(record => [record.chatKey, record]))
+  for (const group of groups) {
+    const keeper = chooseRepairKeeper(group, usedKeys)
+    if (!keeper) continue
+    const keepChatKey = keeper.chatKey
+    const merged = mergeRepairRecords(group, keepChatKey)
+    const removedChatKeys = group.map(record => record.chatKey).filter(chatKey => chatKey !== keepChatKey)
+    const renamedChatKeys = group
+      .map(record => record.chatKey)
+      .filter(chatKey => chatKey && chatKey !== keepChatKey && isPollutedChatKey(recordByChatKey(group, chatKey)))
+    for (const record of group) {
+      if (record.chatKey !== keepChatKey) {
+        nextByChatKey.delete(record.chatKey)
+        keyMap.set(record.chatKey, keepChatKey)
+      }
+    }
+    if (keeper.record.chatKey !== keepChatKey) {
+      nextByChatKey.delete(keeper.record.chatKey)
+      keyMap.set(keeper.record.chatKey, keepChatKey)
+    }
+    nextByChatKey.set(keepChatKey, merged)
+    report.repairedGroups.push({
+      keptChatKey: keepChatKey,
+      originalChatKeys: group.map(record => record.chatKey),
+      removedChatKeys,
+      renamedChatKeys,
+      providerKeys: Array.from(new Set(group.flatMap(record => getProviderKeysFromRecord(record)))),
+    })
+  }
+  const userDataDir = getUserDataDir(options)
+  const finalRecords = Array.from(nextByChatKey.values())
+  const plannedPanelUpdates = [
+    updatePanelStateChatKeys(path.join(userDataDir, 'claude-panel-state.json'), keyMap, true),
+    updatePanelStateChatKeys(path.join(userDataDir, 'codex-panel-state.json'), keyMap, true),
+    updatePanelStateProviderKeys('claude', path.join(userDataDir, 'claude-panel-state.json'), finalRecords, true),
+    updatePanelStateProviderKeys('codex', path.join(userDataDir, 'codex-panel-state.json'), finalRecords, true),
+  ]
+  report.changed = report.repairedGroups.length > 0 || plannedPanelUpdates.some(item => item.changed)
+  report.plannedPanelStateUpdates = plannedPanelUpdates.filter(item => item.changed)
+  if (!report.changed || dryRun) {
+    report.finishedAt = new Date().toISOString()
+    return report
+  }
+
+  const backup = createRepairBackup(options)
+  report.backupPath = backup.backupRoot
+  report.backupCopied = backup.copied
+
+  try {
+    for (const record of records) {
+      const recordPath = getSessionRecordPath(record.chatKey, options)
+      if (fs.existsSync(recordPath) && !nextByChatKey.has(record.chatKey)) fs.unlinkSync(recordPath)
+    }
+    for (const record of finalRecords) {
+      writeJsonAtomic(getSessionRecordPath(record.chatKey, options), record)
+    }
+    rebuildIndexFromRecords(finalRecords, options)
+    report.panelStateUpdates.push(updatePanelStateChatKeys(path.join(userDataDir, 'claude-panel-state.json'), keyMap, dryRun))
+    report.panelStateUpdates.push(updatePanelStateChatKeys(path.join(userDataDir, 'codex-panel-state.json'), keyMap, dryRun))
+    report.panelStateUpdates.push(updatePanelStateProviderKeys('claude', path.join(userDataDir, 'claude-panel-state.json'), finalRecords, dryRun))
+    report.panelStateUpdates.push(updatePanelStateProviderKeys('codex', path.join(userDataDir, 'codex-panel-state.json'), finalRecords, dryRun))
+    writeJsonAtomic(path.join(backup.backupRoot, 'repair-report.json'), report)
+  } catch (e) {
+    report.ok = false
+    report.error = e?.message || String(e)
+    report.warnings.push('repair failed after backup; restore from backupPath if needed')
+  }
+  report.finishedAt = new Date().toISOString()
+  return report
+}
+
+function recordByChatKey(records = [], chatKey) {
+  return records.find(record => record.chatKey === chatKey) || null
+}
+
 module.exports = {
   buildSessionRecordFromChat,
   deleteSessionRecord,
@@ -440,9 +999,15 @@ module.exports = {
   getSessionRecordPath,
   getSessionRegistryRoot,
   listSessionRecords,
+  makeProviderKeys,
+  repairSessionRegistry,
+  resolveSessionByProvider,
+  setSessionTitle,
   setSessionInstruction,
   syncPanelStateSessions,
   normalizeSessionInstructionInput,
+  attachRegistrySessionToScanSummary,
   upsertRuntimeByProvider,
+  upsertSessionFromProviderScan,
   upsertSessionRecord,
 }

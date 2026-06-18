@@ -87,6 +87,7 @@ export function useClaudeHistory({
           createdAt: c.createdAt ?? null,
           updatedAt: c.updatedAt ?? null,
           fileSize: c.fileSize ?? null,
+          titleSource: c.titleSource || '',
           _pendingSessionBinding: Boolean(c._pendingSessionBinding),
           _userRenamed: Boolean(c._userRenamed),
           taskState: c.taskState || null,

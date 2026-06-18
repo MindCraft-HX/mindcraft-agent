@@ -1693,6 +1693,7 @@ const {
       effort: normalizeClaudeEffort(c.effort) || null,
       modelTier: normalizeClaudeModelTier(c.modelTier) || null,
       taskState: ensureTaskState({ taskState: c.taskState }),
+      titleSource: c.titleSource || (c._userRenamed ? 'user' : ''),
       _taskToolUseIds: new Set(),
     }
   },
@@ -1894,7 +1895,7 @@ async function refreshProjectSessionsInBackground(p) {
         const newChat = {
           id: nextChatId(),
           name,
-          sessionId: scannedCliSessionId || `session-${Date.now()}`,
+          sessionId: s.chatKey || nextSessionId(),
           cliSessionId: scannedCliSessionId || null,
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
@@ -1908,7 +1909,8 @@ async function refreshProjectSessionsInBackground(p) {
           currentAssistantId: null,
           filePath: s.filePath || '',
           _pendingSessionBinding: false,
-          _userRenamed: Boolean(s.isCustomTitle),
+          titleSource: s.titleSource || (s.isCustomTitle ? 'provider' : ''),
+          _userRenamed: s.titleSource === 'user' || Boolean(s._userRenamed),
           taskState: createEmptyTaskState(),
           _taskToolUseIds: new Set(),
         }
@@ -2132,6 +2134,14 @@ async function requestDeleteChat(chat) {
   if (!p || !chat) return
   const ok = await confirmDialogRef.value?.open({ message: t('agent.confirmDeleteChat') })
   if (!ok) return
+  if (chat.filePath) {
+    const confirmedPermanentDelete = await confirmDialogRef.value?.open({
+      message: '此操作会永久删除底层 Claude 官方会话历史（JSONL transcript）。删除后 MindCraft 不能仅靠自己的配置恢复该对话内容。是否继续？',
+      okText: t('common.delete'),
+      cancelText: t('common.cancel'),
+    })
+    if (!confirmedPermanentDelete) return
+  }
   window.electronAPI.claudeAgentAbort?.(chat.sessionId)
   // 删除 SDK 持久化的 .jsonl 文件
   if (chat.filePath) {
@@ -2157,17 +2167,17 @@ async function handleRenameChat(session, newName) {
     return
   }
   try {
-    const result = await window.electronAPI?.claudeRenameSession?.({
-      sessionId: chat.cliSessionId || chat.sessionId,
+    const result = await window.electronAPI?.setSessionTitle?.({
+      chatKey: chat.sessionId,
       title: newName,
-      cwd: p.cwd,
     })
-    if (!result?.success) {
+    if (!result?.ok) {
       ElMessage.error(result?.error || t('agent.renameFailed'))
       return
     }
     chat.name = newName
     chat._userRenamed = true
+    chat.titleSource = 'user'
     saveHistory({ immediate: true })
   } catch (e) {
     ElMessage.error(e?.message || t('agent.renameFailed'))
@@ -2238,10 +2248,11 @@ async function selectDir(project, onAfterSelect) {
       const inheritedRunMode = getInheritedClaudeRunMode(project)
       project.chats = sessions.map(s => {
         const cliSessionId = s.cliSessionId || s.id || ''
+        const chatKey = s.chatKey || nextSessionId()
         return {
           id: nextChatId(),
           name: s.name || `${t('chat.sessionPrefix')}${String(cliSessionId || '').slice(0, 8)}`,
-          sessionId: cliSessionId || `session-${Date.now()}`,
+          sessionId: chatKey,
           cliSessionId: cliSessionId || null,
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
@@ -2255,7 +2266,8 @@ async function selectDir(project, onAfterSelect) {
           currentAssistantId: null,
           filePath: s.filePath || '',
           _pendingSessionBinding: false,
-          _userRenamed: Boolean(s._userRenamed),
+          titleSource: s.titleSource || (s._userRenamed ? 'user' : ''),
+          _userRenamed: s.titleSource === 'user' || Boolean(s._userRenamed),
           taskState: createEmptyTaskState(),
           _taskToolUseIds: new Set(),
         }
@@ -2303,6 +2315,7 @@ async function loadProjectSessions(cwd) {
           : `${t('chat.sessionPrefix')}${String(cliSessionId || '').slice(0, 8)}`
         return {
           id: cliSessionId || nextSessionId(),
+          chatKey: s.chatKey || '',
           cliSessionId: cliSessionId || null,
           createdAt: s.createdAt || null,
           updatedAt: s.updatedAt || null,
@@ -2313,7 +2326,8 @@ async function loadProjectSessions(cwd) {
           modelTier: normalizeClaudeModelTier(s.modelTier) || null,
           messages: [],
           name,
-          _userRenamed: Boolean(s.isCustomTitle),
+          titleSource: s.titleSource || (s.isCustomTitle ? 'provider' : ''),
+          _userRenamed: s.titleSource === 'user' || Boolean(s._userRenamed),
         }
       })
     }

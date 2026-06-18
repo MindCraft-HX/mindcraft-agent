@@ -11,6 +11,9 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const {
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
+  attachRegistrySessionToScanSummary,
+  repairSessionRegistry,
+  setSessionTitle,
   syncPanelStateSessions,
   upsertRuntimeByProvider,
 } = require('./sessionRegistry')
@@ -495,20 +498,23 @@ function scanCliSessionsForProject(cwd) {
       const isCustomTitle = titleResult?.isCustomTitle || false
       const meta = readClaudeSessionMetaByFilePath(file.filePath)
       console.log('[scanCliSessionsForProject] title:', title || '(empty)', 'isCustomTitle:', isCustomTitle, 'file:', file.filePath)
-      result.push({
+      result.push(attachRegistrySessionToScanSummary('claude', {
         // `id` is kept for renderer compatibility; new code should read cliSessionId.
         id: file.cliSessionId,
         cliSessionId: file.cliSessionId,
+        providerSessionId: file.cliSessionId,
         createdAt: file.createdAt,
         updatedAt: file.updatedAt,
         filePath: file.filePath,
         fileSize: file.fileSize,
         title,
+        providerTitle: title,
+        providerTitleSource: isCustomTitle ? 'custom-title' : 'provider',
         isCustomTitle,
         model: meta.model || null,
         effort: meta.effort || null,
         modelTier: meta.modelTier || null,
-      })
+      }, { cwd }))
     }
   } catch (_) {}
   return result
@@ -595,20 +601,31 @@ function deleteClaudeSessionArtifacts(filePath) {
 
 function readClaudeCodePanelState() {
   const fp = getClaudeCodePanelStatePath()
-  try {
-    if (!fs.existsSync(fp)) return null
-    const raw = fs.readFileSync(fp, 'utf8')
-    const j = JSON.parse(raw)
+  const normalizeState = (j) => {
     if (!j || typeof j !== 'object') return null
-    // 优先读取 projects（新），回退到 tabs（旧）
     const projects = Array.isArray(j.projects) ? j.projects : null
     const tabs = Array.isArray(j.tabs) ? j.tabs : null
     if (!projects && !tabs) return null
     return {
       lastCwd: typeof j.lastCwd === 'string' ? j.lastCwd : '',
+      activeProjectId: typeof j.activeProjectId === 'string' ? j.activeProjectId : null,
+      activeChatId: typeof j.activeChatId === 'string' ? j.activeChatId : null,
       projects: projects || null,
       tabs: tabs || null,
     }
+  }
+  try {
+    if (!fs.existsSync(fp)) return null
+    const raw = fs.readFileSync(fp, 'utf8')
+    const state = normalizeState(JSON.parse(raw))
+    if (!state) return null
+    syncPanelStateSessions('claude', { projects: state.projects || state.tabs || [] }, sessionRegistryOptionsForTest || {})
+    const repair = repairSessionRegistry(sessionRegistryOptionsForTest || {})
+    if (repair?.changed && fs.existsSync(fp)) {
+      const repaired = normalizeState(JSON.parse(fs.readFileSync(fp, 'utf8')))
+      if (repaired) return repaired
+    }
+    return state
   } catch (e) {
     console.warn('[claude-code-ui] read failed:', e?.message || e)
     return null
@@ -852,9 +869,10 @@ function setupClaudeHandlers() {
   ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
-      const sdk = await loadClaudeAgentSdk()
-      await sdk.renameSession(sessionId, title, { dir: cwd })
-      return { success: true }
+      const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: sessionId }, sessionRegistryOptionsForTest || {})
+      if (!record?.chatKey) return { success: false, error: 'registry session not found' }
+      const result = setSessionTitle(record.chatKey, title, sessionRegistryOptionsForTest || {})
+      return { success: Boolean(result?.ok), error: result?.error }
     } catch (e) {
       console.error('[claude-rename-session] error:', e)
       return { success: false, error: e?.message || 'unknown' }

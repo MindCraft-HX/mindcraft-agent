@@ -1,5 +1,5 @@
 const { dialog } = require('electron')
-const { getSessionInstruction, setSessionInstruction } = require('./sessionRegistry')
+const { getSessionInstruction, setSessionInstruction, setSessionTitle } = require('./sessionRegistry')
 const { resolveAttachments, buildFullInstructionPrompt, ALLOWED_EXTENSIONS } = require('./sessionInstructionAttachments')
 
 function registerSessionInstructionIpc(ipcMain) {
@@ -14,6 +14,14 @@ function registerSessionInstructionIpc(ipcMain) {
   ipcMain.handle('agent-set-session-instruction', (_, { chatKey, instruction } = {}) => {
     try {
       return setSessionInstruction(chatKey, instruction || {})
+    } catch (err) {
+      return { ok: false, error: err?.message || 'write failed' }
+    }
+  })
+
+  ipcMain.handle('agent-set-session-title', (_, { chatKey, title } = {}) => {
+    try {
+      return setSessionTitle(chatKey, title)
     } catch (err) {
       return { ok: false, error: err?.message || 'write failed' }
     }

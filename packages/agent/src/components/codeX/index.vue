@@ -1051,6 +1051,7 @@ function makeRestoredChat(c, messages) {
     _awaitingDone: false,
     cliSessionId: c.cliSessionId, filePath: c.filePath,
     createdAt: c.createdAt ?? null, updatedAt: c.updatedAt ?? null, fileSize: c.fileSize ?? null,
+    titleSource: c.titleSource || (c._userRenamed ? 'user' : ''),
     _userRenamed: Boolean(c._userRenamed),
     hasMoreHistory: Boolean(c.filePath),
     currentPage: 0,
@@ -1254,11 +1255,14 @@ function createNewChat() {
 async function buildChatFromSessionSummary(summary) {
   const cNum = parseInt(String(summary.id || '').replace('chat-', '')) || 0
   if (cNum > chatCounter) chatCounter = cNum
+  const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
+  const chatKey = summary.chatKey || `codex-session-${nextChatId()}-${Date.now()}`
+  const chatId = summary.chatKey ? `chat-${summary.chatKey}` : `chat-${providerSessionId || Date.now()}`
   const chat = makeRestoredChat({
-    id: `chat-${summary.id}`,
+    id: chatId,
     name: summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`,
-    sessionId: summary.sessionId || summary.id,
-    cliSessionId: summary.cliSessionId || summary.id,
+    sessionId: chatKey,
+    cliSessionId: providerSessionId,
     filePath: summary.filePath,
     createdAt: summary.createdAt,
     updatedAt: summary.updatedAt,
@@ -1268,7 +1272,8 @@ async function buildChatFromSessionSummary(summary) {
     historyLoadGuard: summary.historyLoadGuard,
     metrics: null,
     _thinkingStart: null,
-    _userRenamed: Boolean(summary._isCustomTitle),
+    titleSource: summary.titleSource || (summary._isCustomTitle ? 'provider' : ''),
+    _userRenamed: summary.titleSource === 'user' || Boolean(summary._userRenamed),
   }, [])
   return chat
 }
@@ -1290,12 +1295,14 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
   for (const chat of proj.chats || []) {
     if (chat.filePath) cacheByPath[String(chat.filePath).replace(/\\/g, '/')] = chat
     if (chat.cliSessionId) cacheBySid[chat.cliSessionId] = chat
+    if (chat.sessionId) cacheBySid[chat.sessionId] = chat
   }
 
   const nextChats = []
   for (const summary of summaries) {
     const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
-    const cached = cacheByPath[normalizedPath] || cacheBySid[summary.id] || null
+    const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
+    const cached = cacheByPath[normalizedPath] || cacheBySid[summary.chatKey] || cacheBySid[providerSessionId] || null
     const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
 
     if (cached) {
@@ -1303,8 +1310,8 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
       cached.createdAt = summary.createdAt || null
       cached.updatedAt = summary.updatedAt || null
       cached.filePath = summary.filePath || ''
-      cached.cliSessionId = summary.cliSessionId || summary.id || cached.cliSessionId
-      cached.sessionId = cached.sessionId || summary.sessionId || summary.id
+      cached.cliSessionId = providerSessionId || cached.cliSessionId
+      cached.sessionId = cached.sessionId || summary.chatKey || `codex-session-${cached.id}-${Date.now()}`
       cached.model = cached.model || summary.model || cached.metrics?.model || null
       cached.reasoningEffort = normalizeCodexReasoningEffort(cached.reasoningEffort || summary.reasoningEffort) || null
       cached.historyLoadGuard = buildHistoryLoadGuard({
@@ -1369,6 +1376,7 @@ async function refreshProjectSessionsInBackground(project) {
     for (const chat of project.chats || []) {
       if (chat.filePath) cacheByPath[String(chat.filePath).replace(/\\/g, '/')] = chat
       if (chat.cliSessionId) cacheBySid[chat.cliSessionId] = chat
+      if (chat.sessionId) cacheBySid[chat.sessionId] = chat
     }
 
     // 竞态防护：如果项目中有 thinking 但尚未拿到 cliSessionId 的聊天，
@@ -1381,7 +1389,8 @@ async function refreshProjectSessionsInBackground(project) {
     for (const summary of scanned) {
       if (project.id !== activeProjectId.value) return
       const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
-      const cached = cacheByPath[normalizedPath] || cacheBySid[summary.id] || null
+      const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
+      const cached = cacheByPath[normalizedPath] || cacheBySid[summary.chatKey] || cacheBySid[providerSessionId] || null
       const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
 
       if (cached) {
@@ -1389,8 +1398,8 @@ async function refreshProjectSessionsInBackground(project) {
         cached.createdAt = summary.createdAt || null
         cached.updatedAt = summary.updatedAt || null
         cached.filePath = summary.filePath || ''
-        cached.cliSessionId = summary.cliSessionId || summary.id || cached.cliSessionId
-        cached.sessionId = cached.sessionId || summary.sessionId || summary.id
+        cached.cliSessionId = providerSessionId || cached.cliSessionId
+        cached.sessionId = cached.sessionId || summary.chatKey || `codex-session-${cached.id}-${Date.now()}`
         cached.model = cached.model || summary.model || cached.metrics?.model || null
         cached.reasoningEffort = normalizeCodexReasoningEffort(cached.reasoningEffort || summary.reasoningEffort) || null
         cached.historyLoadGuard = buildHistoryLoadGuard({
@@ -1791,6 +1800,14 @@ async function requestDeleteChat(chat) {
   if (!chat) return
   const ok = await confirmDialogRef.value?.open({ message: t('agent.confirmDeleteChat') })
   if (ok) {
+    if (chat.filePath) {
+      const confirmedPermanentDelete = await confirmDialogRef.value?.open({
+        message: '此操作会永久删除底层 Codex 官方会话历史（JSONL transcript）。删除后 MindCraft 不能仅靠自己的配置恢复该对话内容。是否继续？',
+        okText: t('common.delete'),
+        cancelText: t('common.cancel'),
+      })
+      if (!confirmedPermanentDelete) return
+    }
     window.electronAPI.codexAgentAbort?.(chat.sessionId)
     // 删除磁盘上的 JSONL 会话文件，防止刷新时重新出现
     if (chat.filePath) window.electronAPI.codexDeleteSessionFile?.(chat.filePath)
@@ -1816,16 +1833,17 @@ async function handleRenameChat(session, newName) {
     return
   }
   try {
-    const result = await window.electronAPI?.codexRenameSession?.({
-      sessionId: chat.cliSessionId,
+    const result = await window.electronAPI?.setSessionTitle?.({
+      chatKey: chat.sessionId,
       title: newName,
     })
-    if (!result?.success) {
+    if (!result?.ok) {
       ElMessage.error(result?.error || t('agent.renameFailed'))
       return
     }
     chat.name = newName
     chat._userRenamed = true
+    chat.titleSource = 'user'
     saveHistory({ immediate: true })
   } catch (e) {
     ElMessage.error(e?.message || t('agent.renameFailed'))

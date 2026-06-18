@@ -10,7 +10,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { deleteSessionRecordsByProvider, syncPanelStateSessions } = require('./sessionRegistry')
+const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, findSessionRecordByProvider, repairSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { normalizeFileChangeItemPreviews } = require('./codexFileChangePreview')
@@ -1611,7 +1611,9 @@ function listSessionsByCwd(targetCwd) {
   for (const file of files) {
     const summary = extractSessionSummary(file)
     if (!summary) continue
-    if (normalizeFsPath(summary.cwd) === normalizedTarget) sessions.push(summary)
+    if (normalizeFsPath(summary.cwd) === normalizedTarget) {
+      sessions.push(attachRegistrySessionToScanSummary('codex', summary, { cwd: targetCwd }))
+    }
   }
 
   return sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
@@ -2465,26 +2467,12 @@ function setupCodexSdkHandlers() {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
       // 在 SESSIONS_DIR 中找到对应 JSONL 文件
-      const files = walkFiles(SESSIONS_DIR).filter(file => file.toLowerCase().endsWith('.jsonl'))
-      let targetFile = null
-      for (const file of files) {
-        const summary = extractSessionSummary(file)
-        if (summary && (summary.id === sessionId || summary.sessionId === sessionId)) {
-          targetFile = file
-          break
-        }
-      }
-      if (!targetFile) return { success: false, error: 'session file not found' }
+      const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
+      if (!record?.chatKey) return { success: false, error: 'registry session not found' }
+      const result = setSessionTitle(record.chatKey, title)
+      return { success: Boolean(result?.ok), error: result?.error }
+
       // 追加 custom-title 行（与 Claude Code SDK 格式一致）
-      const entry = JSON.stringify({
-        type: 'custom-title',
-        customTitle: String(title).trim(),
-        sessionId,
-        uuid: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        timestamp: new Date().toISOString(),
-      }) + '\n'
-      fs.appendFileSync(targetFile, entry, 'utf8')
-      return { success: true }
     } catch (e) {
       console.error('[codex-rename-session] error:', e)
       return { success: false, error: e?.message || 'unknown' }
@@ -3059,6 +3047,12 @@ function setupCodexSdkHandlers() {
         const normalized = normalizePanelState(parsed)
         if (candidate === LEGACY_PANEL_STATE_FILE && !fs.existsSync(PANEL_STATE_FILE)) {
           writePanelState(normalized)
+        }
+        syncPanelStateSessions('codex', normalized)
+        const repair = repairSessionRegistry()
+        if (repair?.changed) {
+          const repairedPath = fs.existsSync(PANEL_STATE_FILE) ? PANEL_STATE_FILE : candidate
+          return normalizePanelState(JSON.parse(fs.readFileSync(repairedPath, 'utf8')))
         }
         return normalized
       } catch (e) {
