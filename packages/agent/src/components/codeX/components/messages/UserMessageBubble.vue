@@ -129,6 +129,11 @@ function getImageSrc(block) {
   margin: 0; display: inline-block; width: 78%;
   box-sizing: border-box;
 }
+.code-card :deep(.code-block pre),
+.code-card :deep(.code-block code),
+.code-card :deep(.code-block .hljs) {
+  color: var(--cc-hljs-text);
+}
 .file-card { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--cc-text-secondary); }
 .msg-img { max-width: 200px; height: auto; border-radius: 5px; cursor: zoom-in; display: block; }
 .file-icon { font-size: 12px; }
@@ -187,21 +192,21 @@ function getImageSrc(block) {
 .user-bubble :deep(.md-table td) { color: var(--cc-user-code-text); }
 .user-bubble :deep(.md-table th:last-child),
 .user-bubble :deep(.md-table td:last-child) { border-right: none; }
-/* highlight.js tokens in user-authored code blocks need a separate palette for contrast. */
-.user-msg :deep(.code-block .hljs-keyword)  { color: var(--cc-user-hljs-keyword, #ffd6ff) !important; }
-.user-msg :deep(.code-block .hljs-built_in) { color: var(--cc-user-hljs-built-in, #b9f6ca) !important; }
-.user-msg :deep(.code-block .hljs-string)   { color: var(--cc-user-hljs-string, #ffe0b2) !important; }
-.user-msg :deep(.code-block .hljs-number)   { color: var(--cc-user-hljs-number, #d7ffb8) !important; }
-.user-msg :deep(.code-block .hljs-comment)  { color: var(--cc-user-hljs-comment, rgba(255, 255, 255, 0.65)) !important; font-style: italic; }
-.user-msg :deep(.code-block .hljs-function) { color: var(--cc-user-hljs-function, #fff3b0) !important; }
-.user-msg :deep(.code-block .hljs-title)    { color: var(--cc-user-hljs-function, #fff3b0) !important; }
-.user-msg :deep(.code-block .hljs-params)   { color: var(--cc-user-hljs-params, #c8e1ff) !important; }
-.user-msg :deep(.code-block .hljs-variable) { color: var(--cc-user-hljs-params, #c8e1ff) !important; }
-.user-msg :deep(.code-block .hljs-attr)     { color: var(--cc-user-hljs-params, #c8e1ff) !important; }
-.user-msg :deep(.code-block .hljs-name)     { color: var(--cc-user-hljs-built-in, #b9f6ca) !important; }
-.user-msg :deep(.code-block .hljs-tag)      { color: var(--cc-user-hljs-tag, #c8e1ff) !important; }
-.user-msg :deep(.code-block .hljs-type)     { color: var(--cc-user-hljs-built-in, #b9f6ca) !important; }
-.user-msg :deep(.code-block .hljs-literal)  { color: var(--cc-user-hljs-tag, #c8e1ff) !important; }
-.user-msg :deep(.code-block .hljs-operator) { color: var(--cc-user-hljs-operator, var(--cc-user-code-text)) !important; }
-.user-msg :deep(.code-block .hljs-punctuation) { color: var(--cc-user-hljs-operator, var(--cc-user-code-text)) !important; }
+/* Only code blocks inside the colored user bubble use the high-contrast bubble palette. */
+.user-bubble :deep(.code-block .hljs-keyword)  { color: var(--cc-user-hljs-keyword, #ffd6ff) !important; }
+.user-bubble :deep(.code-block .hljs-built_in) { color: var(--cc-user-hljs-built-in, #b9f6ca) !important; }
+.user-bubble :deep(.code-block .hljs-string)   { color: var(--cc-user-hljs-string, #ffe0b2) !important; }
+.user-bubble :deep(.code-block .hljs-number)   { color: var(--cc-user-hljs-number, #d7ffb8) !important; }
+.user-bubble :deep(.code-block .hljs-comment)  { color: var(--cc-user-hljs-comment, rgba(255, 255, 255, 0.65)) !important; font-style: italic; }
+.user-bubble :deep(.code-block .hljs-function) { color: var(--cc-user-hljs-function, #fff3b0) !important; }
+.user-bubble :deep(.code-block .hljs-title)    { color: var(--cc-user-hljs-function, #fff3b0) !important; }
+.user-bubble :deep(.code-block .hljs-params)   { color: var(--cc-user-hljs-params, #c8e1ff) !important; }
+.user-bubble :deep(.code-block .hljs-variable) { color: var(--cc-user-hljs-params, #c8e1ff) !important; }
+.user-bubble :deep(.code-block .hljs-attr)     { color: var(--cc-user-hljs-params, #c8e1ff) !important; }
+.user-bubble :deep(.code-block .hljs-name)     { color: var(--cc-user-hljs-built-in, #b9f6ca) !important; }
+.user-bubble :deep(.code-block .hljs-tag)      { color: var(--cc-user-hljs-tag, #c8e1ff) !important; }
+.user-bubble :deep(.code-block .hljs-type)     { color: var(--cc-user-hljs-built-in, #b9f6ca) !important; }
+.user-bubble :deep(.code-block .hljs-literal)  { color: var(--cc-user-hljs-tag, #c8e1ff) !important; }
+.user-bubble :deep(.code-block .hljs-operator) { color: var(--cc-user-hljs-operator, var(--cc-user-code-text)) !important; }
+.user-bubble :deep(.code-block .hljs-punctuation) { color: var(--cc-user-hljs-operator, var(--cc-user-code-text)) !important; }
 </style>
