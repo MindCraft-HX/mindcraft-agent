@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, toRaw } from 'vue'
 
 defineProps({
   themeClass: { type: String, default: '' },
@@ -73,13 +73,15 @@ function close() {
 }
 
 async function save() {
+  const plain = toRaw(draft)
+  const hasContent = String(plain.content || '').trim().length > 0
   await window.electronAPI?.setSessionInstruction?.({
     chatKey: chatKey.value,
     instruction: {
-      enabled: draft.enabled,
-      description: draft.description,
-      content: draft.content,
-      attachments: draft.attachments,
+      enabled: hasContent ? true : plain.enabled,
+      description: plain.description,
+      content: plain.content,
+      attachments: plain.attachments,
     },
   })
   emit('saved', chatKey.value)

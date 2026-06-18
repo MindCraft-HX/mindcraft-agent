@@ -1151,10 +1151,6 @@ function dismissPlanOverview(messageId) {
   dismissedPlanOverviewSourceMessageId.value = messageId ?? null
 }
 
-watch(() => activeTab.value?.sessionId, () => {
-  void refreshActiveSessionInstructionState()
-}, { immediate: true })
-
 watch(
   () => rawCurrentPlanOverview.value?.sourceMessageId ?? null,
   (nextSourceMessageId) => {
@@ -2370,6 +2366,12 @@ const codexPluginsRef = ref(null)
 const codexSkillsRef = ref(null)
 const sessionInstructionRef = ref(null)
 const activeSessionInstructionEnabled = ref(false)
+
+// 同步活跃 session 的指令启用状态
+watch(() => activeTab.value?.sessionId, () => {
+  void refreshActiveSessionInstructionState()
+}, { immediate: true })
+
 const canSend = computed(() => {
   if (!activeProject.value?.cwdLocked || !activeTab.value) return false
   if (isActiveTabHistoryDeferred.value) return false
