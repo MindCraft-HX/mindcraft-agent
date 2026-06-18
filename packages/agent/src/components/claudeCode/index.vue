@@ -580,6 +580,11 @@ function getClaudeTabEffort(tab) {
   return normalizeClaudeEffort(tab?.effort) || claudeDefaultEffort.value || 'medium'
 }
 
+function getInheritedClaudeRunMode(project = activeProject.value) {
+  const activeChat = project?.chats?.find(c => c.id === activeChatId.value) || null
+  return activeChat?.runMode || 'edit_automatically'
+}
+
 function persistClaudeTabMeta(tab, project = activeProject.value) {
   if (!tab || !project?.cwd || !tab.cliSessionId) return
   window.electronAPI?.claudeWriteSessionMeta?.({
@@ -1884,6 +1889,7 @@ async function refreshProjectSessionsInBackground(p) {
         }
         if (hasPendingNewChat) continue  // 等 onAgentDone 填充 cliSessionId 后再匹配
         newCount++
+        const inheritedRunMode = getInheritedClaudeRunMode(p)
         // 新增会话：插入到列表中（按最新对话时间倒序）
         const newChat = {
           id: nextChatId(),
@@ -1896,7 +1902,7 @@ async function refreshProjectSessionsInBackground(p) {
           model: s.model || claudeDefaultModel.value || null,
           effort: normalizeClaudeEffort(s.effort || claudeDefaultEffort.value) || 'medium',
           modelTier: normalizeClaudeModelTier(s.modelTier) || null,
-          runMode: 'edit_automatically',
+          runMode: inheritedRunMode,
           thinking: false,
           messages: [],
           currentAssistantId: null,
@@ -2229,6 +2235,7 @@ async function selectDir(project, onAfterSelect) {
   try {
     const sessions = await loadProjectSessions(dir)
     if (Array.isArray(sessions) && sessions.length) {
+      const inheritedRunMode = getInheritedClaudeRunMode(project)
       project.chats = sessions.map(s => {
         const cliSessionId = s.cliSessionId || s.id || ''
         return {
@@ -2242,7 +2249,7 @@ async function selectDir(project, onAfterSelect) {
           model: s.model || claudeDefaultModel.value || null,
           effort: normalizeClaudeEffort(s.effort || claudeDefaultEffort.value) || 'medium',
           modelTier: normalizeClaudeModelTier(s.modelTier) || null,
-          runMode: 'edit_automatically',
+          runMode: inheritedRunMode,
           thinking: false,
           messages: [],
           currentAssistantId: null,
