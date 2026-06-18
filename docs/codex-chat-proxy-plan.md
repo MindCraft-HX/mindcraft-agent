@@ -157,3 +157,13 @@ POST /v1/responses  ────→   检测 apiFormat=chat
 1. **transformResponse.js**: 移除未使用的 `buildResponseFunctionCallItem` import（死代码）
 2. **proxyServer.js**: URL 路由改为按 pathname 匹配（`req.url` 可能含查询参数）
 3. **APISetting.vue**: `extractTomlFields` 补齐 `result.api_format = draft.apiFormat` 读取
+
+### 人工验收方案
+
+详见 [`docs/codex-chat-proxy-acceptance-test.md`](./codex-chat-proxy-acceptance-test.md)，覆盖 6 大类 26 项检查点：
+- UI 验收（下拉框、持久化、国际化）
+- config.toml 验证（`wire_api` + `api_format`）
+- 代理生命周期（启动/释放/中止/非侵入）
+- 协议转换（流式、推理、工具调用、模型列表）
+- 错误路径（无效 Key、连接失败、上游错误）
+- 跨 Provider 兼容（DeepSeek / Kimi / Qwen / GLM / MiniMax）
