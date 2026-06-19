@@ -67,6 +67,71 @@ function writeMindCraftSettings(settings) {
   return settingsPath
 }
 
+function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
+  const safePage = Math.max(0, Number(page) || 0)
+  const safePageSize = Math.max(1, Math.min(200, Number(pageSize) || 60))
+  const newestToSkip = safePage * safePageSize
+  const wanted = safePageSize + 1
+  const maxLinesToRead = newestToSkip + wanted
+  const chunkSize = 64 * 1024
+  const linesNewestFirst = []
+  let fd = null
+  let fileSize = 0
+  let bytesScanned = 0
+
+  try {
+    fd = fs.openSync(filePath, 'r')
+    fileSize = fs.fstatSync(fd).size
+    let pos = fileSize
+    let carry = Buffer.alloc(0)
+
+    while (pos > 0 && linesNewestFirst.length < maxLinesToRead) {
+      const toRead = Math.min(chunkSize, pos)
+      pos -= toRead
+      const buf = Buffer.allocUnsafe(toRead)
+      const bytesRead = fs.readSync(fd, buf, 0, toRead, pos)
+      if (bytesRead <= 0) break
+      bytesScanned += bytesRead
+
+      let end = bytesRead
+      for (let i = bytesRead - 1; i >= 0; i--) {
+        if (buf[i] !== 0x0a) continue
+        const part = buf.subarray(i + 1, end)
+        const lineBuf = carry.length ? Buffer.concat([part, carry]) : part
+        if (lineBuf.length > 0 && lineBuf.toString('utf8').trim()) {
+          linesNewestFirst.push(lineBuf)
+          if (linesNewestFirst.length >= maxLinesToRead) break
+        }
+        carry = Buffer.alloc(0)
+        end = i
+      }
+      if (end > 0 && linesNewestFirst.length < maxLinesToRead) {
+        const prefix = buf.subarray(0, end)
+        carry = carry.length ? Buffer.concat([prefix, carry]) : Buffer.from(prefix)
+      }
+    }
+
+    if (carry.length > 0 && linesNewestFirst.length < maxLinesToRead && carry.toString('utf8').trim()) {
+      linesNewestFirst.push(carry)
+    }
+
+    const pageLinesNewestFirst = linesNewestFirst.slice(newestToSkip, newestToSkip + safePageSize)
+    const hasMore = linesNewestFirst.length > newestToSkip + safePageSize
+    return {
+      lines: pageLinesNewestFirst.reverse().map(line => line.toString('utf8')),
+      hasMore,
+      totalPages: hasMore ? safePage + 2 : safePage + 1,
+      fileSize,
+      bytesScanned,
+      linesScanned: linesNewestFirst.length,
+    }
+  } finally {
+    if (fd != null) {
+      try { fs.closeSync(fd) } catch (_) {}
+    }
+  }
+}
+
 function getClaudeFreezeDiagEnabled() {
   const settings = readMindCraftSettings()
   return Boolean(settings?.diagnostics?.claudeFreeze?.enabled)
@@ -963,76 +1028,28 @@ function setupClaudeHandlers() {
         })
         return { messages: [], hasMore: false, totalPages: 0, error: 'file_not_found' }
       }
-      const fd = fs.openSync(filePath, 'r')
-      const fileSize = fs.fstatSync(fd).size
+      const pageData = readJsonlPageLinesFromTail(filePath, page, pageSize)
       appendClaudeFreezeDiag('session-range.opened', {
         file: path.basename(filePath),
-        fileSize,
+        fileSize: pageData.fileSize,
         page,
         pageSize,
       })
 
-      // 从尾部逐行扫描，收集所有有效消息的行偏移
-      // 先快速统计总行数（不需要解析 JSON）
-      const readBuf = Buffer.alloc(64 * 1024)
-      let pos = 0
-      let totalLines = 0
-      const countStart = Date.now()
-      appendClaudeFreezeDiag('session-range.count-lines.start', {
-        file: path.basename(filePath),
-        fileSize,
-      })
-      while (pos < fileSize) {
-        const toRead = Math.min(readBuf.length, fileSize - pos)
-        const bytesRead = fs.readSync(fd, readBuf, 0, toRead, pos)
-        if (bytesRead === 0) break
-        for (let i = 0; i < bytesRead; i++) {
-          if (readBuf[i] === 0x0a) totalLines++
-        }
-        pos += bytesRead
-      }
-      // 如果最后一行没有换行符，也算一行
-      if (fileSize > 0) {
-        const lastByte = Buffer.alloc(1)
-        fs.readSync(fd, lastByte, 0, 1, fileSize - 1)
-        if (lastByte[0] !== 0x0a) totalLines++
-      }
-      const countMs = Date.now() - countStart
-      appendClaudeFreezeDiag('session-range.count-lines.done', {
-        file: path.basename(filePath),
-        fileSize,
-        totalLines,
-        countMs,
-      })
-
-      // 计算目标行范围：从第 startLine 行到第 endLine 行（从 0 开始计数）
-      // page=0 → 读最后 pageSize 行 → startLine = totalLines - pageSize
-      // page=1 → 读再往前 pageSize 行 → startLine = totalLines - 2*pageSize
-      const endLine = totalLines - page * pageSize
-      const startLine = Math.max(0, endLine - pageSize)
-
-      if (startLine >= totalLines || endLine <= 0) {
-        fs.closeSync(fd)
-        return { messages: [], hasMore: false, totalPages: Math.ceil(totalLines / pageSize) }
-      }
-
-      // 重新扫描，只收集目标行范围内的消息
-      pos = 0
-      let currentLine = 0
       const messages = []
-      let lineBuffer = ''
       const collectStart = Date.now()
       appendClaudeFreezeDiag('session-range.collect-page.start', {
         file: path.basename(filePath),
         page,
         pageSize,
-        startLine,
-        endLine,
+        bytesScanned: pageData.bytesScanned,
+        linesScanned: pageData.linesScanned,
       })
       const collectMessages = (line) => {
-        if (!line.trim()) return
+        const cleanLine = String(line || '').replace(/^\uFEFF/, '')
+        if (!cleanLine.trim()) return
         try {
-          const entry = JSON.parse(line)
+          const entry = JSON.parse(cleanLine)
           if (entry.type === 'queue-operation' && entry.content) {
             messages.push({ type: 'queue-operation', content: entry.content })
             return
@@ -1054,28 +1071,9 @@ function setupClaudeHandlers() {
         } catch (_) {}
       }
 
-      while (pos < fileSize) {
-        const toRead = Math.min(readBuf.length, fileSize - pos)
-        const bytesRead = fs.readSync(fd, readBuf, 0, toRead, pos)
-        if (bytesRead === 0) break
-        lineBuffer += readBuf.subarray(0, bytesRead).toString('utf8')
-        pos += bytesRead
-        const lines = lineBuffer.split('\n')
-        lineBuffer = lines.pop() || ''
-        for (const line of lines) {
-          if (currentLine >= startLine && currentLine < endLine) {
-            collectMessages(line)
-          }
-          currentLine++
-        }
-      }
-      // 处理最后一行
-      if (lineBuffer.trim() && currentLine >= startLine && currentLine < endLine) {
-        collectMessages(lineBuffer)
-      }
+      for (const line of pageData.lines) collectMessages(line)
 
-      fs.closeSync(fd)
-      const hasMore = startLine > 0
+      const hasMore = pageData.hasMore
       const collectMs = Date.now() - collectStart
       const totalMs = Date.now() - diagStart
       appendClaudeFreezeDiag('session-range.collect-page.done', {
@@ -1087,17 +1085,17 @@ function setupClaudeHandlers() {
       })
       appendClaudeFreezeDiag('session-range.return', {
         file: path.basename(filePath),
-        fileSize,
+        fileSize: pageData.fileSize,
         page,
         pageSize,
-        totalLines,
+        linesScanned: pageData.linesScanned,
+        bytesScanned: pageData.bytesScanned,
         returnedMessages: messages.length,
         hasMore,
-        countMs,
         collectMs,
         totalMs,
       })
-      return { messages, hasMore, totalPages: Math.ceil(totalLines / pageSize) }
+      return { messages, hasMore, totalPages: pageData.totalPages }
     } catch (e) {
       appendClaudeFreezeDiag('session-range.fail', {
         error: e?.message || String(e),

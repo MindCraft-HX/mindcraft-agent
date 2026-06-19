@@ -504,10 +504,12 @@ const isComposing = ref(false)
 const mentionSuggestions = ref([])
 const mentionIdx = ref(0)
 let mentionReqSeq = 0
+let mentionRefreshTimer = null
 const mentionFlatMode = ref(false)
 const allFilesCache = ref(null)  // null=未加载, []=空
 let allFilesCacheTime = 0
 const ALL_FILES_CACHE_TTL = 30000  // 30 秒过期
+const MENTION_REFRESH_DEBOUNCE_MS = 150
 
 function toggleMentionFlatMode() {
   mentionFlatMode.value = !mentionFlatMode.value
@@ -618,11 +620,23 @@ async function refreshMentionSuggestions(rawQuery) {
 }
 
 function clearMentionSuggestions() {
+  if (mentionRefreshTimer) {
+    clearTimeout(mentionRefreshTimer)
+    mentionRefreshTimer = null
+  }
   mentionReqSeq += 1
   mentionSuggestions.value = []
   mentionIdx.value = 0
   allFilesCache.value = null
   allFilesCacheTime = 0
+}
+
+function refreshMentionSuggestionsDebounced(rawQuery) {
+  if (mentionRefreshTimer) clearTimeout(mentionRefreshTimer)
+  mentionRefreshTimer = setTimeout(() => {
+    mentionRefreshTimer = null
+    refreshMentionSuggestions(rawQuery)
+  }, MENTION_REFRESH_DEBOUNCE_MS)
 }
 
 function applyMention(item) {
@@ -1163,11 +1177,29 @@ watch(
   { immediate: true }
 )
 
+function getRunningCount(chats) {
+  let count = 0
+  for (const chat of chats || []) {
+    if (chat?.thinking) count += 1
+  }
+  return count
+}
+
+function hasPendingToolInChats(chats) {
+  for (const chat of chats || []) {
+    const messages = chat?.messages || []
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.status === 'pending') return true
+    }
+  }
+  return false
+}
+
 const projectTabs = computed(() =>
   projects.value.map(p => ({
     ...p,
-    runningCount: (p.chats || []).filter(c => c.thinking).length,
-    hasPendingTool: (p.chats || []).some(c => (c.messages || []).some(m => m.status === 'pending')),
+    runningCount: getRunningCount(p.chats || []),
+    hasPendingTool: hasPendingToolInChats(p.chats || []),
   }))
 )
 
@@ -2218,7 +2250,7 @@ function onInputChange(e) {
   if (query == null) {
     clearMentionSuggestions()
   } else {
-    refreshMentionSuggestions(query)
+    refreshMentionSuggestionsDebounced(query)
   }
   const val = inputText.value || ''
   if (val.startsWith('/') && !val.includes(' ')) {
@@ -2589,9 +2621,7 @@ async function ensureChatMessagesLoaded(chat) {
     const n = Math.min(MAX_MESSAGES, allMessages.length)
     chat.messages = allMessages.slice(-n)
     normalizeFileChangeMessages(chat.messages)
-    // 服务端 page 0 的 hasMore 在去重后可能不准（60 行去重后可能 < 60）
-    // 如果加载了 60 条但 hasMore=false，说明到了上限而非文件末尾，强制设为 true
-    chat.hasMoreHistory = rawData.hasMore || allMessages.length >= 60
+    chat.hasMoreHistory = Boolean(rawData.hasMore)
     chat.currentPage = 0
     chat.pageSize = 60
     chat._messagesLoaded = true
@@ -2601,8 +2631,7 @@ async function ensureChatMessagesLoaded(chat) {
 
 async function loadMoreHistory(scrollEl) {
   const chat = activeTab.value
-  if (!chat || chat.loadingMore || !chat.filePath) return
-  // hasMoreHistory 可能不准确，消息满页时也尝试加载
+  if (!chat || !chat.hasMoreHistory || chat.loadingMore || !chat.filePath) return
   if (loadMoreCooldownTimer) return
   loadMoreCooldownTimer = setTimeout(() => { loadMoreCooldownTimer = null }, 1000)
 
@@ -2729,8 +2758,8 @@ defineExpose({
       name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
       cwd: p.cwd || '',
       cwdLocked: Boolean(p.cwdLocked),
-      runningCount: chats.filter(c => c.thinking).length,
-      hasPendingTool: chats.some(c => (c.messages || []).some(m => m.status === 'pending')),
+      runningCount: getRunningCount(chats),
+      hasPendingTool: hasPendingToolInChats(chats),
       hasDoneNotification: Boolean(p.hasDoneNotification),
       createdAt: p.createdAt || 0,
     }
@@ -2749,6 +2778,10 @@ onActivated(() => {
 })
 
 onUnmounted(() => {
+  if (mentionRefreshTimer) {
+    clearTimeout(mentionRefreshTimer)
+    mentionRefreshTimer = null
+  }
   stopMetricsTimer()
   window.removeEventListener('beforeunload', flushOnUnload)
   for (const timer of queuedRetryTimers.values()) clearTimeout(timer)

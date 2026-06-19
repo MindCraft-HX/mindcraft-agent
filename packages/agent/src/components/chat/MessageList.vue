@@ -16,7 +16,7 @@
     <div class="msg-items" v-else>
       <MessageBubble
         v-for="(msg, i) in messages"
-        :key="i"
+        :key="msg.id ?? `${msg.sessionId || 'msg'}-${i}`"
         :msg="msg"
         @preview-image="$emit('preview-image', $event)"
       />
@@ -53,11 +53,16 @@ defineEmits(['preview-image'])
 
 const listRef = ref(null)
 const showScrollBtn = ref(false)
+let scrollRaf = null
 
 function scrollToBottom() {
-  nextTick(() => {
-    const el = listRef.value
-    if (el) el.scrollTop = el.scrollHeight
+  if (scrollRaf != null) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = null
+    nextTick(() => {
+      const el = listRef.value
+      if (el) el.scrollTop = el.scrollHeight
+    })
   })
 }
 

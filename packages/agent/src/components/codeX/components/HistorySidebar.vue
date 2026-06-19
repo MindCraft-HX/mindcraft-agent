@@ -334,13 +334,17 @@ const renamingId = ref(null)
 const renameText = ref('')
 const renameInputRef = ref(null)
 
+function focusRenameInput() {
+  const raw = Array.isArray(renameInputRef.value) ? renameInputRef.value[0] : renameInputRef.value
+  const el = raw?.$el || raw
+  if (typeof el?.focus === 'function') el.focus()
+  if (typeof el?.select === 'function') el.select()
+}
+
 function startRename(session) {
   renamingId.value = session.id
   renameText.value = formatSessionTitle(session)
-  nextTick(() => {
-    const el = renameInputRef.value
-    if (el) { el.focus(); el.select() }
-  })
+  nextTick(focusRenameInput)
 }
 
 function confirmRename(session) {

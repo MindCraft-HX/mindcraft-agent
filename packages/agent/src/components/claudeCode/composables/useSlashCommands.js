@@ -20,12 +20,21 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
   let slashRemoteLoading = false
   let slashLocalRefreshTimer = null
   let slashRemoteRefreshTimer = null
+  let modelPanelStateCache = null
+  let modelPanelStateCacheTime = 0
 
   const SLASH_LOCAL_REFRESH_DEBOUNCE_MS = 220
   const SLASH_REMOTE_REFRESH_DEBOUNCE_MS = 800
+  const MODEL_PANEL_STATE_TTL_MS = 30_000
 
   async function loadModelPanelState() {
     try {
+      if (modelPanelStateCache && Date.now() - modelPanelStateCacheTime < MODEL_PANEL_STATE_TTL_MS) {
+        slashEffortLevel.value = modelPanelStateCache.effort
+        slashModelName.value = modelPanelStateCache.modelName
+        slashThinkingEnabled.value = modelPanelStateCache.thinking
+        return
+      }
       // 读取全局 conf
       const [effort, model, tier, thinking] = await Promise.all([
         window.electronAPI?.claudeGetEffortLevel?.(),
@@ -37,6 +46,12 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
       const tierLabel = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', reasoning: 'Reasoning' }
       slashModelName.value = model || tierLabel[tier] || '未配置模型'
       slashThinkingEnabled.value = thinking !== false
+      modelPanelStateCache = {
+        effort: slashEffortLevel.value,
+        modelName: slashModelName.value,
+        thinking: slashThinkingEnabled.value,
+      }
+      modelPanelStateCacheTime = Date.now()
     } catch (_) {}
   }
 
@@ -44,12 +59,20 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
     const valid = ['low', 'medium', 'high', 'xhigh']
     if (!valid.includes(level)) return
     slashEffortLevel.value = level
+    if (modelPanelStateCache) {
+      modelPanelStateCache.effort = level
+      modelPanelStateCacheTime = Date.now()
+    }
     await window.electronAPI?.claudeSetEffortLevel?.(level)
   }
 
   async function toggleThinking() {
     const next = !slashThinkingEnabled.value
     slashThinkingEnabled.value = next
+    if (modelPanelStateCache) {
+      modelPanelStateCache.thinking = next
+      modelPanelStateCacheTime = Date.now()
+    }
     await window.electronAPI?.claudeSetThinkingEnabled?.(next)
   }
 

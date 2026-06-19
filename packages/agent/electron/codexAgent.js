@@ -103,6 +103,20 @@ function dataUrlToTempImagePath(img = {}) {
   }
 }
 
+function execFileAsync(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout
+        error.stderr = stderr
+        reject(error)
+        return
+      }
+      resolve({ stdout, stderr })
+    })
+  })
+}
+
 /** 解析图片输入：系统路径直传，data URL 写入临时文件 */
 function resolveImageInputPath(img = {}) {
   if (img?.path && fs.existsSync(img.path)) return img.path
@@ -505,6 +519,67 @@ function readJsonlTailLines(filePath, maxLines = 80) {
       fs.closeSync(fd)
     }
   } catch (_) { return [] }
+}
+
+function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
+  const safePage = Math.max(0, Number(page) || 0)
+  const safePageSize = Math.max(1, Math.min(200, Number(pageSize) || 60))
+  const newestToSkip = safePage * safePageSize
+  const wanted = safePageSize + 1
+  const maxLinesToRead = newestToSkip + wanted
+  const chunkSize = 64 * 1024
+  const linesNewestFirst = []
+  let fd = null
+  let fileSize = 0
+
+  try {
+    fd = fs.openSync(filePath, 'r')
+    fileSize = fs.fstatSync(fd).size
+    let pos = fileSize
+    let carry = Buffer.alloc(0)
+
+    while (pos > 0 && linesNewestFirst.length < maxLinesToRead) {
+      const toRead = Math.min(chunkSize, pos)
+      pos -= toRead
+      const buf = Buffer.allocUnsafe(toRead)
+      const bytesRead = fs.readSync(fd, buf, 0, toRead, pos)
+      if (bytesRead <= 0) break
+
+      let end = bytesRead
+      for (let i = bytesRead - 1; i >= 0; i--) {
+        if (buf[i] !== 0x0a) continue
+        const part = buf.subarray(i + 1, end)
+        const lineBuf = carry.length ? Buffer.concat([part, carry]) : part
+        if (lineBuf.length > 0 && lineBuf.toString('utf8').trim()) {
+          linesNewestFirst.push(lineBuf)
+          if (linesNewestFirst.length >= maxLinesToRead) break
+        }
+        carry = Buffer.alloc(0)
+        end = i
+      }
+      if (end > 0 && linesNewestFirst.length < maxLinesToRead) {
+        const prefix = buf.subarray(0, end)
+        carry = carry.length ? Buffer.concat([prefix, carry]) : Buffer.from(prefix)
+      }
+    }
+
+    if (carry.length > 0 && linesNewestFirst.length < maxLinesToRead && carry.toString('utf8').trim()) {
+      linesNewestFirst.push(carry)
+    }
+
+    const pageLinesNewestFirst = linesNewestFirst.slice(newestToSkip, newestToSkip + safePageSize)
+    const hasMore = linesNewestFirst.length > newestToSkip + safePageSize
+    return {
+      lines: pageLinesNewestFirst.reverse().map(line => line.toString('utf8').replace(/^\uFEFF/, '')),
+      hasMore,
+      totalPages: hasMore ? safePage + 2 : safePage + 1,
+      fileSize,
+    }
+  } finally {
+    if (fd != null) {
+      try { fs.closeSync(fd) } catch (_) {}
+    }
+  }
 }
 
 function collectSessionTailRiskSummary(filePath, maxLines = 80) {
@@ -1347,39 +1422,13 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       }
     }
 
-    const fd = fs.openSync(filePath, 'r')
-    const readBuf = Buffer.alloc(64 * 1024)
-    let pos = 0
-    let totalLines = 0
-    while (pos < fileSize) {
-      const toRead = Math.min(readBuf.length, fileSize - pos)
-      const bytesRead = fs.readSync(fd, readBuf, 0, toRead, pos)
-      if (bytesRead === 0) break
-      for (let i = 0; i < bytesRead; i++) {
-        if (readBuf[i] === 0x0a) totalLines++
-      }
-      pos += bytesRead
-    }
-    if (fileSize > 0) {
-      const lastByte = Buffer.alloc(1)
-      fs.readSync(fd, lastByte, 0, 1, fileSize - 1)
-      if (lastByte[0] !== 0x0a) totalLines++
-    }
-
-    const endLine = totalLines - (safePage * safePageSize)
-    const startLine = Math.max(0, endLine - safePageSize)
-
-    if (startLine >= totalLines || endLine <= 0) {
-      fs.closeSync(fd)
-      return { messages: [], hasMore: false, totalPages: Math.ceil(totalLines / safePageSize) }
-    }
+    const pageData = readJsonlPageLinesFromTail(filePath, safePage, safePageSize)
+    if (!pageData.lines.length) return { messages: [], hasMore: false, totalPages: pageData.totalPages }
 
     const messages = []
     const seenMessages = new Set()
     const pendingCalls = {}
     const patchCalls = new Set()
-    let currentLine = 0
-    let lineBuffer = ''
     function collectMessage(line) {
       if (!line.trim()) return
       const row = safeJsonParse(line)
@@ -1572,30 +1621,13 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       }
     }
 
-    pos = 0
-    while (pos < fileSize) {
-      const toRead = Math.min(readBuf.length, fileSize - pos)
-      const bytesRead = fs.readSync(fd, readBuf, 0, toRead, pos)
-      if (bytesRead === 0) break
-      lineBuffer += readBuf.subarray(0, bytesRead).toString('utf8')
-      pos += bytesRead
-      const lines = lineBuffer.split('\n')
-      lineBuffer = lines.pop() || ''
-      for (const line of lines) {
-        if (currentLine >= startLine && currentLine < endLine) collectMessage(line)
-        currentLine++
-      }
-    }
-    if (lineBuffer.trim() && currentLine >= startLine && currentLine < endLine) {
-      collectMessage(lineBuffer)
-    }
+    for (const line of pageData.lines) collectMessage(line)
 
-    fs.closeSync(fd)
-    const baseId = startLine + 1
+    const baseId = -((safePage + 1) * 100000)
     return {
       messages: messages.map((message, index) => ({ id: baseId + index, ...message })),
-      hasMore: startLine > 0,
-      totalPages: Math.ceil(totalLines / safePageSize),
+      hasMore: pageData.hasMore,
+      totalPages: pageData.totalPages,
     }
   } catch (_) {
     return { messages: [], hasMore: false, totalPages: 0 }
@@ -3226,17 +3258,30 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-run-git-diff', async (_, { cwd } = {}) => {
     const resolvedCwd = path.resolve(cwd || process.cwd())
     try {
-      const { execSync } = require('child_process')
       // 检查是否在 git 仓库内
       try {
-        execSync('git rev-parse --is-inside-work-tree', { cwd: resolvedCwd, timeout: 5000, stdio: 'pipe' })
+        await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], {
+          cwd: resolvedCwd,
+          timeout: 5000,
+          encoding: 'utf8',
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
       } catch (_) {
         return { isGitRepo: false, diff: '' }
       }
       // 已跟踪文件的 diff（无颜色，HTML 无法渲染 ANSI escape codes）
       let tracked = ''
       try {
-        tracked = execSync('git diff', { cwd: resolvedCwd, timeout: 15000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
+        const result = await execFileAsync('git', ['diff', '--no-color'], {
+          cwd: resolvedCwd,
+          timeout: 15000,
+          encoding: 'utf8',
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          maxBuffer: 20 * 1024 * 1024,
+        })
+        tracked = result.stdout || ''
       } catch (e) {
         // git diff 返回 1 表示有差异（正常情况）
         if (e.stdout) tracked = typeof e.stdout === 'string' ? e.stdout : e.stdout.toString('utf8')
@@ -3244,19 +3289,44 @@ function setupCodexSdkHandlers() {
       // 未跟踪文件列表
       let untrackedFiles = ''
       try {
-        untrackedFiles = execSync('git ls-files --others --exclude-standard', { cwd: resolvedCwd, timeout: 5000, encoding: 'utf8', stdio: 'pipe' })
+        const result = await execFileAsync('git', ['ls-files', '--others', '--exclude-standard'], {
+          cwd: resolvedCwd,
+          timeout: 5000,
+          encoding: 'utf8',
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          maxBuffer: 5 * 1024 * 1024,
+        })
+        untrackedFiles = result.stdout || ''
       } catch (_) {}
       let untrackedDiff = ''
       if (untrackedFiles.trim()) {
         const nullDevice = process.platform === 'win32' ? 'NUL' : '/dev/null'
-        for (const file of untrackedFiles.split('\n').map(s => s.trim()).filter(Boolean)) {
-          try {
-            const d = execSync(`git diff --no-index -- ${nullDevice} "${file}"`, { cwd: resolvedCwd, timeout: 10000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
-            untrackedDiff += d
-          } catch (e) {
-            if (e.stdout) untrackedDiff += typeof e.stdout === 'string' ? e.stdout : e.stdout.toString('utf8')
+        const files = untrackedFiles.split('\n').map(s => s.trim()).filter(Boolean)
+        const concurrency = 4
+        let nextIndex = 0
+        const worker = async () => {
+          let chunk = ''
+          while (nextIndex < files.length) {
+            const file = files[nextIndex++]
+            try {
+              const result = await execFileAsync('git', ['diff', '--no-index', '--no-color', '--', nullDevice, file], {
+                cwd: resolvedCwd,
+                timeout: 10000,
+                encoding: 'utf8',
+                windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                maxBuffer: 10 * 1024 * 1024,
+              })
+              chunk += result.stdout || ''
+            } catch (e) {
+              if (e.stdout) chunk += typeof e.stdout === 'string' ? e.stdout : e.stdout.toString('utf8')
+            }
           }
+          return chunk
         }
+        const chunks = await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, worker))
+        untrackedDiff = chunks.join('')
       }
       return { isGitRepo: true, diff: (tracked + untrackedDiff).trim() }
     } catch (e) {

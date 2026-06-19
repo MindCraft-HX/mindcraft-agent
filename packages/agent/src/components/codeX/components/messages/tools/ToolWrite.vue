@@ -323,7 +323,16 @@ function computeFileChangeDiffs() {
 onMounted(() => { computeDiff(); computeFileChangeDiffs() })
 watch(() => props.msg.expanded, (val) => { if (val) { computeDiff(); computeFileChangeDiffs() } })
 watch(() => props.msg.text, () => { computeDiff(); computeFileChangeDiffs() })
-watch(() => props.msg._fileChanges, () => { computeFileChangeDiffs() }, { deep: true })
+watch(
+  () => (props.msg._fileChanges || []).map(fc => [
+    fc?.path || '',
+    fc?.unified_diff ? 1 : 0,
+    fc?._diffHunks?.length || 0,
+    fc?._oldStr?.length || 0,
+    fc?._newStr?.length || 0,
+  ].join(':')).join('|'),
+  () => { computeFileChangeDiffs() }
+)
 </script>
 
 <style scoped>

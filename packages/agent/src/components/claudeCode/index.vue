@@ -634,14 +634,30 @@ function isPendingTool(msg) {
   return !!msg.requestId || String(msg.toolName) === 'AskUserQuestion'
 }
 
+function getRunningCount(chats) {
+  let count = 0
+  for (const chat of chats || []) {
+    if (chat?.thinking) count += 1
+  }
+  return count
+}
+
+function hasPendingToolInChats(chats) {
+  for (const chat of chats || []) {
+    const messages = chat?.messages || []
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (isPendingTool(messages[i])) return true
+    }
+  }
+  return false
+}
+
 // 为每个 project 注入 hasRunningSession / hasPendingTool，供 ProjectTabs 显示脉冲点
 const projectTabs = computed(() =>
   projects.value.map(p => {
     const chats = p.chats || []
-    const runningCount = chats.filter(c => c.thinking).length
-    const hasPendingTool = chats.some(c =>
-      (c.messages || []).some(m => isPendingTool(m))
-    )
+    const runningCount = getRunningCount(chats)
+    const hasPendingTool = hasPendingToolInChats(chats)
     return { ...p, runningCount, hasPendingTool }
   })
 )
@@ -1398,8 +1414,10 @@ const activeRunMode = computed({
 const mentionSuggestions = ref([])
 const mentionIdx = ref(0)
 let mentionReqSeq = 0
+let mentionRefreshTimer = null
 const mentionFlatMode = ref(false)
 const allFilesCache = ref(null)
+const MENTION_REFRESH_DEBOUNCE_MS = 150
 
 function toggleMentionFlatMode() {
   mentionFlatMode.value = !mentionFlatMode.value
@@ -1478,7 +1496,19 @@ async function refreshMentionSuggestions(rawQuery) {
   }
 }
 
+function refreshMentionSuggestionsDebounced(rawQuery) {
+  if (mentionRefreshTimer) clearTimeout(mentionRefreshTimer)
+  mentionRefreshTimer = setTimeout(() => {
+    mentionRefreshTimer = null
+    refreshMentionSuggestions(rawQuery)
+  }, MENTION_REFRESH_DEBOUNCE_MS)
+}
+
 function clearMentionSuggestions() {
+  if (mentionRefreshTimer) {
+    clearTimeout(mentionRefreshTimer)
+    mentionRefreshTimer = null
+  }
   mentionReqSeq += 1
   mentionSuggestions.value = []
   mentionIdx.value = 0
@@ -1492,7 +1522,7 @@ function onInputChange(e) {
     clearMentionSuggestions()
     return
   }
-  refreshMentionSuggestions(query)
+  refreshMentionSuggestionsDebounced(query)
 }
 
 function onCompositionStart() {
@@ -3483,8 +3513,8 @@ defineExpose({
       name: p.cwd ? p.cwd.split(/[\\/]/).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
       cwd: p.cwd || '',
       cwdLocked: Boolean(p.cwdLocked),
-      runningCount: chats.filter(c => c.thinking).length,
-      hasPendingTool: chats.some(c => (c.messages || []).some(m => m.status === 'pending')),
+      runningCount: getRunningCount(chats),
+      hasPendingTool: hasPendingToolInChats(chats),
       hasDoneNotification: Boolean(p.hasDoneNotification),
       createdAt: p.createdAt || 0,
     }
@@ -3498,6 +3528,10 @@ defineExpose({
 })
 
 onUnmounted(() => {
+  if (mentionRefreshTimer) {
+    clearTimeout(mentionRefreshTimer)
+    mentionRefreshTimer = null
+  }
   if (historyTopObserver) {
     historyTopObserver.disconnect()
     historyTopObserver = null
