@@ -120,6 +120,13 @@ function isStrongLocalPathCandidate(text = '') {
   return /^[a-zA-Z_][\w.-]{2,}\/[^\s]+\.(?:tsx?|jsx?|cjs|mjs|vue|py|rb|java|go|rs|c|cc|cpp|h|hpp|css|scss|less|html?|xml|ya?ml|json|toml|ini|conf|env|sh|ps1|bat|cmd|sql|md|txt|log|svg|png|jpe?g|gif|ico)$/i.test(normalized)
 }
 
+function trimLocalPathCandidate(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/^[`'"\u2018\u2019\u201c\u201d]+/g, '')
+    .replace(/[`'"\u2018\u2019\u201c\u201d)>.,;:\u3002\uff0c\uff1b\uff1a\u3001\uff09\u3011\u300b]+$/g, '')
+}
+
 function createPathCandidateAnchor(label, candidate) {
   const escapedCandidate = escapeAttr(candidate)
   return `<a class="md-link md-file-link" href="#" title="打开 ${escapedCandidate}" data-path-candidate="${escapedCandidate}">${label}</a>`
@@ -133,10 +140,12 @@ function createInlineCodePathCandidateAnchor(code) {
 
 function linkifyStrongLocalPaths(input = '') {
   // 匹配 Windows 绝对路径 | UNC | Unix 绝对路径 | 工程目录前缀 | 目录/文件 模式 | ./ 或 ../
-  const candidatePattern = /(^|[\s(])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)(?:[\\/][^\s<>"')\]]+)+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
+  const candidatePattern = /(^|[\s(\[:：])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)(?:[\\/][^\s<>"')\]]+)+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
   return String(input || '').replace(candidatePattern, (match, prefix, candidate) => {
-    if (!isStrongLocalPathCandidate(candidate)) return match
-    return `${prefix}${createPathCandidateAnchor(candidate, candidate)}`
+    const cleanCandidate = trimLocalPathCandidate(candidate)
+    if (!isStrongLocalPathCandidate(cleanCandidate)) return match
+    const suffix = candidate.slice(cleanCandidate.length)
+    return `${prefix}${createPathCandidateAnchor(cleanCandidate, cleanCandidate)}${suffix}`
   })
 }
 

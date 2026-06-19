@@ -97,6 +97,18 @@ assert.ok(
   'packages/agent source paths should become clickable candidates'
 )
 
+const qaAcceptancePath = 'docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md'
+const qaAcceptanceHtml = renderContent(`人工验收文档：${qaAcceptancePath}。`)
+
+assert.ok(
+  qaAcceptanceHtml.includes(`data-path-candidate="${qaAcceptancePath}"`),
+  'docs/qa acceptance paths followed by Chinese punctuation should keep the candidate clickable'
+)
+assert.ok(
+  !qaAcceptanceHtml.includes(`data-path-candidate="${qaAcceptancePath}。"`),
+  'trailing Chinese punctuation should not be included in the path candidate'
+)
+
 const absoluteMarkdownLinkHtml = renderContent(
   '[documentLocator.js](/D:/repo/electron/mainModules/documentLocator.js)'
 )

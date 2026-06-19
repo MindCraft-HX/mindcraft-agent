@@ -1,5 +1,12 @@
 <template>
-  <div class="msg-list" ref="listRef" @scroll="onScroll">
+  <div
+    class="msg-list"
+    ref="listRef"
+    :data-path-context-cwd="pathContextCwd"
+    :data-path-context-workspace-root="pathContextCwd"
+    data-path-context-source="agent-message"
+    @scroll="onScroll"
+  >
     <!-- 欢迎界面 -->
     <div v-if="!messages.length" class="welcome-area">
       <div class="welcome-icon">
@@ -41,12 +48,13 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import MessageBubble from './MessageBubble.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   error: { type: String, default: '' },
+  projectCwd: { type: String, default: '' },
 })
 
 defineEmits(['preview-image'])
@@ -54,6 +62,8 @@ defineEmits(['preview-image'])
 const listRef = ref(null)
 const showScrollBtn = ref(false)
 let scrollRaf = null
+
+const pathContextCwd = computed(() => props.projectCwd || '')
 
 function scrollToBottom() {
   if (scrollRaf != null) return

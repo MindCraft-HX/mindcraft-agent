@@ -40,6 +40,7 @@
       <MessageList
         :messages="currentSession.messages"
         :error="streamError"
+        :project-cwd="currentSession.cwd || ''"
         @preview-image="previewImageUrl = $event"
       />
 

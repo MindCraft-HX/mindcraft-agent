@@ -116,6 +116,22 @@ test('resolveCandidatePath filters fallback file lists by candidate suffix', asy
   assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\TODO.md'))
 })
 
+test('resolveCandidatePath trims Chinese punctuation from rendered path candidates', async () => {
+  const target = 'D:\\repo\\docs\\qa\\2026-06-19-claude-runtime-metrics-state-machine-acceptance.md'
+  const result = await __test__.resolveCandidatePath({
+    rawText: 'docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md。',
+    workspaceRoot: 'D:\\repo',
+    cwd: 'D:\\repo\\src',
+    pathExists: (value) => normalize(value) === normalize(target),
+    searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.matchType, 'workspace-relative')
+  assert.equal(result.rawText, 'docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md')
+  assert.equal(normalize(result.filePath), normalize(target))
+})
+
 test('inferOpenMode routes markdown and code files into in-app viewers', () => {
   assert.equal(__test__.inferOpenMode('D:\\repo\\docs\\note.md'), 'mdViewer')
   assert.equal(__test__.inferOpenMode('D:\\repo\\src\\main.js'), 'textViewer')

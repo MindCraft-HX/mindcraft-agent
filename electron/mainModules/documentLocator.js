@@ -45,9 +45,9 @@ const TEXT_EXTENSIONS = new Set([
 function normalizeCandidate(rawText = '') {
   return String(rawText || '')
     .trim()
-    .replace(/^[`'"]+|[`'"]+$/g, '')
+    .replace(/^[`'"\u2018\u2019\u201c\u201d]+|[`'"\u2018\u2019\u201c\u201d]+$/g, '')
     .replace(/^file:\/\//i, '')
-    .replace(/[)>.,;:]+$/g, '')
+    .replace(/[)>.,;:\u3002\uff0c\uff1b\uff1a\u3001\uff09\u3011\u300b]+$/g, '')
 }
 
 function isAbsoluteFilePath(value = '') {
