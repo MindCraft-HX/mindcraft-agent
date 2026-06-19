@@ -715,16 +715,36 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
   }
 }
 
+function isProviderScanHidden(agent, scanSummary = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const providerSessionId = normalizeString(
+    scanSummary.providerSessionId
+    || scanSummary.cliSessionId
+    || scanSummary.id
+  )
+  const existing = resolveSessionByProvider({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)
+  return Boolean(existing?.metadata?.hiddenFromScans)
+}
+
 function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
   const record = buildProviderScanRecord(agent, scanSummary, project, options)
   if (!record) return null
-  if (!upsertSessionRecord(record, options)) return null
-  return readJson(getSessionRecordPath(record.chatKey, options), null)
+  try {
+    if (!upsertSessionRecord(record, options)) return null
+    return readJson(getSessionRecordPath(record.chatKey, options), null)
+  } catch (_) {
+    return null
+  }
 }
 
 function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
+  if (isProviderScanHidden(agent, scanSummary, options)) return null
   const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
-  if (!record) return null
+  if (!record) return scanSummary
   const scanFilePath = normalizeString(scanSummary.filePath)
   return {
     ...scanSummary,

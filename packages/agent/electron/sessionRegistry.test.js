@@ -304,6 +304,22 @@ test('hidden provider sessions are skipped by provider scans', () => {
   assert.equal(resolved.metadata.hiddenFromScans, true)
 })
 
+test('provider scans still return raw summaries when registry write fails', () => {
+  const userDataDir = makeTempUserData()
+  const blockedRegistryRoot = path.join(userDataDir, 'session-registry')
+  fs.writeFileSync(blockedRegistryRoot, 'not a directory')
+
+  const summary = attachRegistrySessionToScanSummary('claude', {
+    id: 'cli-visible',
+    cliSessionId: 'cli-visible',
+    filePath: 'C:/Users/demo/.claude/projects/repo/cli-visible.jsonl',
+    title: 'Visible provider prompt',
+  }, { cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(summary.cliSessionId, 'cli-visible')
+  assert.equal(summary.title, 'Visible provider prompt')
+})
+
 test('setSessionTitle can seed provider mapping before transcript scan', () => {
   const userDataDir = makeTempUserData()
 
