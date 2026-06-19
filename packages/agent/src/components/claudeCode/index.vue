@@ -351,6 +351,7 @@ import {
   markClaudeAborted,
   markClaudeAbortRequested,
   markClaudeIdle,
+  markClaudeSessionCleared,
   markClaudeStreamActivity,
   markClaudeTurnStarting,
 } from './utils/claudeRuntimeState.mjs'
@@ -1750,8 +1751,7 @@ const sidebarRefreshing = ref(false)
 function resetTabSession(tab) {
   if (!tab) return
   tab.sessionId = `session-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  tab.cliSessionId = null
-  markClaudeIdle(tab)
+  markClaudeSessionCleared(tab)
   tab._pendingCompactSummary = ''
   tab._awaitingCompactResult = false
   tab.taskState = createEmptyTaskState()

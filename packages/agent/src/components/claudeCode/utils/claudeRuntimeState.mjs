@@ -109,6 +109,17 @@ export function markClaudeIdle(tab) {
   return tab
 }
 
+export function markClaudeSessionCleared(tab) {
+  if (!tab) return tab
+  tab.cliSessionId = null
+  tab.filePath = ''
+  tab.fileSize = null
+  tab._messagesLoaded = true
+  tab._pendingSessionBinding = true
+  markClaudeIdle(tab)
+  return tab
+}
+
 export function applyClaudeMetrics(tab, data = {}) {
   if (!tab || !data || typeof data.thinking !== 'boolean') return tab
   const state = getRuntimeState(tab)

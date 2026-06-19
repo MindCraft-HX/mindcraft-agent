@@ -9,6 +9,7 @@ import {
   markClaudeAbortRequested,
   markClaudeDone,
   markClaudeIdle,
+  markClaudeSessionCleared,
   markClaudeStreamActivity,
   markClaudeTurnStarting,
 } from '../packages/agent/src/components/claudeCode/utils/claudeRuntimeState.mjs'
@@ -108,6 +109,31 @@ test('persistable Claude chat strips memory-only runtime state', () => {
   assert.equal(persistable.metrics.thinking, false)
   assert.equal(persistable.metrics.model, 'claude-sonnet')
   assert.equal(Object.hasOwn(persistable, '_claudeRuntimeState'), false)
+})
+
+test('clearing Claude session drops old transcript binding', () => {
+  const tab = {
+    cliSessionId: 'cli-old',
+    filePath: 'C:/Users/demo/.claude/projects/repo/cli-old.jsonl',
+    fileSize: 12345,
+    _messagesLoaded: false,
+    _pendingSessionBinding: false,
+    thinking: true,
+    _thinkingStart: 1000,
+    currentAssistantId: 'assistant-1',
+  }
+
+  markClaudeSessionCleared(tab)
+
+  assert.equal(tab.cliSessionId, null)
+  assert.equal(tab.filePath, '')
+  assert.equal(tab.fileSize, null)
+  assert.equal(tab._messagesLoaded, true)
+  assert.equal(tab._pendingSessionBinding, true)
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._thinkingStart, null)
+  assert.equal(tab.currentAssistantId, null)
+  assert.equal(tab._claudeRuntimeState, 'idle')
 })
 
 console.log('claude runtime state test passed')
