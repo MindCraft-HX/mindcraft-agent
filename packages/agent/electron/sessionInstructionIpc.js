@@ -19,9 +19,9 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-set-session-title', (_, { chatKey, title } = {}) => {
+  ipcMain.handle('agent-set-session-title', (_, payload = {}) => {
     try {
-      return setSessionTitle(chatKey, title)
+      return setSessionTitle(payload.chatKey, payload.title, payload)
     } catch (err) {
       return { ok: false, error: err?.message || 'write failed' }
     }

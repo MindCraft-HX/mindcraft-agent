@@ -2498,13 +2498,16 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-rename-session', async (_, { sessionId, title }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
-      // 在 SESSIONS_DIR 中找到对应 JSONL 文件
       const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
       if (!record?.chatKey) return { success: false, error: 'registry session not found' }
-      const result = setSessionTitle(record.chatKey, title)
+      const result = setSessionTitle(record.chatKey, title, {
+        agent: 'codex',
+        cwd: record.cwd,
+        cliSessionId: record.provider?.cliSessionId || sessionId,
+        filePath: record.provider?.filePath,
+        runtime: record.runtime,
+      })
       return { success: Boolean(result?.ok), error: result?.error }
-
-      // 追加 custom-title 行（与 Claude Code SDK 格式一致）
     } catch (e) {
       console.error('[codex-rename-session] error:', e)
       return { success: false, error: e?.message || 'unknown' }

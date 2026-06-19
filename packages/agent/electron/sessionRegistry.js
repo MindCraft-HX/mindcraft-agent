@@ -100,6 +100,15 @@ function normalizeTitleSource(value) {
   return ''
 }
 
+function normalizeRuntimeFields(fields = {}) {
+  const normalizedRuntime = {}
+  for (const [key, value] of Object.entries(fields)) {
+    const normalized = normalizeString(value)
+    if (normalized) normalizedRuntime[key] = normalized
+  }
+  return normalizedRuntime
+}
+
 function createRegistryChatKey(agent) {
   const prefix = normalizeAgent(agent) === 'codex' ? 'codex-session' : 'session'
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -276,6 +285,24 @@ function normalizeSessionInstructionInput(data = {}) {
     }
   } catch (err) {
     return { ok: false, error: err?.code || 'invalid_attachments' }
+  }
+}
+
+function normalizeSessionTitleContext(data = {}) {
+  const runtime = data.runtime && typeof data.runtime === 'object' ? data.runtime : {}
+  const normalizedRuntime = normalizeRuntimeFields({
+    model: runtime.model || data.model,
+    effort: runtime.effort || data.effort,
+    modelTier: runtime.modelTier || data.modelTier,
+    reasoningEffort: runtime.reasoningEffort || data.reasoningEffort,
+  })
+  return {
+    agent: normalizeAgent(data.agent),
+    projectId: normalizeString(data.projectId),
+    cwd: normalizeString(data.cwd),
+    cliSessionId: normalizeString(data.cliSessionId || data.providerSessionId),
+    filePath: normalizeString(data.filePath),
+    runtime: normalizedRuntime,
   }
 }
 
@@ -565,17 +592,27 @@ function setSessionTitle(chatKey, title, options = {}) {
   const nextTitle = normalizeString(title)
   if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
   if (!nextTitle) return { ok: false, error: 'missing title' }
+  const context = normalizeSessionTitleContext(options)
   const existing = readJson(getSessionRecordPath(resolvedChatKey, options), {})
   const now = Date.now()
   const record = {
     ...(existing || {}),
     schemaVersion: SCHEMA_VERSION,
     chatKey: resolvedChatKey,
-    agent: normalizeAgent(existing?.agent),
+    agent: context.agent !== 'unknown' ? context.agent : normalizeAgent(existing?.agent),
+    projectId: context.projectId || existing?.projectId || '',
+    cwd: context.cwd || existing?.cwd || '',
     title: nextTitle,
     titleSource: 'user',
-    provider: existing?.provider || {},
-    runtime: existing?.runtime || {},
+    provider: {
+      ...(existing?.provider || {}),
+      cliSessionId: context.cliSessionId || existing?.provider?.cliSessionId || '',
+      filePath: context.filePath || existing?.provider?.filePath || '',
+    },
+    runtime: {
+      ...(existing?.runtime || {}),
+      ...context.runtime,
+    },
     instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
     createdAt: existing?.createdAt || now,
     updatedAt: now,
@@ -600,14 +637,15 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
   const chatKey = existing?.chatKey || normalizeString(scanSummary.chatKey) || createRegistryChatKey(normalizedAgent)
   if (!chatKey) return null
 
-  const runtime = scanSummary.runtime && typeof scanSummary.runtime === 'object'
+  const scanRuntime = scanSummary.runtime && typeof scanSummary.runtime === 'object'
     ? scanSummary.runtime
-    : {
-        model: normalizeString(scanSummary.model),
-        effort: normalizeString(scanSummary.effort),
-        modelTier: normalizeString(scanSummary.modelTier),
-        reasoningEffort: normalizeString(scanSummary.reasoningEffort),
-      }
+    : scanSummary
+  const runtime = normalizeRuntimeFields({
+    model: scanRuntime.model,
+    effort: scanRuntime.effort,
+    modelTier: scanRuntime.modelTier,
+    reasoningEffort: scanRuntime.reasoningEffort,
+  })
   const titleState = chooseTitle(existing || {}, {
     title: existing?.title || providerTitle,
     titleSource: existing?.titleSource || (providerTitle ? 'provider' : 'auto'),

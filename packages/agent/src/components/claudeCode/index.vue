@@ -2198,8 +2198,15 @@ async function handleRenameChat(session, newName) {
   }
   try {
     const result = await window.electronAPI?.setSessionTitle?.({
+      agent: 'claude',
       chatKey: chat.sessionId,
       title: newName,
+      cwd: p.cwd,
+      cliSessionId: chat.cliSessionId,
+      filePath: chat.filePath,
+      model: chat.model,
+      effort: chat.effort,
+      modelTier: chat.modelTier,
     })
     if (!result?.ok) {
       ElMessage.error(result?.error || t('agent.renameFailed'))

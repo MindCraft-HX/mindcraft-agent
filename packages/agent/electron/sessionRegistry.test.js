@@ -181,6 +181,35 @@ test('setSessionTitle writes registry title without changing provider mapping', 
   assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
 })
 
+test('setSessionTitle can seed provider mapping before transcript scan', () => {
+  const userDataDir = makeTempUserData()
+
+  const result = setSessionTitle('chat-key-1', 'User picked title', {
+    userDataDir,
+    agent: 'codex',
+    cwd: 'D:/repo',
+    cliSessionId: 'thread-1',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+    model: 'gpt-5.1-codex',
+    reasoningEffort: 'medium',
+  })
+  assert.equal(result.ok, true)
+
+  const summary = upsertSessionFromProviderScan('codex', {
+    id: 'thread-1',
+    name: 'Provider title',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+  }, { cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(summary.chatKey, 'chat-key-1')
+  assert.equal(summary.title, 'User picked title')
+  assert.equal(summary.titleSource, 'user')
+  assert.equal(summary.provider.cliSessionId, 'thread-1')
+  assert.equal(summary.provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
+  assert.equal(summary.runtime.model, 'gpt-5.1-codex')
+  assert.equal(summary.runtime.reasoningEffort, 'medium')
+})
+
 test('upsertSessionRecord keeps one canonical record per provider identity', () => {
   const userDataDir = makeTempUserData()
   syncPanelStateSessions('codex', {

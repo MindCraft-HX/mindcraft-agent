@@ -936,7 +936,14 @@ function setupClaudeHandlers() {
     try {
       const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: sessionId }, sessionRegistryOptionsForTest || {})
       if (!record?.chatKey) return { success: false, error: 'registry session not found' }
-      const result = setSessionTitle(record.chatKey, title, sessionRegistryOptionsForTest || {})
+      const result = setSessionTitle(record.chatKey, title, {
+        ...(sessionRegistryOptionsForTest || {}),
+        agent: 'claude',
+        cwd: cwd || record.cwd,
+        cliSessionId: record.provider?.cliSessionId || sessionId,
+        filePath: record.provider?.filePath,
+        runtime: record.runtime,
+      })
       return { success: Boolean(result?.ok), error: result?.error }
     } catch (e) {
       console.error('[claude-rename-session] error:', e)
