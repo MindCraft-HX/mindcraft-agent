@@ -1,8 +1,20 @@
 const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 
 const {
   __test__,
 } = require('../packages/agent/electron/codexAgent.js')
+
+function withTempDir(run) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-session-path-'))
+  try {
+    run(dir)
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+}
 
 function runDonePayloadDefaultReasonTest() {
   const payload = __test__.buildCodexAgentDonePayload({
@@ -44,10 +56,36 @@ function runDoneReasonResolutionTest() {
   assert.equal(__test__.resolveCodexDoneReasonFromError(new Error('unexpected failure')), 'failed')
 }
 
+function runResolveSessionFilePathTest() {
+  withTempDir((dir) => {
+    const oldDir = path.join(dir, 'sessions-old')
+    const sessionsDir = path.join(dir, 'sessions')
+    fs.mkdirSync(path.join(sessionsDir, '2026', '06', '19'), { recursive: true })
+    fs.mkdirSync(oldDir, { recursive: true })
+
+    const threadId = '019eddd4-922c-70a2-b0d5-7446c28a1718'
+    const fakePath = path.join(sessionsDir, `${threadId}.jsonl`)
+    const realPath = path.join(sessionsDir, '2026', '06', '19', `rollout-2026-06-19T11-02-36-${threadId}.jsonl`)
+    fs.writeFileSync(realPath, '{}\n', 'utf8')
+
+    __test__.setSessionsDirForTest(sessionsDir)
+    try {
+      assert.equal(__test__.resolveCodexSessionFilePath({
+        sessionId: 'chat-key-1',
+        cliSessionId: threadId,
+        fallbackFilePath: fakePath,
+      }), realPath)
+    } finally {
+      __test__.setSessionsDirForTest(oldDir)
+    }
+  })
+}
+
 function run() {
   runDonePayloadDefaultReasonTest()
   runDonePayloadExplicitReasonTest()
   runDoneReasonResolutionTest()
+  runResolveSessionFilePathTest()
   console.log('codex agent done payload tests passed')
 }
 

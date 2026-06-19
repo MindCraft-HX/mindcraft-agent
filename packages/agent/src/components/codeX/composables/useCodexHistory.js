@@ -86,8 +86,8 @@ export function useCodexHistory({
           sandboxMode: c.sandboxMode || null,
           networkAccessEnabled: typeof c.networkAccessEnabled === 'boolean' ? c.networkAccessEnabled : null,
           webSearchMode: c.webSearchMode || null,
-          _thinkingStart: c._thinkingStart || null,
-          _awaitingDone: Boolean(c._awaitingDone),
+          _thinkingStart: c.filePath ? null : (c._thinkingStart || null),
+          _awaitingDone: c.filePath ? false : Boolean(c._awaitingDone),
           cliSessionId: c.cliSessionId, filePath: c.filePath,
           createdAt: c.createdAt ?? null, updatedAt: c.updatedAt ?? null, fileSize: c.fileSize ?? null,
           titleSource: c.titleSource || '',
@@ -116,7 +116,7 @@ export function useCodexHistory({
 
   function flushOnUnload() {
     if (historySaveTimer) { clearTimeout(historySaveTimer); historySaveTimer = null }
-    try { window.electronAPI?.codexSaveCodePanelStateSync?.(buildPanelState()) } catch (_) {}
+    try { window.electronAPI?.codexSaveCodePanelStateSync?.(buildPanelState({ skipStreaming: true })) } catch (_) {}
   }
 
   function normalizeMessages(messages) {

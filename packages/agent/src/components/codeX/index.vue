@@ -239,7 +239,12 @@ import { useCodexHistory } from './composables/useCodexHistory.js'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
 import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput, shouldRetryRejectedCodexInput } from './utils/queuedInputFlush.mjs'
-import { isCodexTurnLocked, shouldHydrateHistoryFromDisk, shouldSyncThinkingFromMetrics } from './utils/sessionLifecycle.mjs'
+import {
+  isCodexTurnLocked,
+  mergeScannedChatsPreservingRuntime,
+  shouldHydrateHistoryFromDisk,
+  shouldSyncThinkingFromMetrics,
+} from './utils/sessionLifecycle.mjs'
 import {
   isCodeXEditToolName,
   isCodeXReadToolName,
@@ -1480,7 +1485,10 @@ async function refreshProjectSessionsInBackground(project) {
       nextChats.push(chat)
     }
 
-    project.chats = nextChats.length ? sortChatsByRecency(nextChats) : project.chats
+    const mergedChats = mergeScannedChatsPreservingRuntime(project.chats, nextChats, {
+      activeChatId: activeChatId.value,
+    })
+    project.chats = mergedChats.length ? sortChatsByRecency(mergedChats) : project.chats
 
     const needReload = scanned.find(s => s._needReloadActiveChat)
     if (needReload) {
@@ -2184,13 +2192,15 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (queuedInputMessageId && tab._queuedInputMessageId === queuedInputMessageId) {
     tab._queuedInputMessageId = null
   }
-  tab.metrics = {
-    ...buildNewTurnMetrics(tab),
-    sessionId: tab.sessionId,
-    model: tab.metrics?.model || metricsData.value.model || '',
-    thinking: true,
+  if (tab.thinking) {
+    tab.metrics = {
+      ...buildNewTurnMetrics(tab),
+      sessionId: tab.sessionId,
+      model: tab.metrics?.model || metricsData.value.model || '',
+      thinking: true,
+    }
+    if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
   }
-  if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
 }
 
 async function openModelPicker() {
@@ -2405,13 +2415,19 @@ function onMetricsUpdate(data) {
   if (!data.sessionId) return
   const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
   if (!tab) return
-  tab.metrics = mergeCodexMetrics(tab.metrics || {}, data, { sessionId: data.sessionId })
+  const { thinking: metricsThinking, ...metricsPayload } = data
+  tab.metrics = mergeCodexMetrics(tab.metrics || {}, metricsPayload, { sessionId: data.sessionId })
   if (data.model) tab.model = data.model
-  if (typeof data.thinking === 'boolean') {
-    if (shouldSyncThinkingFromMetrics({ awaitingDone: tab._awaitingDone, nextThinking: data.thinking })) {
-      tab.thinking = data.thinking
+  if (typeof metricsThinking === 'boolean') {
+    if (shouldSyncThinkingFromMetrics({
+      currentThinking: tab.thinking,
+      awaitingDone: tab._awaitingDone,
+      nextThinking: metricsThinking,
+    })) {
+      tab.thinking = metricsThinking
     }
-    if (data.thinking) {
+    tab.metrics.thinking = Boolean(tab.thinking)
+    if (metricsThinking && tab.thinking) {
       tab._awaitingDone = true
       if (!tab._thinkingStart) tab._thinkingStart = Date.now() - (data.durationMs || 0)
     } else {

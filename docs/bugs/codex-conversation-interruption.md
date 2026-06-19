@@ -222,6 +222,50 @@ npm run build
 - 已确认并修掉一条主进程多 run 真中断链
 - 后续如果再复现，应该先用 `runId + cleanup + duplicate query` 这一组日志判断，而不是继续泛化怀疑”切 tab 导致断流”
 
+## 2026-06-19 补充：CodeX session registry 回归与运行态显示
+
+本轮修复的重点不是重新写入官方 `~/.codex`，而是继续收敛 MindCraft 自有 registry / panel state 与官方 transcript 的边界。
+
+### 为什么 CodeX 比 ClaudeCode 更容易出状态差异
+
+ClaudeCode 与 CodeX 共用同一套 MindCraft UI 架构，但底层事件和文件语义不同：
+
+1. ClaudeCode 的会话 JSONL 路径和 `cliSessionId` 映射更直接，done/metrics 的时序相对集中。
+2. CodeX 的真实 transcript 是日期 rollout 路径，例如 `~/.codex/sessions/YYYY/MM/DD/rollout-...-<threadId>.jsonl`，不能用 `~/.codex/sessions/<threadId>.jsonl` 这种短路径推导。
+3. CodeX 同时存在三条异步线：SDK stream 事件、metrics 轮询、后台 transcript scan。任意一条晚到或早到，都可能覆盖 `thinking/_awaitingDone/filePath`。
+4. CodeX 新版事件里 `task_complete` / `turn.completed` 是终止信号，但 `codex-agent-done` 仍承担 registry/filePath/通知收尾；前端必须能先用终止事件清 UI，再等 done 做正式收尾。
+
+因此当前策略是：官方 transcript 只作为消息内容权威；MindCraft registry/panel state 只保存 identity/title/runtime metadata；运行态不长期持久化。
+
+### 本轮已修复的问题
+
+1. **CodeX filePath 伪路径**：主进程不再用 `path.join(SESSIONS_DIR, threadId + '.jsonl')` 推导路径，而是按 `fallbackFilePath -> registry filePath -> 递归扫描 rollout 文件名` 解析真实 JSONL。
+2. **重复短回复被吞**：历史解析不再用全局 `role+text` 去重，只去掉相邻重复项，避免多轮都回复“收到。”时后续回复消失。
+3. **`task_complete` 后 UI 仍显示正在响应**：主进程将 terminal stream event 转发给前端；前端收到 `task_complete` / `turn.completed` 时只清 `thinking/_awaitingDone/currentAssistantId`，不触发完成通知，完成通知仍由 `codex-agent-done` 负责。
+4. **运行点消失但实际仍在跑**：后台 transcript scan 以前会用扫描结果替换 `project.chats`。如果新 CodeX 会话刚开始运行，尚未绑定 `cliSessionId/filePath`，它无法匹配 scan summary，可能被列表替换掉，左侧运行点消失但主进程仍在跑。现在 scan merge 会保留 active chat 和未绑定的运行中 chat。
+5. **成功返回覆盖结束状态**：`sendMessage()` 在 `await codexAgentQuery` 返回后不再无条件写 `metrics.thinking=true`，避免后到的 IPC success path 覆盖已经由 terminal/done 清掉的状态。
+
+### 回归风险控制
+
+- `task_complete` 只清 UI 状态，不调用 `onTaskDone()`，因此不会重复响铃、闪任务栏或重复置 `hasDoneNotification`。
+- scan merge 只额外保留两类对象：当前 active chat，或 `thinking/_awaitingDone` 且尚未绑定 `cliSessionId/filePath` 的运行中 chat；普通 inactive 草稿不会无限保留。
+- 运行态保存仍由 `useCodexHistory` 过滤：已有 `filePath` 的 bound session 不持久化 `_awaitingDone=true` / `_thinkingStart`，避免重启后卡在“正在响应”。
+
+### 验证
+
+```text
+node tests/codex-session-lifecycle.test.mjs
+node tests/task-done-history-persistence.test.mjs
+node tests/codex-agent-done-payload.test.cjs
+node tests/codex-agent-done-reason.test.mjs
+node tests/codex-git-metrics.test.cjs
+node --test packages/agent/electron/sessionRegistry.test.js
+node --check packages/agent/electron/codexAgent.js
+git diff --check
+```
+
+`git diff --check` 当前只输出既有 CRLF 提示，没有 whitespace error。
+
 ## 外部评审意见（2026-06-10，Opus 复核）
 
 以下是对当前修复后代码（`packages/agent/electron/codexAgent.js` + `useCodexAgentStream.js` + `codeX/index.vue`）的代码级复核。这里不是“全部已证实的结论”，而是“按置信度排序的进一步怀疑与建议”。其中有些点代码证据很强，有些点仍是待复现假设。

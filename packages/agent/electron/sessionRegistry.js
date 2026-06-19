@@ -711,6 +711,7 @@ function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, op
 function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
   const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
   if (!record) return scanSummary
+  const scanFilePath = normalizeString(scanSummary.filePath)
   return {
     ...scanSummary,
     chatKey: record.chatKey,
@@ -720,7 +721,7 @@ function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {
     name: record.title || scanSummary.name || scanSummary.title || '',
     providerSessionId: record.provider?.cliSessionId || scanSummary.providerSessionId || scanSummary.cliSessionId || scanSummary.id || '',
     cliSessionId: record.provider?.cliSessionId || scanSummary.cliSessionId || scanSummary.id || '',
-    filePath: record.provider?.filePath || scanSummary.filePath || '',
+    filePath: scanFilePath || record.provider?.filePath || '',
     model: record.runtime?.model || scanSummary.model || '',
     effort: record.runtime?.effort || scanSummary.effort || '',
     modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',

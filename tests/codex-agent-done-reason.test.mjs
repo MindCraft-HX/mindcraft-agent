@@ -80,3 +80,15 @@ test('aborted done does not mark completion notification', () => {
   assert.equal(tab.thinking, false)
   assert.equal(tab._awaitingDone, false)
 })
+
+test('terminal stream message clears thinking even if done event is delayed', () => {
+  const { ownerProject, tab, stream, getDoneCount } = createHarness()
+
+  stream.onAgentMessage({ sessionId: 'sess-1', msg: { type: 'task_complete', payload: { type: 'task_complete' } } })
+
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._awaitingDone, false)
+  assert.equal(tab.currentAssistantId, null)
+  assert.equal(ownerProject.hasDoneNotification, false)
+  assert.equal(getDoneCount(), 0)
+})

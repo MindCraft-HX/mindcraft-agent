@@ -92,6 +92,13 @@ async function testClaudeHistoryPersistence() {
 
 async function testCodexHistoryPersistence() {
   const projects = makeProjectsRef(true)
+  Object.assign(projects.value[0].chats[0], {
+    filePath: 'C:/Users/demo/.codex/sessions/2026/06/19/rollout-thread-1.jsonl',
+    messages: [{ id: 1, role: 'user', text: 'running prompt' }],
+    thinking: true,
+    _awaitingDone: true,
+    _thinkingStart: 12345,
+  })
   let savedPayload = null
   let restoredProjects = null
 
@@ -133,6 +140,9 @@ async function testCodexHistoryPersistence() {
 
   history.saveHistory({ immediate: true })
   assert.equal(savedPayload.projects[0].hasDoneNotification, true)
+  assert.equal(savedPayload.projects[0].chats[0]._awaitingDone, false)
+  assert.equal(savedPayload.projects[0].chats[0]._thinkingStart, null)
+  assert.deepEqual(savedPayload.projects[0].chats[0].messages, [])
 
   const loaded = await history.loadHistory()
   assert.equal(loaded, true)

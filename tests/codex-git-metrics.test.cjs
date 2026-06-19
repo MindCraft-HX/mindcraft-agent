@@ -249,6 +249,25 @@ function run() {
     })
   })
 
+  withTempDir((dir) => {
+    const filePath = path.join(dir, 'session-history-repeated-replies.jsonl')
+    fs.writeFileSync(filePath, [
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '收到请回复即可' }] } }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: '收到。' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '收到。' }] } }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '收到请回复即可' }] } }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: '收到。' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '收到。' }] } }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete' } }),
+      '',
+    ].join('\n'), 'utf8')
+
+    const history = __test__.readSessionFileRange(filePath, 0, 20)
+    const assistantReplies = history.messages.filter(msg => msg.role === 'assistant' && msg.text === '收到。')
+    assert.equal(assistantReplies.length, 2)
+  })
+
   console.log('codex git metrics tests passed')
 }
 

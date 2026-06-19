@@ -43,7 +43,7 @@ function sendMetrics(sender, payload) {
 
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
 const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
-const SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
+let SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
 
 function getCodexUploadsDir() {
   return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')
@@ -418,6 +418,43 @@ function walkFiles(dir, out = []) {
     }
   } catch (_) {}
   return out
+}
+
+function findCodexSessionFileByThreadId(threadId) {
+  const id = String(threadId || '').trim()
+  if (!id) return ''
+  const files = walkFiles(SESSIONS_DIR)
+    .filter(file => file.toLowerCase().endsWith('.jsonl') && path.basename(file).includes(id))
+    .filter(file => {
+      try { return fs.statSync(file).isFile() } catch (_) { return false }
+    })
+    .sort((a, b) => {
+      try { return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs } catch (_) { return 0 }
+    })
+  return files[0] || ''
+}
+
+function resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath } = {}) {
+  const fallback = String(fallbackFilePath || '').trim()
+  if (fallback && fs.existsSync(fallback)) return fallback
+
+  const threadId = String(cliSessionId || '').trim()
+  if (threadId) {
+    const registryRecord = findSessionRecordByProvider({ agent: 'codex', cliSessionId: threadId })
+    const registryPath = registryRecord?.provider?.filePath || ''
+    if (registryPath && fs.existsSync(registryPath)) return registryPath
+  }
+
+  if (sessionId) {
+    const mappedCliId = cliSessionIds.get(sessionId)
+    if (mappedCliId && mappedCliId !== threadId) {
+      const registryRecord = findSessionRecordByProvider({ agent: 'codex', cliSessionId: mappedCliId })
+      const registryPath = registryRecord?.provider?.filePath || ''
+      if (registryPath && fs.existsSync(registryPath)) return registryPath
+    }
+  }
+
+  return findCodexSessionFileByThreadId(threadId || cliSessionIds.get(sessionId) || sessionId)
 }
 
 function readFirstLine(filePath) {
@@ -1031,6 +1068,17 @@ function buildMessageDedupKey(role, text, content) {
   return `${safeRole}:${safeText}`
 }
 
+function pushHistoryMessage(messages, seenMessages, message) {
+  if (!message) return false
+  const key = buildMessageDedupKey(message.role, message.text, message.content)
+  const previous = messages[messages.length - 1]
+  const previousKey = previous ? buildMessageDedupKey(previous.role, previous.text, previous.content) : ''
+  if (previousKey === key || seenMessages.has(`${messages.length}:${key}`)) return false
+  seenMessages.add(`${messages.length}:${key}`)
+  messages.push(message)
+  return true
+}
+
 function pickFirstStringValue(...values) {
   for (const value of values) {
     if (typeof value === 'string' && value) return value
@@ -1181,10 +1229,8 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
           const role = row.payload.role
           if (role === 'user' || role === 'assistant' || role === 'system') {
             const text = buildMessageTextFromContent(row.payload.content)
-            const key = buildMessageDedupKey(role, text, row.payload.content)
-            if ((text || hasRenderableMessageContent(row.payload.content)) && !seenMessages.has(key)) {
-              seenMessages.add(key)
-              messages.push({ role, text, content: row.payload.content })
+            if (text || hasRenderableMessageContent(row.payload.content)) {
+              pushHistoryMessage(messages, seenMessages, { role, text, content: row.payload.content })
             }
           }
           return
@@ -1240,17 +1286,13 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
         if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
           const text = p.message.trim()
-          const key = buildMessageDedupKey('assistant', text, [{ type: 'output_text', text }])
-          if (!seenMessages.has(key)) {
-            seenMessages.add(key)
-            messages.push({ role: 'assistant', text, content: [{ type: 'output_text', text }] })
-          }
+          pushHistoryMessage(messages, seenMessages, { role: 'assistant', text, content: [{ type: 'output_text', text }] })
           return
         }
 
         // 以下类型只是元数据，跳过不警告
         if (p.type === 'task_complete' || p.type === 'task_started' || p.type === 'turn_context' ||
-            p.type === 'token_count' || p.type === 'user_message' || p.type === 'reasoning') {
+            p.type === 'token_count' || p.type === 'user_message' || p.type === 'reasoning' || p.type === 'agent_reasoning') {
           return
         }
 
@@ -1438,10 +1480,8 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         const role = row.payload.role
         if (role === 'user' || role === 'assistant' || role === 'system') {
           const text = buildMessageTextFromContent(row.payload.content)
-          const key = buildMessageDedupKey(role, text, row.payload.content)
-          if ((text || hasRenderableMessageContent(row.payload.content)) && !seenMessages.has(key)) {
-            seenMessages.add(key)
-            messages.push({ role, text, content: row.payload.content })
+          if (text || hasRenderableMessageContent(row.payload.content)) {
+            pushHistoryMessage(messages, seenMessages, { role, text, content: row.payload.content })
           }
         }
         return
@@ -1497,17 +1537,13 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
       if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
         const text = p.message.trim()
-        const key = buildMessageDedupKey('assistant', text, [{ type: 'output_text', text }])
-        if (!seenMessages.has(key)) {
-          seenMessages.add(key)
-          messages.push({ role: 'assistant', text, content: [{ type: 'output_text', text }] })
-        }
+        pushHistoryMessage(messages, seenMessages, { role: 'assistant', text, content: [{ type: 'output_text', text }] })
         return
       }
 
       // 以下类型只是元数据，跳过不警告
       if (p.type === 'task_complete' || p.type === 'task_started' || p.type === 'turn_context' ||
-          p.type === 'token_count' || p.type === 'user_message' || p.type === 'reasoning') {
+          p.type === 'token_count' || p.type === 'user_message' || p.type === 'reasoning' || p.type === 'agent_reasoning') {
         return
       }
 
@@ -1979,7 +2015,7 @@ function setupCodexSdkHandlers() {
             if (s.runId !== runId) { clearInterval(pollInterval); return }
             const cliId = cliSessionIds.get(sessionId)
             if (!cliId) return
-            const filePath = path.join(SESSIONS_DIR, cliId + '.jsonl')
+            const filePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: cliId })
             if (!fs.existsSync(filePath)) return
             const metrics = getCodexSessionMetricsByFile(filePath, model || '', s.cwd || '')
             if (metrics) {
@@ -2074,7 +2110,7 @@ function setupCodexSdkHandlers() {
             currentSession.streamClosed = true
             try { currentSession.resolveCompletion?.() } catch (_) {}
             const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-            const sfilePath = thread.id ? path.join(SESSIONS_DIR, thread.id + '.jsonl') : ''
+            const sfilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: thread.id })
             console.log(`[codex] triggerDone: sessionId=${sessionId} cliId=${thread?.id} filePath=${!!sfilePath}`)
             safeSend(sender, 'codex-agent-done', buildCodexAgentDonePayload({
               sessionId,
@@ -2143,6 +2179,10 @@ function setupCodexSdkHandlers() {
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
               const sender = session?.event?.sender || event.sender
+              safeSend(sender, 'codex-agent-message', {
+                sessionId,
+                msg: { type: ev.type, payload: ev.payload || ev },
+              })
               const parsedMetrics = getCodexSessionMetrics(sessionId, model || '', session?.cwd || '')
               const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
               sendMetrics(sender, {
@@ -2415,7 +2455,7 @@ function setupCodexSdkHandlers() {
 
           // 统一发送 done（避免 drain timer 被清除后丢失）
           if (isCurrentRunAtCleanup && needDone) {
-            const sfilePath = thread?.id ? path.join(SESSIONS_DIR, thread.id + '.jsonl') : ''
+            const sfilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: thread?.id })
             if (CODEX_DEBUG) console.log('[Codex] agent-done (finally) → filePath:', sfilePath || '(empty)')
             safeSend(event.sender, 'codex-agent-done', buildCodexAgentDonePayload({
               sessionId,
@@ -3804,6 +3844,7 @@ module.exports = {
     getCodexSessionMetricsByFile,
     getCodexSessionMetrics,
     readSessionFileRange,
+    resolveCodexSessionFilePath,
     resolveCodexDoneReasonFromError,
     isCodexSessionRunTerminal,
     canStartCodexSessionRun,
@@ -3817,5 +3858,6 @@ module.exports = {
     parseSimpleTomlContent,
     buildRuntimeConfigFromToml,
     selectCodexTomlProvider,
+    setSessionsDirForTest: (dir) => { SESSIONS_DIR = dir },
   },
 }

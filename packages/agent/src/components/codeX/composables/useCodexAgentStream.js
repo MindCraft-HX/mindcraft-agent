@@ -567,6 +567,19 @@ export function useCodexAgentStream({
     const isWorking = msg.type === 'assistant' || msg.type === 'item.started' || msg.type === 'item.updated'
     if (!tab.thinking && isWorking && tab._awaitingDone) tab.thinking = true
 
+    if (msg.type === 'turn.completed' || msg.type === 'task_complete') {
+      const lastThinking = [...tab.messages].reverse().find(
+        m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
+      )
+      if (lastThinking) lastThinking.status = 'done'
+      tab.thinking = false
+      tab._awaitingDone = false
+      tab.currentAssistantId = null
+      scrollBottom(tab.id)
+      saveHistory({ immediate: true })
+      return
+    }
+
     if (msg.type === 'assistant') {
       const content = msg.message?.content
       if (!Array.isArray(content)) return

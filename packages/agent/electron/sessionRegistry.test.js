@@ -16,6 +16,7 @@ const {
   setSessionTitle,
   setSessionInstruction,
   syncPanelStateSessions,
+  attachRegistrySessionToScanSummary,
   upsertSessionFromProviderScan,
   upsertRuntimeByProvider,
   normalizeSessionInstructionInput,
@@ -243,6 +244,37 @@ test('title changes from stale panel state refresh registry updatedAt', () => {
 
   const unchanged = resolveSessionByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
   assert.equal(unchanged.updatedAt, after.updatedAt)
+})
+
+test('provider scan real filePath replaces stale registry filePath in summary', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'User title',
+        titleSource: 'user',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  const summary = attachRegistrySessionToScanSummary('codex', {
+    id: 'thread-1',
+    name: 'Provider title',
+    filePath: 'C:/Users/demo/.codex/sessions/2026/06/19/rollout-thread-1.jsonl',
+    updatedAt: 300,
+  }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(summary.chatKey, 'chat-key-1')
+  assert.equal(summary.name, 'User title')
+  assert.equal(summary.filePath, 'C:/Users/demo/.codex/sessions/2026/06/19/rollout-thread-1.jsonl')
+
+  const record = resolveSessionByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/2026/06/19/rollout-thread-1.jsonl')
 })
 
 test('setSessionTitle can seed provider mapping before transcript scan', () => {

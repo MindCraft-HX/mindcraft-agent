@@ -4,6 +4,29 @@
 > 关联任务：T138
 > 方案文档：`docs/plan/2026-06-18-agent-session-identity-registry.md`
 
+## 0. 当前进度
+
+> 更新：2026-06-19
+
+本轮人工验收先暂停在基础功能阶段，后续会先做 CodeX runtime state machine 重构，再继续剩余验收。暂停原因不是身份 registry 主链路失败，而是 CodeX 在继续旧会话时暴露出运行态来源分散的问题：完成后曾被迟到 metrics 重新拉回“正在响应”。
+
+已完成：
+
+- `3.1 新建会话身份分离`：已核对 ClaudeCode / CodeX 的 `sessionId !== cliSessionId`，且 `sessionId` 为 MindCraft chatKey。
+- `3.4 继续旧会话不分裂`：CodeX 已复测通过；同一会话继续发送后正常结束，没有再出现“完成后又恢复正在响应”。
+
+待继续：
+
+- `3.2 自定义标题关闭 Tab 后保留`：ClaudeCode 已通过；CodeX 需在重构后再抽查一次。
+- `3.3 重命名不污染官方 transcript`：需抽查 CodeX JSONL 末尾不新增 `custom-title`。
+- `4.1 旧污染数据自动修复`：需核对 backup / repair-report / registry 去重。
+- `4.2 跨 Agent 不误修`：需核对 ClaudeCode 与 CodeX 同项目互不串。
+- `5.1/5.2 删除语义`：需验取消二级确认与确认永久删除。
+
+相关后续方案：
+
+- `docs/plan/2026-06-19-codex-runtime-state-machine.md`
+
 ## 1. 验收目标
 
 确认 ClaudeCode / CodeX 会话身份、标题、恢复和删除行为符合三层模型：
