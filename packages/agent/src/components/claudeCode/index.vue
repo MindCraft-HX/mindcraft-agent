@@ -2072,9 +2072,14 @@ if (!embedded) {
 }
 
 /** 追加消息到 messages */
+function touchChatUpdatedAt(tab) {
+  if (tab) tab.updatedAt = Date.now()
+}
+
 function pushTabMessage(tab, msg) {
   if (!tab) return
   tab.messages.push(msg)
+  touchChatUpdatedAt(tab)
   bumpScrollCount()
 }
 
@@ -2326,6 +2331,7 @@ async function selectDir(project, onAfterSelect) {
       if (onAfterSelect) {
         const msg = onAfterSelect(t('agent.workDirSet', { dir }))
         c.messages.push(msg)
+        touchChatUpdatedAt(c)
       }
       project.chats.push(c)
       switchChat(c.id)
@@ -3443,6 +3449,7 @@ onMounted(() => {
       expanded: true,
     })
     tab.messages.push(toolMsg)
+    touchChatUpdatedAt(tab)
     onNewMessage?.()
     planReviewToolMsg.value = toolMsg
     showPlanReviewDialog(data)

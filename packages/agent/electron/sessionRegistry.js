@@ -172,6 +172,24 @@ function chooseTitle(current = {}, incoming = {}) {
   }
 }
 
+function stableJson(value) {
+  if (value === undefined) return 'null'
+  if (!value || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(item => stableJson(item)).join(',')}]`
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`
+}
+
+function hasMeaningfulRecordChange(current = {}, next = {}) {
+  const fields = ['chatKey', 'agent', 'projectId', 'cwd', 'title', 'titleSource', 'description']
+  for (const field of fields) {
+    if (normalizeString(current[field]) !== normalizeString(next[field])) return true
+  }
+  for (const field of ['provider', 'runtime', 'instruction']) {
+    if (stableJson(current[field] || {}) !== stableJson(next[field] || {})) return true
+  }
+  return false
+}
+
 function normalizeRuntime(agent, chat = {}) {
   if (normalizeAgent(agent) === 'codex') {
     return {
@@ -391,7 +409,7 @@ function upsertSessionRecord(record, options = {}) {
   const titleState = chooseTitle(existing, effectiveRecord)
   const incomingInst = effectiveRecord.instruction || {}
   const hasRealInstruction = incomingInst.enabled || String(incomingInst.content || '').trim()
-  const next = {
+  const candidate = {
     ...existing,
     ...effectiveRecord,
     title: titleState.title,
@@ -408,7 +426,15 @@ function upsertSessionRecord(record, options = {}) {
       ? { ...(existing?.instruction || {}), ...incomingInst }
       : (existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] }),
     schemaVersion: SCHEMA_VERSION,
-    updatedAt: effectiveRecord.updatedAt || Date.now(),
+  }
+  const existingUpdatedAt = normalizeTimestamp(existing?.updatedAt)
+  const incomingUpdatedAt = normalizeTimestamp(effectiveRecord.updatedAt)
+  const contentChanged = hasMeaningfulRecordChange(existing, candidate)
+  const next = {
+    ...candidate,
+    updatedAt: contentChanged
+      ? Math.max(Date.now(), existingUpdatedAt + 1, incomingUpdatedAt)
+      : (Math.max(existingUpdatedAt, incomingUpdatedAt) || Date.now()),
   }
   writeJsonAtomic(filePath, next)
 

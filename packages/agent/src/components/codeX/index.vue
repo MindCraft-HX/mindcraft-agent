@@ -416,9 +416,14 @@ let chatCounter = 0
 let msgId = 0
 
 const nextMsgId = () => ++msgId
+function touchChatUpdatedAt(tab) {
+  if (tab) tab.updatedAt = Date.now()
+}
+
 function pushTabMessage(tab, msg) {
   if (!tab) return
   tab.messages.push(msg)
+  touchChatUpdatedAt(tab)
 }
 const nextProjectId = () => `proj-${++projectCounter}`
 const nextChatId = () => `chat-${++chatCounter}`
@@ -2066,6 +2071,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (!existingQueuedUserMsg) {
     trimMessages(tab, true)
     tab.messages.push(userMsg)
+    touchChatUpdatedAt(tab)
   }
   // 飞行锁 + 乐观 thinking：必须在 await 之前设置 thinking=true。
   // 后端 Promise 在 finally 中 resolve，晚于 codex-agent-done 事件发送。

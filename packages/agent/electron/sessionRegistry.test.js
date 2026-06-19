@@ -181,6 +181,70 @@ test('setSessionTitle writes registry title without changing provider mapping', 
   assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
 })
 
+test('title changes from stale panel state refresh registry updatedAt', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Original title',
+        _userRenamed: true,
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+        createdAt: 100,
+        updatedAt: 200,
+      }],
+    }],
+  }, { userDataDir })
+
+  const before = resolveSessionByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.ok(before.updatedAt >= 200)
+
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Renamed title',
+        titleSource: 'user',
+        _userRenamed: true,
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+        createdAt: 100,
+        updatedAt: 200,
+      }],
+    }],
+  }, { userDataDir })
+
+  const after = resolveSessionByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.equal(after.title, 'Renamed title')
+  assert.equal(after.titleSource, 'user')
+  assert.ok(after.updatedAt > before.updatedAt)
+
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Renamed title',
+        titleSource: 'user',
+        _userRenamed: true,
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+        createdAt: 100,
+        updatedAt: 200,
+      }],
+    }],
+  }, { userDataDir })
+
+  const unchanged = resolveSessionByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.equal(unchanged.updatedAt, after.updatedAt)
+})
+
 test('setSessionTitle can seed provider mapping before transcript scan', () => {
   const userDataDir = makeTempUserData()
 
