@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-06-19（CodeX runtime state machine 重构通过人工验收，ClaudeCode runtime/metrics 债务进入规划）
+> 最后更新：2026-06-19（CodeX runtime state machine 重构通过人工验收；ClaudeCode runtime/metrics state machine 已实现，待人工验收）
 >
 > ⚠️ **会话相关 bug 排查第一入口**：`docs/session-pitfalls.md`（跨 Agent 陷阱全景图）
 > ⚠️ **SDK 利用率审计**：当前 ~15%，详见下方「SDK 能力挖掘」章节
@@ -11,7 +11,7 @@
 
 | 编号 | 分类 | 说明 | 优先级 | 状态 |
 |------|------|------|:------:|------|
-| T141 | refactor | **ClaudeCode Runtime / Metrics State Machine 重构**：ClaudeCode 仍有运行态和 metrics 时机债务，`thinking` 由 send/stream/done/abort/metrics/history 多处写入，metrics 可能影响 UI live timer，运行态持久化和 scan 恢复语义分散。参照 CodeX runtime state machine 的成功路径，先收敛 ClaudeCode renderer 运行态写入口，再整理 metrics 为只读观测数据，最后补人工验收。详见 `docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md`。 | P0 | 📝 规划中 |
+| T141 | refactor | **ClaudeCode Runtime / Metrics State Machine 重构**：已完成首轮实现，`thinking/_thinkingStart/currentAssistantId` 生命周期写入口收敛到 `claudeRuntimeState.mjs`，send/stream/done/abort/metrics/history 保存链路已接入；metrics 保留为展示数据，不能复活已完成/中断/idle 的 running；history 保存会剥离 runtime 字段，避免重启后假运行。本轮不改 Claude pending adoption、Session Registry schema 或运行中再次发送的 SDK interrupt 语义。详见 `docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md`，人工验收见 `docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md`。 | P0 | 🔄 已实现，待人工验收 |
 | T140 | ux/refactor | **CodeX queued input 可视化与多条排队语义**：当前 running 中再次发送已能排队接上，但 pending 输入不会立即显示用户 bubble，连续发送多条目前语义不够明确。后续应增加 pending queue UI（在输入区/消息底部显示“待发送”列表，而不是提前插入历史消息流），并明确多条输入策略：当前 turn 结束后合并为一条发送，或保留有序队列逐条发送。背景必须写清楚，避免把未执行输入插到 50 条历史消息上方造成用户困惑，也避免 queue flush 覆盖用户草稿。 | P1 | 📝 待方案 |
 | T139 | perf | **界面卡顿性能优化**：第一轮已完成 6 个低风险前端热点 + `codex-run-git-diff` 主进程异步化；第二轮已完成 ClaudeCode/CodeX `projectTabs` 派生状态保守优化、Claude `read-session-file-range` 尾部按页读取、CodeX `codex-read-session-file-range` page>0 尾部按页读取。长历史 session 只读取需要的 60 条附近数据，避免为渲染 60 条全文件扫描。`npm run build` 通过。详见 `docs/perf-audit-report.md`，人工验收见 `docs/qa/2026-06-18-performance-acceptance.md`。 | P0 | 🔄 第二轮完成，待人工回归 |
 | T138 | bug/refactor | **Agent Session Identity 与 MindCraft Registry 去污染重构**：ClaudeCode / CodeX 均存在 `chatKey` 与官方 `cliSessionId/threadId` 混用，关闭项目 Tab 后从官方 transcript 重建会丢失 MindCraft 自有状态，且 registry 已出现同一 provider session 对应多个 record。已建立严格三层身份：MindCraft `chatKey`、官方 `providerSessionId`、官方 transcript `filePath`；扫描官方 JSONL 通过 registry 恢复 `chatKey/title/instruction/runtime`；title 新写入只进 MindCraft registry；自动修复现有 registry/panel state 重复映射，先备份、不写不删 `~/.claude` / `~/.codex`；永久删除底层会话增加二级确认。详见 `docs/plan/2026-06-18-agent-session-identity-registry.md`。 | P0 | ✅ 主体实现完成，待人工回归 |

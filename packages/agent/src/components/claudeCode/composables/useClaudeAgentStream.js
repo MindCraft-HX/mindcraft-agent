@@ -10,6 +10,10 @@ import {
   registerTaskStarted,
   registerTaskUpdated,
 } from './useClaudeTaskState.mjs'
+import {
+  markClaudeDone,
+  markClaudeStreamActivity,
+} from '../utils/claudeRuntimeState.mjs'
 
 /** 追加消息到 messages */
 function pushMessage(tab, onNewMessage, msg) {
@@ -131,9 +135,7 @@ export function useClaudeAgentStream({
     }
 
     const isWorkingMsg = msg.type === 'assistant' || msg.type === 'user' || msg.type === 'tool_result'
-    if (!tab.thinking && isWorkingMsg) {
-      tab.thinking = true
-    }
+    if (isWorkingMsg) markClaudeStreamActivity(tab, msg)
 
     if (msg.type === 'assistant') {
       const content = msg.message?.content
@@ -475,7 +477,7 @@ export function useClaudeAgentStream({
   function onAgentPermission({ sessionId: chatKey, msg }) {
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
-    if (!tab.thinking) tab.thinking = true
+    markClaudeStreamActivity(tab, msg)
     const toolName = msg.tool_name || msg.tool || 'permission'
     const requestId = msg.id || msg.request_id || msg.requestId || msg._requestId || null
     const input = msg.input || {}
@@ -502,14 +504,8 @@ export function useClaudeAgentStream({
   function onAgentDone({ sessionId: chatKey, cliSessionId, filePath, reason = 'completed' }) {
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
-    if (cliSessionId) {
-      tab.cliSessionId = cliSessionId
-      window.electronAPI.claudeRegisterCliSessions?.({ [chatKey]: cliSessionId })
-    }
-    if (filePath) {
-      tab.filePath = filePath
-      console.log('[ClaudeStream] onAgentDone → filePath:', filePath)
-    }
+    if (cliSessionId) window.electronAPI.claudeRegisterCliSessions?.({ [chatKey]: cliSessionId })
+    if (filePath) console.log('[ClaudeStream] onAgentDone → filePath:', filePath)
     if (tab._awaitingCompactResult) {
       tab._awaitingCompactResult = false
       tab._pendingCompactSummary = ''
@@ -523,7 +519,7 @@ export function useClaudeAgentStream({
         break
       }
     }
-    tab.thinking = false
+    markClaudeDone(tab, { cliSessionId, filePath, reason })
     if (reason !== 'completed') {
       markOpenToolsInterrupted(tab, reason)
       tab._sessionIntegrity = {
@@ -551,7 +547,6 @@ export function useClaudeAgentStream({
         }
       }
     }
-    tab.currentAssistantId = null
     tab._taskToolUseIds = new Set()
     // 对话结束，截断旧消息
     trimMessages?.(tab)
@@ -563,7 +558,7 @@ export function useClaudeAgentStream({
   function onAgentAskQuestion({ sessionId: chatKey, requestId, questions }) {
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
-    if (!tab.thinking) tab.thinking = true
+    markClaudeStreamActivity(tab, { type: 'ask_question' })
     pushMessage(tab, onNewMessage, createToolMessage({
       toolName: 'AskUserQuestion',
       status: 'pending',

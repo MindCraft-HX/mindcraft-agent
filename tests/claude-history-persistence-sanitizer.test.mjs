@@ -33,6 +33,62 @@ test('claude history payload falls back to a valid active project and chat', () 
   assert.equal(payload.activeChatId, 'chat-1')
 })
 
+test('claude history save strips runtime state from persisted chats', () => {
+  let savedPayload = null
+  const projects = {
+    value: [{
+      id: 'proj-1',
+      name: 'Project',
+      cwd: 'D:/repo',
+      cwdLocked: true,
+      chats: [{
+        id: 'chat-1',
+        name: 'Chat',
+        sessionId: 'sid-1',
+        cliSessionId: 'cli-1',
+        filePath: 'C:/Users/me/.claude/projects/repo/cli-1.jsonl',
+        messages: [{ id: 1, role: 'user', text: 'hello' }],
+        thinking: true,
+        _thinkingStart: 12345,
+        currentAssistantId: 'assistant-1',
+        _claudeRuntimeState: 'streaming',
+        metrics: { thinking: true, model: 'claude-sonnet' },
+      }],
+    }],
+  }
+
+  global.window = {
+    electronAPI: {
+      claudeSaveCodePanelState: async (payload) => { savedPayload = payload },
+    },
+  }
+
+  const history = useClaudeHistory({
+    projects,
+    setProjects: () => {},
+    getProjectCounter: () => 0,
+    setProjectCounter: () => {},
+    getChatCounter: () => 0,
+    setChatCounter: () => {},
+    getMsgId: () => 0,
+    setMsgId: () => {},
+    makeRestoredChat: (chat, messages) => ({ ...chat, messages }),
+    getActiveProjectId: () => 'proj-1',
+    setActiveProjectId: () => {},
+    getActiveChatId: () => 'chat-1',
+    setActiveChatId: () => {},
+  })
+
+  history.saveHistory({ immediate: true })
+
+  const chat = savedPayload.projects[0].chats[0]
+  assert.equal(chat.thinking, undefined)
+  assert.equal(chat._thinkingStart, undefined)
+  assert.equal(chat.currentAssistantId, undefined)
+  assert.equal(Object.hasOwn(chat, '_claudeRuntimeState'), false)
+  assert.deepEqual(chat.messages, [])
+})
+
 test('claude history payload removes duplicate chats bound to the same jsonl', () => {
   const payload = buildClaudePanelStatePayload({
     lastCwd: 'D:/repo',

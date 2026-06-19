@@ -2,7 +2,7 @@
 
 > 日期：2026-06-19
 > 关联：T141、`docs/session-pitfalls.md`、`docs/bugs/claude-session-duplicate-split.md`
-> 状态：规划稿，待实施
+> 状态：已实现，待人工验收
 
 ## 1. 背景
 
@@ -192,7 +192,20 @@ tests/task-done-history-persistence.test.mjs
 - `onAgentDone` 不是 crash 场景保证事件，history restore 必须仍能从磁盘恢复。
 - 不要在同一轮改多窗口/provider reset 主进程逻辑，避免扩大回归面。
 
-## 8. 推荐开发顺序
+## 8. 实施记录
+
+2026-06-19 已完成首轮实现，范围刻意控制在 ClaudeCode renderer 运行态和 metrics 权威收敛：
+
+- 新增 `claudeRuntimeState.mjs`，集中处理 `starting/streaming/done/failed/abort_requested/aborted/idle`。
+- `sendMessage()`、stream activity、done、abort、metrics update、history save 已接入 runtime helper。
+- metrics 仍更新展示数据，但不能单独复活 `thinking` 或 live timer。
+- done/abort/idle 终态保留在内存 `_claudeRuntimeState` 中，用来挡住迟到 stream/metrics；保存历史时剥离该运行态字段。
+- 保留 ClaudeCode 现有“运行中再次发送走 SDK streamInput/interrupt”的行为，本轮不改成 CodeX 式队列。
+- 本轮不改 pending adoption、Session Registry schema、主进程 `agentSessions/cliSessionIds` ownership。
+
+人工验收见：`docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md`。
+
+## 9. 推荐开发顺序
 
 1. Phase 1：加 `claudeRuntimeState.mjs` + 单元测试。
 2. Phase 2a：替换 `sendMessage/onAgentDone/onAgentMessage` 三个核心入口。

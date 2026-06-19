@@ -345,6 +345,15 @@ import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
 import { analyzeClaudeSessionIntegrity, markDanglingClaudeToolsInterrupted } from './utils/sessionIntegrity.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
 import { sanitizeClaudeProjectsForPersistence } from './utils/historyPersistenceSanitizer.mjs'
+import {
+  applyClaudeMetrics,
+  isClaudeTurnLocked,
+  markClaudeAborted,
+  markClaudeAbortRequested,
+  markClaudeIdle,
+  markClaudeStreamActivity,
+  markClaudeTurnStarting,
+} from './utils/claudeRuntimeState.mjs'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import {
   adoptScannedClaudeSession,
@@ -528,30 +537,42 @@ const metricsData = ref({
 const metricsLiveDurationMs = ref(0)
 let metricsLiveTimer = null
 
+function stopMetricsLiveTimer() {
+  if (metricsLiveTimer) {
+    clearInterval(metricsLiveTimer)
+    metricsLiveTimer = null
+  }
+  metricsLiveDurationMs.value = 0
+}
+
+function syncMetricsTimerForClaudeTab(tab, durationMs = 0) {
+  if (!tab?.thinking) {
+    stopMetricsLiveTimer()
+    return
+  }
+  if (!tab._thinkingStart) {
+    markClaudeStreamActivity(tab, { type: 'metrics_timer' }, Date.now() - (durationMs || 0))
+  }
+  const start = tab._thinkingStart || Date.now()
+  if (metricsLiveTimer) clearInterval(metricsLiveTimer)
+  metricsLiveDurationMs.value = Date.now() - start
+  metricsLiveTimer = setInterval(() => {
+    metricsLiveDurationMs.value = Date.now() - start
+  }, 1000)
+}
+
 function onMetricsUpdate(data) {
   if (!data) return
   // 只更新当前活跃 tab 的 metrics
   const tab = activeTab.value
   if (tab && data.sessionId && data.sessionId !== tab.sessionId) return
   Object.assign(metricsData.value, data)
-  // 如果 thinking，启动实时计时
-  if (data.thinking && !metricsLiveTimer) {
-    const start = Date.now() - (data.durationMs || 0)
-    if (tab) tab._thinkingStart = start
-    metricsLiveTimer = setInterval(() => {
-      metricsLiveDurationMs.value = Date.now() - start
-    }, 1000)
-  } else if (!data.thinking && metricsLiveTimer) {
-    clearInterval(metricsLiveTimer)
-    metricsLiveTimer = null
-    metricsLiveDurationMs.value = 0
-    if (tab) tab._thinkingStart = null
-  }
+  if (tab && typeof data.thinking === 'boolean') applyClaudeMetrics(tab, data)
+  syncMetricsTimerForClaudeTab(tab, data.durationMs || 0)
 }
 
 function resetMetrics() {
-  if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
-  metricsLiveDurationMs.value = 0
+  stopMetricsLiveTimer()
   const keepModel = metricsData.value.model
   Object.assign(metricsData.value, {
     model: keepModel, costUsd: 0, inputTokens: 0, outputTokens: 0,
@@ -601,8 +622,7 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
 }
 
 async function refreshMetricsForChat(chat) {
-  if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
-  metricsLiveDurationMs.value = 0
+  stopMetricsLiveTimer()
   if (!chat?.cliSessionId) { resetMetrics(); return }
   try {
     const result = await window.electronAPI.claudeAgentQueryMetrics?.({
@@ -614,13 +634,7 @@ async function refreshMetricsForChat(chat) {
       result.thinking = Boolean(chat.thinking)
       resetMetrics()
       Object.assign(metricsData.value, result)
-      if (chat.thinking && chat._thinkingStart) {
-        metricsLiveDurationMs.value = Date.now() - chat._thinkingStart
-        const start = chat._thinkingStart
-        metricsLiveTimer = setInterval(() => {
-          metricsLiveDurationMs.value = Date.now() - start
-        }, 1000)
-      }
+      syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
     } else resetMetrics()
   } catch (_) { resetMetrics() }
 }
@@ -1737,7 +1751,7 @@ function resetTabSession(tab) {
   if (!tab) return
   tab.sessionId = `session-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   tab.cliSessionId = null
-  tab.currentAssistantId = null
+  markClaudeIdle(tab)
   tab._pendingCompactSummary = ''
   tab._awaitingCompactResult = false
   tab.taskState = createEmptyTaskState()
@@ -2155,7 +2169,7 @@ async function ensureChatMessagesLoaded(chat) {
     chat._sessionIntegrity = integrity
     chat._hasDanglingToolRecovery = Boolean(integrity.hasDanglingToolUse)
     if (integrity.hasDanglingToolUse) {
-      chat.thinking = false
+      markClaudeIdle(chat)
       chat._pendingSessionBinding = false
     }
     chat._messagesLoaded = true
@@ -2627,8 +2641,7 @@ function handleProviderActivated() {
     if (!p?.chats) continue
     for (const chat of p.chats) {
       // 清 currentAssistantId，避免 abort 后残存的流式消息追加到旧气泡
-      chat.currentAssistantId = null
-      chat.thinking = false
+      markClaudeIdle(chat)
       const chatKey = getClaudeChatKey(chat)
       const cliSessionId = getClaudeCliSessionId(chat)
       if (chatKey && cliSessionId) {
@@ -2655,11 +2668,10 @@ function abortSession() {
   const tab = activeTab.value
   if (!tab) return
   window.electronAPI.claudeAgentAbort?.(tab.sessionId)
-  tab.thinking = false
-  tab.currentAssistantId = null
+  markClaudeAbortRequested(tab)
   metricsData.value.thinking = false
-  if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
-  metricsLiveDurationMs.value = 0
+  stopMetricsLiveTimer()
+  markClaudeAborted(tab)
   pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.aborted') })
   trimMessages(tab, true)
   scrollBottom(tab.id)
@@ -2689,7 +2701,7 @@ async function sendMessage() {
 
   // 正在回复中：SDK 原生 streamInput 立即中断（CLI 终端行为）
   // 不需要排队等 done——SDK 自动打断当前生成，处理新消息后继续流式输出
-  if (tab.thinking) {
+  if (isClaudeTurnLocked(tab)) {
     const imgs = pendingImages.value.filter(i => i.isImage).map(({ dataUrl, mediaType }) => ({
       dataUrl,
       mediaType: mediaType || 'image/png',
@@ -3005,7 +3017,7 @@ async function sendMessage() {
     tab.name = text ? text.slice(0, 24) + (text.length > 24 ? '…' : '') : files.map(f => f.name).join(', ')
   }
   scrollBottom(tab.id)
-  tab.thinking = true
+  markClaudeTurnStarting(tab)
   // 关键：用户消息入列后立刻落盘，避免”刚聊几句就关掉/重开”导致只有新对话
   saveHistory({ immediate: true })
 
@@ -3035,7 +3047,7 @@ async function sendMessage() {
     const payload = safeIpcPayload(rawPayload, 'claudeAgentQuery')
     await window.electronAPI.claudeAgentQuery(payload)
   } catch (e) {
-    tab.thinking = false
+    markClaudeIdle(tab)
     pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.sendFailed', { message: e.message }) })
     scrollBottom(tab.id)
   }
@@ -3433,7 +3445,7 @@ onMounted(() => {
     playAskSound()
     const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
     if (!tab) return
-    tab.thinking = true
+    markClaudeStreamActivity(tab, data)
     const toolMsg = createToolMessage({
       toolName: data.toolName || 'exitplanmode',
       status: 'pending',

@@ -1,5 +1,6 @@
 import { buildClaudePanelStatePayload } from '../utils/historyPersistenceSanitizer.mjs'
 import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
+import { buildPersistableClaudeChat } from '../utils/claudeRuntimeState.mjs'
 
 export function useClaudeHistory({
   projects,
@@ -73,24 +74,25 @@ export function useClaudeHistory({
         chats: p.chats || [],
       })),
       mapChat: c => {
+        const persistable = buildPersistableClaudeChat(c)
         const isStreaming = streamingIds.has(c.sessionId)
         return {
-          id: c.id,
-          name: c.name,
-          sessionId: c.sessionId,
-          runMode: c.runMode,
-          model: c.model || null,
-          effort: c.effort || null,
-          messages: isStreaming ? [] : c.filePath ? [] : (c.messages || []),
-          cliSessionId: c.cliSessionId,
-          filePath: c.filePath,
-          createdAt: c.createdAt ?? null,
-          updatedAt: c.updatedAt ?? null,
-          fileSize: c.fileSize ?? null,
-          titleSource: c.titleSource || '',
-          _pendingSessionBinding: Boolean(c._pendingSessionBinding),
-          _userRenamed: Boolean(c._userRenamed),
-          taskState: c.taskState || null,
+          id: persistable.id,
+          name: persistable.name,
+          sessionId: persistable.sessionId,
+          runMode: persistable.runMode,
+          model: persistable.model || null,
+          effort: persistable.effort || null,
+          messages: isStreaming ? [] : persistable.filePath ? [] : (persistable.messages || []),
+          cliSessionId: persistable.cliSessionId,
+          filePath: persistable.filePath,
+          createdAt: persistable.createdAt ?? null,
+          updatedAt: persistable.updatedAt ?? null,
+          fileSize: persistable.fileSize ?? null,
+          titleSource: persistable.titleSource || '',
+          _pendingSessionBinding: Boolean(persistable._pendingSessionBinding),
+          _userRenamed: Boolean(persistable._userRenamed),
+          taskState: persistable.taskState || null,
         }
       },
     })
