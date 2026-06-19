@@ -1680,7 +1680,8 @@ function listSessionsByCwd(targetCwd) {
     const summary = extractSessionSummary(file)
     if (!summary) continue
     if (normalizeFsPath(summary.cwd) === normalizedTarget) {
-      sessions.push(attachRegistrySessionToScanSummary('codex', summary, { cwd: targetCwd }))
+      const attached = attachRegistrySessionToScanSummary('codex', summary, { cwd: targetCwd })
+      if (attached) sessions.push(attached)
     }
   }
 

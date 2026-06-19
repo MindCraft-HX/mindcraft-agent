@@ -8,20 +8,17 @@
 
 > 更新：2026-06-19
 
-本轮人工验收先暂停在基础功能阶段，后续会先做 CodeX runtime state machine 重构，再继续剩余验收。暂停原因不是身份 registry 主链路失败，而是 CodeX 在继续旧会话时暴露出运行态来源分散的问题：完成后曾被迟到 metrics 重新拉回“正在响应”。
+本轮人工验收已完成。中途先暂停做了 CodeX runtime state machine 重构；重构后继续完成剩余验收。
 
 已完成：
 
 - `3.1 新建会话身份分离`：已核对 ClaudeCode / CodeX 的 `sessionId !== cliSessionId`，且 `sessionId` 为 MindCraft chatKey。
+- `3.2 自定义标题关闭 Tab 后保留`：CodeX 重命名为 `QA Codex Custom Title After Refactor` 后，多次关闭重开仍保留。
+- `3.3 重命名不污染官方 transcript`：CodeX registry 中 `titleSource=user`，官方 JSONL 没有新增 `custom-title` 或标题文本。
 - `3.4 继续旧会话不分裂`：CodeX 已复测通过；同一会话继续发送后正常结束，没有再出现“完成后又恢复正在响应”。
-
-待继续：
-
-- `3.2 自定义标题关闭 Tab 后保留`：ClaudeCode 已通过；CodeX 需在重构后再抽查一次。
-- `3.3 重命名不污染官方 transcript`：需抽查 CodeX JSONL 末尾不新增 `custom-title`。
-- `4.1 旧污染数据自动修复`：需核对 backup / repair-report / registry 去重。
-- `4.2 跨 Agent 不误修`：需核对 ClaudeCode 与 CodeX 同项目互不串。
-- `5.1/5.2 删除语义`：需验取消二级确认与确认永久删除。
+- `4.1 旧污染数据自动修复`：backup / repair-report 存在；panel state 污染为 0；registry provider 重复为 0。
+- `4.2 跨 Agent 不误修`：ClaudeCode / CodeX 同项目 record 分 agent 存在，跨 agent id 碰撞为 0。
+- `5 删除语义`：取消删除后 panel state、registry、官方 JSONL 均保留；确认永久删除后 panel state、registry、provider index、官方 JSONL 均删除。
 
 相关后续方案：
 
@@ -44,7 +41,7 @@
 - 自动修复只改 `{userData}`，不写不删 `~/.claude` / `~/.codex` transcript。
 - 重命名只写 MindCraft registry，不再向官方 JSONL 追加 title。
 - 继续旧会话会 resume 原 transcript，不新建重复 JSONL。
-- 删除底层会话有二级确认。
+- 删除底层会话使用单次危险确认，文案明确会永久删除官方 transcript。
 
 ## 2. 准备
 
@@ -196,14 +193,13 @@ ClaudeCode 验证：
 
 ## 5. 删除语义验收
 
-### 5.1 取消二级确认
+### 5.1 取消删除
 
 步骤：
 
 1. 选择一个已有 `filePath` 的历史会话。
 2. 点击删除。
-3. 第一次确认选择确认。
-4. 第二次“永久删除底层官方会话历史”确认选择取消。
+3. 在“永久删除会话及底层官方历史”确认弹窗中选择取消。
 
 通过标准：
 
@@ -216,7 +212,7 @@ ClaudeCode 验证：
 步骤：
 
 1. 重复删除操作。
-2. 第二次确认选择删除。
+2. 在“永久删除会话及底层官方历史”确认弹窗中选择删除。
 
 通过标准：
 
@@ -226,7 +222,7 @@ ClaudeCode 验证：
 
 失败判定：
 
-- 没有二级确认就删除了官方 transcript。
+- 未确认就删除了官方 transcript。
 - 删除后刷新又出现同一会话。
 
 ## 6. 重点文件检查

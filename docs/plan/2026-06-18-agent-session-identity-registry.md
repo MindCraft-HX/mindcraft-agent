@@ -1,7 +1,7 @@
 # Agent Session Identity 与 MindCraft Registry 重构
 
 > 创建：2026-06-18
-> 状态：主体实现完成，待人工回归
+> 状态：已完成，人工验收通过
 > 关联：T134 / T138
 > 原则：官方 transcript/config 不搬；MindCraft 产品状态只写 `userData`；扫描官方数据只建立底层映射，不生成产品状态。
 
@@ -210,7 +210,7 @@ MindCraft 产品状态包括：
 
 UI 建议：
 
-- 删除按钮保留为“永久删除”时，必须二级确认，文案明确会删除底层 Claude/Codex 会话历史。
+- 删除按钮保留为“永久删除”时，使用单次危险确认，文案明确会删除底层 Claude/Codex 会话历史且不可恢复。
 - 后续可新增“仅从 MindCraft 移除”。
 
 ## 8. 自动修复策略
@@ -298,7 +298,7 @@ UI 建议：
 
 - 实现保守自动修复。
 - 增加诊断输出：合并了哪些 provider、保留了哪个 chatKey、丢弃了哪些重复 record。
-- 删除会话改二级确认，明确“永久删除底层官方会话历史”。
+- 删除会话改为单次危险确认，明确“永久删除底层官方会话历史”。
 
 ## 10. 验收标准
 
@@ -307,7 +307,7 @@ UI 建议：
 - 同一 provider transcript 在 registry 中只有一个 session record。
 - 用户标题不会被后台扫描覆盖。
 - session instruction / runtime 配置不会因 panel state 保存而丢失。
-- 删除 session 有二级确认，并且删除行为符合文案。
+- 删除 session 有单次危险确认，并且删除行为符合文案。
 - 代码中不再新增 MindCraft 自有数据写入 `~/.claude` / `~/.codex` 官方 transcript 附近。
 
 ## 11. 文件级改动计划
@@ -403,7 +403,7 @@ UI 建议：
 
 改动要求：
 
-- 现有“删除 session”如果仍永久删除官方 transcript，必须二级确认。
+- 现有“删除 session”如果仍永久删除官方 transcript，必须使用单次危险确认。
 - 文案明确：会删除底层 Claude/Codex 官方会话历史，无法仅靠 MindCraft 恢复。
 - 后续可加“仅从 MindCraft 移除”，但本阶段不是必须。
 
@@ -434,7 +434,7 @@ ClaudeCode：
 1. 新建会话，发送一条消息，确认 panel state 里 `chat.sessionId !== chat.cliSessionId`。
 2. 重命名，关闭项目 Tab，重新打开目录，标题保留。
 3. 继续发送消息，确认 resume 原 transcript，不创建新 JSONL。
-4. 删除会话，二级确认后官方 JSONL 被删除，registry record 被清理。
+4. 删除会话，确认永久删除后官方 JSONL 被删除，registry record 被清理。
 
 CodeX：
 
@@ -517,7 +517,7 @@ CodeX：
 - 修复报告可追溯。
 - 不触碰官方 transcript。
 
-### Stop 5：删除二级确认
+### Stop 5：删除危险确认
 
 可验证：
 
@@ -541,5 +541,5 @@ CodeX：
 - panel state 保存/恢复已携带 `titleSource`，用户标题以 `titleSource: "user"` 保护。
 - 自动修复已接入 panel state 加载：执行前备份 `{userData}/session-registry`、`claude-panel-state.json`、`codex-panel-state.json`，只修 MindCraft 自有数据，不写不删官方 transcript。
 - 修复覆盖两类污染：重复 provider record 合并；`chatKey == providerSessionId` 或 panel state 仍存 provider id 时改回 canonical MindCraft `chatKey`。
-- 永久删除底层会话已增加二级确认，文案明确会删除 Claude/Codex 官方 JSONL transcript。
+- 永久删除底层会话已改为单次危险确认，文案明确会删除 Claude/Codex 官方 JSONL transcript。
 - 验证：`node --test packages/agent/electron/sessionRegistry.test.js tests/codex-session-summary.test.cjs tests/session-title-utils.test.cjs tests/claude-session-identity.test.mjs tests/claude-history-restore-import.test.cjs tests/claude-history-selection.test.mjs tests/claude-session-refresh-guard.test.mjs tests/codex-session-routing.test.mjs tests/codex-session-lifecycle.test.mjs` 通过；`node --check` 通过。

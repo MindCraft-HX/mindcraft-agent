@@ -9,6 +9,7 @@ const {
   findSessionRecordByProvider,
   getSessionInstruction,
   getSessionRecordPath,
+  hideSessionFromProviderScans,
   listSessionRecords,
   makeProviderKeys,
   repairSessionRegistry,
@@ -275,6 +276,32 @@ test('provider scan real filePath replaces stale registry filePath in summary', 
 
   const record = resolveSessionByProvider({ agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
   assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/2026/06/19/rollout-thread-1.jsonl')
+})
+
+test('hidden provider sessions are skipped by provider scans', () => {
+  const userDataDir = makeTempUserData()
+  const hidden = hideSessionFromProviderScans({
+    agent: 'claude',
+    chatKey: 'chat-key-cleared',
+    cliSessionId: 'cli-cleared',
+    filePath: 'C:/Users/demo/.claude/projects/repo/cli-cleared.jsonl',
+    reason: 'cleared',
+  }, { userDataDir })
+
+  assert.equal(hidden.ok, true)
+  assert.equal(hidden.record.metadata.hiddenFromScans, true)
+
+  const summary = attachRegistrySessionToScanSummary('claude', {
+    id: 'cli-cleared',
+    cliSessionId: 'cli-cleared',
+    filePath: 'C:/Users/demo/.claude/projects/repo/cli-cleared.jsonl',
+    title: 'Old cleared prompt',
+  }, { cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(summary, null)
+  const resolved = resolveSessionByProvider({ agent: 'claude', cliSessionId: 'cli-cleared' }, { userDataDir })
+  assert.equal(resolved.chatKey, 'chat-key-cleared')
+  assert.equal(resolved.metadata.hiddenFromScans, true)
 })
 
 test('setSessionTitle can seed provider mapping before transcript scan', () => {

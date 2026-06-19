@@ -2181,16 +2181,14 @@ async function ensureChatMessagesLoaded(chat) {
 async function requestDeleteChat(chat) {
   const p = activeProject.value
   if (!p || !chat) return
-  const ok = await confirmDialogRef.value?.open({ message: t('agent.confirmDeleteChat') })
+  const ok = await confirmDialogRef.value?.open(chat.filePath
+    ? {
+        message: '此操作会永久删除该 Claude 会话及底层官方历史（JSONL transcript），删除后无法恢复。是否永久删除？',
+        okText: t('common.delete'),
+        cancelText: t('common.cancel'),
+      }
+    : { message: t('agent.confirmDeleteChat') })
   if (!ok) return
-  if (chat.filePath) {
-    const confirmedPermanentDelete = await confirmDialogRef.value?.open({
-      message: '此操作会永久删除底层 Claude 官方会话历史（JSONL transcript）。删除后 MindCraft 不能仅靠自己的配置恢复该对话内容。是否继续？',
-      okText: t('common.delete'),
-      cancelText: t('common.cancel'),
-    })
-    if (!confirmedPermanentDelete) return
-  }
   window.electronAPI.claudeAgentAbort?.(chat.sessionId)
   // 删除 SDK 持久化的 .jsonl 文件
   if (chat.filePath) {
@@ -2766,6 +2764,17 @@ async function sendMessage() {
     slashSuggestions.value = []
     if (cmd === '/clear') {
       window.electronAPI.claudeAgentAbort?.(tab.sessionId)
+      const previousSession = {
+        chatKey: tab.sessionId,
+        cliSessionId: tab.cliSessionId,
+        filePath: tab.filePath,
+      }
+      if (previousSession.cliSessionId || previousSession.filePath) {
+        window.electronAPI?.claudeHideProviderSession?.({
+          ...previousSession,
+          reason: 'cleared',
+        })?.catch?.(() => {})
+      }
       tab.messages = []
       // /clear 语义上应清空上下文，需重建会话，避免继续复用旧 token 窗口。
       resetTabSession(tab)

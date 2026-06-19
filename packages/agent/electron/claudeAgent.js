@@ -12,6 +12,7 @@ const {
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
   attachRegistrySessionToScanSummary,
+  hideSessionFromProviderScans,
   repairSessionRegistry,
   setSessionTitle,
   syncPanelStateSessions,
@@ -563,7 +564,7 @@ function scanCliSessionsForProject(cwd) {
       const isCustomTitle = titleResult?.isCustomTitle || false
       const meta = readClaudeSessionMetaByFilePath(file.filePath)
       console.log('[scanCliSessionsForProject] title:', title || '(empty)', 'isCustomTitle:', isCustomTitle, 'file:', file.filePath)
-      result.push(attachRegistrySessionToScanSummary('claude', {
+      const summary = attachRegistrySessionToScanSummary('claude', {
         // `id` is kept for renderer compatibility; new code should read cliSessionId.
         id: file.cliSessionId,
         cliSessionId: file.cliSessionId,
@@ -579,7 +580,8 @@ function scanCliSessionsForProject(cwd) {
         model: meta.model || null,
         effort: meta.effort || null,
         modelTier: meta.modelTier || null,
-      }, { cwd }))
+      }, { cwd })
+      if (summary) result.push(summary)
     }
   } catch (_) {}
   return result
@@ -930,6 +932,15 @@ function setupClaudeHandlers() {
   })
   ipcMain.handle('claude-write-session-meta', (_, { cwd, cliSessionId, filePath, chatKey, sessionId, data } = {}) => {
     return writeClaudeSessionMeta(cwd, cliSessionId, data, { chatKey: chatKey || sessionId, filePath })
+  })
+  ipcMain.handle('claude-hide-provider-session', (_, payload = {}) => {
+    return hideSessionFromProviderScans({
+      agent: 'claude',
+      chatKey: payload.chatKey || payload.sessionId,
+      cliSessionId: payload.cliSessionId,
+      filePath: payload.filePath,
+      reason: payload.reason || 'cleared',
+    }, sessionRegistryOptionsForTest || {})
   })
   ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }

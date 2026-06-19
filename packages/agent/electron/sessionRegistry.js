@@ -184,7 +184,7 @@ function hasMeaningfulRecordChange(current = {}, next = {}) {
   for (const field of fields) {
     if (normalizeString(current[field]) !== normalizeString(next[field])) return true
   }
-  for (const field of ['provider', 'runtime', 'instruction']) {
+  for (const field of ['provider', 'runtime', 'instruction', 'metadata']) {
     if (stableJson(current[field] || {}) !== stableJson(next[field] || {})) return true
   }
   return false
@@ -229,6 +229,7 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
     title: normalizeString(chat.name),
     titleSource: inferTitleSource(chat),
     description: normalizeString(chat.description),
+    metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {},
     provider: {
       cliSessionId: normalizeString(chat.cliSessionId),
       filePath: normalizeString(chat.filePath),
@@ -401,6 +402,10 @@ function upsertSessionRecord(record, options = {}) {
           ...(canonicalRecord.runtime || {}),
           ...(record.runtime || {}),
         },
+        metadata: {
+          ...(canonicalRecord.metadata || {}),
+          ...(record.metadata || {}),
+        },
       }
     : record
   const filePath = getSessionRecordPath(effectiveRecord.chatKey, options)
@@ -421,6 +426,10 @@ function upsertSessionRecord(record, options = {}) {
     runtime: {
       ...(existing?.runtime || {}),
       ...(effectiveRecord.runtime || {}),
+    },
+    metadata: {
+      ...(existing?.metadata || {}),
+      ...(effectiveRecord.metadata || {}),
     },
     instruction: hasRealInstruction
       ? { ...(existing?.instruction || {}), ...incomingInst }
@@ -525,6 +534,7 @@ function upsertRuntimeByProvider({ agent, filePath, cliSessionId, chatKey, cwd, 
       ...(existing?.runtime || {}),
       ...(runtime || {}),
     },
+    metadata: existing?.metadata || {},
     updatedAt: Date.now(),
   }, options)
 }
@@ -599,6 +609,7 @@ function setSessionInstruction(chatKey, data = {}, options = {}) {
     description: instructionInput.description,
     provider: existing?.provider || {},
     runtime: existing?.runtime || {},
+    metadata: existing?.metadata || {},
     instruction: {
       enabled: instructionInput.enabled,
       instructionId: '',
@@ -639,6 +650,7 @@ function setSessionTitle(chatKey, title, options = {}) {
       ...(existing?.runtime || {}),
       ...context.runtime,
     },
+    metadata: existing?.metadata || {},
     instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
     createdAt: existing?.createdAt || now,
     updatedAt: now,
@@ -660,6 +672,7 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
     cliSessionId: providerSessionId,
     filePath: scanSummary.filePath,
   }, options)
+  if (existing?.metadata?.hiddenFromScans) return null
   const chatKey = existing?.chatKey || normalizeString(scanSummary.chatKey) || createRegistryChatKey(normalizedAgent)
   if (!chatKey) return null
 
@@ -695,6 +708,7 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
       ...(existing?.runtime || {}),
       ...runtime,
     },
+    metadata: existing?.metadata || {},
     instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
     createdAt: normalizeTimestamp(scanSummary.createdAt) || existing?.createdAt || Date.now(),
     updatedAt: normalizeTimestamp(scanSummary.updatedAt) || existing?.updatedAt || Date.now(),
@@ -710,7 +724,7 @@ function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, op
 
 function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
   const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
-  if (!record) return scanSummary
+  if (!record) return null
   const scanFilePath = normalizeString(scanSummary.filePath)
   return {
     ...scanSummary,
@@ -727,6 +741,41 @@ function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {
     modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',
     reasoningEffort: record.runtime?.reasoningEffort || scanSummary.reasoningEffort || '',
   }
+}
+
+function hideSessionFromProviderScans({ agent, filePath, cliSessionId, chatKey, reason = 'cleared' } = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const existing = findSessionRecordByProvider({ agent: normalizedAgent, filePath, cliSessionId }, options)
+  const resolvedChatKey = existing?.chatKey || normalizeString(chatKey) || createRegistryChatKey(normalizedAgent)
+  if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
+  const now = Date.now()
+  const record = {
+    ...(existing || {}),
+    schemaVersion: SCHEMA_VERSION,
+    chatKey: resolvedChatKey,
+    agent: normalizedAgent,
+    cwd: existing?.cwd || '',
+    title: existing?.title || '',
+    titleSource: existing?.titleSource || 'auto',
+    description: existing?.description || '',
+    provider: {
+      ...(existing?.provider || {}),
+      cliSessionId: normalizeString(cliSessionId) || existing?.provider?.cliSessionId || '',
+      filePath: normalizeString(filePath) || existing?.provider?.filePath || '',
+    },
+    runtime: existing?.runtime || {},
+    metadata: {
+      ...(existing?.metadata || {}),
+      hiddenFromScans: true,
+      hiddenReason: normalizeString(reason) || 'cleared',
+      hiddenAt: now,
+    },
+    instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  }
+  if (!upsertSessionRecord(record, options)) return { ok: false, error: 'write_failed' }
+  return { ok: true, record: readJson(getSessionRecordPath(resolvedChatKey, options), null) }
 }
 
 function syncPanelStateSessions(agent, panelState = {}, options = {}) {
@@ -1063,6 +1112,7 @@ module.exports = {
   getSessionInstruction,
   getSessionRecordPath,
   getSessionRegistryRoot,
+  hideSessionFromProviderScans,
   listSessionRecords,
   makeProviderKeys,
   repairSessionRegistry,

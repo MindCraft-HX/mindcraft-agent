@@ -1850,29 +1850,26 @@ function newChat() {
 
 async function requestDeleteChat(chat) {
   if (!chat) return
-  const ok = await confirmDialogRef.value?.open({ message: t('agent.confirmDeleteChat') })
-  if (ok) {
-    if (chat.filePath) {
-      const confirmedPermanentDelete = await confirmDialogRef.value?.open({
-        message: '此操作会永久删除底层 Codex 官方会话历史（JSONL transcript）。删除后 MindCraft 不能仅靠自己的配置恢复该对话内容。是否继续？',
+  const ok = await confirmDialogRef.value?.open(chat.filePath
+    ? {
+        message: '此操作会永久删除该 Codex 会话及底层官方历史（JSONL transcript），删除后无法恢复。是否永久删除？',
         okText: t('common.delete'),
         cancelText: t('common.cancel'),
-      })
-      if (!confirmedPermanentDelete) return
-    }
-    window.electronAPI.codexAgentAbort?.(chat.sessionId)
-    // 删除磁盘上的 JSONL 会话文件，防止刷新时重新出现
-    if (chat.filePath) window.electronAPI.codexDeleteSessionFile?.(chat.filePath)
-    const p = activeProject.value
-    if (!p) return
-    const idx = p.chats.findIndex(c => c.id === chat.id)
-    p.chats.splice(idx, 1)
-    if (activeChatId.value === chat.id) {
-      activeChatId.value = p.chats[idx]?.id || p.chats[idx - 1]?.id || null
-      if (!p.chats.length) newChat()
-    }
-    saveHistory()
+      }
+    : { message: t('agent.confirmDeleteChat') })
+  if (!ok) return
+  window.electronAPI.codexAgentAbort?.(chat.sessionId)
+  // 删除磁盘上的 JSONL 会话文件，防止刷新时重新出现
+  if (chat.filePath) window.electronAPI.codexDeleteSessionFile?.(chat.filePath)
+  const p = activeProject.value
+  if (!p) return
+  const idx = p.chats.findIndex(c => c.id === chat.id)
+  p.chats.splice(idx, 1)
+  if (activeChatId.value === chat.id) {
+    activeChatId.value = p.chats[idx]?.id || p.chats[idx - 1]?.id || null
+    if (!p.chats.length) newChat()
   }
+  saveHistory()
 }
 
 async function handleRenameChat(session, newName) {
