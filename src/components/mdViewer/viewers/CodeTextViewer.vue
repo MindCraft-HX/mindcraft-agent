@@ -533,10 +533,10 @@ onBeforeUnmount(() => {
 .code-action-btn {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid var(--doc-code-btn-border, #d4deea);
+  border: 1px solid var(--doc-source-btn-border, #d4deea);
   border-radius: 10px;
-  background: var(--doc-code-btn-bg, #f8fafc);
-  color: var(--doc-code-btn-text, #334155);
+  background: var(--doc-source-btn-bg, #f8fafc);
+  color: var(--doc-source-btn-text, #334155);
   font-size: 12px;
   cursor: pointer;
   transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
@@ -548,9 +548,9 @@ onBeforeUnmount(() => {
 }
 
 .code-action-btn:hover:not(:disabled) {
-  border-color: var(--doc-code-btn-hover-border, #93c5fd);
-  background: var(--doc-code-btn-hover-bg, #eff6ff);
-  color: var(--doc-code-btn-hover-text, #1d4ed8);
+  border-color: var(--doc-source-btn-hover-border, #93c5fd);
+  background: var(--doc-source-btn-hover-bg, #eff6ff);
+  color: var(--doc-source-btn-hover-text, #1d4ed8);
 }
 
 .code-action-btn:disabled {

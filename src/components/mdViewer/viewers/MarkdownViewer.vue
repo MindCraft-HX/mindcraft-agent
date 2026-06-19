@@ -59,7 +59,7 @@ const html = computed(() => renderHtml(props.text || ''))
 .viewer-markdown:deep(a) {
   color: var(--doc-accent);
   text-decoration: none;
-  border-bottom: 1px solid rgba(37, 99, 235, 0.28);
+  border-bottom: 1px solid color-mix(in srgb, var(--doc-accent) 32%, transparent);
 }
 
 .viewer-markdown:deep(a:hover) {
@@ -114,9 +114,17 @@ const html = computed(() => renderHtml(props.text || ''))
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  color: var(--doc-text);
-  background: rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--doc-code-label);
+  background: var(--doc-code-header-bg);
+  border-bottom: 1px solid var(--doc-code-header-border);
+}
+
+.viewer-markdown:deep(.code-block .name) {
+  color: var(--doc-code-label);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .viewer-markdown:deep(.code-block .button-group) {
@@ -126,17 +134,23 @@ const html = computed(() => renderHtml(props.text || ''))
 
 .viewer-markdown:deep(.code-block button) {
   padding: 4px 10px;
-  color: var(--doc-text);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--doc-code-btn-text);
+  background: var(--doc-code-btn-bg);
+  border: 1px solid var(--doc-code-btn-border);
   border-radius: 999px;
   cursor: pointer;
+}
+
+.viewer-markdown:deep(.code-block button:hover) {
+  color: var(--doc-code-btn-hover-text);
+  background: var(--doc-code-btn-hover-bg);
+  border-color: var(--doc-code-btn-hover-border);
 }
 
 .viewer-markdown:deep(.code-block .hljs) {
   margin: 0;
   padding: 14px 0 14px 52px;
-  color: var(--doc-text);
+  color: var(--cc-hljs-text, var(--doc-text));
   background: transparent;
 }
 
