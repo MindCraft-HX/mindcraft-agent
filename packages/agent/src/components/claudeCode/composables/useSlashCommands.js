@@ -3,7 +3,6 @@ import { ref } from 'vue'
 export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputText, focusInput }) {
   const slashCommands = ref([
     { cmd: '/model', desc: '选择模型（本地命令）' },
-    { cmd: '/clear', desc: '清空当前对话（本地命令）' },
     { cmd: '/memory', desc: '管理项目记忆（查看/添加/删除）' },
     { cmd: '/plugins', desc: '管理插件（安装/卸载/市场源）' },
     { cmd: '/skills', desc: '查看所有可用 Skills（本地命令）' },
@@ -84,7 +83,6 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
       })
       const merged = [
         { cmd: '/model', desc: '选择模型（本地命令）' },
-        { cmd: '/clear', desc: '清空当前对话（本地命令）' },
         { cmd: '/memory', desc: '管理项目记忆（查看/添加/删除）' },
         { cmd: '/plugins', desc: '管理插件（安装/卸载/市场源）' },
         { cmd: '/skills', desc: '查看所有可用 Skills（本地命令）' },
@@ -99,6 +97,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
           const n = (c?.name || '').trim()
           if (!n) continue
           const cmd = n.startsWith('/') ? n : `/${n}`
+          if (cmd === '/clear') continue
           const i = merged.findIndex(x => x.cmd === cmd)
           if (i >= 0) merged[i] = { cmd, desc: c?.description || merged[i].desc }
           else merged.push({ cmd, desc: c?.description || 'Claude 命令' })
@@ -108,6 +107,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
         const n = (s?.name || '').trim()
         if (!n) continue
         const cmd = n.startsWith('/') ? n : `/${n}`
+        if (cmd === '/clear') continue
         if (merged.some(x => x.cmd === cmd)) continue
         merged.push({ cmd, desc: `Skill（本地）${s?.description ? `：${s.description}` : ''}` })
       }

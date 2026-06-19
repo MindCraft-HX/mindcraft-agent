@@ -12,7 +12,6 @@ const {
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
   attachRegistrySessionToScanSummary,
-  hideSessionFromProviderScans,
   repairSessionRegistry,
   setSessionTitle,
   syncPanelStateSessions,
@@ -932,15 +931,6 @@ function setupClaudeHandlers() {
   })
   ipcMain.handle('claude-write-session-meta', (_, { cwd, cliSessionId, filePath, chatKey, sessionId, data } = {}) => {
     return writeClaudeSessionMeta(cwd, cliSessionId, data, { chatKey: chatKey || sessionId, filePath })
-  })
-  ipcMain.handle('claude-hide-provider-session', (_, payload = {}) => {
-    return hideSessionFromProviderScans({
-      agent: 'claude',
-      chatKey: payload.chatKey || payload.sessionId,
-      cliSessionId: payload.cliSessionId,
-      filePath: payload.filePath,
-      reason: payload.reason || 'cleared',
-    }, sessionRegistryOptionsForTest || {})
   })
   ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }

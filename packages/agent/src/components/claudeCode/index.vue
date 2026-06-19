@@ -351,7 +351,6 @@ import {
   markClaudeAborted,
   markClaudeAbortRequested,
   markClaudeIdle,
-  markClaudeSessionCleared,
   markClaudeStreamActivity,
   markClaudeTurnStarting,
 } from './utils/claudeRuntimeState.mjs'
@@ -1748,16 +1747,6 @@ const sidebarOpen = ref(true)
 const sidebarLoading = ref(false)
 const sidebarRefreshing = ref(false)
 
-function resetTabSession(tab) {
-  if (!tab) return
-  tab.sessionId = `session-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  markClaudeSessionCleared(tab)
-  tab._pendingCompactSummary = ''
-  tab._awaitingCompactResult = false
-  tab.taskState = createEmptyTaskState()
-  tab._taskToolUseIds = new Set()
-}
-
 function createChat() {
   const id = nextChatId()
   // T130: `sessionId` is the legacy renderer/runtime chat key. It exists before
@@ -2763,23 +2752,12 @@ async function sendMessage() {
     inputText.value = ''
     slashSuggestions.value = []
     if (cmd === '/clear') {
-      window.electronAPI.claudeAgentAbort?.(tab.sessionId)
-      const previousSession = {
-        chatKey: tab.sessionId,
-        cliSessionId: tab.cliSessionId,
-        filePath: tab.filePath,
-      }
-      if (previousSession.cliSessionId || previousSession.filePath) {
-        await window.electronAPI?.claudeHideProviderSession?.({
-          ...previousSession,
-          reason: 'cleared',
-        })?.catch?.(() => {})
-      }
-      tab.messages = []
-      // /clear 语义上应清空上下文，需重建会话，避免继续复用旧 token 窗口。
-      resetTabSession(tab)
-      tab._carryCompactSummary = ''
-      saveHistory({ immediate: true })
+      pushTabMessage(tab, {
+        id: nextMsgId(),
+        role: 'system',
+        text: '/clear 已停用。请使用新建会话或删除会话。',
+      })
+      scrollBottom(tab.id)
       return
     }
     if (cmd === '/plugins') {
@@ -2945,19 +2923,20 @@ async function sendMessage() {
       for (const c of (remote || [])) {
         const n = normName(c?.name)
         if (!n) continue
+        if (n === 'clear') continue
         all.push({ name: n, desc: c.description || '', source: 'command' })
         seen.add(n)
       }
       for (const s of [...(localSkills?.system || []), ...(localSkills?.project || [])]) {
         const n = normName(s?.name)
         if (!n || seen.has(n)) continue
+        if (n === 'clear') continue
         all.push({ name: n, desc: s.description || '', source: 'skill' })
         seen.add(n)
       }
       // 加上本地内置命令
       const builtins = [
         { name: 'model', desc: t('slashCmd.modelDesc') },
-        { name: 'clear', desc: t('slashCmd.clear') },
         { name: 'skills', desc: t('slashCmd.skills') },
         { name: 'commands', desc: t('slashCmd.commandsDesc') },
       ]

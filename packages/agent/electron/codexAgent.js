@@ -2577,7 +2577,7 @@ function setupCodexSdkHandlers() {
     const cacheKey = `${resolvedCwd}::${sessionId || ''}`
     const now = Date.now()
     const cached = codexSlashCommandsCache.get(cacheKey)
-    // 默认命令：前端 /clear /new /model 均为应用本地命令，不通过 IPC 返回
+    // 默认命令：/new /model 等由前端作为应用本地命令处理，不通过 IPC 返回。
     // IPC 只返回 SDK 级别的命令（如 /compact /init 等），由前端合并到本地命令后
     if (cached && (now - cached.ts) < 10 * 60 * 1000 && Array.isArray(cached.commands) && cached.commands.length) {
       return cached.commands

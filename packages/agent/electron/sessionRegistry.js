@@ -672,7 +672,6 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
     cliSessionId: providerSessionId,
     filePath: scanSummary.filePath,
   }, options)
-  if (existing?.metadata?.hiddenFromScans) return null
   const chatKey = existing?.chatKey || normalizeString(scanSummary.chatKey) || createRegistryChatKey(normalizedAgent)
   if (!chatKey) return null
 
@@ -715,21 +714,6 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
   }
 }
 
-function isProviderScanHidden(agent, scanSummary = {}, options = {}) {
-  const normalizedAgent = normalizeAgent(agent)
-  const providerSessionId = normalizeString(
-    scanSummary.providerSessionId
-    || scanSummary.cliSessionId
-    || scanSummary.id
-  )
-  const existing = resolveSessionByProvider({
-    agent: normalizedAgent,
-    cliSessionId: providerSessionId,
-    filePath: scanSummary.filePath,
-  }, options)
-  return Boolean(existing?.metadata?.hiddenFromScans)
-}
-
 function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
   const record = buildProviderScanRecord(agent, scanSummary, project, options)
   if (!record) return null
@@ -742,7 +726,6 @@ function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, op
 }
 
 function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
-  if (isProviderScanHidden(agent, scanSummary, options)) return null
   const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
   if (!record) return scanSummary
   const scanFilePath = normalizeString(scanSummary.filePath)
@@ -761,41 +744,6 @@ function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {
     modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',
     reasoningEffort: record.runtime?.reasoningEffort || scanSummary.reasoningEffort || '',
   }
-}
-
-function hideSessionFromProviderScans({ agent, filePath, cliSessionId, chatKey, reason = 'cleared' } = {}, options = {}) {
-  const normalizedAgent = normalizeAgent(agent)
-  const existing = findSessionRecordByProvider({ agent: normalizedAgent, filePath, cliSessionId }, options)
-  const resolvedChatKey = existing?.chatKey || normalizeString(chatKey) || createRegistryChatKey(normalizedAgent)
-  if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
-  const now = Date.now()
-  const record = {
-    ...(existing || {}),
-    schemaVersion: SCHEMA_VERSION,
-    chatKey: resolvedChatKey,
-    agent: normalizedAgent,
-    cwd: existing?.cwd || '',
-    title: existing?.title || '',
-    titleSource: existing?.titleSource || 'auto',
-    description: existing?.description || '',
-    provider: {
-      ...(existing?.provider || {}),
-      cliSessionId: normalizeString(cliSessionId) || existing?.provider?.cliSessionId || '',
-      filePath: normalizeString(filePath) || existing?.provider?.filePath || '',
-    },
-    runtime: existing?.runtime || {},
-    metadata: {
-      ...(existing?.metadata || {}),
-      hiddenFromScans: true,
-      hiddenReason: normalizeString(reason) || 'cleared',
-      hiddenAt: now,
-    },
-    instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-  }
-  if (!upsertSessionRecord(record, options)) return { ok: false, error: 'write_failed' }
-  return { ok: true, record: readJson(getSessionRecordPath(resolvedChatKey, options), null) }
 }
 
 function syncPanelStateSessions(agent, panelState = {}, options = {}) {
@@ -1132,7 +1080,6 @@ module.exports = {
   getSessionInstruction,
   getSessionRecordPath,
   getSessionRegistryRoot,
-  hideSessionFromProviderScans,
   listSessionRecords,
   makeProviderKeys,
   repairSessionRegistry,

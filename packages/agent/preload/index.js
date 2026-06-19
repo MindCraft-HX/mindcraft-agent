@@ -54,7 +54,6 @@ function createAgentBridge(ipcRenderer) {
   claudeGetLastCompactSummary: (sessionId) => ipcRenderer.invoke('claude-get-last-compact-summary', sessionId),
   claudeReadSessionMeta: (payload) => ipcRenderer.invoke('claude-read-session-meta', payload),
   claudeWriteSessionMeta: (payload) => ipcRenderer.invoke('claude-write-session-meta', payload),
-  claudeHideProviderSession: (payload) => ipcRenderer.invoke('claude-hide-provider-session', payload),
   claudeLoadCodePanelState: (cwd) => ipcRenderer.invoke('claude-load-code-panel-state', { cwd }),
   claudeSaveCodePanelState: (payload) => ipcRenderer.invoke('claude-save-code-panel-state', payload),
   claudeSaveCodePanelStateSync: (payload) => ipcRenderer.sendSync('claude-save-code-panel-state-sync', payload),

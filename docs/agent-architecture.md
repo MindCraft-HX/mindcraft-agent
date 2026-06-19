@@ -840,3 +840,17 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 | 2026-06-15 | **新增 §11-14**：ClaudeCode SDK 接口参考、CodeX SDK 接口参考、跨 SDK 差异对比、错误结论纠正。经 `@anthropic-ai/claude-agent-sdk/sdk.d.ts` 和 `@openai/codex-sdk/dist/index.d.ts` 完整核对 |
 | 2026-06-13 | 初版 + Chat 功能文档（§10） |
 | 2026-06-11 | 新增会话管理内部机制（§6）
+
+---
+
+## 2026-06-19: `/clear` 命令产品决策
+
+MindCraft 不提供 Claude Code / Codex CLI 的 `/clear` 命令。
+
+原因：CLI 是单窗口模型，`/clear` 的真实效果是清空当前终端视图并启动一个新 session，旧 transcript 仍然保留在历史中。MindCraft 天然是多会话 UI，同一需求应通过“新建会话”表达；如果用户不需要旧会话，应使用“删除会话”。因此不要把当前 chat 清空、不要重置旧 chat 的 `cliSessionId/filePath`，也不要为 `/clear` 写 registry hidden/tombstone 状态。
+
+实现约束：
+
+- ClaudeCode 和 CodeX 的 slash 候选、`/commands` 列表、远程命令合并必须过滤 `/clear`。
+- 手动输入 `/clear` 只能提示“请使用新建会话或删除会话”，不得 abort 当前运行、清空 messages、重置 provider 绑定或改写 registry。
+- 官方 transcript JSONL 是历史事实来源，不因 `/clear` 隐藏、删除或改写。

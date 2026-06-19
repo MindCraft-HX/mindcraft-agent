@@ -537,7 +537,6 @@ function toggleMentionFlatMode() {
 }
 let newChatLock = false
 const slashCommands = ref([
-  { cmd: '/clear', desc: t('slashCmd.clear') },
   { cmd: '/new', desc: t('slashCmd.new') },
   { cmd: '/model', desc: t('slashCmd.model') },
   { cmd: '/plan', desc: t('slashCmd.plan') },
@@ -744,7 +743,6 @@ function applySlash(s) {
 //   未注册  → 原样透传给模型（null）
 
 const SLASH_ROUTES = {
-  '/clear': 'local',
   '/new': 'local',
   '/model': 'local',
   '/diff': 'local',
@@ -756,6 +754,19 @@ const SLASH_ROUTES = {
 }
 
 function dispatchLocalSlashCommand(firstToken, fullText) {
+  if (firstToken === '/clear') {
+    const tab = activeTab.value
+    slashSuggestions.value = []
+    if (!tab) return { action: 'done' }
+    pushTabMessage(tab, {
+      id: nextMsgId(),
+      role: 'system',
+      text: '/clear 已停用。请使用新建会话或删除会话。',
+    })
+    scrollBottom(tab.id)
+    return { action: 'done' }
+  }
+
   const route = SLASH_ROUTES[firstToken]
   if (!route) return null
   const tab = activeTab.value
@@ -763,18 +774,6 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
   if (!tab) return { action: 'done' }
 
   if (route === 'local') {
-    if (firstToken === '/clear') {
-      window.electronAPI.codexAgentAbort?.(tab.sessionId)
-      tab.messages = []
-      markCodexIdle(tab)
-      // /clear 语义上需清空上下文，重置 cliSessionId 新建线程，
-      // 否则 SDK 仍持有旧历史，刷新后消息又回来。
-      tab.cliSessionId = null
-      saveHistory()
-      // 通知主进程解除 sessionId → cliSessionId 映射，下次 query 走新线程
-      window.electronAPI?.codexUnregisterCliSession?.(tab.sessionId)
-      return { action: 'done' }
-    }
     if (firstToken === '/new') { newChat(); return { action: 'done' } }
     if (firstToken === '/model') { openModelPicker(); return { action: 'done' } }
     if (firstToken === '/plugins') { codexPluginsRef.value?.open?.(); return { action: 'done' } }
@@ -857,7 +856,6 @@ async function refreshSlashCommands() {
     // 排除 TUI 专属命令（/vim /theme /quit /raw /copy /ps /stop 等）
     // 处理方式：SLASH_ROUTES 标记 'local' 的由应用拦截，其余透传给模型
     const local = [
-      { cmd: '/clear', desc: t('slashCmd.clear') },
       { cmd: '/new', desc: t('slashCmd.new') },
       { cmd: '/model', desc: t('slashCmd.model') },
       { cmd: '/plan', desc: t('slashCmd.plan') },
@@ -883,6 +881,7 @@ async function refreshSlashCommands() {
       const n = (c?.name || '').trim()
       if (!n) continue
       const cmd = n.startsWith('/') ? n : `/${n}`
+      if (cmd === '/clear') continue
       if (merged.some(x => x.cmd === cmd)) continue
       merged.push({ cmd, desc: c?.description || t('agent.codexCommand') })
     }
@@ -893,6 +892,7 @@ async function refreshSlashCommands() {
       const n = (s?.name || '').trim()
       if (!n) continue
       const cmd = n.startsWith('/') ? n : `/${n}`
+      if (cmd === '/clear') continue
       if (merged.some(x => x.cmd === cmd)) continue
       merged.push({ cmd, desc: t('agent.skillPrefix') + (s?.description || n) })
     }
