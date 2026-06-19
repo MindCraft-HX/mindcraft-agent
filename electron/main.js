@@ -19,16 +19,6 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require('child_process');
-const { setupIpcHandlers } = require("./mainModules/ipcHandlers");
-const { setupAutoUpdater } = require("./mainModules/autoUpdate");
-const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers, getInstalledPlugins } = require("./mainModules/pluginManager");
-
-const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
-const { openClaudeWin } = require("./claudeWindow/index.js");
-const { openCodexWin } = require("./codexWindow/index.js");
-
-const { initCodeWin } = require("./searchView/index.js");
-const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -42,6 +32,33 @@ if(!app.isPackaged) {
     NODE_ENV = packageJson.mode
 }
 const NODE_PLATFORM = packageJson.platform || "WIN"
+
+function configureUserDataPath() {
+  const override = String(process.env.MINDCRAFT_USER_DATA_DIR || '').trim()
+  if (override) {
+    app.setPath('userData', path.resolve(override))
+    console.log('[main] userData override:', app.getPath('userData'))
+    return
+  }
+  if (NODE_ENV === 'development') {
+    app.setPath('userData', path.join(app.getPath('appData'), 'mindcraft-agent-dev'))
+    console.log('[main] dev userData:', app.getPath('userData'))
+  }
+}
+
+configureUserDataPath()
+
+const { setupIpcHandlers } = require("./mainModules/ipcHandlers");
+const { setupAutoUpdater } = require("./mainModules/autoUpdate");
+const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers, getInstalledPlugins } = require("./mainModules/pluginManager");
+
+const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
+const { openClaudeWin } = require("./claudeWindow/index.js");
+const { openCodexWin } = require("./codexWindow/index.js");
+
+const { initCodeWin } = require("./searchView/index.js");
+const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
+
 let initUrl = path.join(__dirname, "../dist/index.html")
 // 开发模式：优先使用 Vite dev server（HMR 支持）
 if (process.env.VITE_DEV_SERVER_URL) {
