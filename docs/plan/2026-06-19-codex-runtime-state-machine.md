@@ -2,7 +2,7 @@
 
 > 日期：2026-06-19
 > 关联：T138 后续、`docs/bugs/codex-conversation-interruption.md`
-> 状态：方案草案，待新窗口接手实施
+> 状态：已修订，进入实施
 
 ## 1. 背景
 
@@ -36,6 +36,7 @@ CodeX 的运行态目前由以下入口直接或间接写入：
 | Metrics event | `codeX/index.vue::onMetricsUpdate()` | token/duration/git + 曾同步 thinking | metrics 不应拥有运行态权威 |
 | Transcript scan | `codeX/index.vue::refreshProjectSessionsInBackground()` | 从官方 JSONL 同步列表 | 曾误删未绑定运行中 chat |
 | History persistence | `useCodexHistory.js` | 保存 panel state | 运行态落盘规则分散 |
+| Abort | `codeX/index.vue::abortSession()` | 中断期间隐藏停止按钮并保持发送锁 | 直接写字段，未纳入统一状态机 |
 
 核心问题不是某一行错，而是没有统一的不变量：
 
@@ -57,10 +58,12 @@ CodeX 的运行态目前由以下入口直接或间接写入：
 ### 3.2 运行态不变量
 
 - 只有 runtime state machine 能写 `tab.thinking`、`tab._awaitingDone`、`tab._thinkingStart`、`tab.currentAssistantId` 的生命周期意义。
+- 内部语义状态写入 `tab._codexRuntimeState`，该字段只存在于 renderer 内存，持久化前必须清理。
 - metrics 只提供观测数据：tokens、duration、context、model、git，不拥有运行态权威。
 - transcript scan 只能同步 transcript metadata，不允许删除 active chat 或未绑定运行中 chat。
 - 已绑定 `filePath` 的 session 不持久化运行中状态，避免重启后假运行。
 - terminal event 可以先清 UI 状态；done event 负责 registry/filePath/通知/最终落盘。
+- `currentAssistantId` 同时承担 assistant message 拼接游标。状态机只负责在 terminal/done/failed/abort 等生命周期边界清理它；普通 stream 拼接仍由 stream handler 管理。
 
 ### 3.3 状态枚举
 
@@ -84,17 +87,28 @@ thinking = state in starting/streaming
 _awaitingDone = state in starting/streaming/terminal_seen/queued
 ```
 
+关键例外：
+
+- `terminal_seen` 下 `thinking=false`、`_awaitingDone=true`。此时 UI 不显示“正在响应”，但发送仍被锁住，直到 done/failed/abort 收尾。
+- `terminal_seen/done/failed/aborted/idle` 下迟到的 `metrics.thinking=true` 不能把 `thinking` 复活。
+- `queued` 用于“当前 turn 尚未真正可发送，但已有用户输入等待重试/flush”。进入 `queued` 时可以保持 `_awaitingDone=true`，但不能由 metrics 决定是否退出。
+
 是否最终保留 `_awaitingDone` 需实施时评估；短期可保留字段，先统一写入口。
 
 ## 4. 建议实现
 
 ### Phase 1：抽 `codexRuntimeState.mjs`
 
-新增文件：
+实现入口：
 
 ```text
 packages/agent/src/components/codeX/utils/codexRuntimeState.mjs
 ```
+
+当前仓库已有 `packages/agent/src/components/codeX/utils/sessionLifecycle.mjs`，其中已有 `isCodexTurnLocked()`、`shouldHydrateHistoryFromDisk()`、`shouldSyncThinkingFromMetrics()`、`mergeScannedChatsPreservingRuntime()` 等局部规则。实施时不得保留两套并行生命周期规则：
+
+- `sessionLifecycle.mjs` 扩展为实际状态机实现文件，保持旧导出兼容既有测试。
+- `codexRuntimeState.mjs` 作为统一命名入口 re-export，后续新代码优先从该文件导入。
 
 提供纯函数：
 
@@ -106,7 +120,9 @@ packages/agent/src/components/codeX/utils/codexRuntimeState.mjs
 | `markCodexTerminalSeen(tab)` | `task_complete/turn.completed` 清 UI thinking，保留必要 awaiting |
 | `markCodexDone(tab, payload)` | done 收尾，清 runtime，写 `cliSessionId/filePath` |
 | `markCodexFailed(tab, error)` | failed/error 收尾 |
+| `markCodexAbortRequested(tab)` | 用户点击 abort 后隐藏停止按钮，但保持发送锁 |
 | `markCodexAborted(tab)` | abort 收尾 |
+| `markCodexQueued(tab, opts)` | queueable reject / 用户排队输入时进入 queued |
 | `applyCodexMetrics(tab, data)` | 合并 metrics，但不让迟到 `thinking:true` 复活已结束 turn |
 | `mergeScannedCodexChats(existing, scanned, ctx)` | scan 合并，保留 active / runtime chat |
 | `buildPersistableCodexChat(chat)` | panel state 持久化前清理 runtime |
@@ -122,6 +138,7 @@ packages/agent/src/components/codeX/utils/codexRuntimeState.mjs
 替换以下直接字段写入：
 
 - `codeX/index.vue::sendMessage()`
+- `codeX/index.vue::abortSession()`
 - `codeX/index.vue::onMetricsUpdate()`
 - `codeX/index.vue::refreshProjectSessionsInBackground()`
 - `useCodexAgentStream.js::onAgentMessage()`
@@ -129,6 +146,12 @@ packages/agent/src/components/codeX/utils/codexRuntimeState.mjs
 - `useCodexHistory.js::buildPanelState()`
 
 保留现有行为，先不改 UI 文案和通知策略。
+
+替换完成后，用 `rg "tab\\.(thinking|_awaitingDone|_thinkingStart|currentAssistantId)\\s*=" packages/agent/src/components/codeX` 做入口审计。允许保留的写入必须满足以下条件之一：
+
+- 位于 runtime state machine 工具文件。
+- `currentAssistantId` 的普通 stream 拼接游标写入。
+- 新建/恢复 chat 时初始化静态默认值。
 
 ### Phase 3：补主流程测试
 
@@ -149,6 +172,8 @@ tests/codex-agent-done-reason.test.mjs
 4. scan 合并保留 active draft 和 unbound running chat。
 5. bound session 持久化时 `_awaitingDone=false`、`_thinkingStart=null`。
 6. done payload 设置真实 `filePath` 后，runtime 清空。
+7. `abort requested -> aborted` 期间保持 `_awaitingDone=true`，避免后端尚未完成时新消息撞上旧 run。
+8. `terminal_seen` 保持 `_awaitingDone=true` 时，迟到 `metrics.thinking=true` 不能复活 `thinking`。
 
 ### Phase 4：清理冗余字段和注释
 

@@ -158,7 +158,7 @@
               <button v-if="activeTab?.thinking" type="button" class="abort-btn" @click="abortSession" :title="$t('agent.abortShort')">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5h6A1.5 1.5 0 0112.5 5v6a1.5 1.5 0 01-1.5 1.5H5A1.5 1.5 0 013.5 11V5A1.5 1.5 0 015 3.5z"/></svg>
               </button>
-              <button class="send-btn" :disabled="!canSend" @click="sendMessage">
+              <button class="send-btn" :disabled="!canSend" :title="isCodexTurnLocked(activeTab) ? $t('agent.queueSend') : $t('chat.sendShort')" @click="sendMessage">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M15.964.686a.5.5 0 00-.65-.65L.767 5.855H.766l-.452.18a.5.5 0 00-.082.887l.41.26.001.002 4.995 3.178 3.178 4.995.002.002.26.41a.5.5 0 00.886-.083l6-15Zm-1.833 1.89L6.637 10.07l-.215-.338a.5.5 0 00-.154-.154l-.338-.215 7.494-7.494 1.178-.471-.47 1.178z"/></svg>
               </button>
             </div>
@@ -240,11 +240,17 @@ import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
 import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput, shouldRetryRejectedCodexInput } from './utils/queuedInputFlush.mjs'
 import {
+  applyCodexMetrics,
+  markCodexAborted,
+  markCodexAbortRequested,
+  markCodexIdle,
+  markCodexQueued,
+  markCodexTurnAccepted,
+  markCodexTurnStarting,
   isCodexTurnLocked,
   mergeScannedChatsPreservingRuntime,
   shouldHydrateHistoryFromDisk,
-  shouldSyncThinkingFromMetrics,
-} from './utils/sessionLifecycle.mjs'
+} from './utils/codexRuntimeState.mjs'
 import {
   isCodeXEditToolName,
   isCodeXReadToolName,
@@ -760,7 +766,7 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
     if (firstToken === '/clear') {
       window.electronAPI.codexAgentAbort?.(tab.sessionId)
       tab.messages = []
-      tab.thinking = false
+      markCodexIdle(tab)
       // /clear 语义上需清空上下文，重置 cliSessionId 新建线程，
       // 否则 SDK 仍持有旧历史，刷新后消息又回来。
       tab.cliSessionId = null
@@ -1383,9 +1389,8 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
     chat.cwd = cwd
     proj.chats = [chat]
   }
-  activeChatId.value = proj.chats[0]?.id || null
-  void refreshMetricsForChat(proj.chats[0] || null)
-  requestAnimationFrame(() => { smartScrollBottom(activeChatId.value) })
+  const firstChatId = proj.chats[0]?.id || null
+  if (firstChatId) switchChat(firstChatId)
 }
 
 async function refreshProjectSessionsInBackground(project) {
@@ -1505,7 +1510,9 @@ async function refreshProjectSessionsInBackground(project) {
     }
 
     if (!project.chats.find(c => c.id === activeChatId.value)) {
-      activeChatId.value = project.chats[0]?.id || null
+      const fallbackChatId = project.chats[0]?.id || null
+      if (fallbackChatId) switchChat(fallbackChatId)
+      else activeChatId.value = null
     }
     void refreshMetricsForChat(project.chats?.find(c => c.id === activeChatId.value) || null)
 
@@ -1744,9 +1751,9 @@ function switchProject(id, preferredChat = null) {
   if (preferred) {
     switchChat(preferred.id)
   } else {
-    activeChatId.value = getLatestChatId(p?.chats || [])
-    void refreshMetricsForChat(p?.chats?.find(c => c.id === activeChatId.value) || null)
-    requestAnimationFrame(() => { smartScrollBottom() })
+    const latestChatId = getLatestChatId(p?.chats || [])
+    if (latestChatId) switchChat(latestChatId)
+    else activeChatId.value = null
   }
   if (p?.cwdLocked && p?.cwd) {
     if (!p._settingsLoaded) { p._settingsLoaded = true; loadProjectSettings(p) }
@@ -2084,9 +2091,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   // 飞行锁 + 乐观 thinking：必须在 await 之前设置 thinking=true。
   // 后端 Promise 在 finally 中 resolve，晚于 codex-agent-done 事件发送。
   // 如果 thinking 在 await 之后才设置，onAgentDone 已将其清为 false 后又被覆盖为 true，导致永不消失。
-  tab._awaitingDone = true
-  tab.thinking = true
-  tab._thinkingStart = Date.now()
+  markCodexTurnStarting(tab)
 
   const images = imageAttachments.map(({ dataUrl, mediaType, path, name, size }) => ({
     dataUrl,
@@ -2148,15 +2153,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }
   if (!accepted) {
     // 清除乐观设置的 thinking（await 之前设的），再根据拒绝类型决定是否重新显示
-    tab.thinking = false
-    tab._thinkingStart = null
+    markCodexIdle(tab)
     stopMetricsTimer()
     if (shouldQueueRejectedCodexInput(queryResult)) {
-      tab._queuedInput = text
-      tab._queuedInputMessageId = userMsg.id
-      tab._awaitingDone = true
-      tab.thinking = true
-      tab._thinkingStart = tab._thinkingStart || Date.now()
+      markCodexQueued(tab, { text, messageId: userMsg.id })
       tab.metrics = {
         ...buildNewTurnMetrics(tab),
         sessionId: tab.sessionId,
@@ -2171,9 +2171,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
           if (!tab._queuedInput) return
           const retryText = tab._queuedInput
           tab._queuedInput = ''
-          tab._awaitingDone = false
-          tab.thinking = false
-          tab._thinkingStart = null
+          markCodexIdle(tab)
           await sendMessage(retryText, tab)
         }, 1200)
         queuedRetryTimers.set(tab.sessionId, timer)
@@ -2182,8 +2180,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     }
     // 非 queueable 拒绝（IPC 异常或意外返回值）：不清除用户消息，仅清理 thinking 状态。
     // 保留用户消息可以避免"消息消失"的恶劣体验；用户看到 toast 后可稍后重试。
-    tab._awaitingDone = false
-    // tab.thinking 已在上面清除
+    markCodexIdle(tab)
     ElMessage.warning({ message: t('agent.codexBusy'), showClose: true, duration: 5000 })
     saveHistory()
     return
@@ -2193,12 +2190,12 @@ async function sendMessage(textOverride = null, targetTab = null) {
     tab._queuedInputMessageId = null
   }
   if (tab.thinking) {
-    tab.metrics = {
+    markCodexTurnAccepted(tab, {
       ...buildNewTurnMetrics(tab),
       sessionId: tab.sessionId,
       model: tab.metrics?.model || metricsData.value.model || '',
       thinking: true,
-    }
+    })
     if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
   }
 }
@@ -2245,16 +2242,14 @@ async function abortSession() {
   if (tab._queuedInputMessageId) tab._queuedInputMessageId = null
   // 立即隐藏停止按钮给予即时反馈，_awaitingDone 阻止 sendMessage
   // 直到后端 abort 完成，避免下一条消息撞上 session_already_running
-  tab.thinking = false
-  tab._awaitingDone = true
-  tab._thinkingStart = null
+  markCodexAbortRequested(tab)
   stopMetricsTimer()
   try {
     await window.electronAPI.codexAgentAbort?.(tab.sessionId)
   } catch (_) {
     // abort 失败不阻塞状态清理
   }
-  tab._awaitingDone = false
+  markCodexAborted(tab)
   saveHistory()
 }
 
@@ -2419,20 +2414,7 @@ function onMetricsUpdate(data) {
   tab.metrics = mergeCodexMetrics(tab.metrics || {}, metricsPayload, { sessionId: data.sessionId })
   if (data.model) tab.model = data.model
   if (typeof metricsThinking === 'boolean') {
-    if (shouldSyncThinkingFromMetrics({
-      currentThinking: tab.thinking,
-      awaitingDone: tab._awaitingDone,
-      nextThinking: metricsThinking,
-    })) {
-      tab.thinking = metricsThinking
-    }
-    tab.metrics.thinking = Boolean(tab.thinking)
-    if (metricsThinking && tab.thinking) {
-      tab._awaitingDone = true
-      if (!tab._thinkingStart) tab._thinkingStart = Date.now() - (data.durationMs || 0)
-    } else {
-      tab._thinkingStart = null
-    }
+    applyCodexMetrics(tab, { ...data, thinking: metricsThinking })
   }
   if (tab.id === activeChatId.value) {
     if (tab.thinking && tab._thinkingStart) startMetricsTimer(tab._thinkingStart)
@@ -2455,7 +2437,6 @@ watch(() => activeTab.value?.sessionId, () => {
 const canSend = computed(() => {
   if (!activeProject.value?.cwdLocked || !activeTab.value) return false
   if (isActiveTabHistoryDeferred.value) return false
-  if (isCodexTurnLocked(activeTab.value)) return false
   return Boolean((inputText.value || '').trim() || pendingImages.value.length)
 })
 
@@ -2749,9 +2730,9 @@ onMounted(async () => {
     const p = activeProject.value
     // 恢复后重新排序（F001：按最新对话时间）
     if (p?.chats?.length) p.chats = sortChatsByRecency(p.chats)
-    activeChatId.value = getLatestChatId(p?.chats || [])
-    requestAnimationFrame(() => { smartScrollBottom(); syncMetricsTimerForActiveTab() })
-    void refreshMetricsForChat(activeTab.value)
+    const latestChatId = getLatestChatId(p?.chats || [])
+    if (latestChatId) switchChat(latestChatId)
+    else activeChatId.value = null
     // 恢复后立即注册所有会话的 cliSessionId 映射（对齐 ClaudeCode T046 根因 B 修复）
     // 避免后端 cliSessionIds Map 为空时，下一条消息执行 startThread（创建新会话）而非 resumeThread
     {

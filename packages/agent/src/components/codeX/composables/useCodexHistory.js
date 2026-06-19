@@ -1,5 +1,6 @@
 import { shouldPersistInlineMessages, shouldRestoreInlineMessages } from '../utils/historyLoadSafety.mjs'
 import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
+import { buildPersistableCodexChat } from '../utils/codexRuntimeState.mjs'
 
 export function useCodexHistory({
   projects, setProjects, getProjectCounter, setProjectCounter,
@@ -77,22 +78,25 @@ export function useCodexHistory({
       projects: projects.value.map(p => ({
         id: p.id, name: p.name, cwd: p.cwd, cwdLocked: Boolean(p.cwdLocked), hasDoneNotification: Boolean(p.hasDoneNotification),
         additionalDirectories: p.additionalDirectories || [],
-        chats: (p.chats || []).map(c => ({
-          id: c.id, name: c.name, sessionId: c.sessionId,
-          messages: streamingIds.has(c.sessionId) || !shouldPersistInlineMessages(c) ? [] : (c.messages || []),
-          metrics: c.metrics || null,
-          model: c.model || null,
-          reasoningEffort: c.reasoningEffort || null,
-          sandboxMode: c.sandboxMode || null,
-          networkAccessEnabled: typeof c.networkAccessEnabled === 'boolean' ? c.networkAccessEnabled : null,
-          webSearchMode: c.webSearchMode || null,
-          _thinkingStart: c.filePath ? null : (c._thinkingStart || null),
-          _awaitingDone: c.filePath ? false : Boolean(c._awaitingDone),
-          cliSessionId: c.cliSessionId, filePath: c.filePath,
-          createdAt: c.createdAt ?? null, updatedAt: c.updatedAt ?? null, fileSize: c.fileSize ?? null,
-          titleSource: c.titleSource || '',
-          _userRenamed: Boolean(c._userRenamed),
-        })),
+        chats: (p.chats || []).map(c => {
+          const persistable = buildPersistableCodexChat(c)
+          return {
+            id: persistable.id, name: persistable.name, sessionId: persistable.sessionId,
+            messages: streamingIds.has(c.sessionId) || !shouldPersistInlineMessages(c) ? [] : (persistable.messages || []),
+            metrics: persistable.metrics || null,
+            model: persistable.model || null,
+            reasoningEffort: persistable.reasoningEffort || null,
+            sandboxMode: persistable.sandboxMode || null,
+            networkAccessEnabled: typeof persistable.networkAccessEnabled === 'boolean' ? persistable.networkAccessEnabled : null,
+            webSearchMode: persistable.webSearchMode || null,
+            _thinkingStart: persistable._thinkingStart,
+            _awaitingDone: persistable._awaitingDone,
+            cliSessionId: persistable.cliSessionId, filePath: persistable.filePath,
+            createdAt: persistable.createdAt ?? null, updatedAt: persistable.updatedAt ?? null, fileSize: persistable.fileSize ?? null,
+            titleSource: persistable.titleSource || '',
+            _userRenamed: Boolean(persistable._userRenamed),
+          }
+        }),
       })),
     }
   }

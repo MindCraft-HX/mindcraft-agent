@@ -3,6 +3,12 @@ import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotifica
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
 import { findChatBySessionId } from '../utils/sessionRouting.mjs'
 import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs'
+import {
+  markCodexDone,
+  markCodexFailed,
+  markCodexStreamActivity,
+  markCodexTerminalSeen,
+} from '../utils/codexRuntimeState.mjs'
 const CODEX_DEBUG = false
 
 function normalizeIncomingFileChange(c = {}) {
@@ -565,16 +571,14 @@ export function useCodexAgentStream({
     if (!tab) return
 
     const isWorking = msg.type === 'assistant' || msg.type === 'item.started' || msg.type === 'item.updated'
-    if (!tab.thinking && isWorking && tab._awaitingDone) tab.thinking = true
+    if (isWorking) markCodexStreamActivity(tab, msg)
 
     if (msg.type === 'turn.completed' || msg.type === 'task_complete') {
       const lastThinking = [...tab.messages].reverse().find(
         m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
       )
       if (lastThinking) lastThinking.status = 'done'
-      tab.thinking = false
-      tab._awaitingDone = false
-      tab.currentAssistantId = null
+      markCodexTerminalSeen(tab)
       scrollBottom(tab.id)
       saveHistory({ immediate: true })
       return
@@ -634,9 +638,7 @@ export function useCodexAgentStream({
     }
 
     if (msg.type === 'turn.failed') {
-      tab.thinking = false
-      tab._awaitingDone = false
-      tab.currentAssistantId = null
+      markCodexFailed(tab, msg.error || msg.message)
       const errorText = msg.error?.message || msg.message || 'Turn 执行失败'
       pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${errorText}` })
       scrollBottom(tab.id)
@@ -650,9 +652,7 @@ export function useCodexAgentStream({
         return
       }
       if (msg.subtype === 'abort') {
-        tab.thinking = false
-        tab._awaitingDone = false
-        tab.currentAssistantId = null
+        markCodexFailed(tab, 'aborted')
         const lastThinking = [...tab.messages].reverse().find(
           m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
         )
@@ -663,9 +663,7 @@ export function useCodexAgentStream({
       }
       if (msg.subtype === 'error') {
         // thread.error / turn.failed 发来的系统级错误，清理状态并显示
-        tab.thinking = false
-        tab._awaitingDone = false
-        tab.currentAssistantId = null
+        markCodexFailed(tab, msg)
         const lastThinking = [...tab.messages].reverse().find(
           m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
         )
@@ -792,22 +790,15 @@ export function useCodexAgentStream({
     }
     console.log(`[codex-done] onAgentDone: sid=${sid} tabFound=${!!tab} ownerProj=${ownerProject?.id || 'none'} activeProj=${getActiveProjectId?.() || 'none'} panelActive=${isPanelActive?.value ?? 'N/A'} reason=${reason}`)
     if (!tab) return
-    if (cliSessionId) {
-      tab.cliSessionId = cliSessionId
-      window.electronAPI.codexRegisterCliSessions?.({ [sid]: cliSessionId })
-    }
-    if (filePath) {
-      tab.filePath = filePath
-      if (CODEX_DEBUG) console.log('[CodexStream] onAgentDone → filePath:', filePath)
-    }
+    if (cliSessionId) window.electronAPI.codexRegisterCliSessions?.({ [sid]: cliSessionId })
+    if (filePath && CODEX_DEBUG) console.log('[CodexStream] onAgentDone → filePath:', filePath)
     const lastThinking = [...tab.messages].reverse().find(
       m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
     )
     if (lastThinking) {
       lastThinking.status = 'done'
     }
-    tab.thinking = false
-    tab._awaitingDone = false
+    markCodexDone(tab, { cliSessionId, filePath, reason })
     if (ownerProject && reason === 'completed') {
       // 提示音：任何任务完成都响，不受窗口焦点/活跃 Tab 影响
       onTaskDone?.()
@@ -822,7 +813,6 @@ export function useCodexAgentStream({
         window.electronAPI?.flashTaskbar?.()
       }
     }
-    tab.currentAssistantId = null
     trimMessages?.(tab)
     scrollBottom(tab.id)
     saveHistory()

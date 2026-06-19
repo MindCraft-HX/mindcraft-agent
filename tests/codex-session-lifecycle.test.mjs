@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  CODEX_RUNTIME_STATES,
   isCodexTurnLocked,
   mergeScannedChatsPreservingRuntime,
   shouldHydrateHistoryFromDisk,
@@ -31,6 +32,12 @@ test('late metrics thinking=true must not revive a completed Codex turn', () => 
     awaitingDone: false,
     nextThinking: true,
   }), true)
+  assert.equal(shouldSyncThinkingFromMetrics({
+    currentThinking: false,
+    awaitingDone: true,
+    nextThinking: true,
+    runtimeState: CODEX_RUNTIME_STATES.TERMINAL_SEEN,
+  }), false)
 })
 
 test('streaming session should keep in-memory messages instead of reloading disk history', () => {
