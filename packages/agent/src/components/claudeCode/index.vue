@@ -2770,7 +2770,7 @@ async function sendMessage() {
         filePath: tab.filePath,
       }
       if (previousSession.cliSessionId || previousSession.filePath) {
-        window.electronAPI?.claudeHideProviderSession?.({
+        await window.electronAPI?.claudeHideProviderSession?.({
           ...previousSession,
           reason: 'cleared',
         })?.catch?.(() => {})
@@ -2779,7 +2779,7 @@ async function sendMessage() {
       // /clear 语义上应清空上下文，需重建会话，避免继续复用旧 token 窗口。
       resetTabSession(tab)
       tab._carryCompactSummary = ''
-      saveHistory()
+      saveHistory({ immediate: true })
       return
     }
     if (cmd === '/plugins') {
