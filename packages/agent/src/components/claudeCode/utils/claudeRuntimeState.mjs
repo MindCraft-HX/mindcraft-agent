@@ -43,6 +43,7 @@ export function isClaudeTurnLocked(tab = {}) {
 
 export function markClaudeTurnStarting(tab, now = Date.now()) {
   if (!tab) return tab
+  if (!tab.cliSessionId && !tab.filePath) tab._pendingSessionBinding = true
   setRuntimeState(tab, CLAUDE_RUNTIME_STATES.STARTING)
   tab.thinking = true
   tab._thinkingStart = now
@@ -115,7 +116,8 @@ export function markClaudeSessionCleared(tab) {
   tab.filePath = ''
   tab.fileSize = null
   tab._messagesLoaded = true
-  tab._pendingSessionBinding = true
+  tab._pendingSessionBinding = false
+  delete tab._expectedCliSessionId
   markClaudeIdle(tab)
   return tab
 }

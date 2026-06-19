@@ -25,6 +25,7 @@ test('Claude runtime starting to done clears lifecycle fields and binds session 
   markClaudeTurnStarting(tab, 1000)
   assert.equal(tab.thinking, true)
   assert.equal(tab._thinkingStart, 1000)
+  assert.equal(tab._pendingSessionBinding, true)
   assert.equal(isClaudeTurnLocked(tab), true)
 
   markClaudeDone(tab, {
@@ -118,6 +119,7 @@ test('clearing Claude session drops old transcript binding', () => {
     fileSize: 12345,
     _messagesLoaded: false,
     _pendingSessionBinding: false,
+    _expectedCliSessionId: 'cli-old',
     thinking: true,
     _thinkingStart: 1000,
     currentAssistantId: 'assistant-1',
@@ -129,11 +131,27 @@ test('clearing Claude session drops old transcript binding', () => {
   assert.equal(tab.filePath, '')
   assert.equal(tab.fileSize, null)
   assert.equal(tab._messagesLoaded, true)
-  assert.equal(tab._pendingSessionBinding, true)
+  assert.equal(tab._pendingSessionBinding, false)
+  assert.equal(Object.hasOwn(tab, '_expectedCliSessionId'), false)
   assert.equal(tab.thinking, false)
   assert.equal(tab._thinkingStart, null)
   assert.equal(tab.currentAssistantId, null)
   assert.equal(tab._claudeRuntimeState, 'idle')
+})
+
+test('cleared Claude session only becomes pending after the next send starts', () => {
+  const tab = {
+    cliSessionId: 'cli-old',
+    filePath: 'C:/Users/demo/.claude/projects/repo/cli-old.jsonl',
+    _pendingSessionBinding: false,
+  }
+
+  markClaudeSessionCleared(tab)
+  assert.equal(tab._pendingSessionBinding, false)
+
+  markClaudeTurnStarting(tab, 2000)
+  assert.equal(tab._pendingSessionBinding, true)
+  assert.equal(tab.thinking, true)
 })
 
 console.log('claude runtime state test passed')
