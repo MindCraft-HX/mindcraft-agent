@@ -74,10 +74,14 @@
           </template>
           <template v-else-if="envStatus">
             <div class="env-row">
-              <span class="env-item" :class="envStatus.node?.installed ? 'ok' : 'warn'">
+              <span class="env-item" :class="envStatus.node?.compatible ? 'ok' : (envStatus.node?.installed ? 'warn' : 'err')">
                 <span class="env-dot"></span>
                 Node {{ envStatus.node?.installed ? envStatus.node.version : $t('settings.notInstalled') }}
+                <span v-if="envStatus.node?.installed && !envStatus.node?.compatible" class="env-tip">{{ $t('settings.needNode') }}</span>
               </span>
+              <span v-if="!envStatus.node?.installed || !envStatus.node?.compatible" class="env-divider">|</span>
+              <a v-if="!envStatus.node?.installed || !envStatus.node?.compatible"
+                class="env-node-link" @click="openNodeJsDownload">{{ $t('settings.downloadNode') }}</a>
               <span class="env-item" :class="envStatus.npm?.installed ? 'ok' : 'warn'">
                 <span class="env-dot"></span>
                 npm {{ envStatus.npm?.installed ? envStatus.npm.version : $t('settings.notInstalled') }}
@@ -94,9 +98,12 @@
               <span v-if="envUpdateAvailable" class="env-update-badge">{{ $t('settings.newVersion') }}</span>
               <button v-if="!envStatus.codex?.installed"
                 class="env-install-btn"
-                :disabled="envInstalling || !envStatus.npm?.installed || !envStatus.node?.installed"
+                :disabled="envInstalling || !envStatus.npm?.installed || !envStatus.node?.compatible"
                 @click="installCodex"
+                :title="!envStatus.node?.compatible ? $t('settings.needNodeHint') : !envStatus.npm?.installed ? $t('settings.needNpmHint') : ''"
               >{{ envInstalling ? $t('settings.installing') : $t('settings.oneClickInstall') }}</button>
+              <span v-if="!envStatus.codex?.installed && !envStatus.node?.compatible" class="env-hint-inline">{{ $t('settings.needNodeHint') }}</span>
+              <span v-else-if="!envStatus.codex?.installed && !envStatus.npm?.installed" class="env-hint-inline">{{ $t('settings.needNpmHint') }}</span>
               <button class="env-refresh-btn" @click="checkEnvironment" :title="$t('settings.redetect')">↻</button>
             </div>
             <div v-if="envStatus.codex?.installed && envStatus.codex.path" class="env-path-hint">
@@ -196,7 +203,7 @@ async function checkEnvironment() {
     const res = await window.electronAPI?.codexCheckEnvironment?.()
     envStatus.value = res || null
   } catch (e) {
-    envStatus.value = { node: { installed: false, version: null }, npm: { installed: false, version: null }, codex: { installed: false, path: null } }
+    envStatus.value = { node: { installed: false, version: null, compatible: false }, npm: { installed: false, version: null }, codex: { installed: false, path: null } }
   } finally { envChecking.value = false }
 }
 
@@ -274,6 +281,10 @@ async function checkForUpdate() {
   } finally {
     envCheckingUpdate.value = false
   }
+}
+
+function openNodeJsDownload() {
+  window.electronAPI?.openExternalWindow?.('https://nodejs.org')
 }
 
 function openSettings() {
@@ -716,6 +727,15 @@ function closeSettings() {
   &:disabled { opacity: .45; cursor: not-allowed; }
   &:not(:disabled):hover { background: var(--cc-info-bg); }
 }
+.env-node-link {
+  color: var(--cc-info); font-size: 11px; cursor: pointer; text-decoration: underline;
+  white-space: nowrap;
+}
+.env-tip { color: var(--cc-warning); font-size: 10px; }
+.env-hint-inline {
+  color: var(--cc-warning); font-size: 11px; white-space: nowrap;
+}
+.env-divider { color: var(--cc-border-strong); }
 .env-update-btn {
   padding: 2px 8px; border-radius: 4px; border: 1px solid var(--cc-success-border);
   background: transparent; color: var(--cc-success); font-size: 11px; cursor: pointer;

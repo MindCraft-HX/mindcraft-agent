@@ -86,6 +86,8 @@
                 @click="installClaudeCode"
                 :title="!envStatus.node?.compatible ? $t('settings.needNodeHint') : !envStatus.npm?.installed ? $t('settings.needNpmHint') : ''"
               >{{ envInstalling ? $t('settings.installing') : $t('settings.oneClickInstall') }}</button>
+              <span v-if="!envStatus.claude?.installed && !envStatus.node?.compatible" class="env-hint-inline">{{ $t('settings.needNodeHint') }}</span>
+              <span v-else-if="!envStatus.claude?.installed && !envStatus.npm?.installed" class="env-hint-inline">{{ $t('settings.needNpmHint') }}</span>
               <button v-if="envStatus.claude?.installed && !envStatus.claude?.path"
                 class="env-config-btn" @click="showExePath = !showExePath"
                 :title="$t('settings.configClaudePath')">{{ $t('settings.configPath') }}</button>
@@ -1020,6 +1022,9 @@ async function removeProvider(i) {
 }
 .env-node-link {
   color: var(--cc-info); font-size: 11px; cursor: pointer; text-decoration: underline;
+}
+.env-hint-inline {
+  color: var(--cc-warning); font-size: 11px; white-space: nowrap;
 }
 .env-refresh-btn {
   margin-left: auto; background: none; border: none; color: var(--cc-text-dim);
