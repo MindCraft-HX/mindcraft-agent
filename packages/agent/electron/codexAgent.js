@@ -2993,8 +2993,10 @@ function setupCodexSdkHandlers() {
           if (err) reject(err); else resolve(stdout)
         })
       })).trim()
-      result.node = { installed: true, version: ver }
-    } catch (_) { result.node = { installed: false, version: null } }
+      const match = ver.match(/^v(\d+)\./)
+      const major = match ? parseInt(match[1], 10) : 0
+      result.node = { installed: true, version: ver, compatible: major >= 18 }
+    } catch (_) { result.node = { installed: false, version: null, compatible: false } }
     try {
       const ver = (await new Promise((resolve, reject) => {
         exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
