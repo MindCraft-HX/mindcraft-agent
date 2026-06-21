@@ -311,7 +311,7 @@ function onSave() {
       model: form.model,
       reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort.value),
       apiFormat: apiFormat.value,
-      alternativeModels: altModels.value.filter(s => s && s.trim()),
+      alternativeModels: altModels.value.map(s => (s || '').trim()),
       authJson,
       tomlText: tomlText.value,
     },

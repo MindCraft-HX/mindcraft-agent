@@ -360,7 +360,7 @@ function normalizeProviderRecord(provider = {}) {
     model: provider.model || draft.model || '',
     reasoningEffort: normalizeCodexReasoningEffort(provider.reasoningEffort || draft.reasoningEffort),
     apiFormat: provider.apiFormat || draft.apiFormat || 'responses',
-    alternativeModels: Array.isArray(provider.alternativeModels) ? provider.alternativeModels.filter(Boolean) : [],
+    alternativeModels: Array.isArray(provider.alternativeModels) ? provider.alternativeModels.map(s => (s || '').trim()) : [],
     authJson: provider.authJson || (key ? { OPENAI_API_KEY: key } : {}),
   }
 }
