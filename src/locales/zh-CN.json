@@ -672,7 +672,12 @@
 			"scopeSystem": "系统",
 			"scopeProject": "项目",
 			"unknownError": "未知错误"
-		}
+		},
+		"defaultModel": "默认模型",
+		"altModel1": "备选模型 1",
+		"altModel2": "备选模型 2",
+		"altModel3": "备选模型 3",
+		"altModelPlaceholder": "如 deepseek-reasoner"
 	},
 	"system": {
 		"claudeSlow": "Claude 响应较慢（可能在加载上下文或等待网络），请稍候…",

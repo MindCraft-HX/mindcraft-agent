@@ -60,14 +60,8 @@ const panelRef = ref(null)
 const rowRefs = ref([])
 const effortIndex = ref(2)
 
-// 硬编码模型列表，仅包含支持 Responses API 的模型
-// gpt-5.4 默认排第一
-const modelOptions = [
-  { id: 'gpt-5.4', label: 'GPT-5.4', desc: '推荐' },
-  { id: 'gpt-5.5', label: 'GPT-5.5', desc: '最新' },
-  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', desc: '' },
-  { id: 'gpt-5.2', label: 'GPT-5.2', desc: '稳定' },
-]
+// 模型列表由 open() 调用方传入（默认模型 + 备选模型 1/2/3）
+const modelOptions = ref([])
 
 const efforts = [
   { key: 'minimal', label: 'Minimal' },
@@ -94,10 +88,16 @@ async function open(opts = {}) {
     window.electronAPI?.codexGetReasoningEffort?.() || Promise.resolve(''),
   ])
 
+  // 使用调用方传入的模型列表，若无则回退到空列表
+  const list = (opts.modelOptions && opts.modelOptions.length > 0)
+    ? opts.modelOptions
+    : []
+  modelOptions.value = list
+
   const model = (opts.model || currentModel || '').trim()
   // 匹配当前模型，若不在列表里则高亮第一个
-  const matched = modelOptions.find(m => m.id === model)
-  hoveredId.value = matched ? model : modelOptions[0].id
+  const matched = list.find(m => m.id === model)
+  hoveredId.value = matched ? model : (list[0]?.id || '')
   initialModel.value = model || ''
 
   const effortStr = normalizeCodexReasoningEffort(opts.reasoningEffort || currentEffort) || 'medium'
@@ -113,7 +113,7 @@ async function open(opts = {}) {
 }
 
 function focusHoveredRow() {
-  const idx = modelOptions.findIndex(m => m.id === hoveredId.value)
+  const idx = modelOptions.value.findIndex(m => m.id === hoveredId.value)
   if (idx >= 0 && rowRefs.value[idx]) {
     rowRefs.value[idx]?.focus?.()
   }
@@ -132,25 +132,25 @@ function onKeydown(e) {
   if (e.key === 'Escape') { e.preventDefault(); cancel(); return }
   if (e.key === 'ArrowDown') {
     e.preventDefault()
-    const idx = modelOptions.findIndex(m => m.id === hoveredId.value)
-    if (idx < modelOptions.length - 1) {
-      hoveredId.value = modelOptions[idx + 1].id
+    const idx = modelOptions.value.findIndex(m => m.id === hoveredId.value)
+    if (idx < modelOptions.value.length - 1) {
+      hoveredId.value = modelOptions.value[idx + 1].id
       focusHoveredRow()
     }
     return
   }
   if (e.key === 'ArrowUp') {
     e.preventDefault()
-    const idx = modelOptions.findIndex(m => m.id === hoveredId.value)
+    const idx = modelOptions.value.findIndex(m => m.id === hoveredId.value)
     if (idx > 0) {
-      hoveredId.value = modelOptions[idx - 1].id
+      hoveredId.value = modelOptions.value[idx - 1].id
       focusHoveredRow()
     }
     return
   }
   if (e.key === 'Enter') {
     e.preventDefault()
-    const item = modelOptions.find(m => m.id === hoveredId.value)
+    const item = modelOptions.value.find(m => m.id === hoveredId.value)
     if (item) confirmSelection(item)
   }
 }

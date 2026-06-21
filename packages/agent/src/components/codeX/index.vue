@@ -2201,9 +2201,28 @@ async function openModelPicker() {
   inputText.value = ''
   slashSuggestions.value = []
   const tab = activeTab.value
+
+  // 构造模型列表：默认模型 + 备选模型 1/2/3
+  const altModels = await window.electronAPI?.codexGetAlternativeModels?.() || []
+  const currentModel = await window.electronAPI?.codexGetModel?.() || ''
+  const modelItems = []
+  // 默认模型（始终在第一项）
+  if (currentModel) {
+    modelItems.push({ id: currentModel, label: t('agent.defaultModel') })
+  }
+  // 备选模型
+  const altLabels = ['agent.altModel1', 'agent.altModel2', 'agent.altModel3']
+  for (let i = 0; i < altModels.length && i < 3; i++) {
+    const mid = String(altModels[i] || '').trim()
+    if (mid && mid !== currentModel) {
+      modelItems.push({ id: mid, label: t(altLabels[i]) })
+    }
+  }
+
   const result = await selectModelRef.value?.open?.({
     model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',
     reasoningEffort: tab?.reasoningEffort || codexDefaultReasoningEffort.value || '',
+    modelOptions: modelItems,
   })
   if (!result) return
   if (tab) {

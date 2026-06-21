@@ -41,6 +41,19 @@
         </div>
 
         <div class="setting-group">
+          <label class="setting-label">{{ $t('agent.altModel1') }}</label>
+          <input class="setting-input" v-model="altModels[0]" :placeholder="$t('agent.altModelPlaceholder')" />
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">{{ $t('agent.altModel2') }}</label>
+          <input class="setting-input" v-model="altModels[1]" :placeholder="$t('agent.altModelPlaceholder')" />
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">{{ $t('agent.altModel3') }}</label>
+          <input class="setting-input" v-model="altModels[2]" :placeholder="$t('agent.altModelPlaceholder')" />
+        </div>
+
+        <div class="setting-group">
           <label class="setting-label">Reasoning Effort</label>
           <select class="setting-input" v-model="reasoningEffort">
             <option value="low">low</option>
@@ -106,6 +119,7 @@ const hydratingFromProps = ref(false)
 const form = reactive({ name: '', key: '', url: '', model: '' })
 const reasoningEffort = ref('')
 const apiFormat = ref('responses')
+const altModels = ref(['', '', ''])
 const authJsonText = ref('')
 const tomlText = ref('')
 
@@ -129,7 +143,7 @@ watch(() => form.key, (key) => {
 })
 
 watch(
-  () => [form.name, form.url, form.model, reasoningEffort.value, apiFormat.value],
+  () => [form.name, form.url, form.model, reasoningEffort.value, apiFormat.value, altModels.value[0], altModels.value[1], altModels.value[2]],
   () => {
     if (hydratingFromProps.value) return
     syncManagedTomlFromForm()
@@ -149,6 +163,12 @@ function initFromProps() {
   form.model = provider.model || draft.model || ''
   reasoningEffort.value = normalizeCodexReasoningEffort(provider.reasoningEffort || draft.reasoningEffort)
   apiFormat.value = provider.apiFormat || draft.apiFormat || 'responses'
+  const alt = provider.alternativeModels || []
+  altModels.value = [
+    alt[0] || '',
+    alt[1] || '',
+    alt[2] || '',
+  ]
   authJsonText.value = provider.authJson
     ? JSON.stringify(provider.authJson, null, 2)
     : buildDefaultAuthJson()
@@ -291,6 +311,7 @@ function onSave() {
       model: form.model,
       reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort.value),
       apiFormat: apiFormat.value,
+      alternativeModels: altModels.value.filter(s => s && s.trim()),
       authJson,
       tomlText: tomlText.value,
     },

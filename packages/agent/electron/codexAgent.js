@@ -3178,6 +3178,20 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-get-providers', () => readProviders())
   ipcMain.handle('codex-set-providers', (_, data) => { writeProviders(data); return true })
 
+  ipcMain.handle('codex-get-alternative-models', () => {
+    try {
+      const providers = readProviders()
+      if (!providers || !Array.isArray(providers)) return []
+      const rt = readRuntimeConfig()
+      const model = String(rt.model || '').trim()
+      const active = model
+        ? providers.find(p => String(p.model || '').trim() === model)
+        : null
+      const first = active || providers[0]
+      return first?.alternativeModels || []
+    } catch (_) { return [] }
+  })
+
   ipcMain.handle('codex-write-auth-json', (_, obj) => {
     try {
       if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
