@@ -375,7 +375,7 @@
 		"thinkingEffort": "Reasoning Effort",
 		"apiFormat": "API Format",
 		"apiFormatResponses": "OpenAI Responses (official/compatible)",
-		"apiFormatChat": "OpenAI Chat Completions (protocol translation required)",
+		"apiFormatChat": "OpenAI Chat Completions",
 		"proxyHint": "The local agent proxy will automatically perform Responses ↔ Chat protocol translation for this provider",
 		"modelNav": "↑↓ Navigate  ↵ Confirm  Esc Cancel",
 		"recommend": "Recommended",
