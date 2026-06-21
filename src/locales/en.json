@@ -677,7 +677,7 @@
 		"altModel1": "Alternative Model 1",
 		"altModel2": "Alternative Model 2",
 		"altModel3": "Alternative Model 3",
-		"altModelPlaceholder": "e.g. deepseek-reasoner"
+		"altModelPlaceholder": "Enter alternative model name"
 	},
 	"system": {
 		"claudeSlow": "Claude is responding slowly (loading context or waiting for network), please wait…",

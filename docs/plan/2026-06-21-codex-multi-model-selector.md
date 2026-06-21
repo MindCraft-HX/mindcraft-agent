@@ -260,7 +260,7 @@ zh-CN.json:
     "altModel1": "备选模型 1",
     "altModel2": "备选模型 2",
     "altModel3": "备选模型 3",
-    "altModelPlaceholder": "如 deepseek-reasoner",
+    "altModelPlaceholder": "输入备选模型名称",
     "defaultModel": "默认模型"
   }
 }
@@ -273,7 +273,7 @@ en.json:
     "altModel1": "Alternative Model 1",
     "altModel2": "Alternative Model 2",
     "altModel3": "Alternative Model 3",
-    "altModelPlaceholder": "e.g. deepseek-reasoner",
+    "altModelPlaceholder": "Enter alternative model name",
     "defaultModel": "Default Model"
   }
 }

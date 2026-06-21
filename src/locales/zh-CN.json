@@ -677,7 +677,7 @@
 		"altModel1": "备选模型 1",
 		"altModel2": "备选模型 2",
 		"altModel3": "备选模型 3",
-		"altModelPlaceholder": "如 deepseek-reasoner"
+		"altModelPlaceholder": "输入备选模型名称"
 	},
 	"system": {
 		"claudeSlow": "Claude 响应较慢（可能在加载上下文或等待网络），请稍候…",
