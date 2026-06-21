@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-06-19（T138 Agent Session Identity Registry 人工验收完成；删除会话改为单次危险确认）
+> 最后更新：2026-06-21（T143 CodeX 多模型选择器改造计划完成）
 >
 > ⚠️ **会话相关 bug 排查第一入口**：`docs/session-pitfalls.md`（跨 Agent 陷阱全景图）
 > ⚠️ **SDK 利用率审计**：当前 ~15%，详见下方「SDK 能力挖掘」章节
@@ -114,6 +114,7 @@
 | T121 | bug | **mdViewer 代码高亮颜色不跟随主题**：删除 `src/main.js` 中两个冲突的 hljs 主题 CSS 全局导入；`MarkdownViewer.vue` 新增 16 个 hljs token `:deep()` 样式映射 `--cc-hljs-*`；`CodeTextViewer.vue` 拆分为 9 组独立 token 规则引用 `--cc-hljs-*` 变量 | P1 | ✅ 已修复 |
 | T122 | bug | **mdViewer 文字不可见（代码块/表格/标题/引用块）**：`MarkdownViewer.vue` 中 12 处硬编码颜色全部替换为 `var(--doc-*)` 变量（`--doc-text`/`--doc-paper`/`--doc-bg`/`--doc-line`），代码块 header/button/hljs 文字从 `#e5e7eb`→`var(--doc-text)`，标题从 `#111827`→`var(--doc-text)`，表格背景从 `#fff`→`var(--doc-paper)` | P1 | ✅ 已修复 |
 | T123 | bug | **mdViewer 多个文档只有第一个能打开**：①`mdRouting.js`: `mdViewerReady` 时直发不入队，消除 keep-alive 下 pendingPayloads 泄漏；②`index.vue`: 监听器 dispose 改在 `onDeactivated` + `onActivated` 重注册；③`addPayload` 串行化（`payloadQueue` 替代 `void` fire-and-forget）；④catch 块设置 `content` 而非空 tab | P1 | ✅ 已修复 |
+| T143 | feature | **CodeX 多模型选择器：去硬编码 + 可选模型配置**：SelectModel.vue 当前硬编码 4 个 GPT 模型，与 Provider 配置完全脱节（配 DeepSeek 却显示 GPT-5.4）。方案：config.toml `model` 保持为默认模型（CodeX 原生字段）；ProviderForm 新增 3 个可选模型输入框，值存入 electron-conf（APP 层数据，不污染 toml）；SelectModel 改为 props 驱动，展示默认模型 + 可选模型（最多 4 个）。详见 `docs/plan/2026-06-21-codex-multi-model-selector.md`。 | P0 | 📝 计划完成 |
 | T137 | feature | **CodeX Chat Completions 协议转换代理**：Electron 主进程内置 HTTP 代理，将 CodeX CLI 的 Responses 请求实时转换为 Chat Completions 请求 → 上游 Chat API → 转换 Responses 响应返回。使 CodeX 可对接所有 OpenAI Chat 兼容模型（DeepSeek/Kimi/Qwen/GLM/MiniMax 等）。ProviderForm 新增 "API 格式" 下拉显式标记（chat/responses）；config.toml 用通用 `api_format` 字段（开源，不绑定 MindCraft）。包含 6 个新模块：proxyServer/transformRequest/transformResponse/transformStream/reasoningMapper/common，预计 ~980 行新代码 + ~80 行修改。详见 `docs/codex-chat-proxy-plan.md`。 | P1 | ✅ 已完成 |
 
 ## T116 详情：Claude 会话中断后 dangling tool_use 恢复
