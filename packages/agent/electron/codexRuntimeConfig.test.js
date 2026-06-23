@@ -28,6 +28,7 @@ experimental_bearer_token = "sk-test"
     baseURL: 'https://api.example.com/v1',
     model: 'gpt-5.4',
     reasoningEffort: 'xhigh',
+    apiFormat: 'responses',
   })
 })
 
@@ -46,6 +47,7 @@ experimental_bearer_token = "sk-dot"
     baseURL: 'https://dot.example.com/v1',
     model: 'gpt-5.4',
     reasoningEffort: '',
+    apiFormat: 'responses',
   })
 })
 
@@ -67,5 +69,6 @@ experimental_bearer_token = "sk-toml"
     baseURL: 'https://user.example.com/v1',
     model: 'user-model',
     reasoningEffort: 'high',
+    apiFormat: 'responses',
   })
 })

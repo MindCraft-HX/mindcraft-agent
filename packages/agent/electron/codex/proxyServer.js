@@ -10,6 +10,7 @@
  */
 
 const http = require('http')
+const { StringDecoder } = require('string_decoder')
 const { responsesToChatCompletions } = require('./transformRequest')
 const { chatCompletionToResponse, chatErrorToResponseError } = require('./transformResponse')
 const { createResponsesSseFromChat } = require('./transformStream')
@@ -124,13 +125,79 @@ async function handleResponses(req, res, opts) {
 
   const isStream = body?.stream === true
 
+  // 🔍 诊断日志：原始 Responses 请求（看 CodeX CLI 实际发了什么）
+  console.log('[codex-proxy] ← ORIGINAL:', {
+    model: body?.model,
+    hasInstructions: !!body?.instructions,
+    instructionsType: typeof body?.instructions,
+    inputLen: body?.input?.length,
+    inputTypes: body?.input?.map(item => item?.type || item?.role || 'unknown'),
+    stream: body?.stream,
+    maxOutputTokens: body?.max_output_tokens,
+    hasReasoning: !!body?.reasoning,
+    reasoningEffort: body?.reasoning?.effort,
+    hasTools: !!body?.tools,
+    toolCount: body?.tools?.length,
+    allKeys: Object.keys(body || {}),
+  })
+
   // Step 1: 转换请求 Responses → Chat Completions
-  const chatBody = responsesToChatCompletions(body, model, upstream)
+  console.log('[codex-proxy] → ORIGINAL INPUT ROLES:', (body?.input || []).map((item, i) => ({
+    i,
+    type: item?.type || '',
+    role: item?.role || '',
+    hasReasoning: !!item?.reasoning_content || Array.isArray(item?.summary),
+    hasOutput: item?.output !== undefined,
+    hasContent: item?.content !== undefined,
+    hasToolName: !!item?.name,
+    callId: item?.call_id || '',
+  })))
+
+  const chatBody = responsesToChatCompletions(body, model, upstream, reasoningEffort)
+
+  // 🔍 诊断日志：确认代理实际发送的请求
+  const upstreamTarget = `${upstream}/chat/completions`
+  console.log('[codex-proxy] → REQUEST:', {
+    url: upstreamTarget,
+    modelFromCodex: body?.model,
+    modelToUpstream: chatBody.model,
+    stream: chatBody.stream,
+    msgCount: chatBody.messages?.length,
+    msgRoles: chatBody.messages?.map(m => ({ role: m.role, contentLen: typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length })),
+  })
 
   // Step 2: 转发到上游 Chat API
+  console.log('[codex-proxy] → REQUEST FULL:', JSON.stringify({
+    keys: Object.keys(chatBody || {}),
+    toolCount: Array.isArray(chatBody?.tools) ? chatBody.tools.length : 0,
+    toolNames: (chatBody?.tools || []).map(t => t?.function?.name || '').filter(Boolean),
+    tool_choice: chatBody?.tool_choice,
+    parallel_tool_calls: chatBody?.parallel_tool_calls,
+    stream_options: chatBody?.stream_options,
+    reasoning: chatBody?.reasoning,
+    reasoning_effort: chatBody?.reasoning_effort,
+    thinking: chatBody?.thinking,
+    enable_thinking: chatBody?.enable_thinking,
+    reasoning_split: chatBody?.reasoning_split,
+    messages: (chatBody?.messages || []).map((m, i) => ({
+      i,
+      role: m?.role,
+      hasToolCalls: Array.isArray(m?.tool_calls) && m.tool_calls.length > 0,
+      hasReasoning: !!m?.reasoning_content,
+      reasoningPreview: typeof m?.reasoning_content === 'string' ? m.reasoning_content.slice(0, 120) : '',
+      contentType: Array.isArray(m?.content) ? 'array' : typeof m?.content,
+      contentPreview: typeof m?.content === 'string' ? m.content.slice(0, 160) : JSON.stringify(m?.content).slice(0, 160),
+      toolCalls: (m?.tool_calls || []).map(tc => ({
+        id: tc?.id,
+        name: tc?.function?.name,
+        argumentsPreview: typeof tc?.function?.arguments === 'string' ? tc.function.arguments.slice(0, 120) : '',
+      })),
+    })),
+  }, null, 2))
+
   let upstreamRes
   try {
-    upstreamRes = await fetch(`${upstream}/chat/completions`, {
+    upstreamRes = await fetch(upstreamTarget, {
       method: 'POST',
       headers: buildUpstreamHeaders(apiKey),
       body: JSON.stringify(chatBody),
@@ -151,6 +218,7 @@ async function handleResponses(req, res, opts) {
   if (!upstreamRes.ok) {
     let errorBody = ''
     try { errorBody = await upstreamRes.text() } catch (_) {}
+    console.error('[codex-proxy] upstream error:', { status: upstreamRes.status, headers: Object.fromEntries(upstreamRes.headers.entries()), body: errorBody.slice(0, 500) })
     const normalizedError = chatErrorToResponseError(errorBody, upstreamRes.status)
     res.writeHead(upstreamRes.status, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify(normalizedError))
@@ -158,12 +226,36 @@ async function handleResponses(req, res, opts) {
 
   // Step 4: 流式响应
   if (isStream) {
+    const upstreamContentType = (upstreamRes.headers.get('content-type') || '').toLowerCase()
+
+    // 上游返回的不是 SSE（如 application/json）→ 按非流式处理
+    if (!upstreamContentType.includes('text/event-stream')) {
+      console.log('[codex-proxy] upstream returned non-SSE (content-type=' + upstreamContentType + '), treating as non-streaming')
+      let fullBody = ''
+      try { fullBody = await upstreamRes.text() } catch (_) {}
+      console.log('[codex-proxy] ← RAW body (first 500):', fullBody.slice(0, 500))
+
+      let chatResponse
+      try { chatResponse = JSON.parse(fullBody) } catch (_) {
+        res.writeHead(502, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: { type: 'upstream_error', message: 'Failed to parse upstream response' } }))
+      }
+
+      const responsesBody = chatCompletionToResponse(chatResponse)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify(responsesBody))
+    }
+
+    console.log('[codex-proxy] upstream response:', { status: upstreamRes.status, contentType: upstreamContentType })
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     })
 
+    let sseEventCount = 0
+    let rawChunkCount = 0
+    let totalRawText = ''
     try {
       // Node.js fetch ReadableStream → async iterable
       const reader = upstreamRes.body.getReader()
@@ -177,8 +269,11 @@ async function handleResponses(req, res, opts) {
                 const text = typeof value === 'string'
                   ? value
                   : Buffer.from(value).toString('utf8')
+                rawChunkCount++
+                totalRawText += text
                 return { value: text, done: false }
               } catch (err) {
+                console.error('[codex-proxy] upstream read error:', err.message)
                 return { done: true }
               }
             },
@@ -188,9 +283,16 @@ async function handleResponses(req, res, opts) {
 
       for await (const event of createResponsesSseFromChat(streamIterable)) {
         res.write(event)
+        sseEventCount++
       }
+
+      // 如果 SSE 解析没产出任何内容事件，打印原始数据来诊断
+      if (sseEventCount <= 3 && totalRawText) {
+        console.log('[codex-proxy] ⚠ low event count, raw response:', totalRawText.slice(0, 800))
+      }
+      console.log('[codex-proxy] stream done:', { sseEventCount, rawChunkCount })
     } catch (err) {
-      console.error('[codex-proxy] stream error:', err.message)
+      console.error('[codex-proxy] stream error:', { message: err.message, sseEventCount, rawChunkCount })
     }
 
     return res.end()
@@ -246,6 +348,8 @@ async function forwardToUpstream(req, res, opts) {
   const { upstream, apiKey } = opts
   const url = `${upstream}${req.url || ''}`
 
+  console.log('[codex-proxy] ⚡ FALLTHROUGH (unmatched path):', { method: req.method, url })
+
   try {
     const body = req.method !== 'GET' && req.method !== 'HEAD'
       ? await readRawBody(req)
@@ -293,9 +397,11 @@ function buildUpstreamHeaders(apiKey) {
  */
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
+    const decoder = new StringDecoder('utf8')
     let data = ''
-    req.on('data', chunk => { data += chunk })
+    req.on('data', chunk => { data += decoder.write(chunk) })
     req.on('end', () => {
+      data += decoder.end()
       try { resolve(data ? JSON.parse(data) : null) }
       catch (e) { reject(e) }
     })

@@ -15,7 +15,7 @@ const { applyReasoningToChatBody, inferReasoningConfig } = require('./reasoningM
  * @param {string} baseUrl - 上游 API URL (用于推理配置推断)
  * @returns {object} Chat Completions 请求体
  */
-function responsesToChatCompletions(body, model, baseUrl) {
+function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort) {
   const result = {}
 
   // model
@@ -48,19 +48,27 @@ function responsesToChatCompletions(body, model, baseUrl) {
     }
   }
 
+  const reasoningConfig = inferReasoningConfig(result.model, baseUrl)
+  const sanitizerContext = { model: result.model, baseUrl, reasoningConfig }
+
   // tools
   if (Array.isArray(body.tools) && body.tools.length) {
-    result.tools = body.tools.map(responsesToolToChat).filter(Boolean)
+    result.tools = body.tools
+      .map(tool => sanitizeResponsesToolForChat(tool, sanitizerContext))
+      .filter(Boolean)
     if (result.tools.length === 0) delete result.tools
   }
 
   // tool_choice
-  if (body.tool_choice !== undefined) {
-    result.tool_choice = responsesToolChoiceToChat(body.tool_choice)
+  if (body.tool_choice !== undefined && Array.isArray(result.tools) && result.tools.length) {
+    result.tool_choice = sanitizeToolChoiceForChat(
+      responsesToolChoiceToChat(body.tool_choice),
+      result.tools
+    )
   }
 
   // parallel_tool_calls
-  if (body.parallel_tool_calls !== undefined) {
+  if (Array.isArray(result.tools) && result.tools.length && body.parallel_tool_calls !== undefined) {
     result.parallel_tool_calls = body.parallel_tool_calls
   }
 
@@ -69,14 +77,17 @@ function responsesToChatCompletions(body, model, baseUrl) {
     result.stream_options = { ...(result.stream_options || {}), include_usage: true }
   }
 
-  // reasoning — 根据 provider 推断并应用推理参数
-  const reasoningEffort = body.reasoning?.effort || body.reasoning_effort || ''
-  const reasoningConfig = inferReasoningConfig(result.model, baseUrl)
+  const reasoningEffort = body.reasoning?.effort || body.reasoning_effort || runtimeReasoningEffort || ''
   if (reasoningEffort || reasoningConfig) {
     applyReasoningToChatBody(result, reasoningEffort, reasoningConfig)
   }
 
   return result
+}
+
+function shouldFilterDeferredCodexTools(model, baseUrl, reasoningConfig) {
+  const haystack = `${model || ''} ${baseUrl || ''} ${reasoningConfig?.label || ''}`.toLowerCase()
+  return haystack.includes('deepseek') || haystack.includes('mindcraft.com.cn')
 }
 
 /**
@@ -106,52 +117,106 @@ function instructionText(instructions) {
  * 将 Responses input[] 追加到 messages[]
  */
 function appendInputMessages(input, messages) {
+  const pendingToolCalls = []
+  let pendingReasoning = ''
+  let lastAssistantIndex = null
+
+  function appendReasoning(text) {
+    const t = String(text || '').trim()
+    if (!t) return
+    pendingReasoning = pendingReasoning ? (pendingReasoning + '\n\n' + t) : t
+  }
+
+  function flushPendingToolCalls() {
+    if (!pendingToolCalls.length) return
+    const msg = {
+      role: 'assistant',
+      content: null,
+      tool_calls: pendingToolCalls.splice(0, pendingToolCalls.length),
+      reasoning_content: pendingReasoning || 'tool call',
+    }
+    pendingReasoning = ''
+    lastAssistantIndex = messages.length
+    messages.push(msg)
+  }
+
+  function canonicalizeOutput(output) {
+    if (output === undefined || output === null) return ''
+    if (typeof output === 'string') return output
+    try { return JSON.stringify(output) } catch (_) { return String(output) }
+  }
+
   for (const item of input) {
     if (!item) continue
 
     switch (item.type || item.role) {
-      case 'message': {
-        const msg = responsesMessageToChatMessage(item)
-        if (msg) messages.push(msg)
-        break
-      }
       case 'function_call': {
-        const callMsg = responsesFunctionCallToChatMessage(item)
-        if (callMsg) messages.push(callMsg)
+        if (item.reasoning_content) appendReasoning(item.reasoning_content)
+        pendingToolCalls.push(responsesFunctionCallToToolCall(item))
         break
       }
       case 'function_call_output': {
+        flushPendingToolCalls()
         messages.push({
           role: 'tool',
           tool_call_id: item.call_id || '',
-          content: String(item.output || ''),
+          content: canonicalizeOutput(item.output),
         })
         break
       }
-      case 'item_reference': {
-        // 跳过（SDK 内部引用）
-        break
-      }
       case 'reasoning': {
-        // 跳过 reason items（SDK 会用 item_reference 引用）
+        const text = responsesReasoningItemText(item)
+        if (!pendingToolCalls.length && lastAssistantIndex !== null && messages[lastAssistantIndex] && messages[lastAssistantIndex].role === 'assistant') {
+          const prev = messages[lastAssistantIndex]
+          const merged = [prev.reasoning_content, text].filter(Boolean).join('\n\n').trim()
+          if (merged) messages[lastAssistantIndex] = { ...prev, reasoning_content: merged }
+        } else {
+          appendReasoning(text)
+        }
         break
       }
+      case 'item_reference': {
+        break
+      }
+      case 'message':
       default: {
-        // 尝试作为 message 处理
-        if (item.role) {
+        flushPendingToolCalls()
+        if (item.role || item.content !== undefined) {
           const msg = responsesMessageToChatMessage(item)
-          if (msg) messages.push(msg)
+          if (msg) {
+            if (msg.role === 'assistant') {
+              const merged = [pendingReasoning, item.reasoning_content].filter(Boolean).join('\n\n').trim()
+              if (merged) msg.reasoning_content = merged
+              pendingReasoning = ''
+              lastAssistantIndex = messages.length
+            } else if (msg.role !== 'tool') {
+              pendingReasoning = ''
+              lastAssistantIndex = null
+            }
+            messages.push(msg)
+          }
         }
       }
     }
   }
+
+  flushPendingToolCalls()
 }
 
-/**
- * Responses message item → Chat message
- */
 function responsesMessageToChatMessage(item) {
-  const role = item.role || 'user'
+  const rawRole = item.role || 'user'
+  // 角色映射 —— 对齐 CC SWITCH responses_role_to_chat_role():
+  //   system/developer → system（多数 Chat provider 只认 system/user/assistant/tool）
+  //   latest_reminder   → user（系统级提醒在 Chat API 中无对应角色，当用户消息处理）
+  const role = (() => {
+    switch (rawRole) {
+      case 'system': case 'developer': return 'system'
+      case 'assistant': return 'assistant'
+      case 'tool': return 'tool'
+      case 'user': case 'latest_reminder': return 'user'
+      default: return 'user'
+    }
+  })()
   const content = []
 
   if (typeof item.content === 'string') {
@@ -189,8 +254,8 @@ function responsesMessageToChatMessage(item) {
   if (content.length === 0) {
     return { role, content: '' }
   }
-  if (content.length === 1 && content[0].type === 'text') {
-    return { role, content: content[0].text }
+  if (content.every(part => part.type === 'text')) {
+    return { role, content: content.map(part => part.text || '').join('') }
   }
 
   return { role, content }
@@ -199,26 +264,37 @@ function responsesMessageToChatMessage(item) {
 /**
  * Responses function_call → Chat assistant message with tool_calls
  */
+function responsesFunctionCallToToolCall(item) {
+  return {
+    id: item.call_id || '',
+    type: 'function',
+    function: {
+      name: item.name || '',
+      arguments: typeof item.arguments === 'string'
+        ? item.arguments
+        : JSON.stringify(item.arguments || {}),
+    },
+  }
+}
+
 function responsesFunctionCallToChatMessage(item) {
   return {
     role: 'assistant',
     content: null,
-    tool_calls: [{
-      id: item.call_id || '',
-      type: 'function',
-      function: {
-        name: item.name || '',
-        arguments: typeof item.arguments === 'string'
-          ? item.arguments
-          : JSON.stringify(item.arguments || {}),
-      },
-    }],
+    tool_calls: [responsesFunctionCallToToolCall(item)],
   }
 }
 
-/**
- * 合并所有 system 消息到头部, MiniMax 不允许多 system
- */
+function responsesReasoningItemText(item) {
+  if (!item) return ''
+  if (typeof item.reasoning_content === 'string' && item.reasoning_content.trim()) return item.reasoning_content.trim()
+  if (typeof item.text === 'string' && item.text.trim()) return item.text.trim()
+  if (Array.isArray(item.summary)) {
+    return item.summary.map(part => part && (part.text || part.content || '')).filter(Boolean).join('\n').trim()
+  }
+  return ''
+}
+
 function collapseSystemMessages(messages) {
   if (!messages.length) return messages
 
@@ -263,6 +339,24 @@ function responsesToolToChat(tool) {
   }
 }
 
+function chatToolName(chatTool) {
+  return String(chatTool?.function?.name || '').trim()
+}
+
+function sanitizeResponsesToolForChat(tool, context = {}) {
+  const chatTool = responsesToolToChat(tool)
+  const name = chatToolName(chatTool)
+  if (!name) return null
+
+  // MindCraft/DeepSeek Chat currently accepts normal function tools but silently
+  // returns an empty stop for Codex's deferred multi-agent tool.
+  if (shouldFilterDeferredCodexTools(context.model, context.baseUrl, context.reasoningConfig)) {
+    if (name === 'multi_agent_v1') return null
+  }
+
+  return chatTool
+}
+
 /**
  * Responses tool_choice → Chat tool_choice
  */
@@ -288,11 +382,28 @@ function responsesToolChoiceToChat(toolChoice) {
   return toolChoice
 }
 
+function sanitizeToolChoiceForChat(toolChoice, tools) {
+  if (toolChoice === undefined) return undefined
+  if (toolChoice === 'none' || toolChoice === 'auto' || toolChoice === 'required') return toolChoice
+
+  const available = new Set((tools || []).map(chatToolName).filter(Boolean))
+  const name = toolChoice?.type === 'function'
+    ? String(toolChoice?.function?.name || '').trim()
+    : ''
+
+  if (!name) return toolChoice
+  return available.has(name) ? toolChoice : 'auto'
+}
+
 module.exports = {
   responsesToChatCompletions,
   instructionText,
   appendInputMessages,
   collapseSystemMessages,
   responsesToolToChat,
+  sanitizeResponsesToolForChat,
   responsesToolChoiceToChat,
+  sanitizeToolChoiceForChat,
+  responsesFunctionCallToToolCall,
+  responsesReasoningItemText,
 }

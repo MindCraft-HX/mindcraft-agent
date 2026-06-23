@@ -13,6 +13,7 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, findSessionRecordByProvider, repairSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
+const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
 const { normalizeFileChangeItemPreviews } = require('./codexFileChangePreview')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
 const {
@@ -1805,6 +1806,7 @@ function setupCodexSdkHandlers() {
       baseURL: runtime.baseURL,
       model: runtime.model,
       reasoningEffort: runtime.reasoningEffort,
+      apiFormat: runtime.apiFormat,
       cwd: path.resolve(cwd || process.cwd()),
     })
     const apiKey = runtime.apiKey || ''
@@ -1920,28 +1922,32 @@ function setupCodexSdkHandlers() {
       let doneSent = false
       let pendingItemIds = new Set()
       let thread = null
-      let proxyServer = null
       ;(async () => {
         try {
           const { Codex } = await loadCodexSdk()
 
-          // 协议转换代理：apiFormat === 'chat' 时启动本地代理
+          // 协议转换代理：跟随 apiFormat 自动管理，toml 接管/恢复由 chatProxyManager 统一处理
           let effectiveBaseUrl = baseURL || ''
           if (apiFormat === 'chat' && baseURL) {
             try {
-              const { startCodexProxy } = require('./codex/proxyServer')
-              proxyServer = await startCodexProxy({
+              const { port } = await ensureProxy({
                 upstreamUrl: baseURL,
                 apiKey,
                 model: model || '',
                 reasoningEffort,
               })
-              effectiveBaseUrl = `http://127.0.0.1:${proxyServer.port}/v1`
-              console.log('[codex] proxy started:', { port: proxyServer.port, upstream: baseURL })
+              effectiveBaseUrl = `http://127.0.0.1:${port}/v1`
             } catch (proxyErr) {
-              console.error('[codex] proxy start failed, falling back to direct:', proxyErr)
-              // 降级：代理启动失败时直连
+              console.error('[codex] proxy start failed:', {
+                upstream: baseURL,
+                model: model || '',
+                message: proxyErr?.message || String(proxyErr),
+              })
+              throw new Error(`Codex Chat proxy failed to start for ${model || 'current model'}: ${proxyErr?.message || proxyErr}`)
             }
+          } else {
+            // apiFormat 不是 chat → 确保代理关闭（含 toml 恢复）
+            try { await shutdownProxy() } catch (_) {}
           }
 
           const codex = new Codex({
@@ -2398,12 +2404,6 @@ function setupCodexSdkHandlers() {
             })
           }
         } finally {
-          // 关闭协议转换代理
-          if (proxyServer) {
-            try { await proxyServer.close() } catch (_) {}
-            proxyServer = null
-            console.log('[codex] proxy closed')
-          }
           clearTimeout(bootWatch)
           clearTimeout(turnTimeout)
           if (drainTimer) { clearTimeout(drainTimer); drainTimer = null }

@@ -156,10 +156,10 @@ function applyReasoningToChatBody(chatBody, reasoningEffort, reasoningConfig) {
   const { supportsThinking, supportsEffort, thinkingParam, effortParam, effortValueMode } = reasoningConfig
 
   const effort = String(reasoningEffort || '').trim()
+  const hasExplicitEffort = effort !== ''
   const enabled = !!effort && effort !== 'none'
 
-  // 应用 thinking 开关
-  if (supportsThinking && thinkingParam) {
+  if (supportsThinking && thinkingParam && hasExplicitEffort) {
     switch (thinkingParam) {
       case 'thinking':
         chatBody.thinking = { type: enabled ? 'enabled' : 'disabled' }
@@ -173,7 +173,6 @@ function applyReasoningToChatBody(chatBody, reasoningEffort, reasoningConfig) {
     }
   }
 
-  // 应用 effort 值
   if (supportsEffort && effortParam && enabled) {
     const mapped = mapReasoningEffort(effort, effortValueMode)
     if (mapped) {
