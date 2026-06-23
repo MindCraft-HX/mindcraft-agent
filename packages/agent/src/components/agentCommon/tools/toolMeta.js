@@ -131,6 +131,7 @@ const TOOL_MAP = {
 
   // Agent (ClaudeCode-specific)
   agent:           { group: GROUP.agent, icon: 'agent', label: '子代理', detailKind: DETAIL_KIND.agent },
+  multi_agent_v1:  { group: GROUP.agent, icon: 'agent', label: '子代理', detailKind: DETAIL_KIND.agent },
 
   // Error
   error:           { group: GROUP.other, icon: 'error', label: '错误', detailKind: DETAIL_KIND.generic },

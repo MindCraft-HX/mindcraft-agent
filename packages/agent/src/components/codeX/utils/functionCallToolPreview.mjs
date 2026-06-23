@@ -20,6 +20,7 @@ export function buildFunctionCallToolState({
   isReadTool = () => false,
 } = {}) {
   const normalizedToolName = String(toolName || '')
+  const isAgent = normalizedToolName === 'multi_agent_v1'
   const isWrite = isWriteTool(normalizedToolName) || isCodeXWriteToolName(normalizedToolName)
   const isEdit = isEditTool(normalizedToolName) || isCodeXEditToolName(normalizedToolName)
   const isBash = isBashTool(normalizedToolName)
@@ -43,6 +44,15 @@ export function buildFunctionCallToolState({
 
   const newStr = isWrite || isEdit ? newContent : ''
 
+  const agentPayload = isAgent
+    ? {
+        subagent_type: pickFirstString(args.subagent_type, args.agent_type, args.type) || 'general',
+        model: pickFirstString(args.model, args.agent_model),
+        description: pickFirstString(args.description, args.task, args.summary),
+        prompt: pickFirstString(args.prompt, args.instructions),
+      }
+    : {}
+
   return {
     filePath,
     bashCmd,
@@ -55,5 +65,6 @@ export function buildFunctionCallToolState({
           newStr,
         }
       : null,
+    ...agentPayload,
   }
 }

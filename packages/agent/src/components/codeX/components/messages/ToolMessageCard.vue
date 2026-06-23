@@ -62,6 +62,7 @@ import ToolTodo from './tools/ToolTodo.vue'
 import ToolUpdatePlan from './tools/ToolUpdatePlan.vue'
 import ToolWebSearch from './tools/ToolWebSearch.vue'
 import ToolGeneric from './tools/ToolGeneric.vue'
+import ToolAgent from '../../../claudeCode/components/messages/tools/ToolAgent.vue'
 import { buildDiffLines } from '../../../agentCommon/utils/helpers.js'
 
 /** Synchronous parse of unified diff (fallback for modalDiffLines) */
@@ -149,6 +150,7 @@ const detailComponent = computed(() => {
   if (kind === 'think') return ToolThinking
   if (kind === 'todo') return ToolTodo
   if (kind === 'plan') return ToolUpdatePlan
+  if (kind === 'agent') return ToolAgent
   if (kind === 'webSearch') return ToolWebSearch
   return ToolGeneric
 })
