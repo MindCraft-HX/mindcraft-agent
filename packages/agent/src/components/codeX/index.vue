@@ -37,7 +37,7 @@
       />
 
       <div class="cc-main">
-        <APISetting ref="apiSettingRef"></APISetting>
+        <APISetting ref="apiSettingRef" @providerActivated="handleProviderActivated"></APISetting>
         <ManagePlugins ref="codexPluginsRef" api-prefix="codexPlugins" />
         <ManageSkills ref="codexSkillsRef" api-prefix="codexSkills" :cwd="activeProject?.cwd || ''" />
 
@@ -283,6 +283,7 @@ const { t } = useI18n()
 const codexSafeModeEnabled = ref(false)
 const codexDefaultModel = ref('')
 const codexDefaultReasoningEffort = ref('')
+const CODEX_MODEL_SLOT_FALLBACKS = ['gpt-5.5', 'gpt-5.3-codex', 'gpt-5.2']
 
 async function loadCodexModelDefaults() {
   try {
@@ -1935,6 +1936,15 @@ function openSettings() {
   }
 }
 
+async function handleProviderActivated() {
+  await loadCodexModelDefaults()
+  const tab = activeTab.value
+  if (!tab) return
+  metricsData.value.model = tab.model || tab.metrics?.model || codexDefaultModel.value || ''
+  pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
+  saveHistory()
+}
+
 function openSessionInstruction() {
   if (!activeTab.value?.sessionId) return
   sessionInstructionRef.value?.open?.(activeTab.value.sessionId)
@@ -2201,9 +2211,9 @@ async function openModelPicker() {
   inputText.value = ''
   slashSuggestions.value = []
   const tab = activeTab.value
-  const sessionModel = String(tab?.model || tab?.metrics?.model || codexDefaultModel.value || '').trim()
-  const fallbackModel = await window.electronAPI?.codexGetModel?.() || ''
-  const currentModel = sessionModel || String(fallbackModel || '').trim()
+  const sessionModel = String(tab?.model || tab?.metrics?.model || '').trim()
+  const runtimeModel = String(await window.electronAPI?.codexGetModel?.() || '').trim()
+  const currentModel = sessionModel || runtimeModel || String(codexDefaultModel.value || '').trim()
   const stored = await window.electronAPI?.codexGetProviders?.()
   const providers = Array.isArray(stored)
     ? stored
@@ -2212,28 +2222,24 @@ async function openModelPicker() {
     ? 0
     : (Number.isInteger(stored?.activeIdx) ? stored.activeIdx : 0)
   const activeProvider = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
-  const matchedProvider = providers.find((provider) => {
-    const ids = [
-      String(provider?.model || '').trim(),
-      ...(Array.isArray(provider?.alternativeModels) ? provider.alternativeModels.map(m => String(m || '').trim()) : []),
-    ].filter(Boolean)
-    return currentModel && ids.includes(currentModel)
-  })
-  const primaryProvider = matchedProvider || activeProvider || providers[0] || null
-  const fallbackProvider = providers[0] || null
-  const primaryDefault = String(primaryProvider?.model || currentModel || '').trim()
+  const primaryProvider = activeProvider || providers[0] || null
+  const primaryDefault = String(primaryProvider?.model || runtimeModel || currentModel || '').trim()
   const primaryAlts = Array.isArray(primaryProvider?.alternativeModels) ? primaryProvider.alternativeModels : []
-  const fallbackAlts = Array.isArray(fallbackProvider?.alternativeModels) ? fallbackProvider.alternativeModels : []
   const modelItems = []
+  const seenModels = new Set()
   if (primaryDefault) {
     modelItems.push({ id: primaryDefault, label: t('agent.defaultModel') })
+    seenModels.add(primaryDefault)
   }
   const altLabels = ['agent.altModel1', 'agent.altModel2', 'agent.altModel3']
   for (let i = 0; i < 3; i++) {
     const own = String(primaryAlts[i] || '').trim()
-    const base = String(fallbackAlts[i] || '').trim()
+    const base = String(CODEX_MODEL_SLOT_FALLBACKS[i] || '').trim()
     const mid = own || base || ''
-    if (mid) modelItems.push({ id: mid, label: t(altLabels[i]) })
+    if (mid && !seenModels.has(mid)) {
+      modelItems.push({ id: mid, label: t(altLabels[i]) })
+      seenModels.add(mid)
+    }
   }
 
   const result = await selectModelRef.value?.open?.({
