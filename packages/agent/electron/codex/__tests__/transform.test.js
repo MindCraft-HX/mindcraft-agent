@@ -375,7 +375,7 @@ async function runTests() {
   })
 
 
-  test('request: generic provider keeps valid tools and drops empty-name tools', () => {
+  test('request: generic provider keeps valid normal tools and drops unsupported deferred tools', () => {
     const result = responsesToChatCompletions({
       model: 'm',
       input: [],
@@ -388,8 +388,8 @@ async function runTests() {
       parallel_tool_calls: false,
     }, 'm', 'https://api.example.com/v1')
 
-    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command', 'multi_agent_v1'])
-    assert.strictEqual(result.tool_choice.function.name, 'multi_agent_v1')
+    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command'])
+    assert.strictEqual(result.tool_choice, 'auto')
     assert.strictEqual(result.parallel_tool_calls, false)
   })
 
@@ -398,7 +398,7 @@ async function runTests() {
       model: 'deepseek-v4-pro',
       input: [],
       tools: [
-        { type: 'function', name: 'multi_agent_v1', description: 'deferred tool', parameters: {} },
+        { type: 'function', name: 'shell_command', description: 'run command', parameters: {} },
       ],
     }, 'deepseek-v4-pro', 'https://api.mindcraft.com.cn/v1')
 
@@ -409,7 +409,7 @@ async function runTests() {
     })
   })
 
-  test('request: mindcraft deepseek keeps deferred tools after schema normalization', () => {
+  test('request: mindcraft deepseek still filters deferred tools unsupported by local codex runtime', () => {
     const result = responsesToChatCompletions({
       model: 'deepseek-v4-pro',
       input: [],
@@ -422,8 +422,8 @@ async function runTests() {
       parallel_tool_calls: false,
     }, 'deepseek-v4-pro', 'https://api.mindcraft.com.cn/v1')
 
-    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command', 'multi_agent_v1'])
-    assert.strictEqual(result.tool_choice.function.name, 'multi_agent_v1')
+    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command'])
+    assert.strictEqual(result.tool_choice, 'auto')
     assert.strictEqual(result.parallel_tool_calls, false)
   })
   test('request: max_output_tokens 鈫?max_tokens', () => {

@@ -85,6 +85,16 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
   return result
 }
 
+function shouldFilterDeferredCodexTools() {
+  // Current local Codex runtime in MindCraft (observed with @openai/codex-sdk 0.135.0)
+  // accepts the tool schema but returns a tool output like:
+  //   "unsupported call: multi_agent_v1"
+  // That means the protocol bridge is fine, but the local runtime cannot execute
+  // the deferred sub-agent tool yet. Keep filtering it in chat-proxy mode until
+  // runtime capability gating exists.
+  return true
+}
+
 /**
  * 从 Responses instructions 提取文本
  * instructions 可以是: string | [{type:"text", text:"..."}]
@@ -374,6 +384,10 @@ function sanitizeResponsesToolForChat(tool, context = {}) {
   const chatTool = responsesToolToChat(tool)
   const name = chatToolName(chatTool)
   if (!name) return null
+
+  if (shouldFilterDeferredCodexTools(context.model, context.baseUrl, context.reasoningConfig)) {
+    if (name === 'multi_agent_v1') return null
+  }
 
   return chatTool
 }

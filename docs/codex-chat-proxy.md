@@ -484,7 +484,8 @@ node packages/agent/electron/codex/__tests__/e2e.test.js
 - 无 tools：可以正常返回文本。
 - 全量 Codex SDK tools，且将空 schema 直接透传为 `parameters: {}`：上游会报错或异常空响应。
 - 只过滤空名 tool：仍然不能解决空 schema 问题。
-- 过滤空名 tool，并将空 schema 规范化为合法 object schema：正常返回文本。
+- 过滤空名 tool，并将空 schema 规范化为合法 object schema：普通工具正常返回文本。
+- 即使 `multi_agent_v1` 也能被 upstream 接收，当前本地 Codex runtime 仍会回 `unsupported call: multi_agent_v1`。
 - 保留普通工具如 `shell_command`、`update_plan`：正常返回文本。
 
 因此实现策略是“保留 tools，但清洗不兼容工具”，不是禁用 tools。
@@ -497,6 +498,7 @@ node packages/agent/electron/codex/__tests__/e2e.test.js
 - `sanitizeResponsesToolForChat()` 会过滤：
   - 转换后 function name 为空的 tool。
   - 对空 schema 做规范化，例如 `{}` → `{ type: "object", properties: {}, additionalProperties: false }`。
+  - 对当前本地 Codex runtime 明确不支持执行的 deferred tool `multi_agent_v1` 保持过滤。
 - 可用工具仍会转发，例如 `shell_command`、`update_plan`。
 - 如果 tools 全部被过滤，则不发送 `tools`、`tool_choice`、`parallel_tool_calls`。
 - 如果 `tool_choice` 指向已经被过滤的工具，则降级为 `auto`，避免请求引用不存在的工具。
@@ -525,7 +527,7 @@ node packages/agent/electron/codex/__tests__/e2e.test.js
 - upstream: `https://api.mindcraft.com.cn/v1`
 - model: `deepseek-v4-pro`
 - request: Responses 流式请求，带 `shell_command`、`update_plan`、`multi_agent_v1`、空名 tool
-- proxy 转发给上游的工具：`shell_command`、`update_plan`、`multi_agent_v1`
+- proxy 转发给上游的工具：`shell_command`、`update_plan`
 - upstream response: HTTP 200 `text/event-stream`
 - Responses SSE: 有 `response.output_text.delta` 和 `response.completed`
 
@@ -539,7 +541,7 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 2. `[codex-proxy] -> REQUEST FULL:` 或对应编码日志中：
    - `keys` 包含 `tools`。
    - `toolNames` 包含普通工具，如 `shell_command`。
-   - `toolNames` 包含 `multi_agent_v1` 时也应能正常返回，不应再因空 schema 触发异常。
+   - `toolNames` 不应包含 `multi_agent_v1`，否则当前本地 runtime 会返回 `unsupported call: multi_agent_v1`。
    - `toolNames` 不包含空字符串。
 3. 上游不再出现只有一个空 `delta.content` 的低事件数响应。
 4. Codex 能正常输出文本；触发工具调用后仍能继续回文本结果。
@@ -549,7 +551,7 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 1. 是否重启了 Electron 主进程。
 2. 是否实际走到了本地 proxy，而不是直接打上游 `/v1/responses`。
 3. `REQUEST FULL.tools[*].function.parameters` 是否已把空 schema 规范化为合法 object schema。
-4. provider 是否对其他具体 tool schema 也有兼容问题，再按同样方式做最小修正，不要全量关闭 tools。
+4. 若前端仍触发了 `multi_agent_v1`，检查是否漏做了 runtime-capability 过滤，而不是继续怀疑 chat 协议转换。
 
 ## 2026-06-23 Checkpoint 验收结论
 
@@ -560,7 +562,7 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 1. Chat provider 接管：`apiFormat = chat` 时启动本地 proxy，并通过 Codex SDK per-process `config` 临时声明 `mindcraft_chat_proxy` provider。
 2. Responses → Chat 转换：支持 system/developer 合并、文本 content 折叠、function_call/function_call_output/reasoning 历史转换。
 3. Chat → Responses SSE 转换：支持文本、reasoning、tool_calls、非 `[DONE]` 自然结束、usage、错误归一化。
-4. 工具保留策略：过滤空名 tool，并把空 schema 规范化后保留普通 Codex tools，包括 `multi_agent_v1`。
+4. 工具保留策略：过滤空名 tool；对普通工具做空 schema 规范化；对当前本地 runtime 不支持执行的 `multi_agent_v1` 继续过滤。
 5. 诊断能力：日志可看到 `toolCount` / `toolNames`，用于确认 tools 未被整体关闭。
 
 ### `multi_agent_v1` 结论
@@ -578,11 +580,14 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 }
 ```
 
-进一步实测确认：问题核心不是 `multi_agent_v1` 名称，而是空 schema。MindCraft/DeepSeek Chat provider 对 `parameters: {}` 会拒绝或异常返回；将其规范化为合法空 object schema 后，`multi_agent_v1` 与强制 `tool_choice` 都能被上游正常接收。
+进一步实测确认：有两个独立问题。
 
-当前策略已经升级为：保留 `multi_agent_v1`，并在转换层统一规范化空 schema。当前已验证“协议可透传并被上游接受”；尚未完整验证的是“Codex 子代理调用能否在真实任务中正确执行、回收结果和恢复历史”。
+1. Upstream Chat provider 对 `parameters: {}` 不兼容；这已经通过空 schema 规范化解决。
+2. 本地 Codex runtime（实测 `@openai/codex-sdk` / `@openai/codex` 0.135.0）即使拿到合法 schema，仍会在执行阶段返回 `unsupported call: multi_agent_v1`。
 
-CodeX 前端现也已补齐最小识别：`multi_agent_v1` 会按“子代理”工具类型展示，而不再退化成普通 generic tool 卡片。后续人工验收时除了看日志，还应确认 UI 中出现子代理卡片及其摘要字段。
+因此当前产品策略应为：继续过滤 `multi_agent_v1`，同时保留空 schema 规范化能力给普通工具使用。当前已验证 chat 协议转换本身不是阻塞点；真正的阻塞点是本地 Codex runtime 尚不支持该 deferred sub-agent tool。
+
+CodeX 前端现已补齐最小识别逻辑；如果未来 runtime 升级后重新放开 `multi_agent_v1`，UI 已具备按“子代理”工具类型展示的基础。
 
 ### 后续架构规划
 
@@ -596,7 +601,7 @@ CodeX 前端现也已补齐最小识别：`multi_agent_v1` 会按“子代理”
 
 1. 将诊断日志加开关，例如 `CODEX_CHAT_PROXY_DEBUG`，生产默认只打印摘要和错误。
 2. 将 tool sanitizer 独立成 `toolSanitizer.js`，按 provider 维护策略和测试矩阵。
-3. 增加 `multi_agent_v1` 专项实验测试，验证真实子代理任务链路，而不是仅验证上游接收。
+3. 等本地 Codex runtime 升级并真正支持 `multi_agent_v1` 后，再恢复专项实验测试；当前阶段不要把它算作 chat proxy 缺陷。
 4. 增加真实 provider smoke test 脚本，但只从环境变量读取 API key，禁止写入仓库或日志。
 
 ### CC SWITCH 适配边界
