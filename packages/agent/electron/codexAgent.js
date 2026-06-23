@@ -3181,43 +3181,6 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-get-providers', () => readProviders())
   ipcMain.handle('codex-set-providers', (_, data) => { writeProviders(data); return true })
 
-  ipcMain.handle('codex-get-alternative-models', () => {
-    try {
-      const stored = readProviders()
-      const providers = Array.isArray(stored)
-        ? stored
-        : (Array.isArray(stored?.providers) ? stored.providers : [])
-      if (!providers.length) return []
-      const rt = readRuntimeConfig()
-      const runtimeModel = String(rt?.model || '').trim()
-      const runtimeUrl = String(rt?.baseURL || '').trim().replace(/\/+$/, '')
-      const runtimeFormat = String(rt?.apiFormat || '').trim() || 'responses'
-      const activeIdx = Array.isArray(stored)
-        ? 0
-        : (Number.isInteger(stored?.activeIdx) ? stored.activeIdx : 0)
-      const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
-      const runtimeMatched = providers.find((provider) => {
-        const model = String(provider?.model || '').trim()
-        const url = String(provider?.url || '').trim().replace(/\/+$/, '')
-        const format = String(provider?.apiFormat || '').trim() || 'responses'
-        if (runtimeUrl && url && runtimeUrl === url && runtimeFormat === format) return true
-        if (runtimeModel && model && runtimeModel === model) return true
-        return false
-      })
-      const primary = runtimeMatched || active || providers[0]
-      const fallback = providers[0]
-      const primaryAlts = Array.isArray(primary?.alternativeModels) ? primary.alternativeModels : []
-      const fallbackAlts = Array.isArray(fallback?.alternativeModels) ? fallback.alternativeModels : []
-      const merged = []
-      for (let i = 0; i < 3; i++) {
-        const own = String(primaryAlts[i] || '').trim()
-        const base = String(fallbackAlts[i] || '').trim()
-        merged.push(own || base || '')
-      }
-      return merged
-    } catch (_) { return [] }
-  })
-
   ipcMain.handle('codex-write-auth-json', (_, obj) => {
     try {
       if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })

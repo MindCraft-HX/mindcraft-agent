@@ -274,6 +274,7 @@ import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared 
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { normalizeCodexReasoningEffort } from './utils/providerToml.mjs'
+import { buildCodexModelSlots } from './utils/modelSlots.mjs'
 
 const themeStore = useClaudeThemeStore()
 const codexConfigStore = useCodexConfigStore()
@@ -283,7 +284,6 @@ const { t } = useI18n()
 const codexSafeModeEnabled = ref(false)
 const codexDefaultModel = ref('')
 const codexDefaultReasoningEffort = ref('')
-const CODEX_MODEL_SLOT_FALLBACKS = ['gpt-5.5', 'gpt-5.3-codex', 'gpt-5.2']
 
 async function loadCodexModelDefaults() {
   try {
@@ -2213,34 +2213,20 @@ async function openModelPicker() {
   const tab = activeTab.value
   const sessionModel = String(tab?.model || tab?.metrics?.model || '').trim()
   const runtimeModel = String(await window.electronAPI?.codexGetModel?.() || '').trim()
-  const currentModel = sessionModel || runtimeModel || String(codexDefaultModel.value || '').trim()
   const stored = await window.electronAPI?.codexGetProviders?.()
-  const providers = Array.isArray(stored)
-    ? stored
-    : (Array.isArray(stored?.providers) ? stored.providers : [])
-  const activeIdx = Array.isArray(stored)
-    ? 0
-    : (Number.isInteger(stored?.activeIdx) ? stored.activeIdx : 0)
-  const activeProvider = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
-  const primaryProvider = activeProvider || providers[0] || null
-  const primaryDefault = String(primaryProvider?.model || runtimeModel || currentModel || '').trim()
-  const primaryAlts = Array.isArray(primaryProvider?.alternativeModels) ? primaryProvider.alternativeModels : []
-  const modelItems = []
-  const seenModels = new Set()
-  if (primaryDefault) {
-    modelItems.push({ id: primaryDefault, label: t('agent.defaultModel') })
-    seenModels.add(primaryDefault)
+  const { currentModel, items } = buildCodexModelSlots({
+    storedProviders: stored,
+    sessionModel,
+    runtimeModel,
+    defaultModel: String(codexDefaultModel.value || '').trim(),
+  })
+  const labelMap = {
+    default: t('agent.defaultModel'),
+    alt1: t('agent.altModel1'),
+    alt2: t('agent.altModel2'),
+    alt3: t('agent.altModel3'),
   }
-  const altLabels = ['agent.altModel1', 'agent.altModel2', 'agent.altModel3']
-  for (let i = 0; i < 3; i++) {
-    const own = String(primaryAlts[i] || '').trim()
-    const base = String(CODEX_MODEL_SLOT_FALLBACKS[i] || '').trim()
-    const mid = own || base || ''
-    if (mid && !seenModels.has(mid)) {
-      modelItems.push({ id: mid, label: t(altLabels[i]) })
-      seenModels.add(mid)
-    }
-  }
+  const modelItems = items.map(item => ({ id: item.id, label: labelMap[item.slot] || item.slot }))
 
   const result = await selectModelRef.value?.open?.({
     model: currentModel,

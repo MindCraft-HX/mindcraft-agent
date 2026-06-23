@@ -324,3 +324,22 @@ en.json:
 - [ ] 切换 Provider → 模型列表刷新
 - [ ] config.toml 不含 alternativeModels 字段
 - [ ] `npm run build` 无报错
+---
+
+## 2026-06-23 收口说明
+
+本专题后续已按实际产品行为收口，当前以代码实现为准：
+
+- 模型选择器的分组依据是当前激活配置 `providers.json.activeIdx`
+- 模型选择器的当前选中项仍然是当前会话模型 `tab.model`；若当前会话未显式覆盖，则回落到 runtime model
+- 备选模型空槽位不再从 `providers[0]` 兜底，而是按固定顺序回退到稳定内置槽位：
+  1. `gpt-5.5`
+  2. `gpt-5.3-codex`
+  3. `gpt-5.2`
+- 若回退值与默认模型或已有槽位重复，则跳过重复项
+- 已删除未再使用的 `codex-get-alternative-models` IPC，避免主进程与前端维护两套不同的模型槽位规则
+- 当前规则已提取为纯函数：`packages/agent/src/components/codeX/utils/modelSlots.mjs`
+- 已补测试覆盖：
+  - active provider 分组
+  - 空槽位 fallback
+  - 重复模型去重
