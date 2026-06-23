@@ -2201,29 +2201,43 @@ async function openModelPicker() {
   inputText.value = ''
   slashSuggestions.value = []
   const tab = activeTab.value
-
-  // 构造模型列表：默认模型 + 备选模型 1/2/3
-  const altModels = await window.electronAPI?.codexGetAlternativeModels?.() || []
-  const currentModel = await window.electronAPI?.codexGetModel?.() || ''
+  const sessionModel = String(tab?.model || tab?.metrics?.model || codexDefaultModel.value || '').trim()
+  const fallbackModel = await window.electronAPI?.codexGetModel?.() || ''
+  const currentModel = sessionModel || String(fallbackModel || '').trim()
+  const stored = await window.electronAPI?.codexGetProviders?.()
+  const providers = Array.isArray(stored)
+    ? stored
+    : (Array.isArray(stored?.providers) ? stored.providers : [])
+  const activeIdx = Array.isArray(stored)
+    ? 0
+    : (Number.isInteger(stored?.activeIdx) ? stored.activeIdx : 0)
+  const activeProvider = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
+  const matchedProvider = providers.find((provider) => {
+    const ids = [
+      String(provider?.model || '').trim(),
+      ...(Array.isArray(provider?.alternativeModels) ? provider.alternativeModels.map(m => String(m || '').trim()) : []),
+    ].filter(Boolean)
+    return currentModel && ids.includes(currentModel)
+  })
+  const primaryProvider = matchedProvider || activeProvider || providers[0] || null
+  const fallbackProvider = providers[0] || null
+  const primaryDefault = String(primaryProvider?.model || currentModel || '').trim()
+  const primaryAlts = Array.isArray(primaryProvider?.alternativeModels) ? primaryProvider.alternativeModels : []
+  const fallbackAlts = Array.isArray(fallbackProvider?.alternativeModels) ? fallbackProvider.alternativeModels : []
   const modelItems = []
-  const seenModels = new Set()
-  // 默认模型（始终在第一项）
-  if (currentModel) {
-    modelItems.push({ id: currentModel, label: t('agent.defaultModel') })
-    seenModels.add(currentModel)
+  if (primaryDefault) {
+    modelItems.push({ id: primaryDefault, label: t('agent.defaultModel') })
   }
-  // 备选模型
   const altLabels = ['agent.altModel1', 'agent.altModel2', 'agent.altModel3']
-  for (let i = 0; i < altModels.length && i < 3; i++) {
-    const mid = String(altModels[i] || '').trim()
-    if (mid && !seenModels.has(mid)) {
-      modelItems.push({ id: mid, label: t(altLabels[i]) })
-      seenModels.add(mid)
-    }
+  for (let i = 0; i < 3; i++) {
+    const own = String(primaryAlts[i] || '').trim()
+    const base = String(fallbackAlts[i] || '').trim()
+    const mid = own || base || ''
+    if (mid) modelItems.push({ id: mid, label: t(altLabels[i]) })
   }
 
   const result = await selectModelRef.value?.open?.({
-    model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',
+    model: currentModel,
     reasoningEffort: tab?.reasoningEffort || codexDefaultReasoningEffort.value || '',
     modelOptions: modelItems,
   })
