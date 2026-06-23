@@ -11,7 +11,7 @@ const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
 const { responsesToChatCompletions } = require('../transformRequest')
 const { chatCompletionToResponse, chatErrorToResponseError } = require('../transformResponse')
-const { patchTomlBaseUrl, hasProxyBaseUrl } = require('../chatProxyManager')
+const { buildProxyCodexConfig, PROXY_PROVIDER_ID } = require('../chatProxyManager')
 
 let passed = 0
 let failed = 0
@@ -474,26 +474,12 @@ async function runTests() {
     assert.strictEqual(result.messages[0].reasoning_content, 'Need to inspect file.')
   })
 
-  test('toml: patchTomlBaseUrl only patches active model_provider section', () => {
-    const input = [
-      'model_provider = "vendor_a"',
-      '',
-      '[model_providers.vendor_a]',
-      'base_url = "https://a.example/v1"',
-      '',
-      '[model_providers.vendor_b]',
-      'base_url = "https://b.example/v1"',
-      '',
-    ].join('\n')
-    const out = patchTomlBaseUrl(input, 'http://127.0.0.1:4312/v1')
-    assert.ok(out.includes('[model_providers.vendor_a]'))
-    assert.ok(out.includes('base_url = "http://127.0.0.1:4312/v1"'))
-    assert.ok(out.includes('[model_providers.vendor_b]\nbase_url = "https://b.example/v1"'))
-  })
-
-  test('toml: hasProxyBaseUrl detects only local proxy base_url', () => {
-    assert.strictEqual(hasProxyBaseUrl('base_url = "http://127.0.0.1:4312/v1"'), true)
-    assert.strictEqual(hasProxyBaseUrl('base_url = "https://api.example.com/v1"'), false)
+  test('proxy config: builds per-process Codex provider override', () => {
+    const cfg = buildProxyCodexConfig('http://127.0.0.1:4312/v1/')
+    assert.strictEqual(cfg.model_provider, PROXY_PROVIDER_ID)
+    assert.strictEqual(cfg.wire_api, 'responses')
+    assert.strictEqual(cfg.model_providers[PROXY_PROVIDER_ID].base_url, 'http://127.0.0.1:4312/v1')
+    assert.strictEqual(cfg.model_providers[PROXY_PROVIDER_ID].wire_api, 'responses')
   })
 
   test('request: runtime reasoningEffort enables deepseek thinking', () => {

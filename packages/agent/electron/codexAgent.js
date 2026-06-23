@@ -1926,17 +1926,19 @@ function setupCodexSdkHandlers() {
         try {
           const { Codex } = await loadCodexSdk()
 
-          // 协议转换代理：跟随 apiFormat 自动管理，toml 接管/恢复由 chatProxyManager 统一处理
+          // 协议转换代理：跟随 apiFormat 自动管理，通过本次 Codex 子进程 config 指向本地 proxy
           let effectiveBaseUrl = baseURL || ''
+          let proxyCodexConfig = null
           if (apiFormat === 'chat' && baseURL) {
             try {
-              const { port } = await ensureProxy({
+              const { baseUrl: proxyBaseUrl, codexConfig } = await ensureProxy({
                 upstreamUrl: baseURL,
                 apiKey,
                 model: model || '',
                 reasoningEffort,
               })
-              effectiveBaseUrl = `http://127.0.0.1:${port}/v1`
+              effectiveBaseUrl = proxyBaseUrl
+              proxyCodexConfig = codexConfig
             } catch (proxyErr) {
               console.error('[codex] proxy start failed:', {
                 upstream: baseURL,
@@ -1954,6 +1956,7 @@ function setupCodexSdkHandlers() {
             codexPathOverride: findGlobalCodexPath(),
             apiKey,
             ...(effectiveBaseUrl ? { baseUrl: effectiveBaseUrl } : {}),
+            ...(proxyCodexConfig ? { config: proxyCodexConfig } : {}),
             env: augmentEnvWithBundledRg({
               ...process.env,
               OPENAI_API_KEY: apiKey,

@@ -1,5 +1,7 @@
 # CodeX Chat Completions 协议转换代理
 
+> 当前实现状态（2026-06-23）：Chat proxy 不再写入或 patch 用户 `~/.codex/config.toml`。旧章节中关于 “toml patched / TOML 接管” 的内容仅作为排障历史保留；实际运行通过 Codex SDK per-process `config` 向本次 CLI 子进程注入临时 provider。
+
 ## 问题背景
 
 CodeX CLI 只支持 OpenAI Responses API 协议（`wire_api = "responses"`），无法直接对接 Chat Completions 协议的模型（DeepSeek、Kimi、Qwen、GLM、MiniMax 等）。
@@ -177,8 +179,8 @@ response.failed             ← 上游错误/流错误
 
 ### 代理不工作时的诊断步骤
 
-1. **检查 toml 是否被劫持**：
-   日志中应有 `[codex] toml patched: base_url → http://127.0.0.1:PORT/v1`
+1. **检查本地 proxy 是否接管**：
+   日志中应有 `[codex] proxy started:`，并显示 `127.0.0.1:{PORT}` 对应的本地代理地址
 
 2. **检查角色映射**：
    日志中 `→ REQUEST: { msgRoles }` 不应出现 `developer`，应全为 `system/user/assistant/tool`
@@ -205,7 +207,7 @@ response.failed             ← 上游错误/流错误
 | `turn.failed` 重复 6 次 | SSE 格式不对 | `stream disconnected before completion` |
 | 无响应内容 | 上游返回非 SSE | `chunks=1, sseEventCount=3`（只有骨架事件） |
 | HTTP 400 `role有误` | 未映射 `developer` 角色 | `msgRoles` 中出现 `developer` |
-| 代理未启动 | toml 未劫持 | 无 `toml patched` 日志 |
+| 代理未启动 | 本地 proxy 未接管 | 无 `proxy started` 日志 |
 
 ## 测试覆盖
 
@@ -376,7 +378,7 @@ node packages/agent/electron/codex/__tests__/chatProxyManager.test.js
 
 建议按以下顺序人工验收，每一步都记录主进程日志中的四类关键行：
 
-1. `[codex] toml patched:`
+1. `[codex] proxy started:`
 2. `[codex-proxy] ← ORIGINAL:`
 3. `[codex-proxy] → REQUEST:`
 4. `[codex-proxy] upstream response:` 或 `[codex-proxy] upstream error:`
@@ -388,7 +390,7 @@ node packages/agent/electron/codex/__tests__/chatProxyManager.test.js
 
 通过标准：
 
-1. 出现 `toml patched`
+1. 出现 `proxy started`
 2. 请求打到本地 `127.0.0.1:{PORT}/v1`
 3. 上游请求为 `/chat/completions`
 4. 前端正常流式输出
@@ -533,7 +535,7 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 
 验收时看主进程日志：
 
-1. `[codex] toml patched:` 指向 `http://127.0.0.1:{PORT}/v1`。
+1. `[codex] proxy started:` 显示本地 proxy 端口和 upstream。
 2. `[codex-proxy] -> REQUEST FULL:` 或对应编码日志中：
    - `keys` 包含 `tools`。
    - `toolNames` 包含普通工具，如 `shell_command`。
@@ -545,7 +547,7 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 若仍失败，优先检查：
 
 1. 是否重启了 Electron 主进程。
-2. 是否实际走到了本地 proxy，而不是直接打 `/v1/responses`。
+2. 是否实际走到了本地 proxy，而不是直接打上游 `/v1/responses`。
 3. `REQUEST FULL.toolNames` 是否仍包含 `multi_agent_v1`。
 4. provider 是否对其他具体 tool 名称或 schema 也有兼容问题，再按同样方式做最小过滤，不要全量关闭 tools。
 
@@ -555,7 +557,7 @@ Electron 主进程代码改动不会被 Vite HMR 热更新。用户使用 `npm r
 
 当前提交包含以下能力：
 
-1. Chat provider 接管：`apiFormat = chat` 时启动本地 proxy，并将 Codex active provider 的 `base_url` 临时指向 `http://127.0.0.1:{PORT}/v1`。
+1. Chat provider 接管：`apiFormat = chat` 时启动本地 proxy，并通过 Codex SDK per-process `config` 临时声明 `mindcraft_chat_proxy` provider。
 2. Responses → Chat 转换：支持 system/developer 合并、文本 content 折叠、function_call/function_call_output/reasoning 历史转换。
 3. Chat → Responses SSE 转换：支持文本、reasoning、tool_calls、非 `[DONE]` 自然结束、usage、错误归一化。
 4. 工具保留策略：保留普通 Codex tools，过滤空名 tool 和当前 provider 不兼容的 `multi_agent_v1`。
@@ -585,23 +587,49 @@ MindCraft/DeepSeek Chat provider 对 `parameters: {}` 会返回 HTTP 200 但空 
 短期保持当前架构，不在 checkpoint 前继续大改：
 
 1. 保持 Electron 本地 proxy 作为 Codex SDK/CLI 与 Chat provider 之间的协议适配层。
-2. 保持 active provider TOML 接管，因为 Codex SDK 的 `baseUrl` 不能完全压过 CLI 当前 provider 配置。
+2. 不写用户 `~/.codex/config.toml`；仅通过本次 Codex CLI 子进程的 `--config` 覆盖 `model_provider` / `model_providers.*.base_url`。
 3. 保持 provider-specific sanitizer，按真实失败矩阵最小过滤，不全量关闭 tools。
 
 中期优化建议：
 
 1. 将诊断日志加开关，例如 `CODEX_CHAT_PROXY_DEBUG`，生产默认只打印摘要和错误。
 2. 将 tool sanitizer 独立成 `toolSanitizer.js`，按 provider 维护策略和测试矩阵。
-3. 将 TOML 接管状态持久化到 app `userData`，增强异常退出后的恢复诊断。
-4. 增加 `multi_agent_v1` 专项实验测试，决定是否从“过滤”升级为“schema 规范化后支持”。
-5. 增加真实 provider smoke test 脚本，但只从环境变量读取 API key，禁止写入仓库或日志。
+3. 增加 `multi_agent_v1` 专项实验测试，决定是否从“过滤”升级为“schema 规范化后支持”。
+4. 增加真实 provider smoke test 脚本，但只从环境变量读取 API key，禁止写入仓库或日志。
 
 ### CC SWITCH 适配边界
 
 CC SWITCH 的方式适合做协议转换基线，但不适合在 MindCraft 中直接照搬全部运行模型：
 
-1. CC SWITCH 主要面向 CLI 代理接管；MindCraft 是 Electron 内集成 Codex SDK，SDK 背后仍启动 CLI，存在 SDK 参数与 CLI TOML 优先级冲突。
+1. CC SWITCH 主要面向 CLI 代理接管；MindCraft 是 Electron 内集成 Codex SDK，SDK 背后仍启动 CLI，但可以通过 SDK `config` 向单次 CLI 子进程传递临时 provider 覆盖。
 2. CC SWITCH 的标准 tool 映射没有覆盖 MindCraft/DeepSeek provider 对空 schema、deferred tool 的兼容差异。
 3. MindCraft 还需要处理 UI 会话生命周期、历史恢复、主进程重启、日志诊断和 userData 边界，这些不属于 CC SWITCH 的核心职责。
 
-结论：继续参考 CC SWITCH 的字段映射和 SSE 状态机，不照搬其 provider 假设；MindCraft 需要保留独立的 SDK/TOML 生命周期管理和 provider 兼容层。
+结论：继续参考 CC SWITCH 的字段映射和 SSE 状态机，不照搬其 provider 假设；MindCraft 需要保留独立的 SDK 子进程配置覆盖和 provider 兼容层。
+
+## 2026-06-23 无 TOML 写入改造
+
+进一步验证后确认：Codex SDK 的 `config` 参数会传递为本次 Codex CLI 子进程的 `--config` 覆盖项。只要同时覆盖：
+
+```js
+{
+  model_provider: 'mindcraft_chat_proxy',
+  wire_api: 'responses',
+  model_providers: {
+    mindcraft_chat_proxy: {
+      name: 'MindCraft Chat Proxy',
+      base_url: 'http://127.0.0.1:{PORT}/v1',
+      wire_api: 'responses'
+    }
+  }
+}
+```
+
+Codex CLI 就会在本次进程内走本地 proxy，不需要修改用户 `~/.codex/config.toml`。真实 SDK 探针已验证：
+
+- proxy 收到 Codex SDK 发出的 `/v1/responses` 请求。
+- 上游实际请求为 `/chat/completions`。
+- 工具列表仍保留普通 tools。
+- `~/.codex/config.toml` 前后 SHA-256 不变。
+
+因此 `chatProxyManager.js` 只负责本地 proxy 生命周期和构造 per-process Codex config，不再备份、patch 或 restore 用户 TOML。
