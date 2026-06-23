@@ -3192,7 +3192,16 @@ function setupCodexSdkHandlers() {
         ? 0
         : (Number.isInteger(stored?.activeIdx) ? stored.activeIdx : 0)
       const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
-      return Array.isArray(active?.alternativeModels) ? active.alternativeModels : []
+      const fallback = providers[0]
+      const activeAlts = Array.isArray(active?.alternativeModels) ? active.alternativeModels : []
+      const fallbackAlts = Array.isArray(fallback?.alternativeModels) ? fallback.alternativeModels : []
+      const merged = []
+      for (let i = 0; i < 3; i++) {
+        const own = String(activeAlts[i] || '').trim()
+        const base = String(fallbackAlts[i] || '').trim()
+        merged.push(own || base || '')
+      }
+      return merged
     } catch (_) { return [] }
   })
 
