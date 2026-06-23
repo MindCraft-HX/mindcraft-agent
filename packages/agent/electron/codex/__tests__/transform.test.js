@@ -393,38 +393,38 @@ async function runTests() {
     assert.strictEqual(result.parallel_tool_calls, false)
   })
 
-  test('request: mindcraft deepseek filters incompatible deferred tools only', () => {
+  test('request: empty tool schema is normalized to object schema', () => {
+    const result = responsesToChatCompletions({
+      model: 'deepseek-v4-pro',
+      input: [],
+      tools: [
+        { type: 'function', name: 'multi_agent_v1', description: 'deferred tool', parameters: {} },
+      ],
+    }, 'deepseek-v4-pro', 'https://api.mindcraft.com.cn/v1')
+
+    assert.deepStrictEqual(result.tools[0].function.parameters, {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    })
+  })
+
+  test('request: mindcraft deepseek keeps deferred tools after schema normalization', () => {
     const result = responsesToChatCompletions({
       model: 'deepseek-v4-pro',
       input: [],
       tools: [
         { type: 'function', name: 'shell_command', description: 'run command', parameters: {} },
-        { type: 'function', name: 'update_plan', description: 'plan', parameters: {} },
         { type: 'function', name: 'multi_agent_v1', description: 'deferred tool', parameters: {} },
         { type: 'function', name: '', description: 'invalid', parameters: {} },
       ],
-      tool_choice: 'auto',
+      tool_choice: { type: 'function', name: 'multi_agent_v1' },
       parallel_tool_calls: false,
     }, 'deepseek-v4-pro', 'https://api.mindcraft.com.cn/v1')
 
-    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command', 'update_plan'])
-    assert.strictEqual(result.tool_choice, 'auto')
+    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command', 'multi_agent_v1'])
+    assert.strictEqual(result.tool_choice.function.name, 'multi_agent_v1')
     assert.strictEqual(result.parallel_tool_calls, false)
-  })
-
-  test('request: filtered forced tool_choice degrades to auto', () => {
-    const result = responsesToChatCompletions({
-      model: 'deepseek-v4-pro',
-      input: [],
-      tools: [
-        { type: 'function', name: 'shell_command', description: 'run command', parameters: {} },
-        { type: 'function', name: 'multi_agent_v1', description: 'deferred tool', parameters: {} },
-      ],
-      tool_choice: { type: 'function', name: 'multi_agent_v1' },
-    }, 'deepseek-v4-pro', 'https://api.mindcraft.com.cn/v1')
-
-    assert.deepStrictEqual(result.tools.map(t => t.function.name), ['shell_command'])
-    assert.strictEqual(result.tool_choice, 'auto')
   })
   test('request: max_output_tokens 鈫?max_tokens', () => {
     const result = responsesToChatCompletions({ model: 'm', input: [], max_output_tokens: 4096 })

@@ -85,11 +85,6 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
   return result
 }
 
-function shouldFilterDeferredCodexTools(model, baseUrl, reasoningConfig) {
-  const haystack = `${model || ''} ${baseUrl || ''} ${reasoningConfig?.label || ''}`.toLowerCase()
-  return haystack.includes('deepseek') || haystack.includes('mindcraft.com.cn')
-}
-
 /**
  * 从 Responses instructions 提取文本
  * instructions 可以是: string | [{type:"text", text:"..."}]
@@ -333,10 +328,42 @@ function responsesToolToChat(tool) {
     function: {
       name: tool.name || '',
       description: tool.description || '',
-      parameters: tool.parameters || tool.input_schema || {},
+      parameters: cleanToolSchema(tool.parameters || tool.input_schema || {}),
       strict: tool.strict,
     },
   }
+}
+
+function cleanToolSchema(schema) {
+  if (schema === undefined || schema === null) {
+    return { type: 'object', properties: {}, additionalProperties: false }
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map(cleanToolSchema)
+  }
+
+  if (typeof schema !== 'object') return schema
+
+  const out = { ...schema }
+  if (Object.keys(out).length === 0) {
+    return { type: 'object', properties: {}, additionalProperties: false }
+  }
+
+  if (out.properties && typeof out.properties === 'object' && !Array.isArray(out.properties)) {
+    const nextProps = {}
+    for (const [key, value] of Object.entries(out.properties)) {
+      nextProps[key] = cleanToolSchema(value)
+    }
+    out.properties = nextProps
+    if (!out.type) out.type = 'object'
+  }
+
+  if (out.items !== undefined) {
+    out.items = cleanToolSchema(out.items)
+  }
+
+  return out
 }
 
 function chatToolName(chatTool) {
@@ -347,12 +374,6 @@ function sanitizeResponsesToolForChat(tool, context = {}) {
   const chatTool = responsesToolToChat(tool)
   const name = chatToolName(chatTool)
   if (!name) return null
-
-  // MindCraft/DeepSeek Chat currently accepts normal function tools but silently
-  // returns an empty stop for Codex's deferred multi-agent tool.
-  if (shouldFilterDeferredCodexTools(context.model, context.baseUrl, context.reasoningConfig)) {
-    if (name === 'multi_agent_v1') return null
-  }
 
   return chatTool
 }
@@ -401,6 +422,7 @@ module.exports = {
   appendInputMessages,
   collapseSystemMessages,
   responsesToolToChat,
+  cleanToolSchema,
   sanitizeResponsesToolForChat,
   responsesToolChoiceToChat,
   sanitizeToolChoiceForChat,
