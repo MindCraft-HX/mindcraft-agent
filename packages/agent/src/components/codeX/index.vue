@@ -2206,16 +2206,19 @@ async function openModelPicker() {
   const altModels = await window.electronAPI?.codexGetAlternativeModels?.() || []
   const currentModel = await window.electronAPI?.codexGetModel?.() || ''
   const modelItems = []
+  const seenModels = new Set()
   // 默认模型（始终在第一项）
   if (currentModel) {
     modelItems.push({ id: currentModel, label: t('agent.defaultModel') })
+    seenModels.add(currentModel)
   }
   // 备选模型
   const altLabels = ['agent.altModel1', 'agent.altModel2', 'agent.altModel3']
   for (let i = 0; i < altModels.length && i < 3; i++) {
     const mid = String(altModels[i] || '').trim()
-    if (mid && mid !== currentModel) {
+    if (mid && !seenModels.has(mid)) {
       modelItems.push({ id: mid, label: t(altLabels[i]) })
+      seenModels.add(mid)
     }
   }
 

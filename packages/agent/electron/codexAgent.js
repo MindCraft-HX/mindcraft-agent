@@ -3183,15 +3183,16 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-get-alternative-models', () => {
     try {
-      const providers = readProviders()
-      if (!providers || !Array.isArray(providers)) return []
-      const rt = readRuntimeConfig()
-      const model = String(rt.model || '').trim()
-      const active = model
-        ? providers.find(p => String(p.model || '').trim() === model)
-        : null
-      const first = active || providers[0]
-      return first?.alternativeModels || []
+      const stored = readProviders()
+      const providers = Array.isArray(stored)
+        ? stored
+        : (Array.isArray(stored?.providers) ? stored.providers : [])
+      if (!providers.length) return []
+      const activeIdx = Array.isArray(stored)
+        ? 0
+        : (Number.isInteger(stored?.activeIdx) ? stored.activeIdx : 0)
+      const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
+      return Array.isArray(active?.alternativeModels) ? active.alternativeModels : []
     } catch (_) { return [] }
   })
 
