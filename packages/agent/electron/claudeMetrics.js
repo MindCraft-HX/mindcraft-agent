@@ -58,6 +58,53 @@ function resolveJsonlPath(cliSessionId) {
 
 const jsonlLineCache = new Map() // cliSessionId -> { lines: [], mtimeMs: 0 }
 
+function toSafeTokenCount(value) {
+  const num = Number(value)
+  return Number.isFinite(num) && num > 0 ? num : 0
+}
+
+function parseClaudeTimestampMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
+function isNativeClaudeModel(model) {
+  const lower = String(model || '').toLowerCase()
+  if (!lower) return false
+  return lower.includes('claude') ||
+    lower.includes('sonnet') ||
+    lower.includes('opus') ||
+    lower.includes('haiku')
+}
+
+function getClaudeContextUsageFromUsageLike(usage, model) {
+  const inputTokens = toSafeTokenCount(usage?.input_tokens)
+  const cacheReadTokens = toSafeTokenCount(usage?.cache_read_input_tokens)
+  const cacheCreationTokens = toSafeTokenCount(usage?.cache_creation_input_tokens)
+  if (isNativeClaudeModel(model)) return inputTokens
+  return inputTokens + cacheReadTokens + cacheCreationTokens
+}
+
+function normalizeClaudeUsageForUi(usage, model) {
+  const rawInputTokens = toSafeTokenCount(usage?.input_tokens)
+  const cacheReadTokens = toSafeTokenCount(usage?.cache_read_input_tokens)
+  const cacheCreationTokens = toSafeTokenCount(usage?.cache_creation_input_tokens)
+  const inputTokens = isNativeClaudeModel(model)
+    ? Math.max(0, rawInputTokens - cacheReadTokens - cacheCreationTokens)
+    : rawInputTokens
+  return {
+    inputTokens,
+    outputTokens: toSafeTokenCount(usage?.output_tokens),
+    cacheReadTokens,
+    cacheCreationTokens,
+    contextUsage: getClaudeContextUsageFromUsageLike(usage, model),
+  }
+}
+
 function readJsonlLines(filePath) {
   try {
     const stat = fs.statSync(filePath)
@@ -73,12 +120,13 @@ function readJsonlLines(filePath) {
   }
 }
 
-function getTokenMetrics(cliSessionId) {
+function getTokenMetrics(cliSessionId, options = {}) {
   const filePath = resolveJsonlPath(cliSessionId)
   if (!filePath) return null
 
   const lines = readJsonlLines(filePath)
   if (lines.length === 0) return null
+  const tokenSinceMs = Number.isFinite(options?.tokenSinceMs) ? Number(options.tokenSinceMs) : null
 
   let inputTokens = 0
   let outputTokens = 0
@@ -95,7 +143,7 @@ function getTokenMetrics(cliSessionId) {
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line)
-      const ts = parsed.timestamp
+      const ts = parseClaudeTimestampMs(parsed.timestamp)
       if (typeof ts === 'number') {
         if (firstTimestamp === null) firstTimestamp = ts
         lastTimestamp = ts
@@ -103,16 +151,20 @@ function getTokenMetrics(cliSessionId) {
 
       // 提取 token usage
       if (parsed.type === 'assistant' && parsed.message?.usage) {
+        if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) {
+          // 本轮状态栏只消费本轮开始后的 token 样本；context 仍可继续用 session 级数据。
+          continue
+        }
         const usage = parsed.message.usage
-        // input_tokens 是累积值（每轮含全部上下文），用 Math.max 取峰值；
-        // 流式消息中已有当前总量，不再依赖 stop_reason 即可实时增长
-        inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
+        const normalized = normalizeClaudeUsageForUi(usage, model || parsed.model_name || parsed.model || parsed.message?.model || '')
+        // inputTokens 是 UI 口径的非缓存输入；流式消息中已有当前样本时可实时增长。
+        inputTokens = Math.max(inputTokens, normalized.inputTokens || 0)
         // output/cache 是 per-round 值，仅信任已完成的轮次（避免流式跳回 0）
         const stopReason = parsed.message.stop_reason
         if (stopReason) {
-          outputTokens = usage.output_tokens || outputTokens
-          cacheReadTokens = usage.cache_read_input_tokens || cacheReadTokens
-          cacheCreationTokens = usage.cache_creation_input_tokens || cacheCreationTokens
+          outputTokens = normalized.outputTokens || outputTokens
+          cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens
+          cacheCreationTokens = normalized.cacheCreationTokens || cacheCreationTokens
         }
       }
 
@@ -126,8 +178,8 @@ function getTokenMetrics(cliSessionId) {
           lastContextWindow = contextWindow
         }
         if (data.input_tokens && !data.usage) {
-          // Claude: input_tokens 已包含 cache_read + cache_creation，不要累加
-          contextUsage = data.input_tokens || 0
+          const model = data.model || data.model_name || parsed.model || parsed.model_name || ''
+          contextUsage = getClaudeContextUsageFromUsageLike(data, model)
           contextWindow = data.context_window_size || 0
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
@@ -142,12 +194,15 @@ function getTokenMetrics(cliSessionId) {
       try {
         const parsed = JSON.parse(line)
         if (parsed.type === 'assistant' && parsed.message?.usage) {
+          const ts = parseClaudeTimestampMs(parsed.timestamp)
+          if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) continue
           const usage = parsed.message.usage
           // 同上：input/output/cache 均取最后值避免跨轮不对称
-          inputTokens = usage.input_tokens || inputTokens
-          outputTokens = usage.output_tokens || outputTokens
-          cacheReadTokens = usage.cache_read_input_tokens || cacheReadTokens
-          cacheCreationTokens = usage.cache_creation_input_tokens || cacheCreationTokens
+          const normalized = normalizeClaudeUsageForUi(usage, model || parsed.model_name || parsed.model || parsed.message?.model || '')
+          inputTokens = normalized.inputTokens || inputTokens
+          outputTokens = normalized.outputTokens || outputTokens
+          cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens
+          cacheCreationTokens = normalized.cacheCreationTokens || cacheCreationTokens
         }
       } catch (_) {}
     }
@@ -160,9 +215,9 @@ function getTokenMetrics(cliSessionId) {
         const parsed = JSON.parse(lines[i])
         if (parsed.type === 'assistant' && parsed.message?.usage) {
           const u = parsed.message.usage
-          // Claude: input_tokens 已包含 cache，直接用
-          contextUsage = u.input_tokens || 0
-          contextWindow = getContextWindowForModel(parsed.model_name || parsed.model || parsed.message?.model || '')
+          const model = parsed.model_name || parsed.model || parsed.message?.model || ''
+          contextUsage = getClaudeContextUsageFromUsageLike(u, model)
+          contextWindow = getContextWindowForModel(model)
           break
         }
       } catch (_) {}
@@ -425,10 +480,10 @@ function estimateCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheCreati
 
 const sessionPollInfo = new Map() // cliSessionId -> { inputTokens, outputTokens, durationMs, firstSeenAt, lastInputTokens, lastOutputTokens, lastPollAt }
 
-async function pollMetrics(cliSessionId, cwd, model, thinking) {
+async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
   if (!cliSessionId) return null
 
-  const tokenMetrics = getTokenMetrics(cliSessionId) || {}
+  const tokenMetrics = getTokenMetrics(cliSessionId, options) || {}
   const speedMetrics = getSpeedMetrics(cliSessionId) || {}
   const gitInfo = getGitInfo(cwd)
   const usageData = getCachedUsageData()
@@ -503,4 +558,11 @@ module.exports = {
   pollMetrics,
   resetSession,
   getContextWindowForModel,
+  normalizeClaudeUsageForUi,
+  __test__: {
+    getClaudeContextUsageFromUsageLike,
+    isNativeClaudeModel,
+    normalizeClaudeUsageForUi,
+    parseClaudeTimestampMs,
+  },
 }

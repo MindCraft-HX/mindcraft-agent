@@ -13,9 +13,10 @@
 |------|------|------|:------:|------|
 | T141 | refactor | **ClaudeCode Runtime / Metrics State Machine 重构**：已完成首轮实现，`thinking/_thinkingStart/currentAssistantId` 生命周期写入口收敛到 `claudeRuntimeState.mjs`，send/stream/done/abort/metrics/history 保存链路已接入；metrics 保留为展示数据，不能复活已完成/中断/idle 的 running；history 保存会剥离 runtime 字段，避免重启后假运行。本轮不改 Claude pending adoption、Session Registry schema 或运行中再次发送的 SDK interrupt 语义。详见 `docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md`，人工验收见 `docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md`。 | P0 | 🔄 已实现，待人工验收 |
 | T142 | bug | **ClaudeCode metrics cache 统计切换漂移**：人工验收发现同一 ClaudeCode 会话运行时 metrics 实时刷新正常，但切到其他 tab 再切回后 cache token 明显减少（约一半）。当前 runtime state machine 已确保 metrics 不拥有 running 权威，但 token/cache 统计本身可能在主进程 poller、`claudeAgentQueryMetrics`、final metrics 或按 `cliSessionId` 聚合路径存在口径不一致。后续需用同一 JSONL/同一 `cliSessionId` 对比实时事件、切 tab query metrics、结束后 final metrics 三组数据，定位 cacheRead/cacheCreation 是否重复计入、漏计或按窗口重置。 | P1 | 🐛 待排查 |
-| T144 | bug | **Token Metrics 统计 BUG 修复**：共 7 个问题已修 4 个（P0 均已 fix）——✅ `tab.metrics` 初始化、✅ contextUsage 三重计数、✅ 切 tab 闪烁+竞态、✅ homeMetrics 首页 4 BUG。遗留 3 个低优先级（流式停滞、usageApiSessionPct、cache 合并）。详见 `docs/agent-architecture.md` §16。 | P1 | ✅ 已修复 |
-| T145 | feature | **Token 数据实时增长**：✅ Claude SDK `getTokenMetrics()` inputTokens 改用 `Math.max()` 取流式消息值；✅ 平滑数字计数 (rAF 插值, 按 3s 轮询间隔反推增速)；✅ 共享 composable `useAnimatedNumber.js`。详见 `docs/agent-architecture.md` §16。 | P2 | ✅ 已完成 |
-| T146 | feature | **对话 Per-Turn Token/时间标注**：✅ 共享组件 `TokenMetaRow.vue`（左侧竖线 + 淡入动画）；✅ ClaudeCode assistant 消息底部显示 token/时间；✅ 简易对话 Claude 消息底部显示 token/时间；🔲 CodeX 两条线待做（需 per-turn delta 后端改造）。详见 `docs/plan/2026-06-24-token-metrics-research.md`。 | P2 | 🟡 进行中 |
+| T144 | bug | **Token Metrics 统计 BUG 修复**：共 7 个问题已修 4 个（P0 均已 fix）——✅ `tab.metrics` 初始化、✅ contextUsage 口径修正（原生 Claude 与第三方 Claude SDK provider 分开计算）、✅ 切 tab 闪烁+竞态、✅ homeMetrics 首页 4 BUG。2026-06-24 追加口径收口：UI `in/out/cache` 不再暴露 provider 原始 usage 语义，主进程必须归一化为“本回合非缓存输入 / 输出 / 缓存输入”。详见 `docs/agent-architecture.md` §16 与 `docs/token-metrics.md`。 | P1 | 🔧 进行中 |
+| T145 | feature | **Token 数据实时增长**：✅ 平滑数字计数 (rAF 插值，仅在真实采样点之间动画，不补假数据)；✅ ClaudeCode / CodeX Agent metrics 轮询由 3s 下调到 1s。当前待收口：ClaudeCode 新回合不能被上一轮 JSONL 轮询 `out/cache` 回灌；CodeX 需要实时转发 `token_count` 并按统一 UI 语义展示 `in/cache/out`。详见 `docs/token-metrics.md` §5.5/§5.6。 | P1 | 🔧 进行中 |
+| T146 | feature | **对话 Per-Turn Token/时间标注**：✅ 共享组件 `TokenMetaRow.vue`（左侧竖线 + 淡入动画）；✅ ClaudeCode assistant 消息底部显示 token/时间；✅ 简易对话 Claude 消息底部显示 token/时间；✅ CodeX Agent per-turn delta + Bubble 引入；✅ 简易对话 CodeX `response.completed.usage` 捕获；🔲 历史消息回填（P5）待做。详见 `docs/plan/2026-06-24-token-metrics-research.md`。 | P2 | 🟡 进行中 |
+| T147 | bug | **CodeX 中间进度 assistant 文本偶发不渲染**：排查发现 `codexAgent.js` 已把 `agent_message` 列为已知事件，但流式桥接未处理顶层 `ev.type === 'agent_message'`；若 SDK/CLI 将中间进度文案以顶层事件发出，主进程会静默吞掉，UI 只剩 tool 卡片和最终回复。已补主进程规范化转发与历史解析兼容，待人工回归确认截图中的“文档/架构/TODO 收口进度文案”稳定显示。 | P1 | 🔄 已修复，待回归 |
 | T140 | ux/refactor | **Agent running 中再次发送 / pending 输入可视化与发送按钮状态**：CodeX running 中再次发送已能排队接上，但 pending 输入不会立即显示用户 bubble，连续发送多条语义不够明确；ClaudeCode running 中再次发送走 SDK `streamInput`/interrupt，会立即结合到当前轮处理，这是不同于 CodeX 的正常语义，但响应中发送图标仍被禁用，Enter 却有效，UI 暗示不一致。后续应统一梳理两类 Agent 的 running-send UX：CodeX 增加 pending queue UI（在输入区/消息底部显示“待发送”，不提前插入历史消息流）并明确多条输入合并/逐条策略；ClaudeCode 保留 interrupt 语义但让发送按钮状态与 Enter 行为一致。背景必须写清楚，避免未执行输入插到大量历史消息上方造成困惑，也避免 queue flush 覆盖用户草稿。 | P1 | 📝 待方案 |
 | T139 | perf | **界面卡顿性能优化**：第一轮已完成 6 个低风险前端热点 + `codex-run-git-diff` 主进程异步化；第二轮已完成 ClaudeCode/CodeX `projectTabs` 派生状态保守优化、Claude `read-session-file-range` 尾部按页读取、CodeX `codex-read-session-file-range` page>0 尾部按页读取。长历史 session 只读取需要的 60 条附近数据，避免为渲染 60 条全文件扫描。`npm run build` 通过。详见 `docs/perf-audit-report.md`，人工验收见 `docs/qa/2026-06-18-performance-acceptance.md`。 | P0 | 🔄 第二轮完成，待人工回归 |
 | T138 | bug/refactor | **Agent Session Identity 与 MindCraft Registry 去污染重构**：ClaudeCode / CodeX 均存在 `chatKey` 与官方 `cliSessionId/threadId` 混用，关闭项目 Tab 后从官方 transcript 重建会丢失 MindCraft 自有状态，且 registry 已出现同一 provider session 对应多个 record。已建立严格三层身份：MindCraft `chatKey`、官方 `providerSessionId`、官方 transcript `filePath`；扫描官方 JSONL 通过 registry 恢复 `chatKey/title/instruction/runtime`；title 新写入只进 MindCraft registry；自动修复现有 registry/panel state 重复映射，先备份、不写不删 `~/.claude` / `~/.codex`；永久删除底层会话使用单次危险确认。CodeX runtime state machine 后续重构已完成，人工验收通过。详见 `docs/plan/2026-06-18-agent-session-identity-registry.md` 和 `docs/qa/2026-06-18-agent-session-identity-registry-acceptance.md`。 | P0 | ✅ 已完成 |
@@ -1290,7 +1291,7 @@ DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be
 | # | 状态 | 严重度 | 问题 | 位置 | 修复说明 |
 |---|------|--------|------|------|---------|
 | 🔴 | ✅ 已修复 | 中 | `tab.metrics` 从未创建，runtime state 写入全是死代码 | `claudeCode/index.vue` | 4 处 `createChat()` 加 `metrics: {}` |
-| 🔴 | ✅ 已修复 | 中 | `contextUsage` 三重计数（Claude input 已含 cache） | `claudeMetrics.js` | 2 处修复：`input_tokens` 包含 cache，直接取原值 |
+| 🔴 | ✅ 已修复 | 中 | `contextUsage` 口径错误（不能假设所有 Claude SDK provider 的 `input_tokens` 都已含 cache） | `claudeMetrics.js` | 2 处修复：原生 Claude 继续按 `input_tokens`；第三方模型按 `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` 计算 |
 | 🟡 | ✅ 已修复 | 中高 | `metricsData` 切 tab 闪烁归零 | `claudeCode/index.vue` | 去 `resetMetrics()` + 直接 `Object.assign` |
 | 🟡 | ✅ 已修复 | 中 | `resetMetrics` / polling 竞态 | `claudeCode/index.vue` | 加 `_refreshingMetrics` 锁 |
 | 🔴 | ✅ 已修复 | 中 | **homeMetrics 首页统计 4 BUG** | `homeMetrics.js` | H1: Claude 跨轮累加 / H2: Codex 累积值多事件累加 / H3: cacheCreation 硬编码 0 / H4: totalInput 公式错误 |
@@ -1305,7 +1306,7 @@ DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be
 |-------|------|------|------|
 | Claude SDK | ✅ 已完成 | `getTokenMetrics()` inputTokens 改用 `Math.max()` 取流式消息值 | commit `c3b5c53` |
 | Codex | ✅ 已完成 | StatusBar 数字弹跳动画（350ms scale+color） | commit `c3b5c53` |
-| 平滑计数 | ✅ 已完成 | `useAnimatedNumber` composable — rAF 插值按 3s 轮询反推增速 | commit `6bf7608` |
+| 平滑计数 | ✅ 已完成 | `useAnimatedNumber` composable — rAF 仅在真实采样点之间插值；2026-06-24 起 Agent metrics 轮询从 3s 下调到 1s | commit `6bf7608` |
 | 简易对话 | ❌ 留给 T146 | 无 StatusBar 无 JSONL，需要新 UI | — |
 
 **实现细节**：

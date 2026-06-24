@@ -35,6 +35,7 @@ const {
 } = require('./skillsCatalogCache')
 
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
+const CLAUDE_METRICS_POLL_INTERVAL_MS = 1000
 let sessionRegistryOptionsForTest = null
 
 function getMindCraftSettingsPath() {
@@ -219,6 +220,46 @@ function safeSend(sender, channel, ...args) {
       sender.send(channel, ...args)
     }
   } catch (_) {}
+}
+
+function toNonNegativeMetricNumber(value) {
+  const num = Number(value)
+  return Number.isFinite(num) && num > 0 ? num : 0
+}
+
+function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
+  const usage = msg?.message?.usage
+  if (!usage || typeof usage !== 'object') return null
+  return claudeMetrics.normalizeClaudeUsageForUi(usage, msg?.message?.model || msg?.model || fallbackModel || '')
+}
+
+function mergeClaudeLiveMetricSamples(base = {}, next = {}) {
+  const prev = base && typeof base === 'object' ? base : {}
+  const curr = next && typeof next === 'object' ? next : {}
+  return {
+    ...prev,
+    ...curr,
+    inputTokens: Math.max(
+      toNonNegativeMetricNumber(prev.inputTokens),
+      toNonNegativeMetricNumber(curr.inputTokens),
+    ),
+    outputTokens: Math.max(
+      toNonNegativeMetricNumber(prev.outputTokens),
+      toNonNegativeMetricNumber(curr.outputTokens),
+    ),
+    cacheReadTokens: Math.max(
+      toNonNegativeMetricNumber(prev.cacheReadTokens),
+      toNonNegativeMetricNumber(curr.cacheReadTokens),
+    ),
+    cacheCreationTokens: Math.max(
+      toNonNegativeMetricNumber(prev.cacheCreationTokens),
+      toNonNegativeMetricNumber(curr.cacheCreationTokens),
+    ),
+    durationMs: Math.max(
+      toNonNegativeMetricNumber(prev.durationMs),
+      toNonNegativeMetricNumber(curr.durationMs),
+    ),
+  }
 }
 
 /** 从用户文案里解析 Windows 绝对路径，用于 additionalDirectories（与 cwd 不同的根目录） */
@@ -2790,19 +2831,26 @@ function setupClaudeHandlers() {
             apiKey,
             runMode: mode,
           })
-          // 启动 metrics 轮询器
+          // 启动 metrics 轮询器。只推送真实 transcript 样本，不伪造中间值；
+          // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
+          let latestLiveMetrics = null
           const pollInterval = setInterval(async () => {
             const s = agentSessions.get(chatKey)
             if (!s) { clearInterval(pollInterval); return }
             const cliId = cliSessionIds.get(chatKey)
             if (!cliId) return
-            const metrics = await claudeMetrics.pollMetrics(cliId, s.cwd, s.model, true)
+            const metrics = await claudeMetrics.pollMetrics(cliId, s.cwd, s.model, true, {
+              tokenSinceMs: pollStart,
+            })
             if (metrics) {
-              metrics.sessionId = sessionId
-              safeSend(s.event?.sender, 'claude-agent-metrics', metrics)
+              const mergedMetrics = latestLiveMetrics
+                ? mergeClaudeLiveMetricSamples(metrics, latestLiveMetrics)
+                : metrics
+              mergedMetrics.sessionId = sessionId
+              safeSend(s.event?.sender, 'claude-agent-metrics', mergedMetrics)
             }
-          }, 3000)
+          }, CLAUDE_METRICS_POLL_INTERVAL_MS)
           metricsPollers.set(chatKey, { interval: pollInterval, startTime: pollStart })
 
           for await (const msg of q) {
@@ -2822,6 +2870,17 @@ function setupClaudeHandlers() {
               const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
               if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
               safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
+            }
+            const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
+            if (liveUsageMetrics) {
+              latestLiveMetrics = mergeClaudeLiveMetricSamples(latestLiveMetrics, {
+                sessionId,
+                model: model || '',
+                thinking: true,
+                durationMs: Math.max(0, Date.now() - pollStart),
+                ...liveUsageMetrics,
+              })
+              safeSend(sender, 'claude-agent-metrics', latestLiveMetrics)
             }
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
               for (const block of msg.message.content) {
@@ -2852,14 +2911,16 @@ function setupClaudeHandlers() {
               }
               // 发送最终 metrics
               const usage = msg.usage || {}
+              const normalizedUsage = claudeMetrics.normalizeClaudeUsageForUi(usage, model || '')
               const finalMetrics = {
                 sessionId,
                 model: model || '',
                 costUsd: msg.total_cost_usd || 0,
-                inputTokens: usage.input_tokens || 0,
-                outputTokens: usage.output_tokens || 0,
-                cacheReadTokens: usage.cache_read_input_tokens || 0,
-                cacheCreationTokens: usage.cache_creation_input_tokens || 0,
+                inputTokens: normalizedUsage.inputTokens || 0,
+                outputTokens: normalizedUsage.outputTokens || 0,
+                cacheReadTokens: normalizedUsage.cacheReadTokens || 0,
+                cacheCreationTokens: normalizedUsage.cacheCreationTokens || 0,
+                contextUsage: normalizedUsage.contextUsage || 0,
                 durationMs: msg.duration_ms || 0,
                 numTurns: msg.num_turns || 0,
                 thinking: false,

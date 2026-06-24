@@ -185,7 +185,7 @@
 
         <div v-if="dragging" class="drop-mask">{{ $t('agent.dragFile') }}</div>
         <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
-        <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" />
+        <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" @send-message="sendFromStatusBar" />
         <ConfirmDialog ref="confirmDialogRef" />
         <SelectModel ref="selectModelRef" />
         <SessionInstructionDialog ref="sessionInstructionRef" :theme-class="themeClass" @saved="refreshActiveSessionInstructionState" />
@@ -2205,6 +2205,13 @@ async function sendMessage(textOverride = null, targetTab = null) {
     })
     if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
   }
+}
+
+function sendFromStatusBar(text) {
+  if (text === '/compact' && metricsData.value.compacting) return
+  inputText.value = String(text || '')
+  if (inputEl.value) inputEl.value.value = inputText.value
+  sendMessage(inputText.value)
 }
 
 async function openModelPicker() {

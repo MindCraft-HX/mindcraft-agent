@@ -5,6 +5,9 @@ const {
   __test__: {
     parseSimpleTomlContent,
     buildRuntimeConfigFromToml,
+    extractCodexAgentMessageText,
+    extractCodexAssistantHistoryMessageFromJsonlRow,
+    normalizeTopLevelCodexStreamEvent,
   },
 } = require('./codexAgent')
 
@@ -94,4 +97,47 @@ api_format = "chat"
     reasoningEffort: '',
     apiFormat: 'chat',
   })
+})
+
+test('top-level agent_message stream events are normalized for renderer consumption', () => {
+  const normalized = normalizeTopLevelCodexStreamEvent({
+    type: 'agent_message',
+    id: 'agent-msg-1',
+    text: '架构文档已经改成主进程归一化契约。',
+  })
+
+  assert.deepEqual(normalized, {
+    type: 'item.completed',
+    item: {
+      id: 'agent-msg-1',
+      type: 'agent_message',
+      text: '架构文档已经改成主进程归一化契约。',
+    },
+  })
+})
+
+test('history parser accepts both top-level and payload agent_message rows', () => {
+  const topLevel = extractCodexAssistantHistoryMessageFromJsonlRow({
+    type: 'agent_message',
+    text: '文档收口已完成。',
+  })
+  const payloadWrapped = extractCodexAssistantHistoryMessageFromJsonlRow({
+    type: 'event_msg',
+    payload: {
+      type: 'agent_message',
+      message: '现在开始做代码实现。',
+    },
+  })
+
+  assert.deepEqual(topLevel, {
+    role: 'assistant',
+    text: '文档收口已完成。',
+    content: [{ type: 'output_text', text: '文档收口已完成。' }],
+  })
+  assert.deepEqual(payloadWrapped, {
+    role: 'assistant',
+    text: '现在开始做代码实现。',
+    content: [{ type: 'output_text', text: '现在开始做代码实现。' }],
+  })
+  assert.strictEqual(extractCodexAgentMessageText({ message: { content: [{ type: 'output_text', text: '继续处理。' }] } }), '继续处理。')
 })

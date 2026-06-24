@@ -21,11 +21,11 @@
         <span class="sb-sep">/</span>
         <span class="sb-val">out {{ fmtK(outputDisplay) }}</span>
         <span v-if="hasCache" class="sb-sep">/</span>
-        <span v-if="hasCache" class="sb-val sb-cache">cache {{ fmtK(m.cacheReadTokens + m.cacheCreationTokens) }}</span>
+        <span v-if="hasCache" class="sb-val sb-cache">cache {{ fmtK(cacheDisplay) }}</span>
       </span>
 
       <!-- 上下文 -->
-      <span v-if="contextPct > 0 || compacting" class="sb-group sb-context-wrap" :class="{ 'sb-warn': contextPct > 80, 'sb-compacting': compacting }" @click="compactContext">
+      <span v-if="m.contextWindow > 0 || compacting" class="sb-group sb-context-wrap" :class="{ 'sb-warn': contextPct > 80, 'sb-compacting': compacting }" @click="compactContext">
         <svg class="sb-ring" :class="{ 'sb-ring-spin': compacting }" viewBox="0 0 24 24" width="16" height="16">
           <circle class="sb-ring-bg" cx="12" cy="12" r="9" fill="none" stroke-width="2.5"/>
           <circle v-if="!compacting" class="sb-ring-fg" cx="12" cy="12" r="9" fill="none" stroke-width="2.5"
@@ -97,9 +97,11 @@ const props = defineProps({
 
 const { display: inputDisplay, update: updateInput } = useAnimatedNumber()
 const { display: outputDisplay, update: updateOutput } = useAnimatedNumber()
+const { display: cacheDisplay, update: updateCache } = useAnimatedNumber()
 
-watch(() => props.metrics.inputTokens, (nv) => { updateInput(nv) })
-watch(() => props.metrics.outputTokens, (nv) => { updateOutput(nv) })
+watch(() => props.metrics.inputTokens, (nv) => { updateInput(nv) }, { immediate: true })
+watch(() => props.metrics.outputTokens, (nv) => { updateOutput(nv) }, { immediate: true })
+watch(() => (props.metrics.cacheReadTokens || 0) + (props.metrics.cacheCreationTokens || 0), (nv) => { updateCache(nv) }, { immediate: true })
 
 const emit = defineEmits(['send-message'])
 

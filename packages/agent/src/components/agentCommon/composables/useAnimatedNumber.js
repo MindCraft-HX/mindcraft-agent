@@ -39,8 +39,11 @@ export function useAnimatedNumber() {
   function update(newTarget) {
     const now = performance.now()
 
-    // 重置/切 tab → 立即同步，下次增长直接 snap
-    if (newTarget < display.value) {
+    // 数据回退（切 tab / 新 session / 上游修正采样）→ 立即同步，不播放反向动画。
+    // 这里必须同时比较 display 和 target：
+    // 当 rAF 尚未追到旧 target 时，newTarget 可能大于 display 但小于 target，
+    // 若继续沿用插值会得到负速率，出现负数或大幅抖动。
+    if (newTarget < display.value || newTarget < target) {
       display.value = newTarget
       target = newTarget
       rate = 0

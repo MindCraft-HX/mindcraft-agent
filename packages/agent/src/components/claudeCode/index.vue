@@ -537,6 +537,19 @@ const metricsData = ref({
 const metricsLiveDurationMs = ref(0)
 let metricsLiveTimer = null
 
+function buildNewClaudeTurnMetrics(tab) {
+  return {
+    ...(tab?.metrics || {}),
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    contextUsage: 0,
+    durationMs: 0,
+    speedOutputPerSec: 0,
+  }
+}
+
 function stopMetricsLiveTimer() {
   if (metricsLiveTimer) {
     clearInterval(metricsLiveTimer)
@@ -564,12 +577,39 @@ function syncMetricsTimerForClaudeTab(tab, durationMs = 0) {
 // refreshMetricsForChat 期间的轮询锁，防止 polling 数据覆盖刚查出的完整结果
 let _refreshingMetrics = false
 
+function hasClaudeTurnTokenSample(data = {}) {
+  return ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheCreationTokens']
+    .some(key => Object.prototype.hasOwnProperty.call(data, key) && Number(data[key]) > 0)
+}
+
+function mergeClaudeRuntimeMetrics(current = {}, data = {}, tab = null) {
+  const next = { ...data }
+  // Running 状态栏展示当前回合 token。没有本轮 token 样本的轮询只补 session 级字段，
+  // 避免上一轮 transcript 的 output/cache 回灌到新回合。
+  if (tab?.thinking && !hasClaudeTurnTokenSample(data)) {
+    delete next.inputTokens
+    delete next.outputTokens
+    delete next.cacheReadTokens
+    delete next.cacheCreationTokens
+  }
+  return {
+    ...current,
+    ...next,
+  }
+}
+
 function onMetricsUpdate(data) {
   if (!data || _refreshingMetrics) return
   // 只更新当前活跃 tab 的 metrics
   const tab = activeTab.value
   if (tab && data.sessionId && data.sessionId !== tab.sessionId) return
-  Object.assign(metricsData.value, data)
+  if (tab) {
+    tab.metrics = {
+      ...mergeClaudeRuntimeMetrics(tab.metrics || {}, data, tab),
+      sessionId: tab.sessionId,
+    }
+  }
+  Object.assign(metricsData.value, mergeClaudeRuntimeMetrics(metricsData.value, data, tab))
   if (tab && typeof data.thinking === 'boolean') applyClaudeMetrics(tab, data)
   syncMetricsTimerForClaudeTab(tab, data.durationMs || 0)
 }
@@ -3019,6 +3059,22 @@ async function sendMessage() {
     tab.name = text ? text.slice(0, 24) + (text.length > 24 ? '…' : '') : files.map(f => f.name).join(', ')
   }
   scrollBottom(tab.id)
+  tab.metrics = {
+    ...buildNewClaudeTurnMetrics(tab),
+    sessionId: tab.sessionId,
+    model: getClaudeTabModel(tab),
+    thinking: true,
+  }
+  Object.assign(metricsData.value, {
+    ...buildNewClaudeTurnMetrics(tab),
+    sessionId: tab.sessionId,
+    model: getClaudeTabModel(tab),
+    thinking: true,
+    compacting: !!tab._compacting,
+    gitBranch: tab.metrics?.gitBranch || '',
+    gitChanges: tab.metrics?.gitChanges || 0,
+    usageApiSessionPct: tab.metrics?.usageApiSessionPct ?? null,
+  })
   markClaudeTurnStarting(tab)
   // 关键：用户消息入列后立刻落盘，避免”刚聊几句就关掉/重开”导致只有新对话
   saveHistory({ immediate: true })

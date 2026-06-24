@@ -1,13 +1,17 @@
 <template>
   <div class="msg-assistant">
     <div :class="['assistant-avatar', 'icon', 'iconfont', iconClass]" :style="iconStyle"></div>
-    <div class="assistant-content" v-html="renderContent(msg.text)"></div>
+    <div class="assistant-main">
+      <div class="assistant-content" v-html="renderContent(msg.text)"></div>
+      <TokenMetaRow v-if="msg._turnTokens" v-bind="msg._turnTokens" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { renderContent } from '../../../agentCommon/render.js'
+import TokenMetaRow from '../../../agentCommon/components/TokenMetaRow.vue'
 import '../../../agentCommon/markdown.css'
 
 const props = defineProps({
@@ -50,6 +54,7 @@ const iconStyle = computed(() => ({
   flex: 1; min-width: 0; line-height: 1.65; color: var(--cc-assistant-text);
   word-break: break-word; font-size: 13px; white-space: pre-wrap;
 }
+.assistant-main { flex: 1; min-width: 0; }
 .assistant-content:deep(.agent-markdown),
 .assistant-content.agent-markdown { color: inherit; }
 .assistant-content :deep(.code-block) {

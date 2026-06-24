@@ -68,6 +68,61 @@ const KNOWN_EVENT_TYPES = new Set([
   'turn_context', 'session_meta', 'token_count', 'user_message', 'agent_message', 'reasoning',
 ])
 
+function extractCodexAgentMessageText(raw = {}) {
+  const directText = typeof raw?.text === 'string' ? raw.text.trim() : ''
+  if (directText) return directText
+
+  const directMessage = typeof raw?.message === 'string' ? raw.message.trim() : ''
+  if (directMessage) return directMessage
+
+  const content = raw?.message?.content || raw?.content || raw?.payload?.content
+  if (Array.isArray(content)) {
+    const text = content
+      .filter(block => block && typeof block.text === 'string' && ['text', 'input_text', 'output_text'].includes(block.type))
+      .map(block => block.text)
+      .join('\n')
+      .trim()
+    if (text) return text
+  }
+
+  return ''
+}
+
+function buildCodexAssistantHistoryMessage(text = '') {
+  const normalizedText = String(text || '').trim()
+  if (!normalizedText) return null
+  return {
+    role: 'assistant',
+    text: normalizedText,
+    content: [{ type: 'output_text', text: normalizedText }],
+  }
+}
+
+function extractCodexAssistantHistoryMessageFromJsonlRow(row = {}) {
+  if (!row || typeof row !== 'object') return null
+  if (row.type === 'agent_message') {
+    return buildCodexAssistantHistoryMessage(extractCodexAgentMessageText(row))
+  }
+  if (row.payload?.type === 'agent_message') {
+    return buildCodexAssistantHistoryMessage(extractCodexAgentMessageText(row.payload))
+  }
+  return null
+}
+
+function normalizeTopLevelCodexStreamEvent(ev = {}) {
+  if (ev?.type !== 'agent_message') return null
+  const text = extractCodexAgentMessageText(ev)
+  if (!text) return null
+  return {
+    type: 'item.completed',
+    item: {
+      id: ev.id || `agent_message_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      type: 'agent_message',
+      text,
+    },
+  }
+}
+
 function ensureDirSync(dirPath) {
   if (!dirPath) return
   try {
@@ -742,17 +797,19 @@ function estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens) {
 function normalizeCodexUsage(usage = {}) {
   if (!usage || typeof usage !== 'object') return null
   const inputDetails = usage.input_tokens_details || {}
+  const rawInputTokens = toNonNegativeNumber(usage.input_tokens)
+  const cacheReadTokens = toNonNegativeNumber(
+    usage.cache_read_input_tokens,
+    toNonNegativeNumber(usage.cached_input_tokens, toNonNegativeNumber(inputDetails.cached_tokens))
+  )
+  const cacheCreationTokens = toNonNegativeNumber(usage.cache_creation_input_tokens)
   return {
-    input_tokens: toNonNegativeNumber(usage.input_tokens),
+    input_tokens: Math.max(0, rawInputTokens - cacheReadTokens - cacheCreationTokens),
     output_tokens: toNonNegativeNumber(usage.output_tokens),
     total_tokens: toNonNegativeNumber(usage.total_tokens),
-    cache_read_input_tokens: toNonNegativeNumber(
-      usage.cache_read_input_tokens,
-      toNonNegativeNumber(usage.cached_input_tokens, toNonNegativeNumber(inputDetails.cached_tokens))
-    ),
-    cache_creation_input_tokens: toNonNegativeNumber(
-      usage.cache_creation_input_tokens
-    ),
+    cache_read_input_tokens: cacheReadTokens,
+    cache_creation_input_tokens: cacheCreationTokens,
+    raw_input_tokens: rawInputTokens,
   }
 }
 
@@ -784,6 +841,42 @@ function buildCodexPerTurnTokens(parsedMetrics, usage = null) {
     cacheReadTokens,
     cacheCreationTokens,
     durationMs,
+  }
+}
+
+function buildCodexMetricsFromTokenCountPayload(payload = {}, {
+  model = '',
+  durationMs = 0,
+  gitBranch = '',
+  gitChanges = 0,
+} = {}) {
+  const info = payload?.info || payload || {}
+  const total = info.total_token_usage || {}
+  const last = info.last_token_usage || {}
+  const normalizedLast = normalizeCodexUsage(last) || {}
+  const inputTokens = toNonNegativeNumber(normalizedLast.input_tokens)
+  const outputTokens = toNonNegativeNumber(last.output_tokens)
+  const cacheReadTokens = toNonNegativeNumber(normalizedLast.cache_read_input_tokens)
+  const cacheCreationTokens = toNonNegativeNumber(normalizedLast.cache_creation_input_tokens)
+  const contextUsage = pickCodexContextUsage(info, payload)
+  const contextWindow = pickCodexContextWindow(info, payload, getCodexContextWindowForModel(model))
+  if (inputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && cacheCreationTokens <= 0 && contextUsage <= 0) {
+    return null
+  }
+
+  return {
+    model: model || '',
+    costUsd: estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens),
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    contextUsage,
+    contextWindow,
+    durationMs,
+    speedOutputPerSec: 0,
+    gitBranch,
+    gitChanges,
   }
 }
 
@@ -889,10 +982,11 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
         const nextCumulativeCacheRead = toNonNegativeNumber(total.cached_input_tokens, cumulativeCacheReadTokens)
         const nextCumulativeCacheCreation = toNonNegativeNumber(total.cache_creation_input_tokens, cumulativeCacheCreationTokens)
 
-        inputTokens = pickCodexTurnTokenValue(last.input_tokens, nextCumulativeInput - turnStartInputTokens, inputTokens)
+        const rawTurnInput = pickCodexTurnTokenValue(last.input_tokens, nextCumulativeInput - turnStartInputTokens, inputTokens)
         outputTokens = pickCodexTurnTokenValue(last.output_tokens, nextCumulativeOutput - turnStartOutputTokens, outputTokens)
         cacheReadTokens = pickCodexTurnTokenValue(last.cached_input_tokens, nextCumulativeCacheRead - turnStartCacheReadTokens, cacheReadTokens)
         cacheCreationTokens = pickCodexTurnTokenValue(last.cache_creation_input_tokens, nextCumulativeCacheCreation - turnStartCacheCreationTokens, cacheCreationTokens)
+        inputTokens = Math.max(0, rawTurnInput - cacheReadTokens - cacheCreationTokens)
         cumulativeInputTokens = nextCumulativeInput
         cumulativeOutputTokens = nextCumulativeOutput
         cumulativeCacheReadTokens = nextCumulativeCacheRead
@@ -921,7 +1015,7 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
 
     return {
       model: model || '',
-      costUsd: estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens),
+      costUsd: estimateCodexCostUsd(inputTokens + cacheCreationTokens, outputTokens, cacheReadTokens),
       inputTokens,
       outputTokens,
       cacheReadTokens,
@@ -1336,9 +1430,9 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         // --- 新版 SDK 新增的 event_msg 类型 (静默跳过/收集) ---
 
         // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
-        if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
-          const text = p.message.trim()
-          pushHistoryMessage(messages, seenMessages, { role: 'assistant', text, content: [{ type: 'output_text', text }] })
+        const agentMessage = extractCodexAssistantHistoryMessageFromJsonlRow(row)
+        if (agentMessage) {
+          pushHistoryMessage(messages, seenMessages, agentMessage)
           return
         }
 
@@ -1587,9 +1681,9 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       // --- 新版 SDK 新增的 event_msg 类型 (静默跳过/收集) ---
 
       // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
-      if (p.type === 'agent_message' && typeof p.message === 'string' && p.message.trim()) {
-        const text = p.message.trim()
-        pushHistoryMessage(messages, seenMessages, { role: 'assistant', text, content: [{ type: 'output_text', text }] })
+      const agentMessage = extractCodexAssistantHistoryMessageFromJsonlRow(row)
+      if (agentMessage) {
+        pushHistoryMessage(messages, seenMessages, agentMessage)
         return
       }
 
@@ -2277,6 +2371,25 @@ function setupCodexSdkHandlers() {
               if (!cliSessionIds.has(sessionId)) cliSessionIds.set(sessionId, ev.thread_id)
             }
 
+            if (ev.type === 'token_count' || ev.payload?.type === 'token_count') {
+              const session = codexSessions.get(sessionId)
+              const sender = session?.event?.sender || event.sender
+              const elapsedMs = Math.max(0, Date.now() - pollStart)
+              const liveMetrics = buildCodexMetricsFromTokenCountPayload(ev.payload?.type === 'token_count' ? ev.payload : ev, {
+                model: model || '',
+                durationMs: elapsedMs,
+                gitBranch: '',
+                gitChanges: 0,
+              })
+              if (liveMetrics) {
+                sendMetrics(sender, {
+                  ...liveMetrics,
+                  sessionId,
+                  thinking: true,
+                })
+              }
+            }
+
             if (ev.type === 'turn.completed' || ev.type === 'turn.failed' || ev.type === 'task_complete') {
               console.log(`[codex] turn terminal: type=${ev.type} sessionId=${sessionId} pendingItems=${pendingItemIds.size}`)
               resultReceived = true
@@ -2386,6 +2499,13 @@ function setupCodexSdkHandlers() {
               turnCompletedSeen = true
               turnCompletedAt = Date.now()
               maybeSendDone()
+            }
+
+            const topLevelAgentMessage = normalizeTopLevelCodexStreamEvent(ev)
+            if (topLevelAgentMessage) {
+              const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
+              safeSend(sender, 'codex-agent-message', { sessionId, msg: topLevelAgentMessage })
+              continue
             }
 
             if (ev.type === 'thread.error' || ev.type === 'turn.failed') {
@@ -3957,6 +4077,7 @@ module.exports = {
   resetCodexSdkRuntime,
   __test__: {
     buildCodexAgentDonePayload,
+    buildCodexMetricsFromTokenCountPayload,
     buildCodexPerTurnTokens,
     codexEventHasErrorType,
     getCodexSessionMetricsByFile,
@@ -3977,6 +4098,9 @@ module.exports = {
     markCodexSessionDoneSent,
     parseSimpleTomlContent,
     buildRuntimeConfigFromToml,
+    extractCodexAgentMessageText,
+    extractCodexAssistantHistoryMessageFromJsonlRow,
+    normalizeTopLevelCodexStreamEvent,
     selectCodexTomlProvider,
     setSessionsDirForTest: (dir) => { SESSIONS_DIR = dir },
   },
