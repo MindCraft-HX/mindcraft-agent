@@ -72,3 +72,26 @@ experimental_bearer_token = "sk-toml"
     apiFormat: 'responses',
   })
 })
+
+test('runtime config prefers selected provider base_url over stale top-level proxy base_url', () => {
+  const toml = parseSimpleTomlContent(`
+model = "deepseek-v4-pro"
+model_provider = "deepseek"
+base_url = "http://127.0.0.1:18528/v1"
+experimental_bearer_token = "stale-proxy-token"
+api_format = "responses"
+
+[model_providers.deepseek]
+base_url = "https://api.mindcraft.com.cn/v1"
+experimental_bearer_token = "MC-real-token"
+api_format = "chat"
+`)
+
+  assert.deepEqual(buildRuntimeConfigFromToml(toml, {}), {
+    apiKey: 'MC-real-token',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    model: 'deepseek-v4-pro',
+    reasoningEffort: '',
+    apiFormat: 'chat',
+  })
+})

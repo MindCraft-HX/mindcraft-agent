@@ -254,13 +254,13 @@ function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
   let tomlApiFormat = toml.api_format || ''
 
   // [model_providers.<id>] 段（第三方 provider 格式，参照 cc-switch）
-  if (!tomlApiKey || !tomlBaseURL) {
-    const provider = selectCodexTomlProvider(toml.model_providers, toml.model_provider)
-    if (provider) {
-      if (!tomlApiKey) tomlApiKey = provider.experimental_bearer_token || ''
-      if (!tomlBaseURL) tomlBaseURL = provider.base_url || ''
-      if (!tomlApiFormat) tomlApiFormat = provider.api_format || ''
-    }
+  // 当存在选中的 model_provider 时，provider 段应优先于顶层 base_url/token。
+  // 这样可以避开历史版本遗留在顶层的临时代理地址（如 127.0.0.1）。
+  const provider = selectCodexTomlProvider(toml.model_providers, toml.model_provider)
+  if (provider) {
+    if (provider.experimental_bearer_token) tomlApiKey = provider.experimental_bearer_token || tomlApiKey
+    if (provider.base_url) tomlBaseURL = provider.base_url || tomlBaseURL
+    if (provider.api_format) tomlApiFormat = provider.api_format || tomlApiFormat
   }
 
   if (!tomlApiKey && toml.auth && toml.auth.token) tomlApiKey = toml.auth.token
