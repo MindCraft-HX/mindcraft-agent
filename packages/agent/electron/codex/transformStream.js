@@ -80,6 +80,29 @@ class ChatToResponsesState {
   }
 
   // ─── handle_chat_chunk(), 对齐 CC SWITCH line 101 ───
+  hasMeaningfulOutput() {
+    if (this.text.text && this.text.text.trim()) return true
+    if (this.reasoning.text && this.reasoning.text.trim()) return true
+    for (const [, state] of this.tools) {
+      if (state?.added || state?.name || state?.callId || state?.arguments) return true
+    }
+    return false
+  }
+
+  failedEvents(message, errorType) {
+    if (this.completed) return []
+    this.completed = true
+    const output = [...this.outputItems].sort((a, b) => a[0] - b[0]).map(([, item]) => item)
+    const error = { message }
+    if (errorType) error.type = errorType
+    const response = this.baseResponse('failed', output)
+    response.error = error
+    return [
+      `event: response.failed\n` +
+      `data: ${JSON.stringify({ type: 'response.failed', response })}\n`,
+    ]
+  }
+
   handleChunk(chunk) {
     const events = []
 
@@ -630,7 +653,6 @@ class ChatToResponsesState {
   // ─── finalize(), 对齐 CC SWITCH line 505 ───
   finalize() {
     if (this.completed) return []
-    this.completed = true
 
     const events = [
       ...this.ensureResponseStarted(),
@@ -641,6 +663,12 @@ class ChatToResponsesState {
     ]
 
     // completed_output_items(), 对齐 CC SWITCH line 732
+    if (!this.hasMeaningfulOutput()) {
+      return events.concat(this.failedEvents('Empty response from upstream chat API', 'empty_upstream_response'))
+    }
+
+    this.completed = true
+
     const sorted = [...this.outputItems].sort((a, b) => a[0] - b[0])
     const output = sorted.map(([, item]) => item)
 
@@ -725,9 +753,9 @@ async function* createResponsesSseFromChat(chatStream) {
           continue
         }
 
-        if (!trimmed.startsWith('data: ')) continue
+        if (!trimmed.startsWith('data:')) continue
 
-        const data = trimmed.slice('data: '.length)
+        const data = trimmed.slice('data:'.length).trimStart()
         if (data === '[DONE]') {
           console.log('[codex-proxy] stream: [DONE] received, finalizing')
           yield* emitEvents(state.finalize())
@@ -772,17 +800,7 @@ async function* createResponsesSseFromChat(chatStream) {
  * 发送 response.failed SSE 事件 (对齐 CC SWITCH ChatToResponsesState::failed_event)
  */
 async function* emitFailedEvent(state, message, errorType) {
-  if (state.completed) return
-  state.completed = true
-  const output = [...state.outputItems].sort((a, b) => a[0] - b[0]).map(([, item]) => item)
-  const error = { message }
-  if (errorType) error.type = errorType
-
-  const response = state.baseResponse('failed', output)
-  response.error = error
-
-  yield `event: response.failed\n` +
-    `data: ${JSON.stringify({ type: 'response.failed', response })}\n`
+  yield* emitEvents(state.failedEvents(message, errorType))
 }
 
 async function* emitEvents(events) {

@@ -101,6 +101,44 @@ async function runTests() {
     await proxy.close()
   })
 
+  await test('SSE streaming accepts data lines without a space after colon', async () => {
+    const upstream = await startMockUpstream((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write('data:{"id":"chatcmpl_nospace","created":123,"model":"m","choices":[{"delta":{"content":"No"}}]}\n\n')
+      res.write('data:{"id":"chatcmpl_nospace","created":123,"model":"m","choices":[{"delta":{"content":" space"},"finish_reason":"stop"}]}\n\n')
+      res.write('data:[DONE]\n\n')
+      res.end()
+    })
+
+    const proxy = await startCodexProxy({ upstreamUrl: `http://127.0.0.1:${upstream.port}`, apiKey: 'test', model: 'm' })
+    const result = await proxyRequest(proxy.port, { model: 'm', input: [{ role: 'user', content: 'hi' }], stream: true })
+
+    assert.ok(result.text.includes('event: response.output_text.delta'))
+    assert.ok(result.text.includes('No space'))
+    assert.ok(result.text.includes('event: response.completed'))
+
+    await upstream.close()
+    await proxy.close()
+  })
+
+  await test('SSE empty stop becomes failed response instead of silent completed turn', async () => {
+    const upstream = await startMockUpstream((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write('data: {"id":"empty_1","created":123,"model":"m","choices":[{"delta":{"content":""},"finish_reason":"stop"}]}\n\n')
+      res.end()
+    })
+
+    const proxy = await startCodexProxy({ upstreamUrl: `http://127.0.0.1:${upstream.port}`, apiKey: 'test', model: 'm' })
+    const result = await proxyRequest(proxy.port, { model: 'm', input: [{ role: 'user', content: 'hi' }], stream: true })
+
+    assert.ok(result.text.includes('event: response.failed'))
+    assert.ok(result.text.includes('empty_upstream_response'))
+    assert.ok(!result.text.includes('event: response.completed'))
+
+    await upstream.close()
+    await proxy.close()
+  })
+
   // ─── 测试 2: 上游返回非 SSE（application/json）───
   await test('non-SSE fallback: application/json', async () => {
     const upstream = await startMockUpstream((req, res) => {

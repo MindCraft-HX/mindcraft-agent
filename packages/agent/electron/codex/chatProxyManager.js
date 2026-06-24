@@ -15,9 +15,14 @@ const PROXY_PROVIDER_ID = 'mindcraft_chat_proxy'
 let server = null
 let currentFingerprint = ''
 
-function proxyFingerprint(upstreamUrl, apiKey) {
+function proxyFingerprint(upstreamUrl, apiKey, model, reasoningEffort) {
   const keyHash = crypto.createHash('sha256').update(String(apiKey || '')).digest('hex')
-  return `${String(upstreamUrl || '').replace(/\/+$/, '')}|${keyHash}`
+  return [
+    String(upstreamUrl || '').replace(/\/+$/, ''),
+    keyHash,
+    String(model || '').trim(),
+    String(reasoningEffort || '').trim(),
+  ].join('|')
 }
 
 function buildProxyCodexConfig(proxyBaseUrl) {
@@ -39,7 +44,7 @@ function buildProxyCodexConfig(proxyBaseUrl) {
 
 async function ensureProxy(opts) {
   const { upstreamUrl, apiKey, model, reasoningEffort } = opts
-  const fingerprint = proxyFingerprint(upstreamUrl, apiKey)
+  const fingerprint = proxyFingerprint(upstreamUrl, apiKey, model, reasoningEffort)
 
   if (server && fingerprint === currentFingerprint) {
     const baseUrl = `http://127.0.0.1:${server.port}/v1`
@@ -84,4 +89,7 @@ module.exports = {
   isProxyRunning,
   buildProxyCodexConfig,
   PROXY_PROVIDER_ID,
+  __test__: {
+    proxyFingerprint,
+  },
 }

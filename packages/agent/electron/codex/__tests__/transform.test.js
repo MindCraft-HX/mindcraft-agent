@@ -11,7 +11,7 @@ const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
 const { responsesToChatCompletions } = require('../transformRequest')
 const { chatCompletionToResponse, chatErrorToResponseError } = require('../transformResponse')
-const { buildProxyCodexConfig, PROXY_PROVIDER_ID } = require('../chatProxyManager')
+const { buildProxyCodexConfig, PROXY_PROVIDER_ID, __test__: chatProxyManagerTest } = require('../chatProxyManager')
 
 let passed = 0
 let failed = 0
@@ -480,6 +480,16 @@ async function runTests() {
     assert.strictEqual(cfg.wire_api, 'responses')
     assert.strictEqual(cfg.model_providers[PROXY_PROVIDER_ID].base_url, 'http://127.0.0.1:4312/v1')
     assert.strictEqual(cfg.model_providers[PROXY_PROVIDER_ID].wire_api, 'responses')
+  })
+
+  test('proxy lifecycle: fingerprint changes when model or reasoning effort changes', () => {
+    const base = chatProxyManagerTest.proxyFingerprint('https://api.mindcraft.com.cn/v1/', 'k', 'deepseek-v4-pro', 'high')
+    const same = chatProxyManagerTest.proxyFingerprint('https://api.mindcraft.com.cn/v1', 'k', 'deepseek-v4-pro', 'high')
+    const otherModel = chatProxyManagerTest.proxyFingerprint('https://api.mindcraft.com.cn/v1', 'k', 'deepseek-v4-flash', 'high')
+    const otherEffort = chatProxyManagerTest.proxyFingerprint('https://api.mindcraft.com.cn/v1', 'k', 'deepseek-v4-pro', 'medium')
+    assert.strictEqual(base, same)
+    assert.notStrictEqual(base, otherModel)
+    assert.notStrictEqual(base, otherEffort)
   })
 
   test('request: runtime reasoningEffort enables deepseek thinking', () => {
