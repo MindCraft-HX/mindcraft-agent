@@ -17,9 +17,9 @@
       <!-- Token 用量 -->
       <span v-if="hasTokenData" class="sb-group">
         <span class="sb-icon">📊</span>
-        <span class="sb-val" :class="{ 'sb-num-bump': bumpInput }">in {{ fmtK(m.inputTokens) }}</span>
+        <span class="sb-val">in {{ fmtK(inputAnim.display) }}</span>
         <span class="sb-sep">/</span>
-        <span class="sb-val" :class="{ 'sb-num-bump': bumpOutput }">out {{ fmtK(m.outputTokens) }}</span>
+        <span class="sb-val">out {{ fmtK(outputAnim.display) }}</span>
         <span v-if="hasCache" class="sb-sep">/</span>
         <span v-if="hasCache" class="sb-val sb-cache">cache {{ fmtK(m.cacheReadTokens + m.cacheCreationTokens) }}</span>
       </span>
@@ -86,7 +86,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
+import { useAnimatedNumber } from '../../agentCommon/composables/useAnimatedNumber.js'
 
 const props = defineProps({
   metrics: { type: Object, required: true },
@@ -94,16 +95,11 @@ const props = defineProps({
   compacting: { type: Boolean, default: false },
 })
 
-const bumpInput = ref(false)
-const bumpOutput = ref(false)
+const inputAnim = useAnimatedNumber()
+const outputAnim = useAnimatedNumber()
 
-// 数值增长时触发弹跳动画（初始加载/切 tab 时 ov=0 不触发）
-watch(() => props.metrics.inputTokens, (nv, ov) => {
-  if (nv > (ov || 0) && (ov || 0) > 0) { bumpInput.value = true; setTimeout(() => { bumpInput.value = false }, 350) }
-})
-watch(() => props.metrics.outputTokens, (nv, ov) => {
-  if (nv > (ov || 0) && (ov || 0) > 0) { bumpOutput.value = true; setTimeout(() => { bumpOutput.value = false }, 350) }
-})
+watch(() => props.metrics.inputTokens, (nv) => { inputAnim.update(nv) })
+watch(() => props.metrics.outputTokens, (nv) => { outputAnim.update(nv) })
 
 const emit = defineEmits(['send-message'])
 
@@ -325,10 +321,4 @@ function formatDuration(ms) {
   color: var(--cc-text-muted);
 }
 
-/* Token 数字增长动画 */
-.sb-num-bump { animation: sb-count-up 0.35s ease; }
-@keyframes sb-count-up {
-  0%   { transform: scale(1.15); color: var(--cc-primary); }
-  100% { transform: scale(1);    color: var(--cc-text-secondary); }
-}
 </style>
