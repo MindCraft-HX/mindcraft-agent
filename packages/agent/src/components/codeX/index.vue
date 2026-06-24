@@ -436,6 +436,7 @@ function pushTabMessage(tab, msg) {
   if (!tab) return
   tab.messages.push(msg)
   touchChatUpdatedAt(tab)
+  bumpScrollCount()
 }
 const nextProjectId = () => `proj-${++projectCounter}`
 const nextChatId = () => `chat-${++chatCounter}`
@@ -1109,7 +1110,7 @@ function getLatestChatId(chats = []) {
 }
 
 const activeMsgContainer = ref(null)
-const { show: showScrollBottomBtn, newMsgCount, onScroll: onScrollHook } = useScrollBottom(activeMsgContainer)
+const { show: showScrollBottomBtn, newMsgCount, onScroll: onScrollHook, scrollToBottom: scrollToBottomActive, scrollOrBump, bumpCount: bumpScrollCount } = useScrollBottom(activeMsgContainer)
 const showScrollPrevBtn = ref(false)
 let scrollPrevCurrentId = null
 const queuedRetryTimers = new Map()
@@ -1168,6 +1169,18 @@ function smartScrollBottom(chatId) {
     if (!el) return
     el.scrollTo({ top: 999999, behavior: 'instant' })
   })
+}
+
+// 智能滚动：活跃 tab 用 scrollOrBump（尊重用户上翻位置），后台 tab 强滚
+function smartScrollToBottom(chatId, smooth = true) {
+  const id = chatId || activeChatId.value
+  if (id === activeChatId.value) {
+    scrollOrBump(smooth)
+  } else {
+    const el = msgRefs[id]
+    if (!el) return
+    nextTick(() => { if (el) el.scrollTop = el.scrollHeight })
+  }
 }
 
 function jumpToMessage(messageId) {
@@ -1602,7 +1615,7 @@ const { onAgentMessage, onAgentDone } = useCodexAgentStream({
     // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
     if (codehubHasNotification) codehubHasNotification.value = true
   },
-  scrollBottom: smartScrollBottom, saveHistory, nextMsgId,
+  scrollBottom: smartScrollToBottom, saveHistory, nextMsgId,
   isWriteTool, isEditTool, isBashTool, isReadTool, inferToolFailureFromText, createToolMessage,
   onNewMessage: () => {},
   trimMessages,
