@@ -2607,6 +2607,7 @@ function setupClaudeHandlers() {
       const abortController = new AbortController()
       let gotAnyMessage = false
       let resultReceived = false
+      let _agentRunDoneFilePath = '' // PR 2：在 result/fallback 捕获 filePath，finally 使用
       let exitCode = 0
       const resolvedCwd = path.resolve(cwd || process.cwd())
       const extraDirs = additionalDirsFromUserText(resolvedCwd, prompt || '')
@@ -2954,6 +2955,7 @@ function setupClaudeHandlers() {
               })
               console.log('[Claude] agent-done → filePath:', donePayload.filePath || '(empty)')
               safeSend(sender, 'claude-agent-done', donePayload)
+              _agentRunDoneFilePath = donePayload.filePath || ''  // PR 2：捕获 filePath 供 finally 使用
               // PR 2：双发 agent.turn.terminal（旧通道仍是权威路径）
               try {
                 const { buildAgentTurnTerminalEvent, TerminalKind } = await _getAgentProtocol()
@@ -3073,15 +3075,18 @@ function setupClaudeHandlers() {
               reason: doneReason,
             })
             safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
+            _agentRunDoneFilePath = donePayload.filePath || ''  // PR 2：fallback 路径也捕获 filePath
           }
-          // PR 2：双发 agent.run.done（finally 无条件发送，确保成功/失败/中断路径全部覆盖）
+          // PR 2：双发 agent.run.done（finally 统一发送，abort/success/failure 全部覆盖）
           // agent.turn.terminal 在 result 到达时已发，此处是 run 收尾事件。
+          // filePath 从 result/fallback 的 donePayload 捕获，abort 交给 finally 统一发。
           try {
             const { buildAgentRunDoneEvent } = await _getAgentProtocol()
             safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
               agent: 'claudeCode',
               chatKey: sessionId,
               cliSessionId: cliSessionIds.get(chatKey) || '',
+              filePath: _agentRunDoneFilePath,
             }))
           } catch (_) { /* 新通道发送失败不影响旧通道 */ }
           agentSessions.delete(chatKey)
@@ -3106,14 +3111,7 @@ function setupClaudeHandlers() {
         cwd: s.cwd || '',
         reason: 'aborted',
       }))
-      // PR 2：双发 agent.run.done（abort 路径 — handler 非 async，用 .then）
-      _getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
-        safeSend(s.event?.sender, 'agent:event', buildAgentRunDoneEvent({
-          agent: 'claudeCode',
-          chatKey: sessionId,
-          cliSessionId: cliSessionIds.get(chatKey) || '',
-        }))
-      }).catch(() => {})
+      // PR 2：agent.run.done 由 query handler 的 finally 统一发送，此处不重复
     }
   })
 
