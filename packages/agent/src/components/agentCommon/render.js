@@ -360,7 +360,7 @@ function findNextNonEmptyLine(lines, startIdx) {
 }
 
 function isOrderedListLine(line) {
-  return /^\s*\d+\.\s+/.test(line)
+  return /^\s*\d+\.\s+.+/.test(line)
 }
 
 function isTaskListLine(line) {
@@ -368,7 +368,7 @@ function isTaskListLine(line) {
 }
 
 function isBulletListLine(line) {
-  return /^\s*[-*]\s+/.test(line)
+  return /^\s*[-*]\s+.+/.test(line)
 }
 
 function isSameListType(line, ordered) {
@@ -570,9 +570,14 @@ export function renderContent(text) {
 
     if (isOrderedListLine(line) || isTaskListLine(line) || isBulletListLine(line)) {
       const { html, nextIdx } = renderNestedList(lines, i)
-      out.push(html)
-      i = nextIdx - 1
-      continue
+      // 防御：空列表项（如 "- " / "1. " 无内容）会导致 renderNestedList 不前进，
+      // nextIdx === i 时回退 i 会造成死循环 → 整个应用卡死。
+      if (nextIdx > i) {
+        out.push(html)
+        i = nextIdx - 1
+        continue
+      }
+      // 退化为普通段落处理（不 continue，继续往下走）
     }
 
     if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
