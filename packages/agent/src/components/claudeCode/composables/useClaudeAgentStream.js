@@ -15,6 +15,24 @@ import {
   markClaudeStreamActivity,
 } from '../utils/claudeRuntimeState.mjs'
 
+function normalizeClaudeTurnUsageForUi(usage, model = '') {
+  const rawInputTokens = Number(usage?.input_tokens || 0)
+  const cacheReadTokens = Number(usage?.cache_read_input_tokens || 0)
+  const cacheCreationTokens = Number(usage?.cache_creation_input_tokens || 0)
+  const isNativeClaudeModel = String(model || '').toLowerCase().includes('claude')
+    || String(model || '').toLowerCase().includes('sonnet')
+    || String(model || '').toLowerCase().includes('opus')
+    || String(model || '').toLowerCase().includes('haiku')
+  return {
+    inputTokens: isNativeClaudeModel
+      ? Math.max(0, rawInputTokens - cacheReadTokens - cacheCreationTokens)
+      : rawInputTokens,
+    outputTokens: Number(usage?.output_tokens || 0),
+    cacheReadTokens,
+    cacheCreationTokens,
+  }
+}
+
 /** 追加消息到 messages */
 function pushMessage(tab, onNewMessage, msg) {
   tab.messages.push(msg)
@@ -260,11 +278,12 @@ export function useClaudeAgentStream({
       if (msg.usage) {
         const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
         if (lastAssistant && !lastAssistant._turnTokens) {
+          const normalizedUsage = normalizeClaudeTurnUsageForUi(msg.usage, msg?.message?.model || msg?.model || tab?.model || '')
           lastAssistant._turnTokens = {
-            inputTokens: msg.usage.input_tokens || 0,
-            outputTokens: msg.usage.output_tokens || 0,
-            cacheReadTokens: msg.usage.cache_read_input_tokens || 0,
-            cacheCreationTokens: msg.usage.cache_creation_input_tokens || 0,
+            inputTokens: normalizedUsage.inputTokens,
+            outputTokens: normalizedUsage.outputTokens,
+            cacheReadTokens: normalizedUsage.cacheReadTokens,
+            cacheCreationTokens: normalizedUsage.cacheCreationTokens,
             durationMs: msg.duration_ms || 0,
           }
         }
