@@ -314,6 +314,6 @@ function formatDuration(ms) {
 .sb-num-bump { animation: sb-count-up 0.35s ease; }
 @keyframes sb-count-up {
   0%   { transform: scale(1.15); color: var(--cc-primary); }
-  100% { transform: scale(1);    color: inherit; }
+  100% { transform: scale(1);    color: var(--cc-text-secondary); }
 }
 </style>
