@@ -1039,3 +1039,311 @@ node --test tests/task-done-history-persistence.test.mjs
 - 不重写 ClaudeCode / CodeX 面板 UI
 - 不把 Agent Registry 做成完整插件市场
 - 不把远程 shell / 文件写入权限提前开放
+
+## 12. 后续节奏：稳定观察后再继续
+
+### 当前结论
+
+PR1-PR3 已经完成本轮最小可交付闭环：
+
+- PR1：建立 Agent Registry / Agent Protocol / Agent Client 雏形。
+- PR2：Main 侧双发 `agent:event`，旧通道继续保留。
+- PR3：通知音迁移到 `agent.turn.terminal`，`onAgentDone` 回到 session 收尾和视觉提醒职责。
+
+这轮重构的收益不是立即改变 UI，而是把生命周期边界立住：`agent.turn.terminal` 表示 provider 本轮已到终止边界，`agent.run.done` 表示 Main 完成收尾。后续通知、metrics、远程交互、多 Agent 编排都可以基于同一套领域事件，不再把逻辑继续复制到 ClaudeCode / CodeX 两条路径里。
+
+### 稳定观察期
+
+在继续 PR4 前，建议先运行当前版本一段时间。观察期不继续拆 Main 大文件，不迁移 session binding，不接真实远程。
+
+建议观察 1-2 天日常使用。如果期间出现 P0/P1 生命周期问题，先修稳定性，不继续推进抽象层。
+
+观察重点：
+
+- Claude 正常完成：完成音只响一次，`run.done` 后可以继续发送下一轮。
+- CodeX 正常完成：完成音只响一次，`terminal_seen` 到 `run.done` 的锁和 queued input 不回归。
+- abort / failed：不播放完成音，thinking 能正确结束。
+- 后台项目：仍有 tab 高亮和任务栏闪烁。
+- CodeHub 双面板挂载：ClaudeCode / CodeX 同时监听 `agent:event` 时不重复播放。
+
+观察记录建议：
+
+| 场景 | 预期 | 若失败优先排查 |
+|---|---|---|
+| Claude completed | `agent.turn.terminal` 播放一次；`agent.run.done` 后可继续发消息 | PR2 Claude result/finally；`agentNotificationGate` |
+| Claude abort | 不播放完成音；UI thinking 结束；pending tool 标 interrupted | abort handler；finally run.done；`markClaudeDone()` |
+| CodeX completed | terminal 后 UI 停止 thinking，但 send lock 到 done 才释放；完成音一次 | `turnCompletedSeen`；`maybeSendDone()`；`triggerDone()` |
+| CodeX queued input | running 中输入排队；done 后 flush 到同一 session | `resolveQueuedInputFlushTarget()`；`codex-agent-done` |
+| CodeHub 双面板 | 两个面板都监听时仍只响一次 | `agentNotificationGate` shared dedupe window |
+| 后台完成提醒 | 后台 tab 高亮/任务栏闪烁；前台活跃项目不误标 | `shouldNotifyOnTaskDone()`；panel active 判断 |
+
+稳定期通过标准：
+
+- 没有新增会话卡死、done 丢失、queued input 不发送、完成音重复播放。
+- `npm test` 通过。
+- 本专题相关测试通过：
+
+```powershell
+node --test tests/agent-protocol.test.mjs
+node --test tests/agent-registry-contract.test.mjs
+node --test tests/agent-client.test.mjs
+node --test tests/agent-event-emit.test.mjs
+node --test tests/agent-notification-gate.test.mjs
+node --test tests/codex-agent-done-reason.test.mjs
+node --test tests/codex-runtime-state.test.mjs
+node --test tests/codex-session-lifecycle.test.mjs
+node --test tests/codex-session-run-ownership.test.cjs
+```
+
+当前已知非阻塞基线：
+
+- `tests/claude-permission-sound.test.mjs` 仍有 permission pending 后 `tab.thinking` 断言差异，需单独确认是否是既有语义变化。
+- `tests/claude-agent-done-payload.test.cjs` 仍有 `modelTier: ''` 多字段差异，和本轮协议/通知主线无直接关系。
+
+### 回滚口径
+
+本轮重构保留旧通道，回滚可以分层做，不需要一次性撤销全部代码：
+
+- 只回滚通知音：在页面层临时停止消费 `onAgentEvent`，恢复旧 `onAgentDone` 播放路径。但这只作为应急，不建议长期保留。
+- 只停用新事件消费：保留 Main 双发 `agent:event`，Renderer 不消费。旧 `claude-agent-*` / `codex-agent-*` 仍可工作。
+- 不建议回滚 PR1 协议/registry：它们主要是纯数据和纯函数，低风险，后续仍需要。
+- 不建议在故障中拆 Main：先修行为，再做物理拆分。
+
+### PR4：IpcAgentTransport
+
+目标：把 Renderer 访问 Agent Runtime 的入口收敛到 transport，但不大规模改 UI。
+
+建议范围：
+
+- 新增 `packages/agent/src/components/agentCommon/runtime/ipcAgentTransport.mjs`。
+- 复用现有 `agentClient.mjs`，封装 `onAgentEvent(callback)`。
+- command 侧先包装旧 API：`claudeAgentQuery` / `codexAgentQuery` / abort 等。
+- 不接 WebSocket，不做真实远程，不迁移 session binding。
+
+建议接口：
+
+```js
+export function createIpcAgentTransport(electronAPI = window.electronAPI) {
+  return {
+    send(command) {},
+    onEvent(callback) {},
+  }
+}
+```
+
+`send(command)` 初期只支持最小 command：
+
+| command | 路由 |
+|---|---|
+| `agent.run.abort` + `agent=claudeCode` | `electronAPI.claudeAgentAbort(chatKey)` |
+| `agent.run.abort` + `agent=codex` | `electronAPI.codexAgentAbort(chatKey)` |
+| `agent.run.start` + `agent=claudeCode` | 包装 `claudeAgentQuery(payload)`，payload 仍沿用旧结构 |
+| `agent.run.start` + `agent=codex` | 包装 `codexAgentQuery(payload)`，payload 仍沿用旧结构 |
+
+PR4 不要求面板全部改用 `send(agent.run.start)`；可以先只让测试和一个低风险入口使用 transport。核心是确认 transport 能作为未来远程替换点。
+
+验收重点：
+
+- ClaudeCode / CodeX 面板仍可继续直接使用旧 API。
+- 新 transport 的 `onEvent()` 能收到 `agent.turn.terminal` / `agent.run.done`。
+- `abortRun({ agent, chatKey, runId })` 能路由到对应旧 abort API。
+- `onEvent()` 返回 unsubscribe，卸载后不泄漏 listener。
+- transport 不 import Vue，不 import 具体面板组件。
+
+建议测试：
+
+```powershell
+node --test tests/agent-client.test.mjs
+node --test tests/ipc-agent-transport.test.mjs
+node --test tests/agent-runtime-boundary.test.cjs
+node --test tests/agent-shared-imports.test.cjs
+```
+
+PR4 禁止事项：
+
+- 不新增 WebSocket。
+- 不改变 Main 行为。
+- 不删除旧 preload API。
+- 不把 session registry / history 逻辑塞进 transport。
+
+### PR5：低风险消费侧迁移
+
+目标：把一个低风险消费者改为通过 `AgentClient + IpcAgentTransport` 消费事件。
+
+推荐从通知音开始二次收敛：把页面内直接 `window.electronAPI.onAgentEvent` 的注册移动到统一 client/transport 层，业务规则仍使用 `agentNotificationGate`。
+
+推荐做法：
+
+1. 新增一个小 composable，例如 `agentCommon/runtime/useAgentNotificationEvents.js`。
+2. 内部创建 `IpcAgentTransport + AgentClient`，订阅 `agent.turn.terminal`。
+3. 调用 `shouldPlayNotificationSound(event)`。
+4. 触发 `playDoneSound()`。
+5. ClaudeCode / CodeX 页面只调用这个 composable，不再各自手写 `window.electronAPI.onAgentEvent`。
+
+这样做的目的不是减少几行代码，而是验证 transport 可以承载真实消费逻辑，同时仍然保持业务范围很小。
+
+不建议此阶段迁移：
+
+- session binding
+- queued input flush
+- history scan / adoption
+- final metrics 权威值
+
+验收重点：
+
+- CodeHub 双面板仍只播放一次。
+- 独立 ClaudeCode 路由、独立 CodeX 路由也能播放。
+- 页面卸载后 listener 被释放。
+- `onAgentDone` 仍不播放完成音。
+- 后台高亮仍走旧 done 路径。
+
+建议测试：
+
+```powershell
+node --test tests/agent-notification-gate.test.mjs
+node --test tests/agent-client.test.mjs
+node --test tests/codex-agent-done-reason.test.mjs
+```
+
+### PR6：metrics / per-turn token 收敛
+
+目标：让 token 展示逐步消费统一事件字段，但必须保持现有口径不回归。
+
+PR6 是本路线里第一个中高风险阶段。metrics 当前有多条来源：
+
+- Claude SDK result usage
+- Claude JSONL polling / query metrics
+- CodeX token_count
+- CodeX turn.completed `_perTurnTokens`
+- renderer tab metrics merge
+- home metrics 聚合
+
+迁移前需要先写清楚每个字段的权威来源，不要直接把所有 metrics 都搬到 `agent:event`。
+
+必须保护：
+
+- Claude 最终 `result.usage` 仍是最终权威值。
+- CodeX `token_count` / `_perTurnTokens` 的 delta 口径不回归。
+- 切 tab 时 StatusBar 不闪烁或至少不恶化。
+- late metrics 不 revive 已结束的 running 状态。
+
+建议分两步：
+
+1. PR6a：只补 `agent.metrics.updated` 的事件字段和测试，不改 UI 消费。
+2. PR6b：只迁移 per-turn token 显示或 StatusBar 中一个低风险显示点，不同时迁移 home metrics。
+
+字段建议：
+
+```js
+{
+  domain: 'agent.metrics.updated',
+  agent,
+  chatKey,
+  runId,
+  cliSessionId,
+  metrics: {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    durationMs,
+    contextUsage,
+    contextWindow,
+    source: 'sdk-result' | 'jsonl-poll' | 'codex-token-count' | 'codex-turn-completed'
+  }
+}
+```
+
+关键规则：
+
+- `source` 必须显式存在，避免未来不知道哪个值覆盖哪个值。
+- final result 可以覆盖 live poll，但 live poll 不能覆盖 final result。
+- terminal 后 late metrics 只能更新数字，不得重新置 `thinking=true`。
+- UI 口径只展示归一化后的 `in/out/cache`，不暴露 provider 原始字段语义。
+
+建议测试：
+
+```powershell
+node --test tests/claude-context-usage.test.cjs
+node --test tests/codex-turn-tokens.test.cjs
+node --test tests/codex-git-metrics.test.cjs
+node --test tests/claude-runtime-state.test.mjs
+node --test tests/codex-runtime-state.test.mjs
+```
+
+PR6 禁止事项：
+
+- 不顺手改 home metrics 聚合，除非 PR 明确就是 home metrics。
+- 不在同一 PR 里改 Claude 和 CodeX 全部 metrics 入口。
+- 不删除旧 metrics IPC。
+- 不让 metrics 事件拥有 run lock 权威。
+
+### PR7：Runtime state reducer / Main 拆分评估
+
+只有在 PR1-PR6 稳定后再评估物理拆分。
+
+这一步不是必须马上做。只有当协议事件、transport、通知和 metrics 消费都稳定后，物理拆分才有收益。否则拆文件会掩盖行为变化，review 难度会显著上升。
+
+拆分规则：
+
+- 每次只移动一个职责。
+- 先移动纯函数和 builder，再移动 service。
+- 不在同一个 PR 同时“移动代码”和“改变行为”。
+- CodeX stream loop 的闭包状态最后拆。
+
+优先拆分候选：
+
+- agent event emitter
+- done reason builder
+- metrics normalizer
+- provider config service
+- session scan / registry integration
+
+暂缓拆分：
+
+- CodeX stream loop 主体
+- Claude query / resume / abort 主循环
+- queued input flush
+- session binding 写入链路
+
+建议拆分顺序：
+
+1. `agentEventEmitter`：只封装 `build + safeSend('agent:event')`，不改变发送位置。
+2. `doneReasonBuilder`：把 Claude / CodeX done reason 纯函数集中测试。
+3. `metricsNormalizer`：只处理字段归一化，不碰 UI。
+4. `providerConfigService`：抽 provider 配置读写。
+5. `sessionScanService`：抽 transcript scan 和 registry integration。
+6. 最后才考虑 stream loop。
+
+每一步都应满足：
+
+- diff 中移动代码多、行为代码少。
+- 移动前后相关测试完全一致。
+- review 描述中明确“本 PR 只移动，不改变行为”，或者明确列出唯一行为变化。
+
+### 远程 / 多 Agent 的准备边界
+
+本轮后续路线会为远程和多 Agent 准备接口，但不要提前实现生产远程链路。
+
+可以提前准备：
+
+- transport 接口抽象。
+- event 去重 key。
+- `runId` / `turnId` 字段预留。
+- capability 字段，例如是否支持 abort、resume、metrics、approval。
+- 断线重连所需的 event replay 需求文档。
+
+暂不实现：
+
+- WebSocket 生产服务。
+- 远程文件写入权限。
+- 多 Agent 编排 UI。
+- 后台 daemon。
+- 远程 shell 安全策略。
+
+判断是否进入远程设计的标准：
+
+- 本地 `IpcAgentTransport` 已稳定。
+- 至少一个真实 UI 消费者通过 AgentClient 工作。
+- session binding 和 run lifecycle 的边界在本地已经稳定。
+- 有明确的权限、审计和断线恢复方案。

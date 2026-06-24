@@ -1,5 +1,34 @@
 # TODO
 
+## 2026-06-24 架构重构稳定观察
+
+Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / Agent Client 雏形、Main 双发 `agent:event`、通知音迁移到 `agent.turn.terminal` + 去重闸门。旧 `claude-agent-*` / `codex-agent-*` 通道仍保留为收尾和兼容路径。
+
+当前策略：先运行当前版本一段时间，确认 ClaudeCode / CodeX 的完成音、abort、后台提醒、queued input、session 继续发送都稳定后，再继续 PR4+。不要在稳定观察期继续拆 Main 大文件或迁移 session binding。
+
+后续入口：`docs/plan/2026-06-24-architecture-review-notification-refactor.md#12-后续节奏稳定观察后再继续`
+
+观察期建议至少覆盖 1-2 天日常使用，重点记录：
+
+- Claude 正常完成：完成音只响一次；`run.done` 后能继续发下一轮；切 tab / 切项目后历史和 metrics 不明显回退。
+- Claude 异常路径：主动 abort、max turns、SDK error 不播放完成音；pending tool 能标记 interrupted / failed；不会卡 thinking。
+- CodeX 正常完成：完成音只响一次；`terminal_seen` 到 `run.done` 之间 send lock 不提前释放；queued input 能在 done 后正确 flush。
+- CodeX 异常路径：abort / turn.failed / empty upstream 不播放完成音；detachResume 不重新绑定坏 session。
+- CodeHub 双面板：ClaudeCode + CodeX 同时挂载时，同一个 `agent:event` 不重复播放；切换 active agent 不影响后台完成提醒。
+- 后台提醒：后台项目完成仍有 tab 高亮、侧边栏红点、任务栏闪烁；前台活跃项目不误标后台提醒。
+
+观察期通过标准：
+
+- 没有新增“会话卡死 / done 丢失 / queued input 不发送 / 完成音重复播放”类 P0/P1 问题。
+- 核心测试矩阵通过：`npm test`，以及 `agent-notification-gate` / `agent-event-emit` / `agent-protocol` / `codex-agent-done-reason` / `codex-runtime-state`。
+- 两个非阻塞测试基线单独记录，不阻塞本轮架构结论：`tests/claude-permission-sound.test.mjs` 的 permission thinking 断言、`tests/claude-agent-done-payload.test.cjs` 的 `modelTier: ''` 字段差异。
+
+后续继续条件：
+
+- 观察期没有发现生命周期回归，再进入 PR4 `IpcAgentTransport`。
+- 如果出现通知音问题，优先回查 `agentNotificationGate` / `agent.turn.terminal`，不要回到旧 `onAgentDone` 播放声音。
+- 如果出现 session binding / queued input / history 恢复问题，先暂停 PR4+，按 `docs/session-pitfalls.md` 排查，避免在不稳定状态继续抽象。
+
 > 最后更新：2026-06-24（Token 使用统计优化研究 + BUG 排查）
 >
 > ⚠️ **会话相关 bug 排查第一入口**：`docs/session-pitfalls.md`（跨 Agent 陷阱全景图）
