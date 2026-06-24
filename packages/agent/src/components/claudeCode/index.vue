@@ -340,6 +340,7 @@ import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
 import { buildDiffLines, applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
+import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
 import { analyzeClaudeSessionIntegrity, markDanglingClaudeToolsInterrupted } from './utils/sessionIntegrity.mjs'
@@ -536,6 +537,7 @@ const metricsData = ref({
 })
 const metricsLiveDurationMs = ref(0)
 let metricsLiveTimer = null
+let _unregAgentEvent = null
 
 function buildNewClaudeTurnMetrics(tab) {
   return {
@@ -3262,7 +3264,6 @@ const {
   },
   onNewMessage: bumpScrollCount,
   trimMessages,
-  onTaskDone: playDoneSound,
   onPendingApproval: playAskSound,
   onBackgroundTaskDone() {
     // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
@@ -3568,6 +3569,10 @@ onMounted(() => {
     scrollBottom(tab.id)
   })
   window.electronAPI.onClaudeAgentMetrics?.(onMetricsUpdate)
+  _unregAgentEvent = window.electronAPI.onAgentEvent((event) => {
+    const { shouldPlay } = shouldPlayNotificationSound(event)
+    if (shouldPlay) playDoneSound()
+  })
   loadClaudeModelDefaults()
   // 默认模型初始化（非阻塞）
   window.electronAPI.claudeGetModel?.().then(m => {
@@ -3669,6 +3674,7 @@ onUnmounted(() => {
   window.removeEventListener('beforeunload', flushHistoryOnUnload)
   flushHistoryOnUnload()
   disposeImageAttachments()
+  _unregAgentEvent?.()
   window.electronAPI.offClaudeAgentListeners?.()
 })
 </script>

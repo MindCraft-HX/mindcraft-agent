@@ -272,6 +272,7 @@ import { useCodexConfigStore } from '../../stores/codexConfig.js'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
+import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { normalizeCodexReasoningEffort } from './utils/providerToml.mjs'
 import { buildCodexModelSlots } from './utils/modelSlots.mjs'
@@ -557,6 +558,7 @@ const slashIdx = ref(0)
 const slashModelName = ref('')
 const slashEffortLevel = ref('medium')
 let slashLocalRefreshTimer = null
+let _unregAgentEvent = null
 const SLASH_LOCAL_REFRESH_DEBOUNCE_MS = 220
 const planModeActive = ref(false)  // /plan 切换的计划模式状态
 const msgRefs = {}
@@ -1610,7 +1612,6 @@ const { onAgentMessage, onAgentDone } = useCodexAgentStream({
     return p ? (p.chats || []) : []
   }),
   projects, getActiveProjectId: () => activeProjectId.value, isPanelActive,
-  onTaskDone: playDoneSound,
   onBackgroundTaskDone() {
     // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
     if (codehubHasNotification) codehubHasNotification.value = true
@@ -2757,6 +2758,10 @@ onMounted(async () => {
     })
   })
   window.electronAPI.onCodexAgentMetrics?.(onMetricsUpdate)
+  _unregAgentEvent = window.electronAPI.onAgentEvent((event) => {
+    const { shouldPlay } = shouldPlayNotificationSound(event)
+    if (shouldPlay) playDoneSound()
+  })
 
   window.electronAPI.codexGetModel?.().then(m => {
     if (!m) return
@@ -2842,6 +2847,7 @@ onUnmounted(() => {
   queuedRetryTimers.clear()
   flushOnUnload()
   dispose()
+  _unregAgentEvent?.()
   window.electronAPI.offCodexAgentListeners?.()
   if (loadMoreCooldownTimer) { clearTimeout(loadMoreCooldownTimer); loadMoreCooldownTimer = null }
   if (scrollThrottleTimer) { clearTimeout(scrollThrottleTimer); scrollThrottleTimer = null }

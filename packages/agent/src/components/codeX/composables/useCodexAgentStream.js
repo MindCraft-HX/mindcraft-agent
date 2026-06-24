@@ -402,7 +402,7 @@ const ITEM_TOOL_HANDLERS = {
 }
 
 export function useCodexAgentStream({
-  tabs, projects, getActiveProjectId, isPanelActive, onTaskDone, onBackgroundTaskDone,
+  tabs, projects, getActiveProjectId, isPanelActive, onBackgroundTaskDone,
   scrollBottom, saveHistory, nextMsgId,
   isWriteTool, isEditTool, isBashTool, isReadTool,
   inferToolFailureFromText, createToolMessage, onNewMessage, trimMessages,
@@ -827,8 +827,6 @@ export function useCodexAgentStream({
       reason,
     })
     if (ownerProject && reason === 'completed') {
-      // 提示音：任何任务完成都响，不受窗口焦点/活跃 Tab 影响
-      onTaskDone?.()
       // 视觉提醒（任务栏闪烁 + Tab 高亮）：仅后台/非活跃项目时
       if (shouldNotifyOnTaskDone({
         ownerProjectId: ownerProject.id,
