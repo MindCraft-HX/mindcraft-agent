@@ -104,12 +104,12 @@ function getTokenMetrics(cliSessionId) {
       // 提取 token usage
       if (parsed.type === 'assistant' && parsed.message?.usage) {
         const usage = parsed.message.usage
-        // 去重：只统计有 stop_reason 的完整请求，或最后一个未完成的
+        // input_tokens 是累积值（每轮含全部上下文），用 Math.max 取峰值；
+        // 流式消息中已有当前总量，不再依赖 stop_reason 即可实时增长
+        inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
+        // output/cache 是 per-round 值，仅信任已完成的轮次（避免流式跳回 0）
         const stopReason = parsed.message.stop_reason
         if (stopReason) {
-          // inputTokens/cacheReadTokens/cacheCreationTokens 每轮 API 调用已包含前文全部上下文，
-          // 跨轮累加会导致重复计数（数量级偏高）；output 同样取最后一轮保持一致（对齐 CodeX 做法）
-          inputTokens = usage.input_tokens || inputTokens
           outputTokens = usage.output_tokens || outputTokens
           cacheReadTokens = usage.cache_read_input_tokens || cacheReadTokens
           cacheCreationTokens = usage.cache_creation_input_tokens || cacheCreationTokens
