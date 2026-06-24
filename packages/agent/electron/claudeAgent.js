@@ -3073,17 +3073,17 @@ function setupClaudeHandlers() {
               reason: doneReason,
             })
             safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
-            // PR 2：双发 agent.run.done
-            try {
-              const { buildAgentRunDoneEvent } = await _getAgentProtocol()
-              safeSend((s.event?.sender || event.sender), 'agent:event', buildAgentRunDoneEvent({
-                agent: 'claudeCode',
-                chatKey: sessionId,
-                cliSessionId: finalCliSessionId || '',
-                filePath: donePayload.filePath,
-              }))
-            } catch (_) { /* 新通道发送失败不影响旧通道 */ }
           }
+          // PR 2：双发 agent.run.done（finally 无条件发送，确保成功/失败/中断路径全部覆盖）
+          // agent.turn.terminal 在 result 到达时已发，此处是 run 收尾事件。
+          try {
+            const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+            safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
+              agent: 'claudeCode',
+              chatKey: sessionId,
+              cliSessionId: cliSessionIds.get(chatKey) || '',
+            }))
+          } catch (_) { /* 新通道发送失败不影响旧通道 */ }
           agentSessions.delete(chatKey)
           pendingSessionMetaByChatKey.delete(chatKey)
           resolve(exitCode)

@@ -2802,22 +2802,25 @@ function setupCodexSdkHandlers() {
             }
 
             if (ev.type === 'turn.completed' || ev.type === 'task_complete') {
+              // 防重：turn.completed 和 task_complete 可能同时出现，只发一次 terminal 事件
+              const wasAlreadyTerminal = turnCompletedSeen
               turnCompletedSeen = true
               turnCompletedAt = Date.now()
-              // PR 2：双发 agent.turn.terminal
-              try {
-                const { buildAgentTurnTerminalEvent, TerminalKind } = await _getAgentProtocol()
-                const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-                safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
-                  agent: 'codex',
-                  chatKey: sessionId,
-                  runId,
-                  cliSessionId: thread?.id || '',
-                  terminalKind: TerminalKind.COMPLETED,
-                  hasAssistantOutput: true,
-                }))
-              } catch (_) { /* 新通道发送失败不影响旧通道 */ }
+              // 旧 done 优先（不阻塞），新 event fire-and-forget
               maybeSendDone()
+              if (!wasAlreadyTerminal) {
+                const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
+                _getAgentProtocol().then(({ buildAgentTurnTerminalEvent, TerminalKind }) => {
+                  safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
+                    agent: 'codex',
+                    chatKey: sessionId,
+                    runId,
+                    cliSessionId: thread?.id || '',
+                    terminalKind: TerminalKind.COMPLETED,
+                    hasAssistantOutput: true,
+                  }))
+                }).catch(() => {})
+              }
             }
 
             const topLevelAgentMessage = normalizeTopLevelCodexStreamEvent(ev)
