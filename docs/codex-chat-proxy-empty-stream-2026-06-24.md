@@ -61,3 +61,25 @@ This recovery is intentionally narrow:
 
 - It only applies to `empty_upstream_response`.
 - Normal failed turns, aborted turns, and successful completed turns keep their existing resume mapping.
+
+## Resume Compatibility
+
+A second root cause was confirmed after the initial empty-stream recovery work:
+
+- MindCraft reused the same Codex `cliSessionId` for one UI chat even after switching runtime identity.
+- In practice, switching `deepseek-v4-pro -> kimi-k2.7-code -> deepseek-v4-pro` could resume a polluted old thread instead of starting a fresh one.
+- That stale thread could still reach the upstream provider successfully, but return an empty SSE stop and fail with `empty_upstream_response`.
+
+Current resume policy is now fingerprint-based instead of model-only. MindCraft resumes a Codex thread only when all of these match the last completed turn:
+
+```text
+model + baseURL + apiFormat + reasoningEffort
+```
+
+If the fingerprint changes, MindCraft:
+
+- keeps the old official Codex transcript untouched,
+- clears only the app-owned resume mapping for that UI chat,
+- starts a fresh Codex thread for the new runtime identity.
+
+This makes Codex behavior closer to Claude's session isolation while still preserving resume for true same-runtime follow-up turns.

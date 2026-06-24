@@ -1836,6 +1836,7 @@ function listSessionsByCwd(targetCwd) {
 
 const codexSessions = new Map()
 const cliSessionIds = new Map()
+const sessionFingerprints = new Map()
 const slowNoticeSent = new Set()
 const codexMetricsPollers = new Map() // sessionId -> { interval, startTime }
 let codexSessionRunSeq = 0
@@ -1976,11 +1977,30 @@ function resetCodexSdkRuntime() {
     codexSessions.delete(s.sessionId)
   }
   cliSessionIds.clear()
+  sessionFingerprints.clear()
   slowNoticeSent.clear()
   codexModulePromise = null
 }
 
 /** 注册所有 Codex SDK 相关的 IPC 处理器（query/abort/history/settings） */
+function buildCodexSessionFingerprint({ model, baseURL, apiFormat, reasoningEffort } = {}) {
+  return JSON.stringify({
+    model: String(model || '').trim(),
+    baseURL: String(baseURL || '').trim(),
+    apiFormat: String(apiFormat || '').trim() || 'responses',
+    reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort),
+  })
+}
+
+function shouldResumeCodexSession({ previousFingerprint, nextFingerprint, previousCliId } = {}) {
+  const cliId = String(previousCliId || '').trim()
+  if (!cliId) return false
+  const prev = String(previousFingerprint || '').trim()
+  const next = String(nextFingerprint || '').trim()
+  if (!prev || !next) return true
+  return prev === next
+}
+
 function setupCodexSdkHandlers() {
   loadCodexSdk().catch(() => {})
 
@@ -2044,7 +2064,29 @@ function setupCodexSdkHandlers() {
     }
 
     return new Promise((resolve) => {
-      const prevCliId = cliSessionIds.get(sessionId)
+      const nextFingerprint = buildCodexSessionFingerprint({
+        model,
+        baseURL,
+        apiFormat,
+        reasoningEffort,
+      })
+      const previousFingerprint = sessionFingerprints.get(sessionId)
+      const previousCliId = cliSessionIds.get(sessionId)
+      const canResumePreviousThread = shouldResumeCodexSession({
+        previousFingerprint,
+        nextFingerprint,
+        previousCliId,
+      })
+      const prevCliId = canResumePreviousThread ? previousCliId : ''
+      if (previousCliId && !canResumePreviousThread) {
+        console.log('[codex] resume fingerprint changed, starting fresh thread instead of resume:', {
+          sessionId,
+          previousFingerprint: previousFingerprint || '',
+          nextFingerprint,
+        })
+        cliSessionIds.delete(sessionId)
+        sessionFingerprints.delete(sessionId)
+      }
       const abortController = new AbortController()
       let resolveCompletion = () => {}
       const completionPromise = new Promise((completionResolve) => {
@@ -2369,6 +2411,10 @@ function setupCodexSdkHandlers() {
 
             if (ev.type === 'thread.started' && ev.thread_id) {
               if (!cliSessionIds.has(sessionId)) cliSessionIds.set(sessionId, ev.thread_id)
+            }
+
+            if (ev.type === 'turn.completed') {
+              sessionFingerprints.set(sessionId, nextFingerprint)
             }
 
             if (ev.type === 'token_count' || ev.payload?.type === 'token_count') {
@@ -2747,7 +2793,10 @@ function setupCodexSdkHandlers() {
   })
 
   ipcMain.handle('codex-unregister-cli-session', (_, sessionId) => {
-    if (sessionId) cliSessionIds.delete(sessionId)
+    if (sessionId) {
+      cliSessionIds.delete(sessionId)
+      sessionFingerprints.delete(sessionId)
+    }
   })
 
   ipcMain.handle('codex-list-sessions-by-cwd', (_, cwd) => {
@@ -2835,9 +2884,10 @@ function setupCodexSdkHandlers() {
         }),
       })
       let thread = null
-      if (sessionId) {
+      const cliSessionId = sessionId ? (cliSessionIds.get(sessionId) || sessionId) : ''
+      if (cliSessionId) {
         try {
-          thread = codex.resumeThread(sessionId, { workingDirectory: resolvedCwd, skipGitRepoCheck: true })
+          thread = codex.resumeThread(cliSessionId, { workingDirectory: resolvedCwd, skipGitRepoCheck: true })
         } catch (_) {
           thread = null
         }
@@ -4084,6 +4134,8 @@ module.exports = {
     getCodexSessionMetrics,
     isEmptyUpstreamCodexFailure,
     normalizeCodexUsage,
+    buildCodexSessionFingerprint,
+    shouldResumeCodexSession,
     readSessionFileRange,
     resolveCodexSessionFilePath,
     resolveCodexDoneReasonFromError,

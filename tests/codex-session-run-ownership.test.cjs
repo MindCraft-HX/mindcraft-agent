@@ -108,6 +108,57 @@ function runFindSlashCommandSessionByCliIdTest() {
   assert.equal(__test__.findCodexSessionForSlashCommands(sessions, cliSessionIds, 'missing'), null)
 }
 
+function runCodexResumeFingerprintTest() {
+  const same = __test__.buildCodexSessionFingerprint({
+    model: 'deepseek-v4-pro',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    apiFormat: 'chat',
+    reasoningEffort: 'high',
+  })
+  const sameAgain = __test__.buildCodexSessionFingerprint({
+    model: 'deepseek-v4-pro',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    apiFormat: 'chat',
+    reasoningEffort: 'high',
+  })
+  const changedModel = __test__.buildCodexSessionFingerprint({
+    model: 'kimi-k2.7-code',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    apiFormat: 'chat',
+    reasoningEffort: 'high',
+  })
+  const changedFormat = __test__.buildCodexSessionFingerprint({
+    model: 'deepseek-v4-pro',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    apiFormat: 'responses',
+    reasoningEffort: 'high',
+  })
+
+  assert.equal(__test__.shouldResumeCodexSession({
+    previousFingerprint: same,
+    nextFingerprint: sameAgain,
+    previousCliId: 'cli-1',
+  }), true)
+
+  assert.equal(__test__.shouldResumeCodexSession({
+    previousFingerprint: same,
+    nextFingerprint: changedModel,
+    previousCliId: 'cli-1',
+  }), false)
+
+  assert.equal(__test__.shouldResumeCodexSession({
+    previousFingerprint: same,
+    nextFingerprint: changedFormat,
+    previousCliId: 'cli-1',
+  }), false)
+
+  assert.equal(__test__.shouldResumeCodexSession({
+    previousFingerprint: same,
+    nextFingerprint: sameAgain,
+    previousCliId: '',
+  }), false)
+}
+
 function runEmptyUpstreamFailureDetectionTest() {
   assert.equal(__test__.isEmptyUpstreamCodexFailure({
     type: 'turn.failed',
@@ -132,6 +183,7 @@ async function run() {
   await runCloseSessionRunMarksClosedAndResolvesCompletionTest()
   runDoneSentDoesNotMarkStreamClosedTest()
   runFindSlashCommandSessionByCliIdTest()
+  runCodexResumeFingerprintTest()
   runEmptyUpstreamFailureDetectionTest()
   console.log('codex session run ownership tests passed')
 }
