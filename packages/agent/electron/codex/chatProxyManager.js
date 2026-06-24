@@ -11,9 +11,8 @@ const { startCodexProxy } = require('./proxyServer')
 
 const PROXY_PROVIDER_ID = 'mindcraft_chat_proxy'
 
-/** @type {{ port: number, close: () => Promise<void> } | null} */
-let server = null
-let currentFingerprint = ''
+/** @type {Map<string, { port: number, close: () => Promise<void> }>} */
+const serversByFingerprint = new Map()
 
 function proxyFingerprint(upstreamUrl, apiKey, model, reasoningEffort) {
   const keyHash = crypto.createHash('sha256').update(String(apiKey || '')).digest('hex')
@@ -45,40 +44,48 @@ function buildProxyCodexConfig(proxyBaseUrl) {
 async function ensureProxy(opts) {
   const { upstreamUrl, apiKey, model, reasoningEffort } = opts
   const fingerprint = proxyFingerprint(upstreamUrl, apiKey, model, reasoningEffort)
+  const existing = serversByFingerprint.get(fingerprint)
 
-  if (server && fingerprint === currentFingerprint) {
-    const baseUrl = `http://127.0.0.1:${server.port}/v1`
-    return { port: server.port, baseUrl, codexConfig: buildProxyCodexConfig(baseUrl) }
+  if (existing) {
+    const baseUrl = `http://127.0.0.1:${existing.port}/v1`
+    return { port: existing.port, baseUrl, codexConfig: buildProxyCodexConfig(baseUrl) }
   }
 
-  if (server) {
-    console.log('[codex] proxy config changed, restarting...')
-    await shutdownProxy()
-  }
-
-  server = await startCodexProxy({ upstreamUrl, apiKey, model, reasoningEffort })
-  currentFingerprint = fingerprint
+  const server = await startCodexProxy({ upstreamUrl, apiKey, model, reasoningEffort })
+  serversByFingerprint.set(fingerprint, server)
 
   const baseUrl = `http://127.0.0.1:${server.port}/v1`
   console.log('[codex] proxy started:', { port: server.port, upstream: upstreamUrl })
   return { port: server.port, baseUrl, codexConfig: buildProxyCodexConfig(baseUrl) }
 }
 
-async function shutdownProxy() {
-  if (server) {
+async function shutdownProxy(fingerprint) {
+  const key = String(fingerprint || '').trim()
+  if (key) {
+    const server = serversByFingerprint.get(key)
+    if (!server) return
     try { await server.close() } catch (_) {}
-    server = null
-    currentFingerprint = ''
-    console.log('[codex] proxy closed')
+    serversByFingerprint.delete(key)
+    console.log('[codex] proxy closed:', { fingerprint: key })
+    return
   }
+
+  const closers = Array.from(serversByFingerprint.entries())
+  serversByFingerprint.clear()
+  await Promise.allSettled(closers.map(async ([fp, server]) => {
+    try { await server.close() } catch (_) {}
+    console.log('[codex] proxy closed:', { fingerprint: fp })
+  }))
 }
 
-function isProxyRunning() {
-  return server !== null
+function isProxyRunning(fingerprint) {
+  const key = String(fingerprint || '').trim()
+  if (key) return serversByFingerprint.has(key)
+  return serversByFingerprint.size > 0
 }
 
 process.on('exit', () => {
-  if (server) {
+  for (const server of serversByFingerprint.values()) {
     try { server.close() } catch (_) {}
   }
 })
