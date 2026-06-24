@@ -20,6 +20,7 @@ export function useAnimatedNumber() {
   let rate = 0 // tokens per ms
   let lastTime = 0
   let rafId = null
+  let snapNext = false // reset 后首次增长直接 snap，避免 session 切换时动画
 
   function tick(now) {
     const elapsed = now - lastTime
@@ -38,12 +39,13 @@ export function useAnimatedNumber() {
   function update(newTarget) {
     const now = performance.now()
 
-    // 重置/切 tab → 立即同步
+    // 重置/切 tab → 立即同步，下次增长直接 snap
     if (newTarget < display.value) {
       display.value = newTarget
       target = newTarget
       rate = 0
       lastTime = now
+      snapNext = true
       if (rafId) { cancelAnimationFrame(rafId); rafId = null }
       return
     }
@@ -52,7 +54,8 @@ export function useAnimatedNumber() {
     if (newTarget === target) return
 
     // 首次调用 / reset 后首次增长 → 直接同步（无基线不猜速率）
-    if (lastTime === 0 || target === 0) {
+    if (lastTime === 0 || target === 0 || snapNext) {
+      snapNext = false
       display.value = newTarget
       target = newTarget
       lastTime = now
@@ -78,6 +81,7 @@ export function useAnimatedNumber() {
     target = 0
     rate = 0
     lastTime = 0
+    snapNext = false
     rafId = null
   }
 
