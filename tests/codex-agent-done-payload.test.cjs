@@ -28,6 +28,7 @@ function runDonePayloadDefaultReasonTest() {
     cliSessionId: 'cli-1',
     filePath: 'D:/sessions/cli-1.jsonl',
     reason: 'completed',
+    detachResume: false,
   })
 }
 
@@ -42,6 +43,25 @@ function runDonePayloadExplicitReasonTest() {
     cliSessionId: '',
     filePath: '',
     reason: 'aborted',
+    detachResume: false,
+  })
+}
+
+function runDonePayloadDetachResumeTest() {
+  const payload = __test__.buildCodexAgentDonePayload({
+    sessionId: 'sess-3',
+    cliSessionId: 'cli-bad',
+    filePath: 'D:/sessions/cli-bad.jsonl',
+    reason: 'failed',
+    detachResume: true,
+  })
+
+  assert.deepEqual(payload, {
+    sessionId: 'sess-3',
+    cliSessionId: 'cli-bad',
+    filePath: 'D:/sessions/cli-bad.jsonl',
+    reason: 'failed',
+    detachResume: true,
   })
 }
 
@@ -84,6 +104,7 @@ function runResolveSessionFilePathTest() {
 function run() {
   runDonePayloadDefaultReasonTest()
   runDonePayloadExplicitReasonTest()
+  runDonePayloadDetachResumeTest()
   runDoneReasonResolutionTest()
   runResolveSessionFilePathTest()
   console.log('codex agent done payload tests passed')

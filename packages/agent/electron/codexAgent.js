@@ -10,7 +10,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, findSessionRecordByProvider, repairSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
+const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -45,6 +45,7 @@ function sendMetrics(sender, payload) {
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
 const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
 let SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
+const CODEX_METRICS_POLL_INTERVAL_MS = 1000
 
 function getCodexUploadsDir() {
   return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')
@@ -530,12 +531,14 @@ function buildCodexAgentDonePayload({
   cliSessionId = '',
   filePath = '',
   reason = 'completed',
+  detachResume = false,
 } = {}) {
   return {
     sessionId,
     cliSessionId,
     filePath,
     reason,
+    detachResume: Boolean(detachResume),
   }
 }
 
@@ -734,6 +737,54 @@ function estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens) {
   return (inputTokens / 1e6 * perMillion.input)
     + (outputTokens / 1e6 * perMillion.output)
     + (cacheReadTokens / 1e6 * perMillion.cacheRead)
+}
+
+function normalizeCodexUsage(usage = {}) {
+  if (!usage || typeof usage !== 'object') return null
+  const inputDetails = usage.input_tokens_details || {}
+  return {
+    input_tokens: toNonNegativeNumber(usage.input_tokens),
+    output_tokens: toNonNegativeNumber(usage.output_tokens),
+    total_tokens: toNonNegativeNumber(usage.total_tokens),
+    cache_read_input_tokens: toNonNegativeNumber(
+      usage.cache_read_input_tokens,
+      toNonNegativeNumber(usage.cached_input_tokens, toNonNegativeNumber(inputDetails.cached_tokens))
+    ),
+    cache_creation_input_tokens: toNonNegativeNumber(
+      usage.cache_creation_input_tokens
+    ),
+  }
+}
+
+function buildCodexPerTurnTokens(parsedMetrics, usage = null) {
+  const normalizedUsage = normalizeCodexUsage(usage)
+  const inputTokens = toNonNegativeNumber(
+    parsedMetrics?.inputTokens,
+    normalizedUsage?.input_tokens
+  )
+  const outputTokens = toNonNegativeNumber(
+    parsedMetrics?.outputTokens,
+    normalizedUsage?.output_tokens
+  )
+  const cacheReadTokens = toNonNegativeNumber(
+    parsedMetrics?.cacheReadTokens,
+    normalizedUsage?.cache_read_input_tokens
+  )
+  const cacheCreationTokens = toNonNegativeNumber(
+    parsedMetrics?.cacheCreationTokens,
+    normalizedUsage?.cache_creation_input_tokens
+  )
+  const durationMs = toNonNegativeNumber(parsedMetrics?.durationMs)
+  if (inputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && cacheCreationTokens <= 0 && durationMs <= 0) {
+    return null
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    durationMs,
+  }
 }
 
 /** 从 Codex 会话 JSONL 文件解析完整指标：tokens、cost、duration、context */
@@ -1713,6 +1764,46 @@ function markCodexSessionDoneSent(session) {
   session.doneSent = true
 }
 
+function codexEventHasErrorType(value, targetType) {
+  const expected = String(targetType || '').trim()
+  if (!expected) return false
+  const seen = new Set()
+  function visit(node) {
+    if (!node || typeof node !== 'object') return false
+    if (seen.has(node)) return false
+    seen.add(node)
+    if (String(node.type || '') === expected) return true
+    if (String(node.code || '') === expected) return true
+    if (String(node.error?.type || '') === expected) return true
+    if (String(node.error?.code || '') === expected) return true
+    for (const child of Object.values(node)) {
+      if (child && typeof child === 'object' && visit(child)) return true
+    }
+    return false
+  }
+  return visit(value)
+}
+
+function isEmptyUpstreamCodexFailure(ev) {
+  return codexEventHasErrorType(ev, 'empty_upstream_response')
+}
+
+function detachCodexResumeMapping({ sessionId, cliSessionId, filePath } = {}) {
+  const sid = String(sessionId || '').trim()
+  const cliId = String(cliSessionId || '').trim()
+  if (sid) cliSessionIds.delete(sid)
+  try {
+    detachSessionProviderBinding({
+      agent: 'codex',
+      chatKey: sid || undefined,
+      cliSessionId: cliId || undefined,
+      filePath: filePath || undefined,
+    })
+  } catch (e) {
+    console.warn('[codex] failed to detach resume mapping:', e?.message || e)
+  }
+}
+
 function deleteCodexSessionRunIfCurrent(sessions, sessionId, runId) {
   const current = sessions.get(sessionId)
   if (current?.runId !== runId) return false
@@ -1869,6 +1960,7 @@ function setupCodexSdkHandlers() {
       let resultReceived = false
       let exitCode = 0
       let doneReason = 'completed'
+      let detachResumeOnDone = false
 
       const sessionState = {
         runId, thread: null, abortController, event, model, baseURL, apiKey,
@@ -2017,7 +2109,8 @@ function setupCodexSdkHandlers() {
             thinking: true,
           })
 
-          // 启动 metrics 轮询器（3s 间隔，与 ClaudeCode 一致）
+          // 启动 metrics 轮询器。只推送真实 JSONL 样本，不伪造中间值；
+          // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
           const pollInterval = setInterval(async () => {
             const s = codexSessions.get(sessionId)
@@ -2033,7 +2126,7 @@ function setupCodexSdkHandlers() {
               metrics.thinking = true
               sendMetrics(s.event?.sender, metrics)
             }
-          }, 3000)
+          }, CODEX_METRICS_POLL_INTERVAL_MS)
           codexMetricsPollers.set(sessionId, { interval: pollInterval, startTime: pollStart, runId })
 
           const { events } = await thread.runStreamed(input, { signal: abortController.signal })
@@ -2127,6 +2220,7 @@ function setupCodexSdkHandlers() {
               cliSessionId: thread.id,
               filePath: sfilePath,
               reason: doneReason,
+              detachResume: detachResumeOnDone,
             }))
           }
 
@@ -2189,11 +2283,12 @@ function setupCodexSdkHandlers() {
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
               const sender = session?.event?.sender || event.sender
+              const parsedMetrics = getCodexSessionMetrics(sessionId, model || '', session?.cwd || '')
+              const perTurnTokens = buildCodexPerTurnTokens(parsedMetrics, ev.usage)
               safeSend(sender, 'codex-agent-message', {
                 sessionId,
-                msg: { type: ev.type, payload: ev.payload || ev },
+                msg: { type: ev.type, payload: ev.payload || ev, _perTurnTokens: perTurnTokens },
               })
-              const parsedMetrics = getCodexSessionMetrics(sessionId, model || '', session?.cwd || '')
               const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
               sendMetrics(sender, {
                 sessionId,
@@ -2297,10 +2392,22 @@ function setupCodexSdkHandlers() {
               resultReceived = true
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
+              if (ev.type === 'turn.failed' && isEmptyUpstreamCodexFailure(ev)) {
+                const cliId = thread?.id || cliSessionIds.get(sessionId) || ''
+                const filePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: cliId })
+                console.warn('[codex] empty upstream response; detaching bad resume mapping:', {
+                  sessionId,
+                  cliSessionId: cliId,
+                  filePath: !!filePath,
+                })
+                detachResumeOnDone = true
+                detachCodexResumeMapping({ sessionId, cliSessionId: cliId, filePath })
+              }
               const sender = session?.event?.sender || event.sender
+              const errorText = ev.message || ev.error?.message || ev.payload?.error?.message || ev.error?.type || ev.payload?.error?.type || ''
               safeSend(sender, 'codex-agent-message', {
                 sessionId,
-                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: ev.message || ev.error?.message || '' }) }] } },
+                msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: errorText }) }] } },
               })
             }
 
@@ -2466,6 +2573,7 @@ function setupCodexSdkHandlers() {
               cliSessionId: thread?.id,
               filePath: sfilePath,
               reason: doneReason,
+              detachResume: detachResumeOnDone,
             }))
           }
 
@@ -3710,6 +3818,7 @@ function setupCodexSdkHandlers() {
     let thinkingChars = 0
     const toolCalls = []
     let finishReason = null
+    let usage = null
     let chunkCount = 0
 
     try {
@@ -3808,6 +3917,7 @@ function setupCodexSdkHandlers() {
 
               case 'response.completed':
                 finishReason = json.response?.status || 'completed'
+                usage = normalizeCodexUsage(json.response?.usage)
                 break
             }
           }
@@ -3818,11 +3928,11 @@ function setupCodexSdkHandlers() {
       }
     } catch (e) {
       if (controller.signal.aborted) {
-        return { fullText, finish_reason: 'aborted', stop_reason: 'aborted', toolCalls: [] }
+        return { fullText, finish_reason: 'aborted', stop_reason: 'aborted', toolCalls: [], usage: null }
       }
       // 超时 → 返回已收到的部分内容
       if (e?.name === 'TimeoutError' || e?.message?.includes('timeout') || e?.message?.includes('The operation was aborted')) {
-        return { fullText, finish_reason: 'timeout', stop_reason: 'timeout', toolCalls: [] }
+        return { fullText, finish_reason: 'timeout', stop_reason: 'timeout', toolCalls: [], usage: null }
       }
       throw e
     } finally {
@@ -3830,7 +3940,7 @@ function setupCodexSdkHandlers() {
     }
 
     if (!finishReason) finishReason = toolCalls.length > 0 ? 'tool_calls' : 'stop'
-    return { fullText, finish_reason: finishReason, toolCalls }
+    return { fullText, finish_reason: finishReason, toolCalls, usage }
   }
 
   ipcMain.handle('codex-chat', async (event, payload) => runCodexChatStream(event, payload))
@@ -3847,8 +3957,12 @@ module.exports = {
   resetCodexSdkRuntime,
   __test__: {
     buildCodexAgentDonePayload,
+    buildCodexPerTurnTokens,
+    codexEventHasErrorType,
     getCodexSessionMetricsByFile,
     getCodexSessionMetrics,
+    isEmptyUpstreamCodexFailure,
+    normalizeCodexUsage,
     readSessionFileRange,
     resolveCodexSessionFilePath,
     resolveCodexDoneReasonFromError,

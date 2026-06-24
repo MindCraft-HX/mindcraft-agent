@@ -49,6 +49,22 @@ function appendAssistantText(tab, nextMsgId, onNewMessage, text) {
   msg.text = (msg.text || '') + text
 }
 
+function attachPerTurnTokens(tab, perTurnTokens) {
+  if (!perTurnTokens || !Array.isArray(tab?.messages)) return
+  for (let i = tab.messages.length - 1; i >= 0; i -= 1) {
+    const msg = tab.messages[i]
+    if (msg?.role !== 'assistant') continue
+    msg._turnTokens = {
+      inputTokens: perTurnTokens.inputTokens || 0,
+      outputTokens: perTurnTokens.outputTokens || 0,
+      cacheReadTokens: perTurnTokens.cacheReadTokens || 0,
+      cacheCreationTokens: perTurnTokens.cacheCreationTokens || 0,
+      durationMs: perTurnTokens.durationMs || 0,
+    }
+    return
+  }
+}
+
 function normalizeToolStatus(itemStatus, isFinal) {
   if (!isFinal) return 'running'
   return itemStatus === 'failed' ? 'error' : 'done'
@@ -578,6 +594,7 @@ export function useCodexAgentStream({
         m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
       )
       if (lastThinking) lastThinking.status = 'done'
+      attachPerTurnTokens(tab, msg._perTurnTokens)
       markCodexTerminalSeen(tab)
       scrollBottom(tab.id)
       saveHistory({ immediate: true })
@@ -774,7 +791,7 @@ export function useCodexAgentStream({
     console.warn('[codex] onAgentMessage: unhandled msg.type:', msg.type, msg)
   }
 
-  function onAgentDone({ sessionId: sid, cliSessionId, filePath, reason = 'completed' }) {
+  function onAgentDone({ sessionId: sid, cliSessionId, filePath, reason = 'completed', detachResume = false }) {
     // 跨所有项目搜索 session（不仅是当前活跃项目，后台项目也需要处理）
     let tab = null
     let ownerProject = null
@@ -790,7 +807,13 @@ export function useCodexAgentStream({
     }
     console.log(`[codex-done] onAgentDone: sid=${sid} tabFound=${!!tab} ownerProj=${ownerProject?.id || 'none'} activeProj=${getActiveProjectId?.() || 'none'} panelActive=${isPanelActive?.value ?? 'N/A'} reason=${reason}`)
     if (!tab) return
-    if (cliSessionId) window.electronAPI.codexRegisterCliSessions?.({ [sid]: cliSessionId })
+    if (detachResume) {
+      tab.cliSessionId = ''
+      tab.filePath = ''
+      window.electronAPI.codexUnregisterCliSession?.(sid)
+    } else if (cliSessionId) {
+      window.electronAPI.codexRegisterCliSessions?.({ [sid]: cliSessionId })
+    }
     if (filePath && CODEX_DEBUG) console.log('[CodexStream] onAgentDone → filePath:', filePath)
     const lastThinking = [...tab.messages].reverse().find(
       m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
@@ -798,7 +821,11 @@ export function useCodexAgentStream({
     if (lastThinking) {
       lastThinking.status = 'done'
     }
-    markCodexDone(tab, { cliSessionId, filePath, reason })
+    markCodexDone(tab, {
+      cliSessionId: detachResume ? '' : cliSessionId,
+      filePath: detachResume ? '' : filePath,
+      reason,
+    })
     if (ownerProject && reason === 'completed') {
       // 提示音：任何任务完成都响，不受窗口焦点/活跃 Tab 影响
       onTaskDone?.()

@@ -108,6 +108,21 @@ function runFindSlashCommandSessionByCliIdTest() {
   assert.equal(__test__.findCodexSessionForSlashCommands(sessions, cliSessionIds, 'missing'), null)
 }
 
+function runEmptyUpstreamFailureDetectionTest() {
+  assert.equal(__test__.isEmptyUpstreamCodexFailure({
+    type: 'turn.failed',
+    error: { type: 'empty_upstream_response', message: 'Empty response from upstream chat API' },
+  }), true)
+  assert.equal(__test__.isEmptyUpstreamCodexFailure({
+    type: 'turn.failed',
+    payload: { error: { type: 'empty_upstream_response' } },
+  }), true)
+  assert.equal(__test__.isEmptyUpstreamCodexFailure({
+    type: 'turn.failed',
+    error: { type: 'upstream_connection_error' },
+  }), false)
+}
+
 async function run() {
   runOldTurnCannotDeleteNewTurnTest()
   runCurrentTurnDeletesItselfTest()
@@ -117,6 +132,7 @@ async function run() {
   await runCloseSessionRunMarksClosedAndResolvesCompletionTest()
   runDoneSentDoesNotMarkStreamClosedTest()
   runFindSlashCommandSessionByCliIdTest()
+  runEmptyUpstreamFailureDetectionTest()
   console.log('codex session run ownership tests passed')
 }
 

@@ -6,6 +6,7 @@ const path = require('node:path')
 const {
   buildSessionRecordFromChat,
   deleteSessionRecordsByProvider,
+  detachSessionProviderBinding,
   findSessionRecordByProvider,
   getSessionInstruction,
   getSessionRecordPath,
@@ -569,6 +570,113 @@ test('deleteSessionRecordsByProvider removes matching provider filePath records'
   const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
   assert.deepEqual(index.sessions, {})
   assert.deepEqual(index.providers, {})
+})
+
+test('detachSessionProviderBinding clears provider mapping without deleting record', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Keep me',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+        model: 'deepseek-v4-pro',
+      }],
+    }],
+  }, { userDataDir })
+  setSessionInstruction('chat-key-1', {
+    enabled: true,
+    content: 'Session instruction',
+  }, { userDataDir })
+
+  const detached = detachSessionProviderBinding({
+    agent: 'codex',
+    chatKey: 'chat-key-1',
+    cliSessionId: 'thread-1',
+  }, { userDataDir })
+
+  assert.equal(detached, 1)
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records.length, 1)
+  assert.equal(records[0].chatKey, 'chat-key-1')
+  assert.equal(records[0].title, 'Keep me')
+  assert.equal(records[0].provider.cliSessionId, '')
+  assert.equal(records[0].provider.filePath, '')
+  assert.equal(records[0].instruction.content, 'Session instruction')
+  assert.equal(records[0].metadata.detachedProviderBinding.cliSessionId, 'thread-1')
+  const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
+  assert.equal(index.sessions['chat-key-1'].cliSessionId, '')
+  assert.equal(index.providers['codex:session:thread-1'], undefined)
+})
+
+test('detached provider binding is not restored by stale panel-state sync', () => {
+  const userDataDir = makeTempUserData()
+  const panelState = {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Keep me',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }],
+    }],
+  }
+  syncPanelStateSessions('codex', panelState, { userDataDir })
+  detachSessionProviderBinding({
+    agent: 'codex',
+    chatKey: 'chat-key-1',
+    cliSessionId: 'thread-1',
+  }, { userDataDir })
+
+  syncPanelStateSessions('codex', panelState, { userDataDir })
+
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records.length, 1)
+  assert.equal(records[0].provider.cliSessionId, '')
+  assert.equal(records[0].provider.filePath, '')
+  assert.equal(records[0].metadata.detachedProviderBinding.cliSessionId, 'thread-1')
+  const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
+  assert.equal(index.providers['codex:session:thread-1'], undefined)
+})
+
+test('detached provider binding is not re-imported by provider scan', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Keep me',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+  detachSessionProviderBinding({
+    agent: 'codex',
+    chatKey: 'chat-key-1',
+    cliSessionId: 'thread-1',
+  }, { userDataDir })
+
+  const summary = attachRegistrySessionToScanSummary('codex', {
+    id: 'thread-1',
+    cliSessionId: 'thread-1',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+    name: 'Provider title',
+  }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(summary.chatKey, undefined)
+  assert.equal(summary.cliSessionId, 'thread-1')
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records.length, 1)
+  assert.equal(records[0].chatKey, 'chat-key-1')
+  assert.equal(records[0].provider.cliSessionId, '')
 })
 
 test('upsertRuntimeByProvider updates runtime for an existing provider mapping', () => {

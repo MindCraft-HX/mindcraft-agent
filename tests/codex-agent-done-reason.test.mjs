@@ -11,10 +11,14 @@ function createHarness({ activeProjectId = 'proj-1', panelActive = true } = {}) 
   let msgId = 0
   let doneCount = 0
   let flashCount = 0
+  let registerCount = 0
+  let unregisterCount = 0
   const tab = {
     id: 'chat-1',
     sessionId: 'sess-1',
     cwd: 'D:/repo',
+    cliSessionId: 'old-cli',
+    filePath: 'D:/sessions/old-cli.jsonl',
     messages: [],
     thinking: true,
     _awaitingDone: true,
@@ -27,7 +31,8 @@ function createHarness({ activeProjectId = 'proj-1', panelActive = true } = {}) 
 
   globalThis.window.electronAPI = {
     flashTaskbar: () => { flashCount++ },
-    codexRegisterCliSessions: () => {},
+    codexRegisterCliSessions: () => { registerCount++ },
+    codexUnregisterCliSession: () => { unregisterCount++ },
   }
 
   const stream = useCodexAgentStream({
@@ -50,7 +55,15 @@ function createHarness({ activeProjectId = 'proj-1', panelActive = true } = {}) 
     onCompactBoundary: () => {},
   })
 
-  return { tab, ownerProject, stream, getDoneCount: () => doneCount, getFlashCount: () => flashCount }
+  return {
+    tab,
+    ownerProject,
+    stream,
+    getDoneCount: () => doneCount,
+    getFlashCount: () => flashCount,
+    getRegisterCount: () => registerCount,
+    getUnregisterCount: () => unregisterCount,
+  }
 }
 
 test('completed done marks background project notification', () => {
@@ -77,6 +90,25 @@ test('aborted done does not mark completion notification', () => {
   assert.equal(ownerProject.hasDoneNotification, false)
   assert.equal(getDoneCount(), 0)
   assert.equal(getFlashCount(), 0)
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._awaitingDone, false)
+})
+
+test('detachResume done clears stale cli mapping and does not re-register it', () => {
+  const { tab, stream, getRegisterCount, getUnregisterCount } = createHarness()
+
+  stream.onAgentDone({
+    sessionId: 'sess-1',
+    cliSessionId: 'bad-cli',
+    filePath: 'D:/sessions/bad-cli.jsonl',
+    reason: 'failed',
+    detachResume: true,
+  })
+
+  assert.equal(tab.cliSessionId, '')
+  assert.equal(tab.filePath, '')
+  assert.equal(getRegisterCount(), 0)
+  assert.equal(getUnregisterCount(), 1)
   assert.equal(tab.thinking, false)
   assert.equal(tab._awaitingDone, false)
 })
