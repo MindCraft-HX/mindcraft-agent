@@ -217,12 +217,12 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 | P2 | 简易对话 Claude token 累加 + Bubble 引入 | ✅ |
 | P3 | CodeX per-turn delta + Bubble 引入 | ✅ |
 | P4 | 简易对话 CodeX SSE usage 捕获 | ✅ |
-| P5 | 历史加载兼容（JSONL 逐轮解析） | 🔲 |
+| P5 | 历史加载兼容（JSONL 逐轮解析） | ✅ |
 
 > 2026-06-24 本轮落地结果：
 > 1. P3 已改为基于 JSONL `token_count/last_token_usage` 的保守实现，不依赖 SDK `turn.completed.usage`
 > 2. P4 已在简易对话 `runCodexChatStream()` 捕获 `response.completed.usage`
-> 3. P5 仍未做，历史消息恢复时暂无 `_turnTokens`
+> 3. P5 已补齐：历史消息恢复时从官方 JSONL 回填 `_turnTokens`
 > 4. 状态栏动态数字仅基于真实样本插值，不补造中间 token；ClaudeCode / CodeX Agent 轮询已从 3s 调整为 1s
 > 5. ClaudeCode context 占用现已按模型口径计算：原生 Claude 用 `input_tokens`，第三方 Claude SDK provider 额外计入 `cache_read/cache_creation`
 > 6. 2026-06-24 追加收口：UI `in/out/cache` 必须统一语义；ClaudeCode 当前待修的是旧轮询样本回灌当前回合，CodeX 当前待修的是 live `token_count` 转发和 cache/input 展示口径。

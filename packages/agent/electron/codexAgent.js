@@ -844,20 +844,67 @@ function buildCodexPerTurnTokens(parsedMetrics, usage = null) {
   }
 }
 
+function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = {}, fallbackLastUsage = null) {
+  const normalizedTotal = normalizeCodexUsage(totalUsage) || {}
+  const normalizedStart = normalizeCodexUsage(turnStartTotals) || {}
+  const normalizedFallback = normalizeCodexUsage(fallbackLastUsage || {}) || {}
+
+  const rawTotalInput = toNonNegativeNumber(normalizedTotal.raw_input_tokens, normalizedTotal.input_tokens)
+  const rawStartInput = toNonNegativeNumber(normalizedStart.raw_input_tokens, normalizedStart.input_tokens)
+  const totalOutput = toNonNegativeNumber(normalizedTotal.output_tokens)
+  const startOutput = toNonNegativeNumber(normalizedStart.output_tokens)
+  const totalCacheRead = toNonNegativeNumber(normalizedTotal.cache_read_input_tokens)
+  const startCacheRead = toNonNegativeNumber(normalizedStart.cache_read_input_tokens)
+  const totalCacheCreation = toNonNegativeNumber(normalizedTotal.cache_creation_input_tokens)
+  const startCacheCreation = toNonNegativeNumber(normalizedStart.cache_creation_input_tokens)
+
+  const derivedCacheReadTokens = Math.max(0, totalCacheRead - startCacheRead)
+  const derivedCacheCreationTokens = Math.max(0, totalCacheCreation - startCacheCreation)
+  const derivedRawInputTokens = Math.max(0, rawTotalInput - rawStartInput)
+  const derivedInputTokens = Math.max(0, derivedRawInputTokens - derivedCacheReadTokens - derivedCacheCreationTokens)
+  const derivedOutputTokens = Math.max(0, totalOutput - startOutput)
+
+  const fallbackInputTokens = Number(normalizedFallback.input_tokens)
+  const fallbackOutputTokens = Number(normalizedFallback.output_tokens)
+  const fallbackCacheReadTokens = Number(normalizedFallback.cache_read_input_tokens)
+  const fallbackCacheCreationTokens = Number(normalizedFallback.cache_creation_input_tokens)
+
+  const inputTokens = Number.isFinite(fallbackInputTokens) && fallbackInputTokens > 0
+    ? fallbackInputTokens
+    : derivedInputTokens
+  const outputTokens = Number.isFinite(fallbackOutputTokens) && fallbackOutputTokens > 0
+    ? fallbackOutputTokens
+    : derivedOutputTokens
+  const cacheReadTokens = Number.isFinite(fallbackCacheReadTokens) && fallbackCacheReadTokens > 0
+    ? fallbackCacheReadTokens
+    : derivedCacheReadTokens
+  const cacheCreationTokens = Number.isFinite(fallbackCacheCreationTokens) && fallbackCacheCreationTokens > 0
+    ? fallbackCacheCreationTokens
+    : derivedCacheCreationTokens
+
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+  }
+}
+
 function buildCodexMetricsFromTokenCountPayload(payload = {}, {
   model = '',
   durationMs = 0,
   gitBranch = '',
   gitChanges = 0,
+  turnStartTotals = null,
 } = {}) {
   const info = payload?.info || payload || {}
   const total = info.total_token_usage || {}
   const last = info.last_token_usage || {}
-  const normalizedLast = normalizeCodexUsage(last) || {}
-  const inputTokens = toNonNegativeNumber(normalizedLast.input_tokens)
-  const outputTokens = toNonNegativeNumber(last.output_tokens)
-  const cacheReadTokens = toNonNegativeNumber(normalizedLast.cache_read_input_tokens)
-  const cacheCreationTokens = toNonNegativeNumber(normalizedLast.cache_creation_input_tokens)
+  const liveTurnMetrics = buildCodexLiveTurnMetricsFromTotals(total, turnStartTotals || {}, last)
+  const inputTokens = toNonNegativeNumber(liveTurnMetrics.inputTokens)
+  const outputTokens = toNonNegativeNumber(liveTurnMetrics.outputTokens)
+  const cacheReadTokens = toNonNegativeNumber(liveTurnMetrics.cacheReadTokens)
+  const cacheCreationTokens = toNonNegativeNumber(liveTurnMetrics.cacheCreationTokens)
   const contextUsage = pickCodexContextUsage(info, payload)
   const contextWindow = pickCodexContextWindow(info, payload, getCodexContextWindowForModel(model))
   if (inputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && cacheCreationTokens <= 0 && contextUsage <= 0) {
@@ -1225,6 +1272,28 @@ function pushHistoryMessage(messages, seenMessages, message) {
   return true
 }
 
+function attachTurnTokensToLastAssistantMessage(messages, turnTokens) {
+  if (!turnTokens || !Array.isArray(messages)) return
+  const hasTokens = toNonNegativeNumber(turnTokens.inputTokens) > 0
+    || toNonNegativeNumber(turnTokens.outputTokens) > 0
+    || toNonNegativeNumber(turnTokens.cacheReadTokens) > 0
+    || toNonNegativeNumber(turnTokens.cacheCreationTokens) > 0
+    || toNonNegativeNumber(turnTokens.durationMs) > 0
+  if (!hasTokens) return
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message?.role !== 'assistant') continue
+    message._turnTokens = {
+      inputTokens: toNonNegativeNumber(turnTokens.inputTokens),
+      outputTokens: toNonNegativeNumber(turnTokens.outputTokens),
+      cacheReadTokens: toNonNegativeNumber(turnTokens.cacheReadTokens),
+      cacheCreationTokens: toNonNegativeNumber(turnTokens.cacheCreationTokens),
+      durationMs: toNonNegativeNumber(turnTokens.durationMs),
+    }
+    return
+  }
+}
+
 function pickFirstStringValue(...values) {
   for (const value of values) {
     if (typeof value === 'string' && value) return value
@@ -1364,10 +1433,75 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       const seenToolCallIds = new Set() // 已刷入消息的 call_id，防止 JSONL 重复行导致 tool 消息重复
       const pendingCalls = {} // call_id -> { call, output }
       const patchCalls = new Set() // call_ids that are apply_patch (handled by patch_apply_end)
+      let historyModel = ''
+      let activeTurnTokens = null
+
+      function ensureActiveTurnTokens(ts = null) {
+        if (!activeTurnTokens) {
+          activeTurnTokens = {
+            startedAt: ts,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            durationMs: 0,
+          }
+        } else if (!activeTurnTokens.startedAt && ts) {
+          activeTurnTokens.startedAt = ts
+        }
+        return activeTurnTokens
+      }
+
+      function flushActiveTurnTokens() {
+        if (!activeTurnTokens) return
+        attachTurnTokensToLastAssistantMessage(messages, activeTurnTokens)
+        activeTurnTokens = null
+      }
 
       function collectMessage(line) {
         const row = safeJsonParse(line)
         if (!row) return
+        const parsedTs = Date.parse(row.timestamp || '')
+        const ts = Number.isFinite(parsedTs) ? parsedTs : null
+        if (row.type === 'turn_context' && row.payload?.model) historyModel = historyModel || row.payload.model
+        if (row.type === 'session_meta' && row.payload?.model) historyModel = historyModel || row.payload.model
+
+        if (row.type === 'event_msg' && row.payload?.type === 'user_message') {
+          flushActiveTurnTokens()
+          activeTurnTokens = {
+            startedAt: ts,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            durationMs: 0,
+          }
+          return
+        }
+
+        if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+          const metrics = buildCodexMetricsFromTokenCountPayload(row.payload, {
+            model: historyModel,
+            durationMs: activeTurnTokens?.startedAt && ts ? Math.max(0, ts - activeTurnTokens.startedAt) : 0,
+          })
+          if (metrics) {
+            const turn = ensureActiveTurnTokens(ts)
+            turn.inputTokens = toNonNegativeNumber(metrics.inputTokens, turn.inputTokens)
+            turn.outputTokens = toNonNegativeNumber(metrics.outputTokens, turn.outputTokens)
+            turn.cacheReadTokens = toNonNegativeNumber(metrics.cacheReadTokens, turn.cacheReadTokens)
+            turn.cacheCreationTokens = toNonNegativeNumber(metrics.cacheCreationTokens, turn.cacheCreationTokens)
+            turn.durationMs = toNonNegativeNumber(metrics.durationMs, turn.durationMs)
+          }
+          return
+        }
+
+        if (row.type === 'event_msg' && row.payload?.type === 'task_complete') {
+          const turn = ensureActiveTurnTokens(ts)
+          turn.durationMs = toNonNegativeNumber(row.payload?.duration_ms, turn.durationMs)
+          if (!turn.durationMs && turn.startedAt && ts) {
+            turn.durationMs = Math.max(0, ts - turn.startedAt)
+          }
+        }
 
         // user/assistant/system 消息只取 response_item（数据最完整，含图片等），
         // event_msg.user_message / agent_message 直接跳过避免重复
@@ -1559,6 +1693,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       }
 
       for (const line of lines) collectMessage(line)
+      flushActiveTurnTokens()
 
       // Flush remaining calls without output (timeout/cancelled)
       // NOTE: page=0 uses tail-read; tail may start mid-session. Do not synthesize
@@ -1617,10 +1752,75 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
     const seenMessages = new Set()
     const pendingCalls = {}
     const patchCalls = new Set()
+    let historyModel = ''
+    let activeTurnTokens = null
+
+    function ensureActiveTurnTokens(ts = null) {
+      if (!activeTurnTokens) {
+        activeTurnTokens = {
+          startedAt: ts,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          durationMs: 0,
+        }
+      } else if (!activeTurnTokens.startedAt && ts) {
+        activeTurnTokens.startedAt = ts
+      }
+      return activeTurnTokens
+    }
+
+    function flushActiveTurnTokens() {
+      if (!activeTurnTokens) return
+      attachTurnTokensToLastAssistantMessage(messages, activeTurnTokens)
+      activeTurnTokens = null
+    }
     function collectMessage(line) {
       if (!line.trim()) return
       const row = safeJsonParse(line)
       if (!row) return
+      const parsedTs = Date.parse(row.timestamp || '')
+      const ts = Number.isFinite(parsedTs) ? parsedTs : null
+      if (row.type === 'turn_context' && row.payload?.model) historyModel = historyModel || row.payload.model
+      if (row.type === 'session_meta' && row.payload?.model) historyModel = historyModel || row.payload.model
+
+      if (row.type === 'event_msg' && row.payload?.type === 'user_message') {
+        flushActiveTurnTokens()
+        activeTurnTokens = {
+          startedAt: ts,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          durationMs: 0,
+        }
+        return
+      }
+
+      if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+        const metrics = buildCodexMetricsFromTokenCountPayload(row.payload, {
+          model: historyModel,
+          durationMs: activeTurnTokens?.startedAt && ts ? Math.max(0, ts - activeTurnTokens.startedAt) : 0,
+        })
+        if (metrics) {
+          const turn = ensureActiveTurnTokens(ts)
+          turn.inputTokens = toNonNegativeNumber(metrics.inputTokens, turn.inputTokens)
+          turn.outputTokens = toNonNegativeNumber(metrics.outputTokens, turn.outputTokens)
+          turn.cacheReadTokens = toNonNegativeNumber(metrics.cacheReadTokens, turn.cacheReadTokens)
+          turn.cacheCreationTokens = toNonNegativeNumber(metrics.cacheCreationTokens, turn.cacheCreationTokens)
+          turn.durationMs = toNonNegativeNumber(metrics.durationMs, turn.durationMs)
+        }
+        return
+      }
+
+      if (row.type === 'event_msg' && row.payload?.type === 'task_complete') {
+        const turn = ensureActiveTurnTokens(ts)
+        turn.durationMs = toNonNegativeNumber(row.payload?.duration_ms, turn.durationMs)
+        if (!turn.durationMs && turn.startedAt && ts) {
+          turn.durationMs = Math.max(0, ts - turn.startedAt)
+        }
+      }
 
       if (row.type === 'response_item' && row.payload?.type === 'message') {
         const role = row.payload.role
@@ -1804,6 +2004,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
     }
 
     for (const line of pageData.lines) collectMessage(line)
+    flushActiveTurnTokens()
 
     const baseId = -((safePage + 1) * 100000)
     return {
@@ -2417,15 +2618,49 @@ function setupCodexSdkHandlers() {
               sessionFingerprints.set(sessionId, nextFingerprint)
             }
 
+            if (ev.type === 'user_message' || ev.payload?.type === 'user_message') {
+              const session = codexSessions.get(sessionId)
+              if (session) {
+                session._liveTurnStartTotals = {
+                  ...(session._liveLastTotals || {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cached_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                  }),
+                }
+              }
+            }
+
             if (ev.type === 'token_count' || ev.payload?.type === 'token_count') {
               const session = codexSessions.get(sessionId)
               const sender = session?.event?.sender || event.sender
+              const tokenPayload = ev.payload?.type === 'token_count' ? ev.payload : ev
+              const tokenInfo = tokenPayload?.info || tokenPayload || {}
+              const totalUsage = tokenInfo.total_token_usage || {}
+              if (!session?._liveTurnStartTotals) {
+                session._liveTurnStartTotals = {
+                  input_tokens: 0,
+                  output_tokens: 0,
+                  cached_input_tokens: 0,
+                  cache_creation_input_tokens: 0,
+                }
+              }
+              if (session) {
+                session._liveLastTotals = {
+                  input_tokens: toNonNegativeNumber(totalUsage.input_tokens),
+                  output_tokens: toNonNegativeNumber(totalUsage.output_tokens),
+                  cached_input_tokens: toNonNegativeNumber(totalUsage.cached_input_tokens),
+                  cache_creation_input_tokens: toNonNegativeNumber(totalUsage.cache_creation_input_tokens),
+                }
+              }
               const elapsedMs = Math.max(0, Date.now() - pollStart)
-              const liveMetrics = buildCodexMetricsFromTokenCountPayload(ev.payload?.type === 'token_count' ? ev.payload : ev, {
+              const liveMetrics = buildCodexMetricsFromTokenCountPayload(tokenPayload, {
                 model: model || '',
                 durationMs: elapsedMs,
                 gitBranch: '',
                 gitChanges: 0,
+                turnStartTotals: session?._liveTurnStartTotals || null,
               })
               if (liveMetrics) {
                 sendMetrics(sender, {
@@ -2466,6 +2701,13 @@ function setupCodexSdkHandlers() {
                 usageApiSessionPct: null,
                 costUsd: parsedMetrics?.costUsd ?? 0,
               })
+              if (session?.runId === runId) {
+                const currentSession = codexSessions.get(sessionId)
+                if (currentSession) {
+                  currentSession._liveTurnStartTotals = null
+                  currentSession._liveLastTotals = null
+                }
+              }
             }
 
             // 转发 item 事件到前端

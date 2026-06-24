@@ -960,6 +960,44 @@ function applyToolResultToHistoryMessages(messages, toolUseId, content, isErrorF
   })
 }
 
+function buildClaudeHistoryTurnTokensFromEntry(entry) {
+  const usage = entry?.message?.usage
+  if (!usage || typeof usage !== 'object') return null
+  const model = entry?.message?.model || entry?.model || ''
+  const inputTokens = Number(usage.input_tokens || 0)
+  const cacheReadTokens = Number(usage.cache_read_input_tokens || 0)
+  const cacheCreationTokens = Number(usage.cache_creation_input_tokens || 0)
+  const outputTokens = Number(usage.output_tokens || 0)
+  const normalizedInputTokens = String(model || '').toLowerCase().includes('claude')
+    || String(model || '').toLowerCase().includes('sonnet')
+    || String(model || '').toLowerCase().includes('opus')
+    || String(model || '').toLowerCase().includes('haiku')
+    ? Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens)
+    : inputTokens
+  const durationMs = Number(entry?.duration_ms || 0)
+  if (normalizedInputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && cacheCreationTokens <= 0 && durationMs <= 0) {
+    return null
+  }
+  return {
+    inputTokens: normalizedInputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    durationMs,
+  }
+}
+
+function attachClaudeHistoryTurnTokens(messages, entry) {
+  const turnTokens = buildClaudeHistoryTurnTokensFromEntry(entry)
+  if (!turnTokens) return
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message?.role !== 'assistant') continue
+    message._turnTokens = turnTokens
+    return
+  }
+}
+
 function normalizeSessionEventsToUiMessages(rawData, { recoverDanglingTools = false } = {}) {
   const out = []
   let currentAssistantId = null
@@ -992,6 +1030,7 @@ function normalizeSessionEventsToUiMessages(rawData, { recoverDanglingTools = fa
         const { text: t, meta } = splitBracketMetaLines(content)
         for (const m of meta) out.push({ id: nextMsgId(), role: 'system', text: m })
         if (t) out.push({ id: nextMsgId(), role: 'assistant', text: t, specialItems: [] })
+        if (t) attachClaudeHistoryTurnTokens(out, entry)
         continue
       }
       if (!Array.isArray(content)) continue
@@ -1053,6 +1092,7 @@ function normalizeSessionEventsToUiMessages(rawData, { recoverDanglingTools = fa
           }))
         }
       }
+      attachClaudeHistoryTurnTokens(out, entry)
       continue
     }
 
@@ -1267,6 +1307,7 @@ function normalizeFlatSessionMessagesToUiMessages(rawData, { recoverDanglingTool
         const { text, meta } = splitBracketMetaLines(raw)
         for (const m of meta) out.push({ id: nextMsgId(), role: 'system', text: m })
         if (text) out.push({ id: nextMsgId(), role: 'assistant', text, specialItems: [] })
+        if (text) attachClaudeHistoryTurnTokens(out, entry)
         continue
       }
 
@@ -1326,6 +1367,7 @@ function normalizeFlatSessionMessagesToUiMessages(rawData, { recoverDanglingTool
           }))
         }
       }
+      attachClaudeHistoryTurnTokens(out, entry)
       continue
     }
 
