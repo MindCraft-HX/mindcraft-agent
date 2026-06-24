@@ -5,6 +5,15 @@
  * 维护一个小型去重窗口，防止 Claude 双 done / CodeX terminal+finally 重复播放。
  *
  * 不依赖 Electron IPC / Vue，可纯 Node 测试。
+ *
+ * ## 双面板注册的设计说明
+ *
+ * CodeHub 默认同时挂载 ClaudeCode 和 CodeX 面板，两者分别在 onMounted 注册
+ * window.electronAPI.onAgentEvent。同一 agent:event 会触发两个回调，但共享的
+ * _seenKeys Set 保证 dedup key 相同时只播放一次。这是有意设计：
+ * - 任一面板卸载时，另一个仍能独立播放通知音
+ * - 无需在 CodeHub 层引入额外的注册/分发逻辑
+ * - 后续若需要 agent-specific 声音/开关，可在此处按 event.agent 分流
  */
 
 import { isSoundEligible, notificationDedupeKey } from './agentProtocol.mjs'

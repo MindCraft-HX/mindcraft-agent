@@ -9,7 +9,6 @@ import { useCodexAgentStream } from '../packages/agent/src/components/codeX/comp
 
 function createHarness({ activeProjectId = 'proj-1', panelActive = true } = {}) {
   let msgId = 0
-  let doneCount = 0
   let flashCount = 0
   let registerCount = 0
   let unregisterCount = 0
@@ -40,7 +39,7 @@ function createHarness({ activeProjectId = 'proj-1', panelActive = true } = {}) 
     projects,
     getActiveProjectId: () => activeProjectId,
     isPanelActive: ref(panelActive),
-    onTaskDone: () => { doneCount++ },
+    onBackgroundTaskDone: () => {},
     scrollBottom: () => {},
     saveHistory: () => {},
     nextMsgId,
@@ -59,15 +58,16 @@ function createHarness({ activeProjectId = 'proj-1', panelActive = true } = {}) 
     tab,
     ownerProject,
     stream,
-    getDoneCount: () => doneCount,
     getFlashCount: () => flashCount,
     getRegisterCount: () => registerCount,
     getUnregisterCount: () => unregisterCount,
   }
 }
 
-test('completed done marks background project notification', () => {
-  const { ownerProject, stream, getDoneCount, getFlashCount } = createHarness({
+test('completed done marks background project notification (sound moved to agent:event gate)', () => {
+  // PR 3: onAgentDone 不再播放声音，通知音由 agent:event → agentNotificationGate 统一处理。
+  // 此处只断言视觉提醒（hasDoneNotification、flashTaskbar）仍正确触发。
+  const { ownerProject, tab, stream, getFlashCount } = createHarness({
     activeProjectId: 'proj-2',
     panelActive: false,
   })
@@ -75,12 +75,13 @@ test('completed done marks background project notification', () => {
   stream.onAgentDone({ sessionId: 'sess-1', cliSessionId: 'cli-1', reason: 'completed' })
 
   assert.equal(ownerProject.hasDoneNotification, true)
-  assert.equal(getDoneCount(), 1)
   assert.equal(getFlashCount(), 1)
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._awaitingDone, false)
 })
 
 test('aborted done does not mark completion notification', () => {
-  const { ownerProject, tab, stream, getDoneCount, getFlashCount } = createHarness({
+  const { ownerProject, tab, stream, getFlashCount } = createHarness({
     activeProjectId: 'proj-2',
     panelActive: false,
   })
@@ -88,7 +89,6 @@ test('aborted done does not mark completion notification', () => {
   stream.onAgentDone({ sessionId: 'sess-1', cliSessionId: 'cli-1', reason: 'aborted' })
 
   assert.equal(ownerProject.hasDoneNotification, false)
-  assert.equal(getDoneCount(), 0)
   assert.equal(getFlashCount(), 0)
   assert.equal(tab.thinking, false)
   assert.equal(tab._awaitingDone, false)
@@ -114,7 +114,7 @@ test('detachResume done clears stale cli mapping and does not re-register it', (
 })
 
 test('terminal stream message clears UI thinking but keeps send lock until done', () => {
-  const { ownerProject, tab, stream, getDoneCount } = createHarness()
+  const { ownerProject, tab, stream } = createHarness()
 
   stream.onAgentMessage({ sessionId: 'sess-1', msg: { type: 'task_complete', payload: { type: 'task_complete' } } })
 
@@ -122,5 +122,4 @@ test('terminal stream message clears UI thinking but keeps send lock until done'
   assert.equal(tab._awaitingDone, true)
   assert.equal(tab.currentAssistantId, null)
   assert.equal(ownerProject.hasDoneNotification, false)
-  assert.equal(getDoneCount(), 0)
 })
