@@ -832,10 +832,157 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 ---
 
+## 16. Token Metrics 数据模型（2026-06-24 定论）
+
+> 专题研究：`docs/plan/2026-06-24-token-metrics-research.md`
+> TODO 路由：`docs/TODO.md` → T144-T146
+
+### 16.1 核心差异：`input_tokens` 语义
+
+Claude (Anthropic API) 和 Codex (OpenAI 风格) 的同名字段**语义不同**，这是之前 token 统计 BUG 的根因。
+
+| 字段 | Claude 语义 | Codex 语义 |
+|------|-----------|-----------|
+| `input_tokens` | **包含**缓存命中 + 缓存写入 + 常规输入 | **仅**常规输入（不含缓存） |
+| `cache_read_input_tokens` / `cached_input_tokens` | `input_tokens` 的**子集** | **独立**于 `input_tokens` |
+| `cache_creation_input_tokens` | `input_tokens` 的**子集** | **独立**于 `input_tokens` |
+
+### 16.2 四分类 Token 模型
+
+无论 Claude 还是 Codex，最终统一为以下四类：
+
+| # | 分类 | 显示名 | Claude 数据源 | Codex 数据源 |
+|---|------|--------|-------------|-------------|
+| ① | **缓存命中** | `命中` | `cache_read_input_tokens` | `cached_input_tokens` |
+| ② | **缓存写入** | `写入` | `cache_creation_input_tokens` | `cache_creation_input_tokens` |
+| ③ | **常规输入** | `入` | `input_tokens - ① - ②` | `input_tokens` |
+| ④ | **输出** | `出` | `output_tokens` | `output_tokens` |
+
+```
+Claude:  input_tokens = ① + ② + ③   （包含关系）
+Codex:   input_tokens = ③            （独立关系，① ② 不在 input 内）
+```
+
+### 16.3 contextUsage 计算公式
+
+```
+Claude:  contextUsage = input_tokens
+         （已包含全部，不要加 ① ②，会三重计数）
+
+Codex:   contextUsage = input_tokens + ① + ②
+         （三项独立，需要累加）
+```
+
+### 16.4 StatusBar 展示规范
+
+不计费，只展示分布。格式：
+
+```
+命中 8.1k / 入 2.3k / 出 5.1k
+```
+
+- `写入`（②）不单独展示（不计费时与 `入` 无价格区别），仅在 tooltip 中补充
+- `costUsd` 字段不再在前端展示（多模型、用户自带 API Key 价格各异，无统一计费基准）
+- 上下文占用进度条：`contextUsage / contextWindow` 百分比
+
+### 16.5 IPC Metrics 数据结构
+
+```js
+// claude-agent-metrics / codex-agent-metrics 通道
+{
+  model: string,
+  inputTokens: number,        // ③ 常规输入 (Claude) 或 ①+②+③ 总输入 (Codex)
+  outputTokens: number,       // ④
+  cacheReadTokens: number,    // ①
+  cacheCreationTokens: number,// ② (tooltip 用)
+  contextUsage: number,       // 按 §16.3 公式计算
+  contextWindow: number,
+  durationMs: number,
+  speedOutputPerSec: number,
+  thinking: boolean,
+  // 以下不计费不展示但保留传输
+  gitBranch: string,
+  gitChanges: number,
+  usageApiSessionPct: number | null,
+}
+```
+
+### 16.6 已知 BUG（待修复）
+
+**StatusBar / 实时 Metrics（7 个）：**
+
+| # | 问题 | 位置 |
+|---|------|------|
+| 🔴 | `input_tokens + cache_read + cache_creation` 三重计数 | `claudeMetrics.js` L128-129 |
+| 🔴 | `createChat()` 缺 `metrics: {}`，runtime state 写入死代码 | `claudeCode/index.vue` L1750 |
+| 🟡 | `refreshMetricsForChat()` 先清零再异步，切 tab 闪烁 | `claudeCode/index.vue` L624 |
+| 🟡 | `resetMetrics` 与 3s polling 竞态 | `claudeCode/index.vue` L564+L635 |
+| 🟡 | `_thinkingStart` 计时器回拨逻辑分散 | `claudeCode/index.vue` L548 |
+| 🟢 | CodeX `usageApiSessionPct` 硬编码 null | `codexAgent.js` |
+| 🟢 | Cache read/creation 合并显示 | `StatusBarMetrics.vue` ×2 |
+
+**首页统计 `homeMetrics.js`（4 个额外 BUG）：**
+
+| # | 问题 | 位置 |
+|---|------|------|
+| 🔴 H1 | Claude **多轮累加溢出**：每轮 API 的 `input_tokens` 含全部上下文（system + history），3 轮 session 被加三次，日统计虚高 2-3 倍 | `parseClaudeLines` L87-99 |
+| 🔴 H2 | Codex **累加累积值**：`totalInput += inp` 把 token_count 的累积值当增量累加，10 个事件就等于 10× 末值 | `parseCodexLines` L166 |
+| 🔴 H3 | Codex **cacheCreation 恒为 0**：`total_token_usage` 有 `cache_creation_input_tokens` 字段但被硬编码为 0 | `parseCodexLines` L163 |
+| 🟡 H4 | 趋势图 **totalInput 公式错误**：`claudeInput - cacheRead` 对 Codex 无意义（Codex 的 input 不含 cache），遇到大缓存 session 可能归零 | `getTokenTrend` L315 |
+
+### 16.7 首页统计修正公式
+
+**Claude 日聚合（per session）：**
+```
+正确做法：只取最后一个 stop_reason 轮次的 input_tokens
+         不跨轮累加（每轮的 input_tokens 包含前面全部上下文）
+
+修复前 → parseClaudeLines：每个 stop_reason 轮都 addToDate(inp)
+修复后 → 每 session 只取最后一次 stop_reason 的 input/output/cache
+```
+
+**Codex 日聚合（per session）：**
+```
+正确做法：取 token_count 事件的 last_token_usage（本轮增量）而非 total_token_usage（累积值）
+         或取 total_token_usage 的末值（最后一个事件的累积值即为全 session 总量）
+
+修复前 → parseCodexLines：totalInput += total_token_usage.input_tokens（累积值被当增量累加）
+修复后 → 取最后一个 token_count 事件的 total_token_usage 值作为该 session 总量
+         cacheCreation 改为 usage.cache_creation_input_tokens（非 0）
+```
+
+**趋势图 totalInput：**
+```
+修复前：Math.max(0, claudeInput - cacheRead) + Math.max(0, codexInput - cacheRead)
+        ↓ 对 Codex 错误：codexInput 本就不含 cache，再减 cacheRead 可能归零
+
+修复后：Claude 侧 = input (已含 cache，取末轮值)
+        Codex 侧 = input + cacheRead + cacheCreation（三项独立求和）
+        合并  = Claude 侧 + Codex 侧
+```
+
+**趋势图数据注释规范：**
+```js
+// homeMetrics 日聚合返回的字段含义
+{
+  claudeInput: number,        // Claude: 最后一轮 input_tokens（已含 cache）
+  claudeOutput: number,       // Claude: output_tokens 跨轮累加
+  claudeCacheRead: number,    // Claude: 最后一轮 cache_read_input_tokens
+  codexInput: number,         // Codex: 最后事件 total.input_tokens（不含 cache）
+  codexOutput: number,        // Codex: 最后事件 total.output_tokens
+  codexCacheRead: number,     // Codex: 最后事件 total.cached_input_tokens
+  // ⚠️ claudeInput 包含 cache，codexInput 不包含 cache
+  // ⚠️ 两者语义不同，图表 tooltip 须区分标注
+}
+```
+
+---
+
 ## 15. 更新记录
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-24 | **新增 §16**：Token Metrics 数据模型 — 四分类语义对照表、Claude/CodeX 差异定论、contextUsage 计算公式、StatusBar 展示规范 |
 | 2026-06-17 | 恢复 `docs/` 版本管理规则；新增 §5.3 官方目录与 MindCraft 自有数据边界；补充 §6.6 T134 Session Registry 目标结构和迁移顺序 |
 | 2026-06-15 | **新增 §11-14**：ClaudeCode SDK 接口参考、CodeX SDK 接口参考、跨 SDK 差异对比、错误结论纠正。经 `@anthropic-ai/claude-agent-sdk/sdk.d.ts` 和 `@openai/codex-sdk/dist/index.d.ts` 完整核对 |
 | 2026-06-13 | 初版 + Chat 功能文档（§10） |

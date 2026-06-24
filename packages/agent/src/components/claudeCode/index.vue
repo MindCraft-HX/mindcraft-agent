@@ -561,8 +561,11 @@ function syncMetricsTimerForClaudeTab(tab, durationMs = 0) {
   }, 1000)
 }
 
+// refreshMetricsForChat 期间的轮询锁，防止 polling 数据覆盖刚查出的完整结果
+let _refreshingMetrics = false
+
 function onMetricsUpdate(data) {
-  if (!data) return
+  if (!data || _refreshingMetrics) return
   // 只更新当前活跃 tab 的 metrics
   const tab = activeTab.value
   if (tab && data.sessionId && data.sessionId !== tab.sessionId) return
@@ -624,6 +627,7 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
 async function refreshMetricsForChat(chat) {
   stopMetricsLiveTimer()
   if (!chat?.cliSessionId) { resetMetrics(); return }
+  _refreshingMetrics = true
   try {
     const result = await window.electronAPI.claudeAgentQueryMetrics?.({
       cliSessionId: chat.cliSessionId,
@@ -632,11 +636,17 @@ async function refreshMetricsForChat(chat) {
     if (result) {
       if (!result.model) result.model = getClaudeTabModel(chat)
       result.thinking = Boolean(chat.thinking)
-      resetMetrics()
+      // 不先 reset 再 assign——先 reset 会导致切换 tab 时闪烁归零
       Object.assign(metricsData.value, result)
       syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
-    } else resetMetrics()
-  } catch (_) { resetMetrics() }
+    } else {
+      resetMetrics()
+    }
+  } catch (_) {
+    resetMetrics()
+  } finally {
+    _refreshingMetrics = false
+  }
 }
 
 const activeProject = computed(() => projects.value.find(p => p.id === activeProjectId.value) || null)
@@ -1769,6 +1779,7 @@ function createChat() {
     _pendingSessionBinding: true,
     taskState: createEmptyTaskState(),
     _taskToolUseIds: new Set(),
+    metrics: {},
   }
 }
 
@@ -1946,6 +1957,7 @@ async function refreshProjectSessionsInBackground(p) {
           _userRenamed: s.titleSource === 'user' || Boolean(s._userRenamed),
           taskState: createEmptyTaskState(),
           _taskToolUseIds: new Set(),
+          metrics: {},
         }
         const insertAt = p.chats.findIndex(c => {
           const ct = c.updatedAt || c.createdAt
@@ -2313,6 +2325,7 @@ async function selectDir(project, onAfterSelect) {
           _userRenamed: s.titleSource === 'user' || Boolean(s._userRenamed),
           taskState: createEmptyTaskState(),
           _taskToolUseIds: new Set(),
+          metrics: {},
         }
       })
       const firstChatId = project.chats[0]?.id || null
@@ -2372,6 +2385,7 @@ async function loadProjectSessions(cwd) {
           name,
           titleSource: s.titleSource || (s.isCustomTitle ? 'provider' : ''),
           _userRenamed: s.titleSource === 'user' || Boolean(s._userRenamed),
+          metrics: {},
         }
       })
     }

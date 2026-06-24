@@ -58,8 +58,13 @@ const _lineCache = new Map()
 function parseClaudeLines(lines) {
   let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0
   let lastStopInput = 0, lastStopOutput = 0, lastStopCacheRead = 0, lastStopCacheCreation = 0
+  let lastStopTs = null
+  let lastFallbackTs = null
   let hasStop = false
   const dateMap = new Map()
+  // 注：Claude 的 input_tokens 已包含 cache_read + cache_creation（子集关系）
+  //     每轮 API 调用的 input_tokens 含全部上下文，跨轮累加会严重偏高
+  //     正确做法：只取最后一个 stop_reason 轮次的值
 
   function addToDate(ts, inp, out, cr, cc) {
     if (!ts) return
@@ -83,20 +88,20 @@ function parseClaudeLines(lines) {
         const out = u.output_tokens || 0
         const cr = u.cache_read_input_tokens || 0
         const cc = u.cache_creation_input_tokens || 0
+        if (ts) lastFallbackTs = ts
 
         if (parsed.message.stop_reason) {
           hasStop = true
-          // claudeMetrics.js 的做法：input/cache 取最后一轮，output 累加
+          // H1 修复：每轮只记 delta output，input/cache 只取末轮（不跨轮累加）
           const deltaOut = out - lastStopOutput
           lastStopInput = inp
           lastStopOutput = out
           lastStopCacheRead = cr
           lastStopCacheCreation = cc
+          lastStopTs = ts
           if (deltaOut > 0) {
             totalOutput += deltaOut
           }
-          // 日期映射始终用累加（用于趋势图每天独立统计）
-          addToDate(ts, inp, out, cr, cc)
         }
       }
     } catch (_) {}
@@ -106,8 +111,10 @@ function parseClaudeLines(lines) {
     totalInput = lastStopInput
     totalCacheRead = lastStopCacheRead
     totalCacheCreation = lastStopCacheCreation
+    // 趋势图：整 session 归到最后一轮日期（避免每轮全量 input 重复累加）
+    addToDate(lastStopTs, totalInput, totalOutput, totalCacheRead, totalCacheCreation)
   } else {
-    // Fallback：没有 stop_reason，统计所有
+    // Fallback：没有 stop_reason，统计所有（取最后一个 assistant 的 usage）
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line)
@@ -117,11 +124,11 @@ function parseClaudeLines(lines) {
           totalOutput += u.output_tokens || 0
           totalCacheRead = u.cache_read_input_tokens || totalCacheRead
           totalCacheCreation = u.cache_creation_input_tokens || totalCacheCreation
-          addToDate(parsed.timestamp, u.input_tokens || 0, u.output_tokens || 0,
-            u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0)
         }
       } catch (_) {}
     }
+    // Fallback 也归到末条时间戳
+    addToDate(lastFallbackTs, totalInput, totalOutput, totalCacheRead, totalCacheCreation)
   }
 
   return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheCreation: totalCacheCreation, dateMap, hasStop }
@@ -136,6 +143,9 @@ function parseCodexLines(lines) {
   let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0
   let hasTokens = false
   const dateMap = new Map()
+  // 注：Codex 的 input_tokens 不含 cache（与 Claude 相反）
+  //     input/cache_read/cache_creation 三项独立、互为补充
+  //     total_token_usage 是累积值，不应多事件累加——只取末值
 
   function addToDate(ts, inp, out, cr, cc) {
     if (!ts) return
@@ -148,28 +158,33 @@ function parseCodexLines(lines) {
     dateMap.set(d, cur)
   }
 
+  // H2+H3 修复：取末个 token_count 事件的 total_token_usage（累积值），不跨事件累加
+  let lastInp = 0, lastOut = 0, lastCr = 0, lastCc = 0, lastTs = null
+
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line)
       const ts = parsed.timestamp ? (typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.parse(parsed.timestamp)) : null
 
-      // token_count 事件
       if (parsed.type === 'event_msg' && parsed.payload?.type === 'token_count') {
         const info = parsed.payload?.info || parsed.info || {}
         const usage = info.total_token_usage || {}
-        const inp = usage.input_tokens || 0
-        const out = usage.output_tokens || 0
-        const cr = usage.cached_input_tokens || 0
-        const cc = 0 // Codex 不单独报告 cache creation
-
         hasTokens = true
-        totalInput += inp
-        totalOutput += out
-        totalCacheRead += cr
-        totalCacheCreation += cc
-        addToDate(ts, inp, out, cr, cc)
+        lastInp = usage.input_tokens || 0
+        lastOut = usage.output_tokens || 0
+        lastCr = usage.cached_input_tokens || 0
+        lastCc = usage.cache_creation_input_tokens || 0
+        lastTs = ts
       }
     } catch (_) {}
+  }
+
+  if (hasTokens) {
+    totalInput = lastInp
+    totalOutput = lastOut
+    totalCacheRead = lastCr
+    totalCacheCreation = lastCc
+    addToDate(lastTs, lastInp, lastOut, lastCr, lastCc)
   }
 
   return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheCreation: totalCacheCreation, dateMap, hasTokens }
@@ -257,7 +272,7 @@ function getTokenTrend(days) {
   const claudeProjectsDir = path.join(os.homedir(), '.claude', 'projects')
   const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions')
 
-  // 聚合 Map: dateStr -> { claudeInput, claudeOutput, claudeCacheRead, codexInput, codexOutput, codexCacheRead }
+  // 聚合 Map: dateStr -> { claudeInput, claudeOutput, claudeCacheRead, codexInput, codexOutput, codexCacheRead, codexCacheCreation }
   const dateAgg = new Map()
 
   // Claude
@@ -267,7 +282,7 @@ function getTokenTrend(days) {
       if (!lines.length) return
       const { dateMap } = parseClaudeLines(lines)
       for (const [date, vals] of dateMap) {
-        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0, codexInput: 0, codexOutput: 0, codexCacheRead: 0 }
+        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0, codexInput: 0, codexOutput: 0, codexCacheRead: 0, codexCacheCreation: 0 }
         cur.claudeInput += vals.input
         cur.claudeOutput += vals.output
         cur.claudeCacheRead += (vals.cacheRead || 0)
@@ -283,10 +298,11 @@ function getTokenTrend(days) {
       if (!lines.length) return
       const { dateMap } = parseCodexLines(lines)
       for (const [date, vals] of dateMap) {
-        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0, codexInput: 0, codexOutput: 0, codexCacheRead: 0 }
+        const cur = dateAgg.get(date) || { claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0, codexInput: 0, codexOutput: 0, codexCacheRead: 0, codexCacheCreation: 0 }
         cur.codexInput += vals.input
         cur.codexOutput += vals.output
         cur.codexCacheRead += (vals.cacheRead || 0)
+        cur.codexCacheCreation += (vals.cacheCreation || 0)
         dateAgg.set(date, cur)
       }
     })
@@ -312,7 +328,9 @@ function getTokenTrend(days) {
         codexInput: agg.codexInput,
         codexOutput: agg.codexOutput,
         codexCacheRead: agg.codexCacheRead,
-        totalInput: Math.max(0, agg.claudeInput - agg.claudeCacheRead) + Math.max(0, agg.codexInput - agg.codexCacheRead),
+        codexCacheCreation: agg.codexCacheCreation,
+        // H4 修复：Claude 的 input 已含 cache，取原值；Codex 的 input 不含 cache，三项累加
+        totalInput: agg.claudeInput + agg.codexInput + agg.codexCacheRead + (agg.codexCacheCreation || 0),
         totalOutput: agg.claudeOutput + agg.codexOutput,
         totalCache: agg.claudeCacheRead + agg.codexCacheRead,
       })
@@ -321,7 +339,7 @@ function getTokenTrend(days) {
         date: displayDate,
         dateFull: dateStr,
         claudeInput: 0, claudeOutput: 0, claudeCacheRead: 0,
-        codexInput: 0, codexOutput: 0, codexCacheRead: 0,
+        codexInput: 0, codexOutput: 0, codexCacheRead: 0, codexCacheCreation: 0,
         totalInput: 0, totalOutput: 0, totalCache: 0,
       })
     }

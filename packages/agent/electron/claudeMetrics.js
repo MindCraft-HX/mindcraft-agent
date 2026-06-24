@@ -125,8 +125,9 @@ function getTokenMetrics(cliSessionId) {
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
         }
-        if (data.input_tokens) {
-          contextUsage = (data.input_tokens || 0) + (data.cache_read_input_tokens || 0) + (data.cache_creation_input_tokens || 0)
+        if (data.input_tokens && !data.usage) {
+          // Claude: input_tokens 已包含 cache_read + cache_creation，不要累加
+          contextUsage = data.input_tokens || 0
           contextWindow = data.context_window_size || 0
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
@@ -159,7 +160,8 @@ function getTokenMetrics(cliSessionId) {
         const parsed = JSON.parse(lines[i])
         if (parsed.type === 'assistant' && parsed.message?.usage) {
           const u = parsed.message.usage
-          contextUsage = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)
+          // Claude: input_tokens 已包含 cache，直接用
+          contextUsage = u.input_tokens || 0
           contextWindow = getContextWindowForModel(parsed.model_name || parsed.model || parsed.message?.model || '')
           break
         }

@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-06-21（T143 CodeX 多模型选择器改造完成）
+> 最后更新：2026-06-24（Token 使用统计优化研究 + BUG 排查）
 >
 > ⚠️ **会话相关 bug 排查第一入口**：`docs/session-pitfalls.md`（跨 Agent 陷阱全景图）
 > ⚠️ **SDK 利用率审计**：当前 ~15%，详见下方「SDK 能力挖掘」章节
@@ -13,6 +13,9 @@
 |------|------|------|:------:|------|
 | T141 | refactor | **ClaudeCode Runtime / Metrics State Machine 重构**：已完成首轮实现，`thinking/_thinkingStart/currentAssistantId` 生命周期写入口收敛到 `claudeRuntimeState.mjs`，send/stream/done/abort/metrics/history 保存链路已接入；metrics 保留为展示数据，不能复活已完成/中断/idle 的 running；history 保存会剥离 runtime 字段，避免重启后假运行。本轮不改 Claude pending adoption、Session Registry schema 或运行中再次发送的 SDK interrupt 语义。详见 `docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md`，人工验收见 `docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md`。 | P0 | 🔄 已实现，待人工验收 |
 | T142 | bug | **ClaudeCode metrics cache 统计切换漂移**：人工验收发现同一 ClaudeCode 会话运行时 metrics 实时刷新正常，但切到其他 tab 再切回后 cache token 明显减少（约一半）。当前 runtime state machine 已确保 metrics 不拥有 running 权威，但 token/cache 统计本身可能在主进程 poller、`claudeAgentQueryMetrics`、final metrics 或按 `cliSessionId` 聚合路径存在口径不一致。后续需用同一 JSONL/同一 `cliSessionId` 对比实时事件、切 tab query metrics、结束后 final metrics 三组数据，定位 cacheRead/cacheCreation 是否重复计入、漏计或按窗口重置。 | P1 | 🐛 待排查 |
+| T144 | bug | **Token Metrics 统计 BUG 修复**：共 7 个问题已修 4 个（P0 均已 fix）——✅ `tab.metrics` 初始化、✅ contextUsage 三重计数、✅ 切 tab 闪烁+竞态、✅ homeMetrics 首页 4 BUG。遗留 3 个低优先级（流式停滞、usageApiSessionPct、cache 合并）。详见 `docs/agent-architecture.md` §16。 | P1 | ✅ 已修复 |
+| T145 | feature | **Token 数据实时增长**：Claude SDK 的 3s 轮询在 tool-use 循环中跳过未完成轮次（只统计有 stop_reason 的），导致长时间 tool-use 期间 token 数不变。改 `pollMetrics()` 聚合所有 assistant usage 并用 message.id 去重；Codex 已有 token_count 实时数据只需前端动画；简易对话保存 invoke 返回值中的 usage。对标 CLI 体验。详见 `docs/plan/2026-06-24-token-metrics-research.md` §一.1。 | P2 | 📝 待方案 |
+| T146 | feature | **对话 Per-Turn Token/时间标注**：在每个 assistant 消息气泡底部追加一行元数据（token/time/cost）。覆盖 ClaudeCode/CodeX/简易对话三条线。Token 数据来源：Claude SDK `result` 消息 / Codex `turn.completed` 事件 / 简易对话 `invoke()` 返回值。详见 `docs/plan/2026-06-24-token-metrics-research.md` §一.2。 | P2 | 📝 待方案 |
 | T140 | ux/refactor | **Agent running 中再次发送 / pending 输入可视化与发送按钮状态**：CodeX running 中再次发送已能排队接上，但 pending 输入不会立即显示用户 bubble，连续发送多条语义不够明确；ClaudeCode running 中再次发送走 SDK `streamInput`/interrupt，会立即结合到当前轮处理，这是不同于 CodeX 的正常语义，但响应中发送图标仍被禁用，Enter 却有效，UI 暗示不一致。后续应统一梳理两类 Agent 的 running-send UX：CodeX 增加 pending queue UI（在输入区/消息底部显示“待发送”，不提前插入历史消息流）并明确多条输入合并/逐条策略；ClaudeCode 保留 interrupt 语义但让发送按钮状态与 Enter 行为一致。背景必须写清楚，避免未执行输入插到大量历史消息上方造成困惑，也避免 queue flush 覆盖用户草稿。 | P1 | 📝 待方案 |
 | T139 | perf | **界面卡顿性能优化**：第一轮已完成 6 个低风险前端热点 + `codex-run-git-diff` 主进程异步化；第二轮已完成 ClaudeCode/CodeX `projectTabs` 派生状态保守优化、Claude `read-session-file-range` 尾部按页读取、CodeX `codex-read-session-file-range` page>0 尾部按页读取。长历史 session 只读取需要的 60 条附近数据，避免为渲染 60 条全文件扫描。`npm run build` 通过。详见 `docs/perf-audit-report.md`，人工验收见 `docs/qa/2026-06-18-performance-acceptance.md`。 | P0 | 🔄 第二轮完成，待人工回归 |
 | T138 | bug/refactor | **Agent Session Identity 与 MindCraft Registry 去污染重构**：ClaudeCode / CodeX 均存在 `chatKey` 与官方 `cliSessionId/threadId` 混用，关闭项目 Tab 后从官方 transcript 重建会丢失 MindCraft 自有状态，且 registry 已出现同一 provider session 对应多个 record。已建立严格三层身份：MindCraft `chatKey`、官方 `providerSessionId`、官方 transcript `filePath`；扫描官方 JSONL 通过 registry 恢复 `chatKey/title/instruction/runtime`；title 新写入只进 MindCraft registry；自动修复现有 registry/panel state 重复映射，先备份、不写不删 `~/.claude` / `~/.codex`；永久删除底层会话使用单次危险确认。CodeX runtime state machine 后续重构已完成，人工验收通过。详见 `docs/plan/2026-06-18-agent-session-identity-registry.md` 和 `docs/qa/2026-06-18-agent-session-identity-registry-acceptance.md`。 | P0 | ✅ 已完成 |
@@ -341,6 +344,8 @@ CodeX 刷新后，用户气泡显示 SDK 注入的完整系统上下文：`<INST
 
 | 日期 | 分类 | 说明 |
 |------|------|------|
+| 2026-06-24 | research | **Token 使用统计优化研究完成**：排查三个问题——① codex/claudecode token 数据实时增长可行性（Claude 轮询跳过未完成轮次/Codex 已有 token_count 实时数据/简易对话仅流结束返回）② per-turn token/时间标注方案（result/turn_completed 时机注入消息）③ metrics 统计 BUG 共发现 7 个（tab.metrics 死代码/token 停滞/切 tab 闪烁/竞态/计时器漂移/usageApiSessionPct null/cache 合并显示）。规划 T144-T155，详见 `docs/plan/2026-06-24-token-metrics-research.md`。 |
+| 2026-06-24 | bug | **更新/安装流程修复**：①下载进度条优化——delta 更新过快导致进度条无感，0% 时改为脉动动画 + 异步 IPC 错误处理（commit `678b39c`）②安装重启——`quitAndInstall()` → `quitAndInstall(true, true)` 分离进程启动安装器，防止 `app.exit()` 杀进程（commit `766cb50`）。 |
 | 2026-06-17 | plan | **设计能力集成方案 v1 完成**：基于 Open Design 参考项目分析，输出 `docs/plan/2026-06-17-design-features-integration.md`。涵盖三层增量（craft 知识注入 / 分屏预览 / 场景化交互）、4 个 Phase（0→3）、10 个文件变更清单、6 项关键设计决策。所有新功能默认关闭。详见 T124。 |
 | 2026-06-16 | bug | 表格渲染修复：表头/数据行检测切换为 splitTableRow + 列数一致性校验，支持缺首尾管道；分隔行连字符 ≥3→≥1（GFM）；段落断行同步更新。新增 14 项表格测试。 |
 | 2026-06-16 | bug | 文档路径链接化修复：`linkifyStrongLocalPaths` 正则恢复白名单目录前缀分支（`docs\|src\|packages\|...`），修复 `docs/TODO` 等无扩展名路径无法渲染为可点击链接的回归。新增 12 项路径链接化回归测试。 |
@@ -1265,3 +1270,45 @@ DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be
 - 用户确认：所有新功能默认关闭
 - 分屏方案：水平分割（ChatPanel 左 + PreviewPanel 右），支持独立预览 Tab
 - 多模态触发：SDK tool callback 模式（非 OD 的 CLI shell 命令模式），已有 mindcraft-api 完整生态
+
+---
+
+## T144-T146 详情：Token 使用统计优化
+
+> 专题文档：`docs/plan/2026-06-24-token-metrics-research.md`
+> 创建：2026-06-24 | 类型：research/bug/feature
+
+### 背景
+
+用户反馈三个问题：
+1. CLI 使用时可看到 token 实时增长，但 MindCraft 界面看不到 → T145
+2. 每个对话 turn 没有标注消耗的 token 和时间 → T146
+3. 输入框下方 metrics 和首页统计感觉有 BUG → T144（排查出 7 个）
+
+### T144 — Metrics 统计 BUG（7 个，已修复 4 个核心问题）
+
+| # | 状态 | 严重度 | 问题 | 位置 | 修复说明 |
+|---|------|--------|------|------|---------|
+| 🔴 | ✅ 已修复 | 中 | `tab.metrics` 从未创建，runtime state 写入全是死代码 | `claudeCode/index.vue` | 4 处 `createChat()` 加 `metrics: {}` |
+| 🔴 | ✅ 已修复 | 中 | `contextUsage` 三重计数（Claude input 已含 cache） | `claudeMetrics.js` | 2 处修复：`input_tokens` 包含 cache，直接取原值 |
+| 🟡 | ✅ 已修复 | 中高 | `metricsData` 切 tab 闪烁归零 | `claudeCode/index.vue` | 去 `resetMetrics()` + 直接 `Object.assign` |
+| 🟡 | ✅ 已修复 | 中 | `resetMetrics` / polling 竞态 | `claudeCode/index.vue` | 加 `_refreshingMetrics` 锁 |
+| 🔴 | ✅ 已修复 | 中 | **homeMetrics 首页统计 4 BUG** | `homeMetrics.js` | H1: Claude 跨轮累加 / H2: Codex 累积值多事件累加 / H3: cacheCreation 硬编码 0 / H4: totalInput 公式错误 |
+| 🟡 | 📝 待方案 | 中 | 流式期间 token 数值停滞（只统计已完成轮次） | `claudeMetrics.js` | 归入 T145 |
+| 🟡 | 📝 待方案 | 中 | `metricsLiveDurationMs` 计时器漂移 | `claudeCode/index.vue` | 低影响，归入 T145 |
+| 🟢 | 📝 待方案 | 低 | CodeX `usageApiSessionPct` 始终 null | `codexAgent.js` | 需 OAuth token，无登录不显示 |
+| 🟢 | 📝 待方案 | 低 | Cache read/creation token 合并显示 | `StatusBarMetrics.vue` | UI 优化，归入 T146 |
+
+### T145 — Token 实时增长
+
+| Agent | 现状 | 可行方案 |
+|-------|------|---------|
+| Claude SDK | ❌ 3s 轮询跳过 tool-use 循环中的未完成轮次 | 改 `pollMetrics()` 聚合所有 assistant usage（用 message.id 去重），最终值以 `result` 消息覆盖 |
+| Codex | ✅ `token_count` 事件持续写入 JSONL | 前端加数字过渡动画即可 |
+| 简易对话 | ❌ usage 仅流结束返回 | 保存 `invoke()` 返回值中的 usage |
+
+### T146 — Per-Turn Token/时间
+
+- 在 AssistantMessageBubble 底部追加 `🕐 12.3s · 📊 in 5.2k / out 1.8k · 💰 $0.12`
+- 三条线数据来源：Claude `result` 消息 / Codex `turn.completed` 事件 / 简易对话 `invoke()`
+- 改动范围：3 个 AssistantBubble + 3 个 stream handler
