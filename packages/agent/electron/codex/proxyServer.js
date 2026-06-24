@@ -195,21 +195,17 @@ async function handleResponses(req, res, opts) {
     })),
   }, null, 2))
 
-  let upstreamRes
-  try {
-    upstreamRes = await fetch(upstreamTarget, {
-      method: 'POST',
-      headers: buildUpstreamHeaders(apiKey),
-      body: JSON.stringify(chatBody),
-      signal: AbortSignal.timeout(300000), // 5 分钟超时
-    })
-  } catch (err) {
-    console.error('[codex-proxy] upstream fetch error:', err.message)
+  if (isStream) {
+    return handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatBody)
+  }
+
+  let upstreamRes = await fetchUpstreamChat(upstreamTarget, apiKey, chatBody)
+  if (!upstreamRes) {
     res.writeHead(502, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({
       error: {
         type: 'upstream_connection_error',
-        message: `Failed to connect to upstream: ${err.message}`,
+        message: 'Failed to connect to upstream',
       },
     }))
   }
@@ -224,11 +220,161 @@ async function handleResponses(req, res, opts) {
     return res.end(JSON.stringify(normalizedError))
   }
 
-  // Step 4: 流式响应
-  if (isStream) {
+  // Step 5: 非流式响应
+  let chatResponse
+  try {
+    chatResponse = await upstreamRes.json()
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({
+      error: { type: 'upstream_error', message: 'Failed to parse upstream response' },
+    }))
+  }
+
+  const responsesBody = chatCompletionToResponse(chatResponse)
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(responsesBody))
+}
+
+async function fetchUpstreamChat(upstreamTarget, apiKey, chatBody) {
+  try {
+    return await fetch(upstreamTarget, {
+      method: 'POST',
+      headers: buildUpstreamHeaders(apiKey),
+      body: JSON.stringify(chatBody),
+      signal: AbortSignal.timeout(300000), // 5 分钟超时
+    })
+  } catch (err) {
+    console.error('[codex-proxy] upstream fetch error:', err.message)
+    return null
+  }
+}
+
+function buildRetryChatBody(chatBody, attempt) {
+  if (attempt === 0) return chatBody
+  const next = { ...chatBody }
+
+  // Some chat-compatible providers return an empty stop for reasoning-enabled
+  // streams. Retry once with the same body, then retry without provider-specific
+  // reasoning knobs before surfacing a failure to Codex.
+  if (attempt >= 2) {
+    delete next.thinking
+    delete next.reasoning_effort
+    delete next.reasoning
+    delete next.enable_thinking
+    delete next.reasoning_split
+  }
+
+  return next
+}
+
+function responseEventsHaveMeaningfulOutput(events) {
+  const text = events.join('')
+  if (text.includes('event: response.output_text.delta')) return true
+  if (text.includes('event: response.reasoning_summary_text.delta')) return true
+  if (text.includes('event: response.function_call_arguments.delta')) return true
+  if (text.includes('"type":"function_call"')) return true
+  return false
+}
+
+function writeSseHeaders(res) {
+  if (res.headersSent) return
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  })
+}
+
+async function streamResponsesWithPrefixRetry(upstreamRes, res) {
+  let sseEventCount = 0
+  let rawChunkCount = 0
+  let totalRawText = ''
+  const prefixEvents = []
+  let hasMeaningfulOutput = false
+  let startedWriting = false
+
+  const reader = upstreamRes.body.getReader()
+  const streamIterable = {
+    [Symbol.asyncIterator]() {
+      return {
+        async next() {
+          try {
+            const { done, value } = await reader.read()
+            if (done) return { done: true }
+            const text = typeof value === 'string'
+              ? value
+              : Buffer.from(value).toString('utf8')
+            rawChunkCount++
+            totalRawText += text
+            return { value: text, done: false }
+          } catch (err) {
+            console.error('[codex-proxy] upstream read error:', err.message)
+            return { done: true }
+          }
+        },
+      }
+    },
+  }
+
+  for await (const event of createResponsesSseFromChat(streamIterable)) {
+    sseEventCount++
+    if (!startedWriting) {
+      prefixEvents.push(event)
+      if (responseEventsHaveMeaningfulOutput([event])) {
+        hasMeaningfulOutput = true
+        startedWriting = true
+        writeSseHeaders(res)
+        for (const buffered of prefixEvents) res.write(buffered)
+      }
+      continue
+    }
+    res.write(event)
+  }
+
+  if (!hasMeaningfulOutput) {
+    hasMeaningfulOutput = responseEventsHaveMeaningfulOutput(prefixEvents)
+  }
+
+  return {
+    prefixEvents,
+    startedWriting,
+    sseEventCount,
+    rawChunkCount,
+    totalRawText,
+    emptyUpstream: !hasMeaningfulOutput && totalRawText.includes('"finish_reason"') && totalRawText.includes('"stop"'),
+  }
+}
+
+async function handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatBody) {
+  const maxAttempts = 3
+  let lastCollected = null
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const attemptBody = buildRetryChatBody(chatBody, attempt)
+    const upstreamRes = await fetchUpstreamChat(upstreamTarget, apiKey, attemptBody)
+
+    if (!upstreamRes) {
+      res.writeHead(502, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({
+        error: {
+          type: 'upstream_connection_error',
+          message: 'Failed to connect to upstream',
+        },
+      }))
+    }
+
+    if (!upstreamRes.ok) {
+      let errorBody = ''
+      try { errorBody = await upstreamRes.text() } catch (_) {}
+      console.error('[codex-proxy] upstream error:', { status: upstreamRes.status, headers: Object.fromEntries(upstreamRes.headers.entries()), body: errorBody.slice(0, 500) })
+      const normalizedError = chatErrorToResponseError(errorBody, upstreamRes.status)
+      res.writeHead(upstreamRes.status, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify(normalizedError))
+    }
+
     const upstreamContentType = (upstreamRes.headers.get('content-type') || '').toLowerCase()
 
-    // 上游返回的不是 SSE（如 application/json）→ 按非流式处理
     if (!upstreamContentType.includes('text/event-stream')) {
       console.log('[codex-proxy] upstream returned non-SSE (content-type=' + upstreamContentType + '), treating as non-streaming')
       let fullBody = ''
@@ -246,72 +392,43 @@ async function handleResponses(req, res, opts) {
       return res.end(JSON.stringify(responsesBody))
     }
 
-    console.log('[codex-proxy] upstream response:', { status: upstreamRes.status, contentType: upstreamContentType })
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    })
+    console.log('[codex-proxy] upstream response:', { status: upstreamRes.status, contentType: upstreamContentType, attempt: attempt + 1 })
+    const collected = await streamResponsesWithPrefixRetry(upstreamRes, res)
+    lastCollected = collected
 
-    let sseEventCount = 0
-    let rawChunkCount = 0
-    let totalRawText = ''
-    try {
-      // Node.js fetch ReadableStream → async iterable
-      const reader = upstreamRes.body.getReader()
-      const streamIterable = {
-        [Symbol.asyncIterator]() {
-          return {
-            async next() {
-              try {
-                const { done, value } = await reader.read()
-                if (done) return { done: true }
-                const text = typeof value === 'string'
-                  ? value
-                  : Buffer.from(value).toString('utf8')
-                rawChunkCount++
-                totalRawText += text
-                return { value: text, done: false }
-              } catch (err) {
-                console.error('[codex-proxy] upstream read error:', err.message)
-                return { done: true }
-              }
-            },
-          }
-        },
-      }
-
-      for await (const event of createResponsesSseFromChat(streamIterable)) {
-        res.write(event)
-        sseEventCount++
-      }
-
-      // 如果 SSE 解析没产出任何内容事件，打印原始数据来诊断
-      if (sseEventCount <= 3 && totalRawText) {
-        console.log('[codex-proxy] ⚠ low event count, raw response:', totalRawText.slice(0, 800))
-      }
-      console.log('[codex-proxy] stream done:', { sseEventCount, rawChunkCount })
-    } catch (err) {
-      console.error('[codex-proxy] stream error:', { message: err.message, sseEventCount, rawChunkCount })
+    if (collected.emptyUpstream && attempt < maxAttempts - 1) {
+      console.warn('[codex-proxy] empty upstream stream, retrying:', {
+        attempt: attempt + 1,
+        nextAttempt: attempt + 2,
+        sseEventCount: collected.sseEventCount,
+        rawChunkCount: collected.rawChunkCount,
+      })
+      continue
     }
 
+    if (!collected.startedWriting) {
+      writeSseHeaders(res)
+      for (const event of collected.prefixEvents) {
+        res.write(event)
+      }
+    }
+
+    if (collected.sseEventCount <= 3 && collected.totalRawText) {
+      console.log('[codex-proxy] ⚠ low event count, raw response:', collected.totalRawText.slice(0, 800))
+    }
+    console.log('[codex-proxy] stream done:', {
+      sseEventCount: collected.sseEventCount,
+      rawChunkCount: collected.rawChunkCount,
+      attempts: attempt + 1,
+    })
     return res.end()
   }
 
-  // Step 5: 非流式响应
-  let chatResponse
-  try {
-    chatResponse = await upstreamRes.json()
-  } catch (err) {
-    res.writeHead(502, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify({
-      error: { type: 'upstream_error', message: 'Failed to parse upstream response' },
-    }))
+  writeSseHeaders(res)
+  for (const event of lastCollected?.prefixEvents || []) {
+    res.write(event)
   }
-
-  const responsesBody = chatCompletionToResponse(chatResponse)
-  res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(responsesBody))
+  return res.end()
 }
 
 /**

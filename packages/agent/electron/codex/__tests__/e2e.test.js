@@ -122,7 +122,9 @@ async function runTests() {
   })
 
   await test('SSE empty stop becomes failed response instead of silent completed turn', async () => {
+    let calls = 0
     const upstream = await startMockUpstream((req, res) => {
+      calls++
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
       res.write('data: {"id":"empty_1","created":123,"model":"m","choices":[{"delta":{"content":""},"finish_reason":"stop"}]}\n\n')
       res.end()
@@ -134,6 +136,34 @@ async function runTests() {
     assert.ok(result.text.includes('event: response.failed'))
     assert.ok(result.text.includes('empty_upstream_response'))
     assert.ok(!result.text.includes('event: response.completed'))
+    assert.strictEqual(calls, 3)
+
+    await upstream.close()
+    await proxy.close()
+  })
+
+  await test('SSE empty stop retries before returning stream to Codex', async () => {
+    let calls = 0
+    const upstream = await startMockUpstream((req, res) => {
+      calls++
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      if (calls === 1) {
+        res.write('data: {"id":"empty_once","created":123,"model":"m","choices":[{"delta":{"content":""},"finish_reason":"stop"}]}\n\n')
+      } else {
+        res.write('data: {"id":"chatcmpl_retry","created":123,"model":"m","choices":[{"delta":{"content":"Recovered"},"finish_reason":"stop"}]}\n\n')
+        res.write('data: [DONE]\n\n')
+      }
+      res.end()
+    })
+
+    const proxy = await startCodexProxy({ upstreamUrl: `http://127.0.0.1:${upstream.port}`, apiKey: 'test', model: 'm' })
+    const result = await proxyRequest(proxy.port, { model: 'm', input: [{ role: 'user', content: 'hi' }], stream: true })
+
+    assert.strictEqual(calls, 2)
+    assert.ok(result.text.includes('event: response.output_text.delta'))
+    assert.ok(result.text.includes('Recovered'))
+    assert.ok(result.text.includes('event: response.completed'))
+    assert.ok(!result.text.includes('empty_upstream_response'))
 
     await upstream.close()
     await proxy.close()
