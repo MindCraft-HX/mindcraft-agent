@@ -257,6 +257,19 @@ export function useClaudeAgentStream({
           break
         }
       }
+      // 提取 per-turn token → 附着到最后一条 assistant 消息
+      if (msg.usage) {
+        const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
+        if (lastAssistant && !lastAssistant._turnTokens) {
+          lastAssistant._turnTokens = {
+            inputTokens: msg.usage.input_tokens || 0,
+            outputTokens: msg.usage.output_tokens || 0,
+            cacheReadTokens: msg.usage.cache_read_input_tokens || 0,
+            cacheCreationTokens: msg.usage.cache_creation_input_tokens || 0,
+            durationMs: msg.duration_ms || 0,
+          }
+        }
+      }
       throttledScrollBottom(tab.id, scrollBottom)
     }
     else if (msg.type === 'system') {

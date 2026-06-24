@@ -1,12 +1,16 @@
 <template>
   <div class="msg-assistant">
     <div class="assistant-avatar mindcraft-flow-win-iconfont  icon-mindcraft-claude1"></div>
-    <div class="assistant-content" v-html="renderContent(msg.text)"></div>
+    <div class="assistant-content">
+      <div v-html="renderContent(msg.text)"></div>
+      <TokenMetaRow v-if="msg._turnTokens" v-bind="msg._turnTokens" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { renderContent } from '../../../agentCommon/render.js'
+import TokenMetaRow from '../../../agentCommon/components/TokenMetaRow.vue'
 import '../../../agentCommon/markdown.css'
 
 const props = defineProps({

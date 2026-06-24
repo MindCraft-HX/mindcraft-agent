@@ -86,6 +86,11 @@
 
         <!-- 流式中加载指示（已有文本时显示光标） -->
         <span v-if="msg.isStreaming && assistantText.trim()" class="streaming-cursor">▊</span>
+        <!-- Per-turn token 元数据 -->
+        <TokenMetaRow
+          v-if="msg._turnTokens && !msg.isStreaming"
+          v-bind="msg._turnTokens"
+        />
       </div>
     </template>
   </div>
@@ -94,6 +99,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { renderContent } from '../agentCommon/render.js'
+import TokenMetaRow from '../agentCommon/components/TokenMetaRow.vue'
 
 const props = defineProps({
   msg: { type: Object, required: true },

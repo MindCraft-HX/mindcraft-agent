@@ -436,8 +436,18 @@ export function useChatStream(chatSession) {
       chatSession.addMessage({ role: 'user', content: userContent })
 
       // 2. 工具循环
+      const turnStart = Date.now()
+      const turnUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const result = await doApiCall(iter)
+
+        // 累加 per-turn token（tool loop 多轮调用合并统计）
+        if (result?.usage) {
+          turnUsage.inputTokens += result.usage.input_tokens || 0
+          turnUsage.outputTokens += result.usage.output_tokens || 0
+          turnUsage.cacheReadTokens += result.usage.cache_read_input_tokens || 0
+          turnUsage.cacheCreationTokens += result.usage.cache_creation_input_tokens || 0
+        }
 
         if (userAborted || result?.stop_reason === 'aborted' || result?.finish_reason === 'aborted') break
         if (result?.stop_reason === 'timeout' || result?.finish_reason === 'timeout') {
@@ -493,6 +503,17 @@ export function useChatStream(chatSession) {
 
         if (userAborted) break
         // 5. 继续循环：下一轮 doApiCall 会从会话重建完整消息（含 tool_use + tool_result）
+      }
+
+      // 附着 per-turn token 到最后一条 assistant 消息
+      if (turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0) {
+        const lastMsg = chatSession.getLastAssistant?.()
+        if (lastMsg) {
+          lastMsg._turnTokens = {
+            ...turnUsage,
+            durationMs: Date.now() - turnStart,
+          }
+        }
       }
     } catch (e) {
       console.error('[useChatStream] error:', e)
