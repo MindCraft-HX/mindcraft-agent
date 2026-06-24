@@ -4,13 +4,13 @@ import { ref, onUnmounted } from 'vue'
  * 平滑数字动画：用 requestAnimationFrame 在两帧之间渐进递增显示值。
  *
  * 用法：
- *   const anim = useAnimatedNumber()
- *   watch(() => sourceValue, (nv) => anim.update(nv))
- *   模板中：{{ fmtK(anim.display) }}
+ *   const { display, update } = useAnimatedNumber()
+ *   watch(() => sourceValue, (nv) => update(nv))
+ *   模板中：{{ fmtK(display) }}
  *
  * 行为：
- *   - 首次 update：直接同步显示值（无历史数据，不猜速率）
- *   - 正常增长：根据时间差算速率，rAF 逐帧追赶目标
+ *   - 首次 update / reset 后首次增长：直接同步显示值（无基线不猜速率）
+ *   - 正常增长：根据时间差算速率，rAF 逐帧追赶目标（值始终取整）
  *   - 重置/切 tab（newTarget < display）：立即同步，不播放递减动画
  *   - 同一值重复 update：无操作
  */
@@ -25,7 +25,7 @@ export function useAnimatedNumber() {
     const elapsed = now - lastTime
     lastTime = now
     if (display.value < target) {
-      display.value = Math.min(target, display.value + rate * elapsed)
+      display.value = Math.min(target, Math.round(display.value + rate * elapsed))
     }
     if (display.value >= target) {
       display.value = target
@@ -51,8 +51,8 @@ export function useAnimatedNumber() {
     // 值未变 → 跳过
     if (newTarget === target) return
 
-    // 首次调用 → 直接同步
-    if (lastTime === 0) {
+    // 首次调用 / reset 后首次增长 → 直接同步（无基线不猜速率）
+    if (lastTime === 0 || target === 0) {
       display.value = newTarget
       target = newTarget
       lastTime = now

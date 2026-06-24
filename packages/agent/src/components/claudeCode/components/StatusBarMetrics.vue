@@ -135,7 +135,7 @@ function compactContext() {
 function fmtK(n) {
   if (!n) return '0'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
-  return String(n)
+  return String(Math.round(n))
 }
 
 function formatDuration(ms) {
