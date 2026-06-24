@@ -29,6 +29,14 @@ const {
   readSkillsCatalogCache,
   writeSkillsCatalogCache,
 } = require('./skillsCatalogCache')
+
+// PR 2：懒加载 ESM 协议模块（CJS → ESM 桥接）
+let _agentProtocolMod = null
+async function _getAgentProtocol() {
+  _agentProtocolMod = _agentProtocolMod || await import('../src/components/agentCommon/runtime/agentProtocol.mjs')
+  return _agentProtocolMod
+}
+
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
   try {
@@ -2559,6 +2567,16 @@ function setupCodexSdkHandlers() {
               reason: doneReason,
               detachResume: detachResumeOnDone,
             }))
+            // PR 2：双发 agent.run.done（triggerDone 是同步函数，用 .then）
+            _getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
+              safeSend(sender, 'agent:event', buildAgentRunDoneEvent({
+                agent: 'codex',
+                chatKey: sessionId,
+                runId,
+                cliSessionId: thread.id || '',
+                filePath: sfilePath,
+              }))
+            }).catch(() => {})
           }
 
           function toFileChangeChangesFromPatchEnd(patchEnd) {
@@ -2786,6 +2804,19 @@ function setupCodexSdkHandlers() {
             if (ev.type === 'turn.completed' || ev.type === 'task_complete') {
               turnCompletedSeen = true
               turnCompletedAt = Date.now()
+              // PR 2：双发 agent.turn.terminal
+              try {
+                const { buildAgentTurnTerminalEvent, TerminalKind } = await _getAgentProtocol()
+                const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
+                safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
+                  agent: 'codex',
+                  chatKey: sessionId,
+                  runId,
+                  cliSessionId: thread?.id || '',
+                  terminalKind: TerminalKind.COMPLETED,
+                  hasAssistantOutput: true,
+                }))
+              } catch (_) { /* 新通道发送失败不影响旧通道 */ }
               maybeSendDone()
             }
 
@@ -2983,6 +3014,17 @@ function setupCodexSdkHandlers() {
               reason: doneReason,
               detachResume: detachResumeOnDone,
             }))
+            // PR 2：双发 agent.run.done
+            try {
+              const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+              safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
+                agent: 'codex',
+                chatKey: sessionId,
+                runId,
+                cliSessionId: thread?.id || '',
+                filePath: sfilePath,
+              }))
+            } catch (_) { /* 新通道发送失败不影响旧通道 */ }
           }
 
           resolve({ accepted: true, exitCode })
@@ -3018,6 +3060,14 @@ function setupCodexSdkHandlers() {
         sessionId,
         reason: 'aborted',
       }))
+      // PR 2：双发 agent.run.done（abort 路径）
+      try {
+        const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+        safeSend(s.event?.sender, 'agent:event', buildAgentRunDoneEvent({
+          agent: 'codex',
+          chatKey: sessionId,
+        }))
+      } catch (_) { /* 新通道发送失败不影响旧通道 */ }
       // 发送 thinking=false 确保前端状态正确
       sendMetrics(s.event?.sender, {
         sessionId,

@@ -123,6 +123,7 @@ CodeX 已经有一套历史修复：
 {
   domain: 'agent.turn.terminal',
   agent: 'codex',
+  provider: 'codex',
   chatKey: 'session-chat-1-...',
   cliSessionId: '...',
   runId: '...',
@@ -269,7 +270,8 @@ safeSend(sender, 'agent:event', {
   version: 1,
   eventId: 'evt_...',
   timestamp: '2026-06-24T12:00:00.000Z',
-  agent: 'claude',
+  agent: 'claudeCode',
+  provider: 'claude',
   domain: 'agent.turn.terminal',
   chatKey,
   runId,
@@ -305,6 +307,7 @@ safeSend(sender, 'agent:event', {
 - 不依赖本地绝对路径作为唯一身份，绝对路径只能作为 payload 字段。
 - 必须包含 `version`、`eventId`、`timestamp`、`agent`、`domain`、`chatKey`。
 - 可选包含 `runId`、`turnId`、`providerSessionId`、`filePath`。
+- `agent` 使用 Agent Registry key，例如 `claudeCode` / `codex`；provider 身份单独放 `provider` 或 `runtime.provider`，不要把二者混用。
 
 ### 4.3 推荐事件类型
 
@@ -576,6 +579,13 @@ tests/agent-registry-contract.test.mjs
 - 开发日志中可看到新事件顺序。
 - Claude / CodeX 主路径行为不变。
 - CodeX run ownership 测试通过。
+
+PR2 特别注意：
+
+- `agent` 字段必须使用 registry key：Claude 是 `claudeCode`，CodeX 是 `codex`。
+- 如需表达底层 provider，可新增 `provider: 'claude' | 'codex'`，不要把 `agent` 写成 `claude`。
+- Claude 在 PR2 仍可能没有稳定 `runId`，但 `agent.turn.terminal` 应尽量携带可稳定去重的 `cliSessionId`；后续再补 turn/run id。
+- `agent:event` 只能额外发送，不允许替代旧 done/message 通道。
 
 ### Phase 2.5：Renderer 引入 Agent Client，但只包旧 API
 

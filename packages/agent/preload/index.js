@@ -251,6 +251,12 @@ function createAgentBridge(ipcRenderer) {
   // Locale
   loadLocale: () => ipcRenderer.invoke('load-locale'),
   saveLocale: (locale) => ipcRenderer.send('save-locale', locale),
+  // Agent 领域事件（PR 2：Main 双发，Renderer 暂不消费）
+  onAgentEvent: (callback) => {
+    const handler = (_, data) => callback(data)
+    ipcRenderer.on('agent:event', handler)
+    return () => ipcRenderer.removeListener('agent:event', handler)
+  },
   }
 }
 

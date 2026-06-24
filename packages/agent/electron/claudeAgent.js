@@ -38,6 +38,13 @@ const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
 const CLAUDE_METRICS_POLL_INTERVAL_MS = 1000
 let sessionRegistryOptionsForTest = null
 
+// PR 2：懒加载 ESM 协议模块（CJS → ESM 桥接）
+let _agentProtocolMod = null
+async function _getAgentProtocol() {
+  _agentProtocolMod = _agentProtocolMod || await import('../src/components/agentCommon/runtime/agentProtocol.mjs')
+  return _agentProtocolMod
+}
+
 function getMindCraftSettingsPath() {
   return path.join(app.getPath('userData'), 'settings.json')
 }
@@ -2947,6 +2954,18 @@ function setupClaudeHandlers() {
               })
               console.log('[Claude] agent-done → filePath:', donePayload.filePath || '(empty)')
               safeSend(sender, 'claude-agent-done', donePayload)
+              // PR 2：双发 agent.turn.terminal（旧通道仍是权威路径）
+              try {
+                const { buildAgentTurnTerminalEvent, TerminalKind } = await _getAgentProtocol()
+                safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
+                  agent: 'claudeCode',
+                  chatKey: sessionId,
+                  cliSessionId: msg.session_id || '',
+                  filePath: donePayload.filePath,
+                  terminalKind: TerminalKind.COMPLETED,
+                  hasAssistantOutput: true,
+                }))
+              } catch (_) { /* 新通道发送失败不影响旧通道 */ }
             }
           }
         } // end runQuery
@@ -3054,6 +3073,16 @@ function setupClaudeHandlers() {
               reason: doneReason,
             })
             safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
+            // PR 2：双发 agent.run.done
+            try {
+              const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+              safeSend((s.event?.sender || event.sender), 'agent:event', buildAgentRunDoneEvent({
+                agent: 'claudeCode',
+                chatKey: sessionId,
+                cliSessionId: finalCliSessionId || '',
+                filePath: donePayload.filePath,
+              }))
+            } catch (_) { /* 新通道发送失败不影响旧通道 */ }
           }
           agentSessions.delete(chatKey)
           pendingSessionMetaByChatKey.delete(chatKey)
@@ -3077,6 +3106,14 @@ function setupClaudeHandlers() {
         cwd: s.cwd || '',
         reason: 'aborted',
       }))
+      // PR 2：双发 agent.run.done（abort 路径 — handler 非 async，用 .then）
+      _getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
+        safeSend(s.event?.sender, 'agent:event', buildAgentRunDoneEvent({
+          agent: 'claudeCode',
+          chatKey: sessionId,
+          cliSessionId: cliSessionIds.get(chatKey) || '',
+        }))
+      }).catch(() => {})
     }
   })
 
