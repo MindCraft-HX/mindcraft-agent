@@ -17,9 +17,9 @@
       <!-- Token 用量 -->
       <span v-if="hasTokenData" class="sb-group">
         <span class="sb-icon">📊</span>
-        <span class="sb-val">in {{ fmtK(inputAnim.display) }}</span>
+        <span class="sb-val">in {{ fmtK(inputDisplay) }}</span>
         <span class="sb-sep">/</span>
-        <span class="sb-val">out {{ fmtK(outputAnim.display) }}</span>
+        <span class="sb-val">out {{ fmtK(outputDisplay) }}</span>
         <span v-if="hasCache" class="sb-sep">/</span>
         <span v-if="hasCache" class="sb-val sb-cache">cache {{ fmtK(m.cacheReadTokens + m.cacheCreationTokens) }}</span>
       </span>
@@ -95,11 +95,11 @@ const props = defineProps({
   compacting: { type: Boolean, default: false },
 })
 
-const inputAnim = useAnimatedNumber()
-const outputAnim = useAnimatedNumber()
+const { display: inputDisplay, update: updateInput } = useAnimatedNumber()
+const { display: outputDisplay, update: updateOutput } = useAnimatedNumber()
 
-watch(() => props.metrics.inputTokens, (nv) => { inputAnim.update(nv) })
-watch(() => props.metrics.outputTokens, (nv) => { outputAnim.update(nv) })
+watch(() => props.metrics.inputTokens, (nv) => { updateInput(nv) })
+watch(() => props.metrics.outputTokens, (nv) => { updateOutput(nv) })
 
 const emit = defineEmits(['send-message'])
 
