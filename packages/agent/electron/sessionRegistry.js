@@ -235,14 +235,21 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
       filePath: normalizeString(chat.filePath),
     },
     runtime: normalizeRuntime(agent, chat),
-    instruction: {
-      enabled: Boolean(chat.instruction?.enabled),
-      instructionId: normalizeString(chat.instruction?.instructionId),
-      title: normalizeString(chat.instruction?.title),
-      description: normalizeString(chat.instruction?.description),
-      content: typeof chat.instruction?.content === 'string' ? chat.instruction.content : '',
-      attachments: Array.isArray(chat.instruction?.attachments) ? chat.instruction.attachments.filter(Boolean) : [],
-    },
+    // Only attach instruction when the upstream chat carries real instruction data.
+    // Avoids overwriting an existing enabled instruction with an empty default
+    // during syncPanelStateSessions / buildSessionRecordFromChat.
+    ...(chat.instruction?.enabled || (chat.instruction?.content && String(chat.instruction.content).trim()) || (Array.isArray(chat.instruction?.attachments) && chat.instruction.attachments.length > 0)
+      ? {
+          instruction: {
+            enabled: Boolean(chat.instruction.enabled),
+            instructionId: normalizeString(chat.instruction.instructionId),
+            title: normalizeString(chat.instruction.title),
+            description: normalizeString(chat.instruction.description),
+            content: typeof chat.instruction.content === 'string' ? chat.instruction.content : '',
+            attachments: Array.isArray(chat.instruction.attachments) ? chat.instruction.attachments.filter(Boolean) : [],
+          },
+        }
+      : {}),
     createdAt,
     updatedAt,
   }
@@ -437,9 +444,18 @@ function upsertSessionRecord(record, options = {}) {
       ...(existing?.metadata || {}),
       ...(effectiveRecord.metadata || {}),
     },
+    // Always cascade enabled flag, even when incoming has no content.
+    // Without this, toggling instruction OFF with empty content would be
+    // silently discarded because hasRealInstruction === false.
+    // Only cascade when instruction was explicitly provided (effectiveRecord.instruction
+    // exists); otherwise (e.g. syncPanelStateSessions with no instruction data),
+    // preserve the existing enabled state.
     instruction: hasRealInstruction
       ? { ...(existing?.instruction || {}), ...incomingInst }
-      : (existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] }),
+      : {
+          ...(existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] }),
+          ...(effectiveRecord.instruction ? { enabled: incomingInst.enabled } : {}),
+        },
     schemaVersion: SCHEMA_VERSION,
   }
   const existingUpdatedAt = normalizeTimestamp(existing?.updatedAt)
@@ -768,6 +784,19 @@ function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, op
 }
 
 function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const providerSessionId = normalizeString(
+    scanSummary.providerSessionId
+    || scanSummary.cliSessionId
+    || scanSummary.id
+  )
+  if (isProviderScanDetached({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)) {
+    return null
+  }
   const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
   if (!record) return scanSummary
   const scanFilePath = normalizeString(scanSummary.filePath)
@@ -830,12 +859,13 @@ function deleteSessionRecordsByProvider({ agent, filePath, cliSessionId, chatKey
   }
 }
 
-function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey } = {}, options = {}) {
+function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey, reason = 'empty_upstream_response' } = {}, options = {}) {
   try {
     const normalizedAgent = normalizeAgent(agent)
     const normalizedChatKey = normalizeString(chatKey)
     const normalizedFilePath = normalizeString(filePath)
     const normalizedCliSessionId = normalizeString(cliSessionId)
+    const detachReason = normalizeString(reason) || 'empty_upstream_response'
     if (!normalizedChatKey && !normalizedFilePath && !normalizedCliSessionId) return 0
 
     let count = 0
@@ -859,7 +889,7 @@ function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey }
           detachedProviderBinding: {
             cliSessionId: normalizeString(record.provider?.cliSessionId) || normalizedCliSessionId,
             filePath: normalizeString(record.provider?.filePath) || normalizedFilePath,
-            reason: 'empty_upstream_response',
+            reason: detachReason,
             detachedAt: Date.now(),
           },
         },
