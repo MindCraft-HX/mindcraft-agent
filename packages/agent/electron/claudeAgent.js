@@ -315,6 +315,8 @@ function emitClaudeMetricsViaStore(sender, sample, sessionId, model, extra = {})
     costUsd: snapshot.costUsd,
     ...extra,
   })
+
+  return snapshot
 }
 
 /** 从用户文案里解析 Windows 绝对路径，用于 additionalDirectories（与 cwd 不同的根目录） */
@@ -2966,19 +2968,11 @@ function setupClaudeHandlers() {
                 }
               }
             }
-            safeSend(sender,'claude-agent-message', { sessionId, msg })
+            // Phase 4：对 result 消息，先 finalize TurnStore 再发送，确保前端收到 TurnStore snapshot
             if (msg.type === 'result') {
-              if (msg.session_id) {
-                cliSessionIds.set(chatKey, msg.session_id)
-                sessionModels.set(chatKey, model)
-                const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
-              }
-              // 发送最终 metrics
               const usage = msg.usage || {}
               const normalizedUsage = claudeMetrics.normalizeClaudeUsageForUi(usage, model || '')
-              // Phase 3：TurnStore — sdk-result finalizes turn
-              emitClaudeMetricsViaStore(sender, {
+              const snapshot = emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-result',
                 providerSessionId: msg.session_id || '',
                 inputTokens: normalizedUsage.inputTokens || 0,
@@ -2992,6 +2986,25 @@ function setupClaudeHandlers() {
               }, sessionId, model || '', {
                 numTurns: msg.num_turns || 0,
               })
+              if (snapshot) {
+                msg._turnTokens = {
+                  inputTokens: snapshot.inputTokens,
+                  outputTokens: snapshot.outputTokens,
+                  cacheReadTokens: snapshot.cacheReadTokens,
+                  cacheCreationTokens: snapshot.cacheCreationTokens,
+                  durationMs: snapshot.durationMs,
+                }
+              }
+            }
+            safeSend(sender,'claude-agent-message', { sessionId, msg })
+            if (msg.type === 'result') {
+              if (msg.session_id) {
+                cliSessionIds.set(chatKey, msg.session_id)
+                sessionModels.set(chatKey, model)
+                const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
+                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
+              }
+              // Phase 4：emitClaudeMetricsViaStore 已在 safeSend 前调用（TurnStore 已 finalize）
               resultReceived = true
               // result 到达即视为本 turn 结束：SDK 生成器会 return，query 对象已无法再接收 streamInput。
               // 立即清出 agentSessions，避免下一条消息命中 existing 分支后塞进死 query 导致静默 hang。

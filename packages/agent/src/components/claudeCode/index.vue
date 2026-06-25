@@ -963,6 +963,9 @@ function applyToolResultToHistoryMessages(messages, toolUseId, content, isErrorF
   })
 }
 
+// Phase 4：此函数公式与 tokenMetrics/normalizer.normalizeClaudeUsage 完全一致。
+// 由于历史恢复在 renderer 进程中运行，无法直接 require Node.js 模块，
+// 此处保持内联公式。若修改 native/third-party 判断逻辑，须同步更新 normalizer。
 function buildClaudeHistoryTurnTokensFromEntry(entry) {
   const usage = entry?.message?.usage
   if (!usage || typeof usage !== 'object') return null

@@ -110,6 +110,8 @@ function emitCodexMetricsViaStore(sender, sample, sessionId, model, extra = {}) 
     costUsd: snapshot.costUsd,
     ...extra,
   })
+
+  return snapshot
 }
 
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
@@ -1527,6 +1529,8 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 
       function flushActiveTurnTokens() {
         if (!activeTurnTokens) return
+        // Phase 4：activeTurnTokens 值已由 buildCodexLiveTurnMetricsFromTotals
+        // 通过 normalizeCodexUsage 规范化，与 TurnStore 口径一致。
         attachTurnTokensToLastAssistantMessage(messages, activeTurnTokens)
         activeTurnTokens = null
       }
@@ -2810,30 +2814,37 @@ function setupCodexSdkHandlers() {
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
               const sender = session?.event?.sender || event.sender
-              const parsedMetrics = getCodexSessionMetrics(sessionId, model || '', session?.cwd || '')
-              const perTurnTokens = buildCodexPerTurnTokens(parsedMetrics, ev.usage)
+              const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
+              const normalizedTerminalUsage = normalizeCodexUsage(ev.usage || {}) || {}
+              // Phase 4：先 finalize TurnStore，再从 snapshot 构建 _perTurnTokens
+              const snapshot = emitCodexMetricsViaStore(sender, {
+                source: 'sdk-result',
+                inputTokens: normalizedTerminalUsage.inputTokens ?? 0,
+                outputTokens: normalizedTerminalUsage.outputTokens ?? 0,
+                cacheReadTokens: normalizedTerminalUsage.cacheReadTokens ?? 0,
+                cacheCreationTokens: normalizedTerminalUsage.cacheCreationTokens ?? 0,
+                contextUsage: 0,
+                contextWindow: 0,
+                durationMs,
+                costUsd: 0,
+                rawUsage: ev.usage || null,
+              }, sessionId, model || '', {
+                speedOutputPerSec: 0,
+                gitBranch: '',
+                gitChanges: 0,
+                usageApiSessionPct: null,
+              })
+              // 从 TurnStore snapshot 构建 perTurnTokens（与 StatusBar 同源）
+              const perTurnTokens = snapshot ? {
+                inputTokens: snapshot.inputTokens,
+                outputTokens: snapshot.outputTokens,
+                cacheReadTokens: snapshot.cacheReadTokens,
+                cacheCreationTokens: snapshot.cacheCreationTokens,
+                durationMs: snapshot.durationMs,
+              } : null
               safeSend(sender, 'codex-agent-message', {
                 sessionId,
                 msg: { type: ev.type, payload: ev.payload || ev, _perTurnTokens: perTurnTokens },
-              })
-              const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
-              const normalizedTerminalUsage = normalizeCodexUsage(ev.usage || {}) || {}
-              emitCodexMetricsViaStore(sender, {
-                source: 'sdk-result',
-                inputTokens: parsedMetrics?.inputTokens ?? normalizedTerminalUsage.input_tokens ?? 0,
-                outputTokens: parsedMetrics?.outputTokens ?? normalizedTerminalUsage.output_tokens ?? 0,
-                cacheReadTokens: parsedMetrics?.cacheReadTokens ?? normalizedTerminalUsage.cache_read_input_tokens ?? 0,
-                cacheCreationTokens: parsedMetrics?.cacheCreationTokens ?? normalizedTerminalUsage.cache_creation_input_tokens ?? 0,
-                contextUsage: parsedMetrics?.contextUsage ?? 0,
-                contextWindow: parsedMetrics?.contextWindow ?? 0,
-                durationMs: parsedMetrics?.durationMs || durationMs,
-                costUsd: parsedMetrics?.costUsd ?? 0,
-                rawUsage: ev.usage || null,
-              }, sessionId, parsedMetrics?.model || model || '', {
-                speedOutputPerSec: parsedMetrics?.speedOutputPerSec ?? 0,
-                gitBranch: parsedMetrics?.gitBranch || '',
-                gitChanges: parsedMetrics?.gitChanges || 0,
-                usageApiSessionPct: null,
               })
               if (session?.runId === runId) {
                 const currentSession = codexSessions.get(sessionId)
