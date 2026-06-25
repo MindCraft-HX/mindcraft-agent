@@ -94,8 +94,8 @@ function normalizeClaudeUsageForUi(usage, model) {
   const cacheReadTokens = toSafeTokenCount(usage?.cache_read_input_tokens)
   const cacheCreationTokens = toSafeTokenCount(usage?.cache_creation_input_tokens)
   const inputTokens = isNativeClaudeModel(model)
-    ? Math.max(0, rawInputTokens - cacheReadTokens - cacheCreationTokens)
-    : rawInputTokens
+    ? Math.max(0, rawInputTokens - cacheReadTokens)
+    : rawInputTokens + cacheCreationTokens
   return {
     inputTokens,
     outputTokens: toSafeTokenCount(usage?.output_tokens),
@@ -158,7 +158,7 @@ function getTokenMetrics(cliSessionId, options = {}) {
         const usage = parsed.message.usage
         const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
         const normalized = normalizeClaudeUsageForUi(usage, entryModel)
-        // inputTokens 是 UI 口径的非缓存输入；流式消息中已有当前样本时可实时增长。
+        // inputTokens 是 UI 口径的输入侧成本（常规输入 + cache creation）。
         inputTokens = Math.max(inputTokens, normalized.inputTokens || 0)
         // output/cache 是 per-round 值，仅信任已完成的轮次（避免流式跳回 0）
         const stopReason = parsed.message.stop_reason
@@ -474,7 +474,8 @@ function getContextWindowForModel(model) {
 
 function estimateCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens) {
   const perMillion = { input: 3.0, output: 15.0, cacheRead: 0.3, cacheCreation: 3.75 }
-  return (inputTokens / 1e6 * perMillion.input) +
+  const regularInputTokens = Math.max(0, inputTokens - cacheCreationTokens)
+  return (regularInputTokens / 1e6 * perMillion.input) +
     (outputTokens / 1e6 * perMillion.output) +
     (cacheReadTokens / 1e6 * perMillion.cacheRead) +
     (cacheCreationTokens / 1e6 * perMillion.cacheCreation)

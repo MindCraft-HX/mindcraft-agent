@@ -25,8 +25,8 @@ function normalizeClaudeTurnUsageForUi(usage, model = '') {
     || String(model || '').toLowerCase().includes('haiku')
   return {
     inputTokens: isNativeClaudeModel
-      ? Math.max(0, rawInputTokens - cacheReadTokens - cacheCreationTokens)
-      : rawInputTokens,
+      ? Math.max(0, rawInputTokens - cacheReadTokens)
+      : rawInputTokens + cacheCreationTokens,
     outputTokens: Number(usage?.output_tokens || 0),
     cacheReadTokens,
     cacheCreationTokens,

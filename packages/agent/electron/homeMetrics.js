@@ -71,6 +71,7 @@ function parseClaudeLines(lines) {
   let hasStop = false
   const dateMap = new Map()
   // 注：Claude 的 input_tokens 已包含 cache_read + cache_creation（子集关系）
+  // UI/首页统一口径：in = 常规输入 + cache_creation = input_tokens - cache_read
   //     每轮 API 调用的 input_tokens 含全部上下文，跨轮累加会严重偏高
   //     正确做法：只取最后一个 stop_reason 轮次的值
 
@@ -116,7 +117,7 @@ function parseClaudeLines(lines) {
   }
 
   if (hasStop) {
-    totalInput = lastStopInput
+    totalInput = Math.max(0, lastStopInput - lastStopCacheRead)
     totalCacheRead = lastStopCacheRead
     totalCacheCreation = lastStopCacheCreation
     // 趋势图：整 session 归到最后一轮日期（避免每轮全量 input 重复累加）
@@ -128,10 +129,14 @@ function parseClaudeLines(lines) {
         const parsed = JSON.parse(line)
         if (parsed.type === 'assistant' && parsed.message?.usage) {
           const u = parsed.message.usage
-          totalInput = u.input_tokens || totalInput
+          const fallbackInput = Number.isFinite(Number(u.input_tokens)) ? Number(u.input_tokens) : totalInput
+          const fallbackCacheRead = Number.isFinite(Number(u.cache_read_input_tokens)) ? Number(u.cache_read_input_tokens) : totalCacheRead
+          totalInput = Math.max(0, fallbackInput - fallbackCacheRead)
           totalOutput += u.output_tokens || 0
-          totalCacheRead = u.cache_read_input_tokens || totalCacheRead
-          totalCacheCreation = u.cache_creation_input_tokens || totalCacheCreation
+          totalCacheRead = fallbackCacheRead
+          totalCacheCreation = Number.isFinite(Number(u.cache_creation_input_tokens))
+            ? Number(u.cache_creation_input_tokens)
+            : totalCacheCreation
         }
       } catch (_) {}
     }
@@ -151,8 +156,8 @@ function parseCodexLines(lines) {
   let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0
   let hasTokens = false
   const dateMap = new Map()
-  // 注：Codex 的 input_tokens 不含 cache（与 Claude 相反）
-  //     input/cache_read/cache_creation 三项独立、互为补充
+  // 注：首页统一口径：in = 常规输入 + cache_creation = input_tokens - cache_read + cache_creation
+  //     cache = cache_read
   //     total_token_usage 是累积值，不应多事件累加——只取末值
 
   function addToDate(ts, inp, out, cr, cc) {
@@ -188,11 +193,11 @@ function parseCodexLines(lines) {
   }
 
   if (hasTokens) {
-    totalInput = lastInp
+    totalInput = Math.max(0, lastInp - lastCr) + lastCc
     totalOutput = lastOut
     totalCacheRead = lastCr
     totalCacheCreation = lastCc
-    addToDate(lastTs, lastInp, lastOut, lastCr, lastCc)
+    addToDate(lastTs, totalInput, lastOut, lastCr, lastCc)
   }
 
   return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheCreation: totalCacheCreation, dateMap, hasTokens }
@@ -201,7 +206,8 @@ function parseCodexLines(lines) {
 // ==================== 成本估算 ====================
 
 function estimateClaudeCost(input, output, cacheRead, cacheCreation) {
-  return (input / 1e6) * 3.0 + (output / 1e6) * 15.0 + (cacheRead / 1e6) * 0.3 + (cacheCreation / 1e6) * 3.75
+  const regularInput = Math.max(0, input - cacheCreation)
+  return (regularInput / 1e6) * 3.0 + (output / 1e6) * 15.0 + (cacheRead / 1e6) * 0.3 + (cacheCreation / 1e6) * 3.75
 }
 
 function estimateCodexCost(input, output, cacheRead) {
@@ -352,8 +358,7 @@ function getTokenTrend(days) {
         codexOutput: agg.codexOutput,
         codexCacheRead: agg.codexCacheRead,
         codexCacheCreation: agg.codexCacheCreation,
-        // H4 修复：Claude 的 input 已含 cache，取原值；Codex 的 input 不含 cache，三项累加
-        totalInput: agg.claudeInput + agg.codexInput + agg.codexCacheRead + (agg.codexCacheCreation || 0),
+        totalInput: agg.claudeInput + agg.codexInput,
         totalOutput: agg.claudeOutput + agg.codexOutput,
         totalCache: agg.claudeCacheRead + agg.codexCacheRead,
       })

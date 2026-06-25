@@ -2,7 +2,7 @@
   <div v-if="show" class="token-meta-row">
     <span v-if="showDuration" class="meta-item">🕐 {{ fmtDuration(durationMs) }}</span>
     <span v-if="showTokens" class="meta-item">📊 in {{ fmtK(inputTokens) }} / out {{ fmtK(outputTokens) }}</span>
-    <span v-if="showCache" class="meta-item">💾 cache {{ fmtK(cacheTokens) }}</span>
+    <span v-if="showCache" class="meta-item">💾 cache {{ fmtK(cacheReadTokens) }}</span>
     <span v-if="showCost" class="meta-item">💰 ${{ costUsd.toFixed(2) }}</span>
   </div>
 </template>
@@ -19,15 +19,13 @@ const props = defineProps({
   costUsd: { type: Number, default: 0 },
 })
 
-const cacheTokens = computed(() => (props.cacheReadTokens || 0) + (props.cacheCreationTokens || 0))
-
 const show = computed(() =>
-  (props.inputTokens > 0 || props.outputTokens > 0 || props.durationMs > 0)
+  (props.inputTokens > 0 || props.outputTokens > 0 || props.cacheReadTokens > 0 || props.durationMs > 0)
 )
 
 const showDuration = computed(() => props.durationMs > 0)
-const showTokens = computed(() => props.inputTokens > 0 || props.outputTokens > 0)
-const showCache = computed(() => cacheTokens.value > 0)
+const showTokens = computed(() => props.inputTokens > 0 || props.outputTokens > 0 || props.cacheReadTokens > 0)
+const showCache = computed(() => (props.cacheReadTokens || 0) > 0)
 const showCost = computed(() => props.costUsd > 0)
 
 function fmtK(n) {

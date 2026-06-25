@@ -975,8 +975,8 @@ function buildClaudeHistoryTurnTokensFromEntry(entry) {
     || String(model || '').toLowerCase().includes('sonnet')
     || String(model || '').toLowerCase().includes('opus')
     || String(model || '').toLowerCase().includes('haiku')
-    ? Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens)
-    : inputTokens
+    ? Math.max(0, inputTokens - cacheReadTokens)
+    : inputTokens + cacheCreationTokens
   const durationMs = Number(entry?.duration_ms || 0)
   if (normalizedInputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && cacheCreationTokens <= 0 && durationMs <= 0) {
     return null

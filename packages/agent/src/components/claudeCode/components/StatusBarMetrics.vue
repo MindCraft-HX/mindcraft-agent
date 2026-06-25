@@ -101,7 +101,7 @@ const { display: cacheDisplay, update: updateCache } = useAnimatedNumber()
 
 watch(() => props.metrics.inputTokens, (nv) => { updateInput(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
 watch(() => props.metrics.outputTokens, (nv) => { updateOutput(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
-watch(() => (props.metrics.cacheReadTokens || 0) + (props.metrics.cacheCreationTokens || 0), (nv) => { updateCache(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
+watch(() => props.metrics.cacheReadTokens || 0, (nv) => { updateCache(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
 
 const emit = defineEmits(['send-message'])
 
@@ -113,8 +113,8 @@ const shortModel = computed(() => {
   return i > 0 ? n.slice(0, i) : n.slice(0, 20)
 })
 
-const hasTokenData = computed(() => m.value.inputTokens > 0 || m.value.outputTokens > 0)
-const hasCache = computed(() => m.value.cacheReadTokens > 0 || m.value.cacheCreationTokens > 0)
+const hasTokenData = computed(() => m.value.inputTokens > 0 || m.value.outputTokens > 0 || m.value.cacheReadTokens > 0)
+const hasCache = computed(() => m.value.cacheReadTokens > 0)
 
 const contextPct = computed(() => {
   if (!m.value.contextUsage || !m.value.contextWindow) return 0

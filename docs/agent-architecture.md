@@ -843,9 +843,9 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 | UI 字段 | 统一含义 |
 |---------|----------|
-| `in` | 本回合非缓存输入 token |
+| `in` | 本回合输入侧成本 token（常规输入 + cache creation） |
 | `out` | 本回合输出 token |
-| `cache` | 本回合缓存相关输入 token（read + creation） |
+| `cache` | 本回合缓存命中 token（仅 read） |
 | `context` | 当前上下文占用，独立于 `in/out/cache` |
 
 主进程负责把 provider 原始字段转换成统一口径后再发给前端。前端 `StatusBarMetrics` 不应根据 provider 类型自行解释 `input_tokens` 是否包含 cache。
@@ -858,7 +858,7 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 |------|------------------|----------------------|-------|
 | `input_tokens` | **包含**缓存命中 + 缓存写入 + 常规输入 | 常见情况下**仅**常规输入（不含缓存，需看模型/provider） | **仅**常规输入（不含缓存） |
 | `cache_read_input_tokens` / `cached_input_tokens` | `input_tokens` 的**子集** | 往往**独立**于 `input_tokens` | 通常是 `input_tokens` 的**子集** |
-| `cache_creation_input_tokens` | `input_tokens` 的**子集** | 往往**独立**于 `input_tokens` | 需按字段实测处理，UI 作为 cache 单独展示 |
+| `cache_creation_input_tokens` | `input_tokens` 的**子集** | 往往**独立**于 `input_tokens` | 需按字段实测处理，UI 归入 `in` 展示 |
 
 > 2026-06-24 本地 transcript 已验证：Claude SDK 下的 `deepseek-v4-pro` 出现过 `input_tokens` 很小、`cache_read_input_tokens` 很大，因此“Claude 的 input 一定已含 cache”不是通用真理。
 
@@ -869,8 +869,8 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 | # | 分类 | 显示名 | Claude 数据源 | Codex 数据源 |
 |---|------|--------|-------------|-------------|
 | ① | **缓存命中** | `cache` | `cache_read_input_tokens` | `cached_input_tokens` |
-| ② | **缓存写入** | `cache` | `cache_creation_input_tokens` | `cache_creation_input_tokens` |
-| ③ | **非缓存输入** | `in` | 原生 Claude: `input_tokens - ① - ②`；第三方 provider: `input_tokens` | `input_tokens` |
+| ② | **缓存写入** | `in` | `cache_creation_input_tokens` | `cache_creation_input_tokens` |
+| ③ | **常规输入** | `in` | 原生 Claude: `input_tokens - ① - ②`；第三方 provider: `input_tokens` | `input_tokens - ① - ②` 或按 provider 实测修正 |
 | ④ | **输出** | `out` | `output_tokens` | `output_tokens` |
 
 ```
@@ -904,7 +904,8 @@ Codex:                  contextUsage = input_tokens
 in 2.3k / out 5.1k / cache 8.1k
 ```
 
-- `cache` 合并展示 ① + ②；tooltip 可拆分 read / creation
+- `in` 合并展示 ② + ③；若需要排障可在 tooltip 拆分 regular / creation
+- `cache` 只展示 ①
 - `costUsd` 字段不再在前端展示（多模型、用户自带 API Key 价格各异，无统一计费基准）
 - 上下文占用进度条：`contextUsage / contextWindow` 百分比
 - 新回合开始时 `in/out/cache` 归零，后续只接受当前回合真实样本；不能用上一轮 transcript 结果顶替当前回合样本
@@ -915,10 +916,10 @@ in 2.3k / out 5.1k / cache 8.1k
 // claude-agent-metrics / codex-agent-metrics 通道
 {
   model: string,
-  inputTokens: number,        // UI 统一口径：本回合非缓存输入 token
+  inputTokens: number,        // UI 统一口径：本回合输入侧成本 token（常规输入 + cache creation）
   outputTokens: number,       // ④
-  cacheReadTokens: number,    // ①，UI cache 的一部分
-  cacheCreationTokens: number,// ②，UI cache 的一部分
+  cacheReadTokens: number,    // ①，UI cache
+  cacheCreationTokens: number,// ②，UI in 的一部分
   contextUsage: number,       // 按 §16.3 公式计算
   contextWindow: number,
   durationMs: number,
@@ -935,6 +936,7 @@ in 2.3k / out 5.1k / cache 8.1k
 
 - ClaudeCode StatusBar 的动态数字优先来自 SDK 流中的真实 `assistant.message.usage`；若中途无该字段，则退回 1s JSONL 轮询。不补造中间 token，也不能让上一轮 `out/cache` 回灌到新回合。
 - CodeX StatusBar 应优先消费流中的真实 `token_count` 事件；JSONL 轮询负责补偿和最终对账。
+- `cache creation` 视为输入侧成本，统一归入 `in`，不再与 `cache read` 合并展示。
 - ClaudeCode / CodeX 当前都没有稳定的 per-tool token usage 字段；整体 per-turn usage 可做，精确到单个 tool call 不可做。
 
 ### 16.6 已知 BUG（2026-06-24 已修复项留档）

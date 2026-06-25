@@ -11,21 +11,21 @@
 
 | UI 字段 | 统一含义 | 说明 |
 |---------|----------|------|
-| `in` | 本回合非缓存输入 token | 不包含 cache read / cache creation |
+| `in` | 本回合输入侧成本 token | 常规输入 + cache creation，不包含 cache read |
 | `out` | 本回合输出 token | 模型生成的 assistant 输出 |
-| `cache` | 本回合缓存相关输入 token | `cacheReadTokens + cacheCreationTokens`，tooltip 可拆 read/write |
+| `cache` | 本回合缓存命中 token | 仅 `cacheReadTokens` |
 | `context` | 当前上下文占用 | 独立于 `in/out/cache`，按 provider 口径转换后计算 |
 
 内部字段映射规则：
 
 | Provider | 原始 usage | UI `in` | UI `cache` | `contextUsage` |
 |----------|------------|---------|------------|----------------|
-| 原生 Claude | `input_tokens` 已包含 cache | `max(0, input_tokens - cache_read_input_tokens - cache_creation_input_tokens)` | `cache_read_input_tokens + cache_creation_input_tokens` | `input_tokens` |
-| Claude SDK 第三方 provider | `input_tokens` 常见为非缓存输入 | `input_tokens` | `cache_read_input_tokens + cache_creation_input_tokens` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` |
-| CodeX | `cached_input_tokens` 通常是 `input_tokens` 的子集 | `max(0, input_tokens - cached_input_tokens - cache_creation_input_tokens)` | `cached_input_tokens + cache_creation_input_tokens` | `input_tokens` |
+| 原生 Claude | `input_tokens` 已包含 cache | `max(0, input_tokens - cache_read_input_tokens)` | `cache_read_input_tokens` | `input_tokens` |
+| Claude SDK 第三方 provider | `input_tokens` 常见为常规输入 | `input_tokens + cache_creation_input_tokens` | `cache_read_input_tokens` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` |
+| CodeX | `cached_input_tokens` 通常是 `input_tokens` 的子集 | `max(0, input_tokens - cached_input_tokens) + cache_creation_input_tokens` | `cached_input_tokens` | `input_tokens` |
 
 约束：
-- 主进程可以读取 provider 原始字段，但发给前端的 `inputTokens/cacheReadTokens/cacheCreationTokens/outputTokens` 必须已经是 UI 统一语义。
+- 主进程可以读取 provider 原始字段，但发给前端的 `inputTokens/cacheReadTokens/cacheCreationTokens/outputTokens` 必须已经符合统一 UI 语义：`inputTokens` 代表常规输入 + cache creation，`cacheReadTokens` 代表 cache read。
 - 若后续需要排障原始字段，应新增 `rawUsage` / debug 字段，不允许让状态栏直接消费原始 provider 口径。
 - 动态数字只在真实样本之间插值，不补造 token；没有本回合真实样本时不拿上一轮数据顶替。
 
@@ -169,7 +169,7 @@ poll(t2): target=800  → new rate → rAF 继续追
 显示当前回合指标：模型 / in-out tokens / cache / 上下文环 / 运行时长 / 速度 / Git / API 限额。
 
 Token 数值通过 `useAnimatedNumber` 在真实采样点之间平滑递增；不为缺失的中间数据补假点。2026-06-24 起 ClaudeCode / CodeX Agent 轮询从 3s 下调到 1s，增强动态感；简易对话仍只有最终值。
-状态栏语义按“当前回合”计：新回合开始时先重置 `in/out/cache`，再依据新的真实采样持续增长。`contextUsage` 可以来自 session 级 transcript，但必须按统一公式计算，不能影响本回合 `in/out/cache`。
+状态栏语义按“当前回合”计：新回合开始时先重置 `in/out/cache`，再依据新的真实采样持续增长。这里 `in = 常规输入 + cache creation`，`cache = cache read`。`contextUsage` 可以来自 session 级 transcript，但必须按统一公式计算，不能影响本回合 `in/out/cache`。
 
 ---
 
@@ -287,7 +287,7 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 
 **修复方向**：
 - `token_count` 到达时即时归一化并发给前端。
-- UI `in` 永远表示非缓存输入，CodeX 按 `input_tokens - cached_input_tokens - cache_creation_input_tokens` 计算；`cache` 永远表示缓存相关输入。
+- UI `in` 永远表示输入侧成本，CodeX 按 `max(0, input_tokens - cached_input_tokens) + cache_creation_input_tokens` 计算；`cache` 永远表示 `cached_input_tokens`。
 
 ---
 
@@ -312,3 +312,144 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 | 文档 | `docs/TODO.md` | 任务追踪 |
 | 文档 | `docs/plan/2026-06-24-token-metrics-research.md` | 早期调研稿（已过时） |
 | 文档 | `docs/agent-architecture.md` §16 | 架构文档中的 Token Metrics 章节 |
+
+---
+
+## 七、架构收口方案（2026-06-25）
+
+### 7.1 当前判断
+
+当前 token metrics 的主要风险已经不是单个 bug，而是结构本身仍然分叉：
+
+1. 多数据源并存
+   - ClaudeCode 同时依赖 SDK live usage、result usage、JSONL 轮询。
+   - CodeX 同时依赖流内 `token_count`、final usage、JSONL 历史回填。
+   - 简易对话又单独依赖 `invoke()` 返回 usage。
+
+2. 归一化逻辑分散
+   - 主进程、历史恢复、前端 footer、StatusBar、首页聚合都在各自解释 `input/cache/output`。
+   - 同一个 provider 字段变化后，容易出现一处修好、另一处继续错。
+
+3. 回合边界不统一
+   - 有的链路按 live turn 更新。
+   - 有的链路按 transcript 最后样本更新。
+   - 缺少统一 `turnId` / `phase` 时，上一轮样本容易回灌到下一轮 UI。
+
+4. 消费者各自维护状态
+   - StatusBar
+   - assistant message `_turnTokens`
+   - 历史恢复
+   - `homeMetrics`
+   这四类消费者当前没有共享同一个 turn 级内部模型。
+
+结论：继续按组件逐个补丁修，回归概率仍然高。
+
+### 7.2 必须保持的对外语义
+
+对外语义必须固定，不暴露 ClaudeCode / CodeX / provider 原始 usage 差异：
+
+| UI 字段 | 含义 |
+|------|------|
+| `in` | 当前回合输入侧成本 token（常规输入 + cache creation） |
+| `out` | 当前回合输出 token |
+| `cache` | 当前回合缓存命中 token（仅 read） |
+| `context` | 当前上下文占用，独立于当前回合 `in/out/cache` |
+
+约束：
+
+- 字段缺失时不补假数据。
+- `contextUsage` 不能污染当前回合 `in/out/cache`。
+- `cache creation` 归入 `in`，不能再并入 `cache`，避免把高成本写入和低成本 read 混成一类。
+- provider 原始字段语义差异必须在主进程内部消化。
+
+### 7.3 目标内部模型
+
+后续建议所有链路都收口到同一个 turn 级模型：
+
+```js
+{
+  provider,
+  providerSessionId,
+  chatKey,
+  turnId,
+  phase,                 // live | final | history
+  inputTokens,           // 已归一化：常规输入 + cache creation
+  outputTokens,
+  cacheReadTokens,
+  cacheCreationTokens,
+  contextUsage,
+  contextWindow,
+  durationMs,
+  costUsd,
+  source,                // sdk-live | result | token_count | jsonl-final | history-backfill
+}
+```
+
+约束：
+
+- 只有同一 `turnId` 的事件才能更新当前回合 `in/out/cache`。
+- 无法确认 turn 归属时，只能更新 `contextUsage/contextWindow/duration` 这类 session 级字段。
+- `history` 只负责回填已完成回合，不能反向覆盖 live turn。
+
+### 7.4 三阶段迁移
+
+#### Phase A：Normalizer 收口
+
+目标：主进程只保留一套 provider → UI 语义的归一化入口。
+
+- ClaudeCode 所有 live/final/poll 样本先走同一个 normalizer。
+- CodeX 所有 `token_count` / final usage / JSONL 样本先走同一个 normalizer。
+- 废弃前端按 provider 自行解释 `input_tokens` / `cached_input_tokens` 的逻辑。
+
+建议任务：
+
+- `T149` Token Metrics Normalizer 收口
+
+#### Phase B：Turn Store 收口
+
+目标：主进程维护单一 turn store，再广播给前端。
+
+- 为每个 `chatKey` 维护当前 active turn。
+- 明确 `turnId + phase` 状态机。
+- `live -> final -> history` 只能单向收敛，不能倒灌。
+
+建议任务：
+
+- `T150` Token Turn Store
+
+#### Phase C：Consumer 收口
+
+目标：所有 UI 消费者读取同一份标准化 turn 数据。
+
+- StatusBar 读 current turn store。
+- footer `_turnTokens` 读 final turn snapshot。
+- 历史恢复读 history/backfill snapshot。
+- `homeMetrics` 只读 transcript/history 聚合，不混入 live UI 口径。
+
+建议任务：
+
+- `T151` Metrics Consumer 收口
+
+### 7.5 应逐步废弃的旧模式
+
+以下模式后续应视为待淘汰：
+
+- 前端组件自己判断 `input_tokens` 是否包含 cache。
+- 轮询读到 transcript 最后一条样本后，直接覆盖当前回合 UI。
+- `_turnTokens`、StatusBar、history restore 各自做 delta 计算。
+- `homeMetrics` 复用 StatusBar 的 turn 口径，或反过来。
+
+### 7.6 当前修复的定位
+
+2026-06-24 到 2026-06-25 这批修复，定位是止血，不是最终结构完成：
+
+- 已修一批明确 bug：口径错误、负数漂移、最终动画不 snap、Claude footer 直接使用 raw `input_tokens` 等。
+- 这些修复提升了当前可用性。
+- 但只要 normalizer / turn store / consumer 还没完成收口，后续仍可能在新 provider、新 transcript 样本或历史恢复链路上复发。
+
+因此后续验收不能只看“这次显示对了”，还要同时确认：
+
+1. 当前回合 live 样本只影响当前 turn。
+2. turn 结束后 final 值立即收敛且不再跳动。
+3. 刷新 / 重启后历史值仍能按统一语义恢复。
+4. 首页聚合与会话内展示明确区分 turn 口径和 session 聚合口径。
