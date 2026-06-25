@@ -419,11 +419,6 @@ function upsertSessionRecord(record, options = {}) {
   if (!filePath) return false
   const existing = readJson(filePath, {})
   const incomingProvider = { ...(effectiveRecord.provider || {}) }
-  const detachedProvider = existing?.metadata?.detachedProviderBinding || null
-  if (isDetachedProviderBinding(incomingProvider, detachedProvider)) {
-    incomingProvider.cliSessionId = ''
-    incomingProvider.filePath = ''
-  }
   const titleState = chooseTitle(existing, effectiveRecord)
   const incomingInst = effectiveRecord.instruction || {}
   const hasRealInstruction = incomingInst.enabled || String(incomingInst.content || '').trim()
@@ -504,6 +499,24 @@ function isDetachedProviderBinding(provider = {}, detached = null) {
   )
 }
 
+function findSessionRecordByDetachedProvider({ agent, filePath, cliSessionId } = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const normalizedFilePath = normalizeString(filePath)
+  const normalizedCliSessionId = normalizeString(cliSessionId)
+  if (!normalizedFilePath && !normalizedCliSessionId) return null
+
+  for (const record of listSessionRecords(options)) {
+    if (normalizedAgent !== 'unknown' && record.agent !== normalizedAgent) continue
+    if (isDetachedProviderBinding({
+      cliSessionId: normalizedCliSessionId,
+      filePath: normalizedFilePath,
+    }, record.metadata?.detachedProviderBinding)) {
+      return record
+    }
+  }
+  return null
+}
+
 function listSessionRecords(options = {}) {
   const dir = getSessionsDir(options)
   let entries = []
@@ -543,7 +556,11 @@ function findSessionRecordByProvider({ agent, filePath, cliSessionId } = {}, opt
     const sameCliSession = normalizedCliSessionId && normalizeString(provider.cliSessionId) === normalizedCliSessionId
     if (sameFile || sameCliSession) return record
   }
-  return null
+  return findSessionRecordByDetachedProvider({
+    agent: normalizedAgent,
+    filePath: normalizedFilePath,
+    cliSessionId: normalizedCliSessionId,
+  }, options)
 }
 
 function resolveSessionByProvider(args = {}, options = {}) {
@@ -700,19 +717,33 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
     || scanSummary.cliSessionId
     || scanSummary.id
   )
-  if (isProviderScanDetached({
-    agent: normalizedAgent,
-    cliSessionId: providerSessionId,
-    filePath: scanSummary.filePath,
-  }, options)) {
-    return null
-  }
-  const providerTitle = normalizeString(scanSummary.providerTitle || scanSummary.title || scanSummary.name)
-  const existing = resolveSessionByProvider({
+  const detachedRecord = findSessionRecordByDetachedProvider({
     agent: normalizedAgent,
     cliSessionId: providerSessionId,
     filePath: scanSummary.filePath,
   }, options)
+  const providerTitle = normalizeString(scanSummary.providerTitle || scanSummary.title || scanSummary.name)
+  const resolved = resolveSessionByProvider({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)
+  const detachedRecordProvider = detachedRecord?.provider || {}
+  const detachedRecordHasProvider = Boolean(
+    normalizeString(detachedRecordProvider.cliSessionId)
+    || normalizeString(detachedRecordProvider.filePath)
+  )
+  const detachedMatchesCurrentProvider = Boolean(
+    detachedRecord
+    && (
+      !detachedRecordHasProvider
+      || isDetachedProviderBinding({
+        cliSessionId: detachedRecordProvider.cliSessionId,
+        filePath: detachedRecordProvider.filePath,
+      }, detachedRecord.metadata?.detachedProviderBinding)
+    )
+  )
+  const existing = resolved || (detachedMatchesCurrentProvider ? detachedRecord : null)
   const chatKey = existing?.chatKey || normalizeString(scanSummary.chatKey) || createRegistryChatKey(normalizedAgent)
   if (!chatKey) return null
 
@@ -741,14 +772,21 @@ function buildProviderScanRecord(agent, scanSummary = {}, project = {}, options 
     description: existing?.description || '',
     provider: {
       ...(existing?.provider || {}),
-      cliSessionId: providerSessionId || existing?.provider?.cliSessionId || '',
-      filePath: normalizeString(scanSummary.filePath) || existing?.provider?.filePath || '',
+      cliSessionId: detachedRecord && !detachedMatchesCurrentProvider
+        ? normalizeString(existing?.provider?.cliSessionId)
+        : (providerSessionId || existing?.provider?.cliSessionId || ''),
+      filePath: detachedRecord && !detachedMatchesCurrentProvider
+        ? normalizeString(existing?.provider?.filePath)
+        : (normalizeString(scanSummary.filePath) || existing?.provider?.filePath || ''),
     },
     runtime: {
       ...(existing?.runtime || {}),
       ...runtime,
     },
-    metadata: existing?.metadata || {},
+    metadata: {
+      ...(existing?.metadata || {}),
+      ...(detachedRecord ? { resumeAllowed: false } : {}),
+    },
     instruction: existing?.instruction || { enabled: false, instructionId: '', content: '', attachments: [] },
     createdAt: normalizeTimestamp(scanSummary.createdAt) || existing?.createdAt || Date.now(),
     updatedAt: normalizeTimestamp(scanSummary.updatedAt) || existing?.updatedAt || Date.now(),
@@ -846,12 +884,13 @@ function deleteSessionRecordsByProvider({ agent, filePath, cliSessionId, chatKey
   }
 }
 
-function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey } = {}, options = {}) {
+function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey, reason = 'empty_upstream_response' } = {}, options = {}) {
   try {
     const normalizedAgent = normalizeAgent(agent)
     const normalizedChatKey = normalizeString(chatKey)
     const normalizedFilePath = normalizeString(filePath)
     const normalizedCliSessionId = normalizeString(cliSessionId)
+    const detachReason = normalizeString(reason) || 'empty_upstream_response'
     if (!normalizedChatKey && !normalizedFilePath && !normalizedCliSessionId) return 0
 
     let count = 0
@@ -865,17 +904,14 @@ function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey }
 
       const next = {
         ...record,
-        provider: {
-          ...(record.provider || {}),
-          cliSessionId: '',
-          filePath: '',
-        },
+        provider: record.provider || {},
         metadata: {
           ...(record.metadata || {}),
+          resumeAllowed: false,
           detachedProviderBinding: {
             cliSessionId: normalizeString(record.provider?.cliSessionId) || normalizedCliSessionId,
             filePath: normalizeString(record.provider?.filePath) || normalizedFilePath,
-            reason: 'empty_upstream_response',
+            reason: detachReason,
             detachedAt: Date.now(),
           },
         },

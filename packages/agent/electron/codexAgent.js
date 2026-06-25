@@ -3194,7 +3194,13 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-register-cli-sessions', (_, map) => {
     for (const [sid, cliId] of Object.entries(map || {})) {
-      if (cliId) cliSessionIds.set(sid, cliId)
+      if (!cliId) continue
+      const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: cliId })
+      if (record?.chatKey === sid && record?.metadata?.resumeAllowed === false) {
+        cliSessionIds.delete(sid)
+        continue
+      }
+      cliSessionIds.set(sid, cliId)
     }
   })
 

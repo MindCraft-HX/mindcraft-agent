@@ -808,8 +808,6 @@ export function useCodexAgentStream({
     console.log(`[codex-done] onAgentDone: sid=${sid} tabFound=${!!tab} ownerProj=${ownerProject?.id || 'none'} activeProj=${getActiveProjectId?.() || 'none'} panelActive=${isPanelActive?.value ?? 'N/A'} reason=${reason}`)
     if (!tab) return
     if (detachResume) {
-      tab.cliSessionId = ''
-      tab.filePath = ''
       window.electronAPI.codexUnregisterCliSession?.(sid)
     } else if (cliSessionId) {
       window.electronAPI.codexRegisterCliSessions?.({ [sid]: cliSessionId })
@@ -822,8 +820,8 @@ export function useCodexAgentStream({
       lastThinking.status = 'done'
     }
     markCodexDone(tab, {
-      cliSessionId: detachResume ? '' : cliSessionId,
-      filePath: detachResume ? '' : filePath,
+      cliSessionId: detachResume ? (tab.cliSessionId || cliSessionId) : cliSessionId,
+      filePath: detachResume ? (tab.filePath || filePath) : filePath,
       reason,
     })
     if (ownerProject && reason === 'completed') {

@@ -572,7 +572,7 @@ test('deleteSessionRecordsByProvider removes matching provider filePath records'
   assert.deepEqual(index.providers, {})
 })
 
-test('detachSessionProviderBinding clears provider mapping without deleting record', () => {
+test('detachSessionProviderBinding disables resume without deleting provider identity', () => {
   const userDataDir = makeTempUserData()
   syncPanelStateSessions('codex', {
     projects: [{
@@ -603,16 +603,17 @@ test('detachSessionProviderBinding clears provider mapping without deleting reco
   assert.equal(records.length, 1)
   assert.equal(records[0].chatKey, 'chat-key-1')
   assert.equal(records[0].title, 'Keep me')
-  assert.equal(records[0].provider.cliSessionId, '')
-  assert.equal(records[0].provider.filePath, '')
+  assert.equal(records[0].provider.cliSessionId, 'thread-1')
+  assert.equal(records[0].provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
   assert.equal(records[0].instruction.content, 'Session instruction')
+  assert.equal(records[0].metadata.resumeAllowed, false)
   assert.equal(records[0].metadata.detachedProviderBinding.cliSessionId, 'thread-1')
   const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
-  assert.equal(index.sessions['chat-key-1'].cliSessionId, '')
-  assert.equal(index.providers['codex:session:thread-1'], undefined)
+  assert.equal(index.sessions['chat-key-1'].cliSessionId, 'thread-1')
+  assert.equal(index.providers['codex:session:thread-1'], 'chat-key-1')
 })
 
-test('detached provider binding is not restored by stale panel-state sync', () => {
+test('detached provider binding is not re-enabled by stale panel-state sync', () => {
   const userDataDir = makeTempUserData()
   const panelState = {
     projects: [{
@@ -637,14 +638,15 @@ test('detached provider binding is not restored by stale panel-state sync', () =
 
   const records = listSessionRecords({ userDataDir })
   assert.equal(records.length, 1)
-  assert.equal(records[0].provider.cliSessionId, '')
-  assert.equal(records[0].provider.filePath, '')
+  assert.equal(records[0].provider.cliSessionId, 'thread-1')
+  assert.equal(records[0].provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
+  assert.equal(records[0].metadata.resumeAllowed, false)
   assert.equal(records[0].metadata.detachedProviderBinding.cliSessionId, 'thread-1')
   const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
-  assert.equal(index.providers['codex:session:thread-1'], undefined)
+  assert.equal(index.providers['codex:session:thread-1'], 'chat-key-1')
 })
 
-test('detached provider binding is not re-imported by provider scan', () => {
+test('detached provider scan remains visible and maps back to original chat', () => {
   const userDataDir = makeTempUserData()
   syncPanelStateSessions('codex', {
     projects: [{
@@ -671,11 +673,59 @@ test('detached provider binding is not re-imported by provider scan', () => {
     name: 'Provider title',
   }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
 
-  assert.equal(summary, null)
+  assert.equal(summary.chatKey, 'chat-key-1')
+  assert.equal(summary.cliSessionId, 'thread-1')
+  assert.equal(summary.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
   const records = listSessionRecords({ userDataDir })
   assert.equal(records.length, 1)
   assert.equal(records[0].chatKey, 'chat-key-1')
-  assert.equal(records[0].provider.cliSessionId, '')
+  assert.equal(records[0].provider.cliSessionId, 'thread-1')
+  assert.equal(records[0].metadata.resumeAllowed, false)
+})
+
+test('detached provider scan repairs legacy cleared provider identity', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Keep me',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  const recordPath = getSessionRecordPath('chat-key-1', { userDataDir })
+  const record = JSON.parse(fs.readFileSync(recordPath, 'utf8'))
+  record.provider = { cliSessionId: '', filePath: '' }
+  record.metadata = {
+    ...(record.metadata || {}),
+    resumeAllowed: false,
+    detachedProviderBinding: {
+      cliSessionId: 'thread-1',
+      filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      reason: 'empty_upstream_response',
+      detachedAt: Date.now(),
+    },
+  }
+  fs.writeFileSync(recordPath, JSON.stringify(record, null, 2), 'utf8')
+
+  const summary = attachRegistrySessionToScanSummary('codex', {
+    id: 'thread-1',
+    cliSessionId: 'thread-1',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+    name: 'Provider title',
+  }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(summary.chatKey, 'chat-key-1')
+  assert.equal(summary.cliSessionId, 'thread-1')
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records[0].provider.cliSessionId, 'thread-1')
+  assert.equal(records[0].provider.filePath, 'C:/Users/demo/.codex/sessions/thread-1.jsonl')
+  assert.equal(records[0].metadata.resumeAllowed, false)
 })
 
 test('runtime fingerprint detach prevents old Codex thread from reappearing as a new chat', () => {
@@ -721,7 +771,8 @@ test('runtime fingerprint detach prevents old Codex thread from reappearing as a
     name: 'Stale provider title',
   }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
 
-  assert.equal(staleSummary, null)
+  assert.equal(staleSummary.chatKey, 'chat-key-1')
+  assert.equal(staleSummary.cliSessionId, 'thread-new')
 
   const activeSummary = attachRegistrySessionToScanSummary('codex', {
     id: 'thread-new',
