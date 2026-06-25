@@ -4,6 +4,7 @@ const os = require('os')
 const { app } = require('electron')
 const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { normalizeClaudeUsageForUi } = require('./claudeMetrics')
+const { normalizeCodexUsage } = require('./tokenMetrics/normalizer')
 
 // ==================== 工具函数 ====================
 
@@ -189,17 +190,20 @@ function parseCodexLines(lines) {
         const info = parsed.payload?.info || parsed.info || {}
         const usage = info.total_token_usage || {}
         hasTokens = true
-        lastInp = usage.input_tokens || 0
-        lastOut = usage.output_tokens || 0
-        lastCr = usage.cached_input_tokens || 0
-        lastCc = usage.cache_creation_input_tokens || 0
+        // Phase 1：走统一 normalizer，不再手写 provider 公式
+        const norm = normalizeCodexUsage(usage)
+        lastInp = norm.inputTokens
+        lastOut = norm.outputTokens
+        lastCr = norm.cacheReadTokens
+        lastCc = norm.cacheCreationTokens
         lastTs = ts
       }
     } catch (_) {}
   }
 
   if (hasTokens) {
-    totalInput = Math.max(0, lastInp - lastCr) + lastCc
+    // Phase 1：normalizeCodexUsage 已产出统一语义，不再手算
+    totalInput = lastInp
     totalOutput = lastOut
     totalCacheRead = lastCr
     totalCacheCreation = lastCc

@@ -90,17 +90,11 @@ function getClaudeContextUsageFromUsageLike(usage, model) {
 }
 
 function normalizeClaudeUsageForUi(usage, model) {
-  const rawInputTokens = toSafeTokenCount(usage?.input_tokens)
-  const cacheReadTokens = toSafeTokenCount(usage?.cache_read_input_tokens)
-  const cacheCreationTokens = toSafeTokenCount(usage?.cache_creation_input_tokens)
-  const inputTokens = isNativeClaudeModel(model)
-    ? Math.max(0, rawInputTokens - cacheReadTokens)
-    : rawInputTokens + cacheCreationTokens
+  // Phase 1：委托给统一 normalizer
+  const { normalizeClaudeUsage } = require('./tokenMetrics/normalizer')
+  const base = normalizeClaudeUsage(usage, model)
   return {
-    inputTokens,
-    outputTokens: toSafeTokenCount(usage?.output_tokens),
-    cacheReadTokens,
-    cacheCreationTokens,
+    ...base,
     contextUsage: getClaudeContextUsageFromUsageLike(usage, model),
   }
 }

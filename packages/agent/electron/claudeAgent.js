@@ -4,6 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
+const { logMetricSample } = require('./tokenMetrics/diagnostics')
 const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
@@ -2849,6 +2850,17 @@ function setupClaudeHandlers() {
                 ? mergeClaudeLiveMetricSamples(latestLiveMetrics, metrics)
                 : metrics
               mergedMetrics.sessionId = sessionId
+              logMetricSample({
+                provider: 'claude', source: 'jsonl-poll',
+                chatKey, providerSessionId: cliId, phase: 'live',
+                inputTokens: mergedMetrics.inputTokens,
+                outputTokens: mergedMetrics.outputTokens,
+                cacheReadTokens: mergedMetrics.cacheReadTokens,
+                cacheCreationTokens: mergedMetrics.cacheCreationTokens,
+                contextUsage: mergedMetrics.contextUsage,
+                durationMs: mergedMetrics.durationMs,
+                rawUsage: metrics.rawUsage || null,
+              })
               safeSend(s.event?.sender, 'claude-agent-metrics', mergedMetrics)
             }
           }, CLAUDE_METRICS_POLL_INTERVAL_MS)
@@ -2880,6 +2892,17 @@ function setupClaudeHandlers() {
                 thinking: true,
                 durationMs: Math.max(0, Date.now() - pollStart),
                 ...liveUsageMetrics,
+              })
+              logMetricSample({
+                provider: 'claude', source: 'sdk-live',
+                chatKey, providerSessionId: cliSessionIds.get(chatKey) || '', phase: 'live',
+                inputTokens: latestLiveMetrics.inputTokens,
+                outputTokens: latestLiveMetrics.outputTokens,
+                cacheReadTokens: latestLiveMetrics.cacheReadTokens,
+                cacheCreationTokens: latestLiveMetrics.cacheCreationTokens,
+                contextUsage: latestLiveMetrics.contextUsage,
+                durationMs: latestLiveMetrics.durationMs,
+                rawUsage: msg?.message?.usage || null,
               })
               safeSend(sender, 'claude-agent-metrics', latestLiveMetrics)
             }
@@ -2934,6 +2957,17 @@ function setupClaudeHandlers() {
                 if (!finalMetrics.costUsd && jsonlMetrics.costUsd) finalMetrics.costUsd = jsonlMetrics.costUsd
               }
               safeSend(sender, 'claude-agent-metrics', finalMetrics)
+              logMetricSample({
+                provider: 'claude', source: 'sdk-result',
+                chatKey, providerSessionId: msg.session_id || '', phase: 'final',
+                inputTokens: finalMetrics.inputTokens,
+                outputTokens: finalMetrics.outputTokens,
+                cacheReadTokens: finalMetrics.cacheReadTokens,
+                cacheCreationTokens: finalMetrics.cacheCreationTokens,
+                contextUsage: finalMetrics.contextUsage,
+                durationMs: finalMetrics.durationMs,
+                rawUsage: usage || null,
+              })
               resultReceived = true
               // result 到达即视为本 turn 结束：SDK 生成器会 return，query 对象已无法再接收 streamInput。
               // 立即清出 agentSessions，避免下一条消息命中 existing 分支后塞进死 query 导致静默 hang。

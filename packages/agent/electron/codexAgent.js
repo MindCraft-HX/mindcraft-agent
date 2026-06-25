@@ -6,12 +6,13 @@ const os = require('os')
 const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
+const { logMetricSample } = require('./tokenMetrics/diagnostics')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
+const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, restoreMissingPanelStateChats, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -54,8 +55,9 @@ function safeSend(sender, channel, ...args) {
   } catch (_) {}
 }
 
-function sendMetrics(sender, payload) {
+function sendMetrics(sender, payload, diag = null) {
   safeSend(sender, 'codex-agent-metrics', payload)
+  if (diag) logMetricSample(diag)
 }
 
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
@@ -818,19 +820,16 @@ function estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens) {
 
 function normalizeCodexUsage(usage = {}) {
   if (!usage || typeof usage !== 'object') return null
-  const inputDetails = usage.input_tokens_details || {}
+  // Phase 1：委托给统一 normalizer
+  const { normalizeCodexUsage: _norm } = require('./tokenMetrics/normalizer')
+  const base = _norm(usage)
   const rawInputTokens = toNonNegativeNumber(usage.input_tokens)
-  const cacheReadTokens = toNonNegativeNumber(
-    usage.cache_read_input_tokens,
-    toNonNegativeNumber(usage.cached_input_tokens, toNonNegativeNumber(inputDetails.cached_tokens))
-  )
-  const cacheCreationTokens = toNonNegativeNumber(usage.cache_creation_input_tokens)
   return {
-    input_tokens: Math.max(0, rawInputTokens - cacheReadTokens) + cacheCreationTokens,
-    output_tokens: toNonNegativeNumber(usage.output_tokens),
+    input_tokens: base.inputTokens,
+    output_tokens: base.outputTokens,
     total_tokens: toNonNegativeNumber(usage.total_tokens),
-    cache_read_input_tokens: cacheReadTokens,
-    cache_creation_input_tokens: cacheCreationTokens,
+    cache_read_input_tokens: base.cacheReadTokens,
+    cache_creation_input_tokens: base.cacheCreationTokens,
     raw_input_tokens: rawInputTokens,
   }
 }
@@ -2517,7 +2516,17 @@ function setupCodexSdkHandlers() {
             if (metrics) {
               metrics.sessionId = sessionId
               metrics.thinking = true
-              sendMetrics(s.event?.sender, metrics)
+              sendMetrics(s.event?.sender, metrics, {
+                provider: 'codex', source: 'jsonl-poll',
+                chatKey: sessionId, providerSessionId: cliId, phase: 'live',
+                inputTokens: metrics.inputTokens,
+                outputTokens: metrics.outputTokens,
+                cacheReadTokens: metrics.cacheReadTokens,
+                cacheCreationTokens: metrics.cacheCreationTokens,
+                contextUsage: metrics.contextUsage,
+                durationMs: metrics.durationMs,
+                rawUsage: metrics.rawUsage || null,
+              })
             }
           }, CODEX_METRICS_POLL_INTERVAL_MS)
           codexMetricsPollers.set(sessionId, { interval: pollInterval, startTime: pollStart, runId })
@@ -2733,6 +2742,16 @@ function setupCodexSdkHandlers() {
                   ...liveMetrics,
                   sessionId,
                   thinking: true,
+                }, {
+                  provider: 'codex', source: 'token-count',
+                  chatKey: sessionId, providerSessionId: cliSessionIds.get(sessionId) || '', phase: 'live',
+                  inputTokens: liveMetrics.inputTokens,
+                  outputTokens: liveMetrics.outputTokens,
+                  cacheReadTokens: liveMetrics.cacheReadTokens,
+                  cacheCreationTokens: liveMetrics.cacheCreationTokens,
+                  contextUsage: liveMetrics.contextUsage,
+                  durationMs: liveMetrics.durationMs,
+                  rawUsage: totalUsage || null,
                 })
               }
             }
@@ -2767,6 +2786,16 @@ function setupCodexSdkHandlers() {
                 gitChanges: parsedMetrics?.gitChanges || 0,
                 usageApiSessionPct: null,
                 costUsd: parsedMetrics?.costUsd ?? 0,
+              }, {
+                provider: 'codex', source: 'sdk-result',
+                chatKey: sessionId, providerSessionId: cliSessionIds.get(sessionId) || '', phase: 'final',
+                inputTokens: parsedMetrics?.inputTokens ?? normalizedTerminalUsage.input_tokens ?? 0,
+                outputTokens: parsedMetrics?.outputTokens ?? normalizedTerminalUsage.output_tokens ?? 0,
+                cacheReadTokens: parsedMetrics?.cacheReadTokens ?? normalizedTerminalUsage.cache_read_input_tokens ?? 0,
+                cacheCreationTokens: parsedMetrics?.cacheCreationTokens ?? normalizedTerminalUsage.cache_creation_input_tokens ?? 0,
+                contextUsage: parsedMetrics?.contextUsage ?? 0,
+                durationMs: parsedMetrics?.durationMs || durationMs,
+                rawUsage: ev.usage || null,
               })
               if (session?.runId === runId) {
                 const currentSession = codexSessions.get(sessionId)
@@ -3820,6 +3849,8 @@ function setupCodexSdkHandlers() {
           writePanelState(normalized)
         }
         syncPanelStateSessions('codex', normalized)
+        const backfill = restoreMissingPanelStateChats('codex', normalized)
+        if (backfill?.changed) writePanelState(normalized)
         const repair = repairSessionRegistry()
         if (repair?.changed) {
           const repairedPath = fs.existsSync(PANEL_STATE_FILE) ? PANEL_STATE_FILE : candidate
