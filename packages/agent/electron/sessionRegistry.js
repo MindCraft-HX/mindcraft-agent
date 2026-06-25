@@ -784,19 +784,6 @@ function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, op
 }
 
 function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
-  const normalizedAgent = normalizeAgent(agent)
-  const providerSessionId = normalizeString(
-    scanSummary.providerSessionId
-    || scanSummary.cliSessionId
-    || scanSummary.id
-  )
-  if (isProviderScanDetached({
-    agent: normalizedAgent,
-    cliSessionId: providerSessionId,
-    filePath: scanSummary.filePath,
-  }, options)) {
-    return null
-  }
   const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
   if (!record) return scanSummary
   const scanFilePath = normalizeString(scanSummary.filePath)
@@ -859,13 +846,12 @@ function deleteSessionRecordsByProvider({ agent, filePath, cliSessionId, chatKey
   }
 }
 
-function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey, reason = 'empty_upstream_response' } = {}, options = {}) {
+function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey } = {}, options = {}) {
   try {
     const normalizedAgent = normalizeAgent(agent)
     const normalizedChatKey = normalizeString(chatKey)
     const normalizedFilePath = normalizeString(filePath)
     const normalizedCliSessionId = normalizeString(cliSessionId)
-    const detachReason = normalizeString(reason) || 'empty_upstream_response'
     if (!normalizedChatKey && !normalizedFilePath && !normalizedCliSessionId) return 0
 
     let count = 0
@@ -889,7 +875,7 @@ function detachSessionProviderBinding({ agent, filePath, cliSessionId, chatKey, 
           detachedProviderBinding: {
             cliSessionId: normalizeString(record.provider?.cliSessionId) || normalizedCliSessionId,
             filePath: normalizeString(record.provider?.filePath) || normalizedFilePath,
-            reason: detachReason,
+            reason: 'empty_upstream_response',
             detachedAt: Date.now(),
           },
         },
