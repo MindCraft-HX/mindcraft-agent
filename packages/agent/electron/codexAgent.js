@@ -826,7 +826,7 @@ function normalizeCodexUsage(usage = {}) {
   )
   const cacheCreationTokens = toNonNegativeNumber(usage.cache_creation_input_tokens)
   return {
-    input_tokens: Math.max(0, rawInputTokens - cacheReadTokens - cacheCreationTokens),
+    input_tokens: Math.max(0, rawInputTokens - cacheReadTokens) + cacheCreationTokens,
     output_tokens: toNonNegativeNumber(usage.output_tokens),
     total_tokens: toNonNegativeNumber(usage.total_tokens),
     cache_read_input_tokens: cacheReadTokens,
@@ -883,7 +883,7 @@ function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = 
   const derivedCacheReadTokens = Math.max(0, totalCacheRead - startCacheRead)
   const derivedCacheCreationTokens = Math.max(0, totalCacheCreation - startCacheCreation)
   const derivedRawInputTokens = Math.max(0, rawTotalInput - rawStartInput)
-  const derivedInputTokens = Math.max(0, derivedRawInputTokens - derivedCacheReadTokens - derivedCacheCreationTokens)
+  const derivedInputTokens = Math.max(0, derivedRawInputTokens - derivedCacheReadTokens) + derivedCacheCreationTokens
   const derivedOutputTokens = Math.max(0, totalOutput - startOutput)
 
   const fallbackInputTokens = Number(normalizedFallback.input_tokens)
@@ -1055,7 +1055,7 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
         outputTokens = pickCodexTurnTokenValue(last.output_tokens, nextCumulativeOutput - turnStartOutputTokens, outputTokens)
         cacheReadTokens = pickCodexTurnTokenValue(last.cached_input_tokens, nextCumulativeCacheRead - turnStartCacheReadTokens, cacheReadTokens)
         cacheCreationTokens = pickCodexTurnTokenValue(last.cache_creation_input_tokens, nextCumulativeCacheCreation - turnStartCacheCreationTokens, cacheCreationTokens)
-        inputTokens = Math.max(0, rawTurnInput - cacheReadTokens - cacheCreationTokens)
+        inputTokens = Math.max(0, rawTurnInput - cacheReadTokens) + cacheCreationTokens
         cumulativeInputTokens = nextCumulativeInput
         cumulativeOutputTokens = nextCumulativeOutput
         cumulativeCacheReadTokens = nextCumulativeCacheRead
@@ -1084,7 +1084,7 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
 
     return {
       model: model || '',
-      costUsd: estimateCodexCostUsd(inputTokens + cacheCreationTokens, outputTokens, cacheReadTokens),
+      costUsd: estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens),
       inputTokens,
       outputTokens,
       cacheReadTokens,
@@ -2215,13 +2215,10 @@ function buildCodexSessionFingerprint({ model, baseURL, apiFormat, reasoningEffo
   })
 }
 
-function shouldResumeCodexSession({ previousFingerprint, nextFingerprint, previousCliId } = {}) {
-  const cliId = String(previousCliId || '').trim()
-  if (!cliId) return false
-  const prev = String(previousFingerprint || '').trim()
-  const next = String(nextFingerprint || '').trim()
-  if (!prev || !next) return true
-  return prev === next
+function shouldResumeCodexSession({ previousCliId } = {}) {
+  // P0: 只要存在旧 threadId 就尝试 resume，不再因 fingerprint 变化阻断
+  // SDK 的 resumeThread(id, options) 原生支持传入新的 model / reasoningEffort
+  return Boolean(String(previousCliId || '').trim())
 }
 
 function setupCodexSdkHandlers() {
@@ -2293,23 +2290,9 @@ function setupCodexSdkHandlers() {
         apiFormat,
         reasoningEffort,
       })
-      const previousFingerprint = sessionFingerprints.get(sessionId)
       const previousCliId = cliSessionIds.get(sessionId)
-      const canResumePreviousThread = shouldResumeCodexSession({
-        previousFingerprint,
-        nextFingerprint,
-        previousCliId,
-      })
-      const prevCliId = canResumePreviousThread ? previousCliId : ''
-      if (previousCliId && !canResumePreviousThread) {
-        console.log('[codex] resume fingerprint changed, starting fresh thread instead of resume:', {
-          sessionId,
-          previousFingerprint: previousFingerprint || '',
-          nextFingerprint,
-        })
-        cliSessionIds.delete(sessionId)
-        sessionFingerprints.delete(sessionId)
-      }
+      // P0: 不再因 fingerprint 变化阻断 resume，始终尝试恢复旧 thread
+      const prevCliId = previousCliId || ''
       const abortController = new AbortController()
       let resolveCompletion = () => {}
       const completionPromise = new Promise((completionResolve) => {
@@ -2341,8 +2324,8 @@ function setupCodexSdkHandlers() {
         baseURL: baseURL || '',
         apiFormat: apiFormat || '',
         reasoningEffort: reasoningEffort || '',
-        canResumePreviousThread,
-        previousFingerprint: previousFingerprint || '',
+        // P0: canResumePreviousThread 已移除，始终尝试 resume
+        previousFingerprint: sessionFingerprints.get(sessionId) || '',
         nextFingerprint,
         additionalDirectoriesCount: Array.isArray(additionalDirectories) ? additionalDirectories.length : 0,
         networkAccessEnabled: networkAccessEnabled === undefined ? null : Boolean(networkAccessEnabled),
@@ -2767,13 +2750,14 @@ function setupCodexSdkHandlers() {
                 msg: { type: ev.type, payload: ev.payload || ev, _perTurnTokens: perTurnTokens },
               })
               const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
+              const normalizedTerminalUsage = normalizeCodexUsage(ev.usage || {}) || {}
               sendMetrics(sender, {
                 sessionId,
                 model: parsedMetrics?.model || model || '',
-                inputTokens: parsedMetrics?.inputTokens ?? ev.usage?.input_tokens ?? 0,
-                outputTokens: parsedMetrics?.outputTokens ?? ev.usage?.output_tokens ?? 0,
-                cacheReadTokens: parsedMetrics?.cacheReadTokens ?? ev.usage?.cached_input_tokens ?? 0,
-                cacheCreationTokens: parsedMetrics?.cacheCreationTokens ?? 0,
+                inputTokens: parsedMetrics?.inputTokens ?? normalizedTerminalUsage.input_tokens ?? 0,
+                outputTokens: parsedMetrics?.outputTokens ?? normalizedTerminalUsage.output_tokens ?? 0,
+                cacheReadTokens: parsedMetrics?.cacheReadTokens ?? normalizedTerminalUsage.cache_read_input_tokens ?? 0,
+                cacheCreationTokens: parsedMetrics?.cacheCreationTokens ?? normalizedTerminalUsage.cache_creation_input_tokens ?? 0,
                 contextUsage: parsedMetrics?.contextUsage ?? 0,
                 contextWindow: parsedMetrics?.contextWindow ?? 0,
                 durationMs: parsedMetrics?.durationMs || durationMs,

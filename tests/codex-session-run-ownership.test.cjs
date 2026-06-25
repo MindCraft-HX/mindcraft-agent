@@ -140,17 +140,18 @@ function runCodexResumeFingerprintTest() {
     previousCliId: 'cli-1',
   }), true)
 
+  // P0: fingerprint 不再阻断 resume，仅检查是否有旧 threadId
   assert.equal(__test__.shouldResumeCodexSession({
     previousFingerprint: same,
     nextFingerprint: changedModel,
     previousCliId: 'cli-1',
-  }), false)
+  }), true)
 
   assert.equal(__test__.shouldResumeCodexSession({
     previousFingerprint: same,
     nextFingerprint: changedFormat,
     previousCliId: 'cli-1',
-  }), false)
+  }), true)
 
   assert.equal(__test__.shouldResumeCodexSession({
     previousFingerprint: same,
