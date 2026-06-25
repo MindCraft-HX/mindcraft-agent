@@ -194,22 +194,38 @@ export const useShortcutStore = defineStore('shortcut', () => {
     window.addEventListener('keydown', _onGlobalKeydown, true)
   }
 
+  // ─── 常量：导航键（即使在输入框中也不拦截） ───
+
+  /**
+   * 导航键集合。这些 key 即使焦点在输入框中也不被 guard 拦截，
+   * 因为它们永远不会插入文本（Ctrl+Tab 不会在 textarea 里打 tab，
+   * Ctrl+Arrow 不会移动光标而是留给快捷键系统处理）。
+   */
+  const NAVIGATION_KEYS = new Set([
+    'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Enter', 'Escape', 'PageUp', 'PageDown', 'Home', 'End',
+  ])
+
   function _onGlobalKeydown(event) {
-    // Guard 1: 可编辑元素焦点
-    if (isEditableFocused()) return
-
-    // Guard 2: 弹窗/抽屉打开
-    if (isModalOpen()) return
-
-    // Guard 3: 快捷键录制模式（二期设置页）
-    if (window.__mc_recording_shortcut) return
-
+    // 先计算 combo，判断是否匹配已注册的快捷键
     const combo = eventToKeyCombo(event)
     if (!combo) return
 
     const normalized = normalizeCombo(combo)
     const candidates = comboIndex.value[normalized]
     if (!candidates || !candidates.length) return
+
+    // 提取非修饰键部分，判断是否为导航键
+    const keyPart = combo.split('+').pop()
+
+    // Guard 1: 可编辑元素焦点 — 导航键放行，其他拦截
+    if (isEditableFocused() && !NAVIGATION_KEYS.has(keyPart)) return
+
+    // Guard 2: 弹窗/抽屉打开
+    if (isModalOpen()) return
+
+    // Guard 3: 快捷键录制模式
+    if (window.__mc_recording_shortcut) return
 
     // 找到已注册 + enabled + 最高 priority
     let bestActionId = null

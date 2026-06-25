@@ -32,6 +32,7 @@ import { ref, computed, reactive, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import SystemSettings from '../agentCommon/components/SystemSettings.vue'
+import ShortcutSettings from '../agentCommon/components/ShortcutSettings.vue'
 
 const { agents } = useAgentRegistry()
 const { t } = useI18n()
@@ -48,6 +49,14 @@ const tabs = computed(() => {
     iconStyle: { ...a.iconStyle, fontSize: a.key === 'codex' ? '18px' : '16px' },
     settingsComponent: a.settingsComponent,
   }))
+  // 快捷键设置 Tab
+  agentTabs.push({
+    key: 'shortcuts',
+    label: t('shortcuts.title', '快捷键'),
+    iconClass: 'ss-icon-shortcuts',
+    iconStyle: { color: '#c6613f', fontSize: '16px' },
+    settingsComponent: ShortcutSettings,
+  })
   // 追加系统设置 Tab
   agentTabs.push({
     key: 'system',
@@ -123,6 +132,7 @@ defineExpose({ open, close })
 }
 .shared-settings-close:hover { background: var(--cc-menu-hover); color: var(--cc-text); }
 .ss-icon-system::before { content: '⚙'; }
+.ss-icon-shortcuts::before { content: '⌨'; }
 .shared-settings-body {
   flex: 1; overflow-y: auto; min-height: 0;
   background: var(--cc-bg-secondary);

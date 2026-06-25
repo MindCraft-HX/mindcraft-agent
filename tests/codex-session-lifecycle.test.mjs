@@ -85,3 +85,21 @@ test('scan merge preserves restored unbound local chat during startup refresh', 
 
   assert.deepEqual(merged.map(chat => chat.id), ['chat-scanned', 'chat-local'])
 })
+
+test('scan merge preserves restored non-resumable history tab omitted by transcript scan', () => {
+  const restoredMetadataOnlyChat = {
+    id: 'chat-metadata-only',
+    sessionId: 'codex-session-1781832434153-3vxyu0ci',
+    thinking: false,
+    _awaitingDone: false,
+    _restoredFromPanelState: true,
+    _resumeAllowed: false,
+    cliSessionId: '019ed433-9e89-7331-b062-c3487fd90af1',
+    filePath: 'C:/Users/demo/.codex/sessions/missing.jsonl',
+  }
+  const scanned = { id: 'chat-scanned', cliSessionId: 'thread-1', filePath: 'rollout-thread-1.jsonl' }
+
+  const merged = mergeScannedChatsPreservingRuntime([restoredMetadataOnlyChat], [scanned], {})
+
+  assert.deepEqual(merged.map(chat => chat.id), ['chat-scanned', 'chat-metadata-only'])
+})

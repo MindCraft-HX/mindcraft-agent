@@ -214,7 +214,8 @@ export function mergeScannedChatsPreservingRuntime(existingChats = [], scannedCh
     if (!chat?.id || seen.has(chat.id)) continue
     const isUnboundRuntime = isCodexTurnLocked(chat) && !chat.cliSessionId && !chat.filePath
     const isRestoredUnbound = Boolean(chat._restoredFromPanelState) && !chat.cliSessionId && !chat.filePath
-    if (chat.id === activeChatId || isUnboundRuntime || isRestoredUnbound) {
+    const isRestoredNonResumable = Boolean(chat._restoredFromPanelState) && chat._resumeAllowed === false
+    if (chat.id === activeChatId || isUnboundRuntime || isRestoredUnbound || isRestoredNonResumable) {
       next.push(chat)
       seen.add(chat.id)
     }

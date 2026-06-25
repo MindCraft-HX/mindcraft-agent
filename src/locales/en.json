@@ -905,5 +905,15 @@
 		"devPluginDesc": "Local dev plugin",
 		"count": "{n} plugins",
 		"devInProgress": "In Dev"
+	},
+	"shortcuts": {
+		"title": "Shortcuts",
+		"hint": "Click a shortcut to record a new key combination. Press Esc to cancel. Changes take effect immediately.",
+		"clickToChange": "Click to change",
+		"recording": "Press new keys…",
+		"disabled": "Disabled",
+		"reset": "Reset to default",
+		"resetAll": "Reset all to defaults",
+		"conflict": "Conflicts with another shortcut"
 	}
 }
