@@ -132,6 +132,44 @@ function runBuildPerTurnTokensReturnsNullForEmptyTest() {
   assert.equal(perTurn, null)
 }
 
+// 发现 1 回归：验证 normalizeCodexUsage 返回 snake_case 字段的值非零，
+// 确保 turn.completed 用正确 key 读取后 emitCodexMetricsViaStore 不会传全 0
+function runNormalizeCodexUsageTerminalSnapshotTest() {
+  const usage = {
+    input_tokens: 1200,
+    output_tokens: 350,
+    total_tokens: 1550,
+    cache_read_input_tokens: 600,
+    cache_creation_input_tokens: 80,
+    input_tokens_details: { cached_tokens: 0 },
+  }
+
+  const result = __test__.normalizeCodexUsage(usage)
+
+  // 三个关键断言：snake_case 字段必须存在且非零（bug 修前会因 camelCase 读取返回 0）
+  assert.ok(typeof result.input_tokens === 'number', 'input_tokens is number')
+  assert.ok(result.input_tokens > 0, `input_tokens=${result.input_tokens} should be > 0 (raw 1200 - cache 600 + creation 80 = 680)`)
+  assert.equal(result.input_tokens, 680, 'input = raw - cacheRead + cacheCreation')
+  assert.ok(typeof result.output_tokens === 'number', 'output_tokens is number')
+  assert.ok(result.output_tokens > 0, `output_tokens=${result.output_tokens} should be 350`)
+  assert.equal(result.output_tokens, 350)
+  assert.ok(typeof result.cache_read_input_tokens === 'number', 'cache_read_input_tokens is number')
+  assert.ok(result.cache_read_input_tokens > 0, `cache_read_input_tokens=${result.cache_read_input_tokens} should be 600`)
+  assert.equal(result.cache_read_input_tokens, 600)
+  assert.ok(typeof result.cache_creation_input_tokens === 'number', 'cache_creation_input_tokens is number')
+  assert.ok(result.cache_creation_input_tokens > 0, `cache_creation_input_tokens=${result.cache_creation_input_tokens} should be 80`)
+  assert.equal(result.cache_creation_input_tokens, 80)
+
+  // confirm: 不存在 camelCase 别名（避免误用）
+  assert.equal(result.inputTokens, undefined, 'no inputTokens alias on wrapper result')
+  assert.equal(result.outputTokens, undefined, 'no outputTokens alias on wrapper result')
+  assert.equal(result.cacheReadTokens, undefined, 'no cacheReadTokens alias on wrapper result')
+  assert.equal(result.cacheCreationTokens, undefined, 'no cacheCreationTokens alias on wrapper result')
+
+  console.log('  ✓ terminal snapshot: input_tokens=%d output_tokens=%d cache_read=%d cache_creation=%d',
+    result.input_tokens, result.output_tokens, result.cache_read_input_tokens, result.cache_creation_input_tokens)
+}
+
 function runReadSessionFileRangeBackfillsTurnTokensTest() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-turn-tokens-'))
   const filePath = path.join(tmpDir, 'session.jsonl')
@@ -165,6 +203,7 @@ function run() {
   runBuildLiveMetricsFromTokenCountPayloadTest()
   runBuildLiveMetricsFromTokenCountTotalsFallbackTest()
   runBuildPerTurnTokensReturnsNullForEmptyTest()
+  runNormalizeCodexUsageTerminalSnapshotTest()
   runReadSessionFileRangeBackfillsTurnTokensTest()
   console.log('codex turn tokens tests passed')
 }

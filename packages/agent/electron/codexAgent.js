@@ -2820,10 +2820,11 @@ function setupCodexSdkHandlers() {
               // Phase 4：先 finalize TurnStore，再从 snapshot 构建 _perTurnTokens
               const snapshot = emitCodexMetricsViaStore(sender, {
                 source: 'sdk-result',
-                inputTokens: normalizedTerminalUsage.inputTokens ?? 0,
-                outputTokens: normalizedTerminalUsage.outputTokens ?? 0,
-                cacheReadTokens: normalizedTerminalUsage.cacheReadTokens ?? 0,
-                cacheCreationTokens: normalizedTerminalUsage.cacheCreationTokens ?? 0,
+                // normalizeCodexUsage 返回 snake_case 字段（phase 1 wrapper），需用正确 key
+                inputTokens: normalizedTerminalUsage.input_tokens ?? 0,
+                outputTokens: normalizedTerminalUsage.output_tokens ?? 0,
+                cacheReadTokens: normalizedTerminalUsage.cache_read_input_tokens ?? 0,
+                cacheCreationTokens: normalizedTerminalUsage.cache_creation_input_tokens ?? 0,
                 contextUsage: 0,
                 contextWindow: 0,
                 durationMs,

@@ -287,13 +287,15 @@ export function useClaudeAgentStream({
       }
       // 提取 per-turn token → 附着到最后一条 assistant 消息
       // Phase 4：优先使用后端 TurnStore snapshot（msg._turnTokens），
-      // fallback 到 raw usage 解析（向后兼容旧版后端）
+      // fallback 到 raw usage 解析（向后兼容旧版后端；如果触发，说明 _turnTokens 未正常附加）
       if (msg._turnTokens || msg.usage) {
         const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
         let turnTokens
         if (msg._turnTokens) {
           turnTokens = { ...msg._turnTokens }
         } else {
+          // 诊断：_turnTokens 缺失意味着后端未附加 TurnStore snapshot，走了绕过路径
+          console.warn('[perf] claudeAgentStream: _turnTokens missing, falling back to raw msg.usage — TurnStore bypass detected', { hasUsage: !!msg.usage, msgType: msg.type })
           const normalizedUsage = normalizeClaudeTurnUsageForUi(msg.usage, msg?.message?.model || msg?.model || tab?.model || '')
           turnTokens = {
             inputTokens: normalizedUsage.inputTokens,
