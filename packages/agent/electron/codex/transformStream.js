@@ -10,7 +10,7 @@
  * 每个 SSE 事件的 JSON 字段名/字段结构严格对齐 CC SWITCH。
  */
 
-const { detectOpenThinkTag } = require('./common')
+const { detectOpenThinkTag, extractChatCacheTokens } = require('./common')
 
 /**
  * Chat SSE → Responses SSE 转换状态机
@@ -68,8 +68,10 @@ class ChatToResponsesState {
             input_tokens: this.latestUsage.prompt_tokens || 0,
             output_tokens: this.latestUsage.completion_tokens || 0,
             total_tokens: this.latestUsage.total_tokens || 0,
+            cache_read_input_tokens: extractChatCacheTokens(this.latestUsage),
+            cache_creation_input_tokens: 0,
             input_tokens_details: {
-              cached_tokens: this.latestUsage.prompt_tokens_details?.cached_tokens || 0,
+              cached_tokens: extractChatCacheTokens(this.latestUsage),
             },
             output_tokens_details: {
               reasoning_tokens: this.latestUsage.completion_tokens_details?.reasoning_tokens || 0,

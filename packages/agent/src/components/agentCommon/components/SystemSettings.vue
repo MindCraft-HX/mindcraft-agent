@@ -1,6 +1,5 @@
 <template>
   <div class="ss-panel">
-    <!-- 公司信息 -->
     <div class="ss-section">
       <div class="ss-section-title">{{ L('公司信息', 'Company') }}</div>
       <div class="ss-section-body">
@@ -13,7 +12,6 @@
       </div>
     </div>
 
-    <!-- 版本信息 -->
     <div class="ss-section">
       <div class="ss-section-title">{{ L('版本信息', 'Version') }}</div>
       <div class="ss-section-body">
@@ -24,7 +22,6 @@
       </div>
     </div>
 
-    <!-- 更新检测 -->
     <div class="ss-section">
       <div class="ss-section-title">{{ L('更新检测', 'Updates') }}</div>
       <div class="ss-section-body">
@@ -40,7 +37,6 @@
             {{ updateBtnText }}
           </button>
 
-          <!-- 下载按钮 -->
           <button
             v-if="updateState === 'available' && !forceUpdate"
             class="ss-action-btn ss-action-btn--primary"
@@ -49,12 +45,10 @@
             {{ $t('settings.downloadUpdate') }}
           </button>
 
-          <!-- 强制更新提示 -->
           <span v-if="updateState === 'available' && forceUpdate" class="ss-status ss-status--force">
             {{ $t('settings.forceUpdateRequired') }}
           </span>
 
-          <!-- 状态指示 -->
           <span v-if="updateState === 'available'" class="ss-status ss-status--warn">
             {{ $t('settings.appUpdateAvailable', { version: newVersion }) }}
           </span>
@@ -69,12 +63,10 @@
           </span>
         </div>
 
-        <!-- 更新日志 -->
         <div v-if="updateState === 'available' && releaseNotes" class="ss-item ss-release-notes">
           <pre class="ss-release-notes-text">{{ releaseNotes }}</pre>
         </div>
 
-        <!-- 重启安装按钮 -->
         <div v-if="updateState === 'downloaded'" class="ss-item">
           <button
             class="ss-action-btn ss-action-btn--primary"
@@ -84,7 +76,6 @@
           </button>
         </div>
 
-        <!-- 下载进度 -->
         <div v-if="updateState === 'downloading'" class="ss-item ss-progress">
           <div class="ss-progress-bar">
             <div
@@ -99,6 +90,26 @@
         </div>
       </div>
     </div>
+
+    <div class="ss-section">
+      <div class="ss-section-title">{{ L('诊断日志', 'Diagnostics') }}</div>
+      <div class="ss-section-body">
+        <div class="ss-item ss-item-update">
+          <span class="ss-item-label">{{ L('启用排查日志', 'Enable diagnostics') }}</span>
+          <label class="ss-switch">
+            <input
+              type="checkbox"
+              :checked="diagnosticsEnabled"
+              @change="handleDiagnosticsToggle"
+            />
+            <span class="ss-switch-slider"></span>
+          </label>
+          <span class="ss-status" :class="diagnosticsEnabled ? 'ss-status--warn' : 'ss-status--ok'">
+            {{ diagnosticsEnabled ? L('已开启，仅排查时建议开启', 'Enabled, turn on only when debugging') : L('默认关闭', 'Disabled by default') }}
+          </span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -108,7 +119,6 @@ import { useI18n } from 'vue-i18n'
 
 const { t, locale } = useI18n()
 
-// 中/英双语文案切换，不依赖 i18n key，杜绝 "SETTINGS.COMPANY INFO" 裸奔
 function L(zh, en) {
   return locale.value === 'zh' ? zh : en
 }
@@ -116,13 +126,15 @@ function L(zh, en) {
 const currentYear = computed(() => new Date().getFullYear())
 
 const appVersion = ref('')
-const updateState = ref('idle') // idle | checking | not-available | available | downloading | downloaded | error
+const updateState = ref('idle')
 const newVersion = ref('')
 const downloadProgress = ref(0)
 const isDevMode = ref(false)
 const releaseNotes = ref('')
 const forceUpdate = ref(false)
 const initialized = ref(false)
+const diagnosticsEnabled = ref(false)
+const pendingManualCheckId = ref(0)
 
 let cleanupListener = null
 
@@ -141,8 +153,15 @@ const updateBtnClass = computed(() => ({
   downloading: updateState.value === 'downloading',
 }))
 
-function handleCheckUpdate() {
-  window.electronAPI?.checkForUpdates()
+async function handleCheckUpdate() {
+  updateState.value = 'checking'
+  try {
+    const result = await window.electronAPI?.checkForUpdates?.()
+    pendingManualCheckId.value = Number(result?.checkId || 0)
+  } catch (_) {
+    pendingManualCheckId.value = 0
+    updateState.value = 'error'
+  }
 }
 
 async function handleDownloadUpdate() {
@@ -154,6 +173,17 @@ async function handleDownloadUpdate() {
 
 function handleInstallUpdate() {
   window.electronAPI?.installUpdate?.()
+}
+
+async function handleDiagnosticsToggle(event) {
+  const enabled = Boolean(event?.target?.checked)
+  diagnosticsEnabled.value = enabled
+  try {
+    const result = await window.electronAPI?.setDiagnosticsEnabled?.(enabled)
+    diagnosticsEnabled.value = Boolean(result?.enabled)
+  } catch (_) {
+    diagnosticsEnabled.value = !enabled
+  }
 }
 
 async function openSettings() {
@@ -168,28 +198,42 @@ async function openSettings() {
   }
 
   try {
-    const status = await window.electronAPI?.getAppUpdateStatus()
-    if (status && status.state) {
-      updateState.value = status.state
-      if (status.version) newVersion.value = status.version
-      if (status.progress != null) downloadProgress.value = status.progress
-      if (status.dev) isDevMode.value = true
-      if (status.releaseNotes) releaseNotes.value = status.releaseNotes
-      if (status.force) forceUpdate.value = true
-    }
-  } catch (_) { /* ignore */ }
+    const result = await window.electronAPI?.getDiagnosticsEnabled?.()
+    diagnosticsEnabled.value = Boolean(result?.enabled)
+  } catch (_) {}
 
-  // 监听更新状态变化
+  try {
+    const status = await window.electronAPI?.getAppUpdateStatus()
+    if (status?.state) applyUpdateStatus(status, { fromSnapshot: true })
+  } catch (_) {}
+
   cleanupListener = window.electronAPI?.onAppUpdateStatus?.((data) => {
     if (!data) return
-    updateState.value = data.state || 'idle'
-    if (data.version) newVersion.value = data.version
-    if (data.progress != null) downloadProgress.value = data.progress
-    if (data.dev) isDevMode.value = true
-    if (data.error) updateState.value = 'error'
-    if (data.releaseNotes) releaseNotes.value = data.releaseNotes
-    if (data.force) forceUpdate.value = true
+    applyUpdateStatus(data)
   })
+}
+
+function applyUpdateStatus(data, options = {}) {
+  const nextState = data.error ? 'error' : (data.state || 'idle')
+  const fromSnapshot = Boolean(options.fromSnapshot)
+  const checkId = Number(data.checkId || 0)
+
+  if (nextState === 'checking' && checkId > 0) {
+    pendingManualCheckId.value = checkId
+  }
+  if (!fromSnapshot && pendingManualCheckId.value > 0 && checkId > 0 && checkId < pendingManualCheckId.value) {
+    return
+  }
+
+  updateState.value = nextState
+  if (checkId > 0 && checkId === pendingManualCheckId.value && nextState !== 'checking') {
+    pendingManualCheckId.value = 0
+  }
+  if (data.version !== undefined) newVersion.value = data.version || ''
+  if (data.progress != null) downloadProgress.value = data.progress
+  if (data.dev != null) isDevMode.value = Boolean(data.dev)
+  if (data.releaseNotes !== undefined) releaseNotes.value = data.releaseNotes || ''
+  if (data.force != null) forceUpdate.value = Boolean(data.force)
 }
 
 onMounted(() => {})
@@ -206,7 +250,6 @@ defineExpose({ openSettings })
   padding: 24px 28px;
 }
 
-/* ── Section ── */
 .ss-section {
   margin-bottom: 24px;
 }
@@ -230,7 +273,6 @@ defineExpose({ openSettings })
   gap: 6px;
 }
 
-/* ── Item Row ── */
 .ss-item {
   display: flex;
   align-items: center;
@@ -260,7 +302,6 @@ defineExpose({ openSettings })
   font-size: 12px;
 }
 
-/* ── Update Button ── */
 .ss-item-update {
   flex-wrap: wrap;
   gap: 10px;
@@ -302,7 +343,6 @@ defineExpose({ openSettings })
   to { transform: rotate(360deg); }
 }
 
-/* ── Status Badge ── */
 .ss-status {
   font-size: 12px;
   font-weight: 500;
@@ -318,7 +358,6 @@ defineExpose({ openSettings })
   color: var(--cc-error);
 }
 
-/* ── Progress ── */
 .ss-progress {
   flex-direction: column;
   align-items: stretch;
@@ -355,7 +394,6 @@ defineExpose({ openSettings })
   color: var(--cc-text-muted);
 }
 
-/* ── Action Button ── */
 .ss-action-btn {
   padding: 6px 16px;
   border-radius: 6px;
@@ -375,13 +413,11 @@ defineExpose({ openSettings })
   filter: brightness(1.1);
 }
 
-/* ── Force Update ── */
 .ss-status--force {
   color: var(--cc-error);
   font-weight: 600;
 }
 
-/* ── Release Notes ── */
 .ss-release-notes {
   max-height: 120px;
   overflow-y: auto;
@@ -393,5 +429,47 @@ defineExpose({ openSettings })
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
+}
+
+.ss-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 40px;
+  height: 22px;
+}
+
+.ss-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ss-switch-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--cc-border);
+  transition: background 0.15s ease;
+}
+
+.ss-switch-slider::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.ss-switch input:checked + .ss-switch-slider {
+  background: var(--cc-warning);
+}
+
+.ss-switch input:checked + .ss-switch-slider::before {
+  transform: translateX(18px);
 }
 </style>

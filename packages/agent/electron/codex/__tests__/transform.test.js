@@ -9,9 +9,10 @@
 
 const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
-const { responsesToChatCompletions } = require('../transformRequest')
+const { responsesToChatCompletions, canonicalizeJsonStringIfParseable } = require('../transformRequest')
 const { chatCompletionToResponse, chatErrorToResponseError } = require('../transformResponse')
 const { buildProxyCodexConfig, PROXY_PROVIDER_ID, __test__: chatProxyManagerTest } = require('../chatProxyManager')
+const { chatUsageToResponsesUsage } = require('../common')
 
 let passed = 0
 let failed = 0
@@ -472,6 +473,32 @@ async function runTests() {
     })
     assert.strictEqual(result.messages[0].role, 'assistant')
     assert.strictEqual(result.messages[0].reasoning_content, 'Need to inspect file.')
+  })
+
+  test('request: parseable JSON strings are canonicalized before forwarding', () => {
+    const result = responsesToChatCompletions({
+      model: 'm',
+      input: [
+        { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{"b":2,"a":1}' },
+        { type: 'function_call_output', call_id: 'call_1', output: '{"z":1,"a":2}' },
+      ],
+    })
+    assert.strictEqual(result.messages[0].tool_calls[0].function.arguments, '{"a":1,"b":2}')
+    assert.strictEqual(result.messages[1].content, '{"a":2,"z":1}')
+    assert.strictEqual(canonicalizeJsonStringIfParseable('{"b":2,"a":1}'), '{"a":1,"b":2}')
+  })
+
+  test('usage: DeepSeek prompt cache hit tokens map to responses cache fields', () => {
+    const usage = chatUsageToResponsesUsage({
+      prompt_tokens: 10,
+      completion_tokens: 3,
+      total_tokens: 13,
+      prompt_cache_hit_tokens: 7,
+      prompt_tokens_details: { cached_tokens: 1 },
+    })
+    assert.strictEqual(usage.cache_read_input_tokens, 7)
+    assert.strictEqual(usage.cache_creation_input_tokens, 0)
+    assert.strictEqual(usage.input_tokens_details.cached_tokens, 7)
   })
 
   test('proxy config: builds per-process Codex provider override', () => {

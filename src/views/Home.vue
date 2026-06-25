@@ -173,7 +173,7 @@
       <div class="stats-header">
         <h2 class="stats-title">{{ $t('home.stats') }}</h2>
         <div class="trend-toggle">
-          <button :class="{ active: trendDays === 1 }" @click="setTrendDays(1)">当日</button>
+          <button :class="{ active: trendDays === 1 }" @click="setTrendDays(1)">{{ $t('home.today') }}</button>
           <button :class="{ active: trendDays === 7 }" @click="setTrendDays(7)">{{ $t('home.days7') }}</button>
           <button :class="{ active: trendDays === 30 }" @click="setTrendDays(30)">{{ $t('home.days30') }}</button>
         </div>
@@ -195,7 +195,7 @@
           </div>
         </div>
         <div v-else class="stats-today">
-          <div class="stats-period-label">{{ trendDays === 1 ? '当日汇总' : `${trendDays}天汇总` }}</div>
+          <div class="stats-period-label">{{ trendDays === 1 ? $t('home.todayRange') : $t('home.statsRange', { days: trendDays }) }}</div>
           <div class="stat-item">
             <span class="stat-label">{{ $t('home.input') }}</span>
             <span class="stat-value">{{ formatNumber(summaryStats.inputTokens) }}</span>
@@ -282,6 +282,7 @@ onMounted(async () => {
 const appVersion = ref('')
 const updateChecking = ref(false)
 const updateAvailable = ref(false)
+const pendingManualCheckId = ref(0)
 let _cleanupUpdateStatus = null
 
 onMounted(async () => {
@@ -294,14 +295,12 @@ onMounted(async () => {
 
       try {
         const status = await window.electronAPI?.getAppUpdateStatus()
-        if (status?.state === 'available') updateAvailable.value = true
-        if (status?.state === 'checking') updateChecking.value = true
+        applyUpdateStatus(status, { fromSnapshot: true })
       } catch (_) {}
 
       _cleanupUpdateStatus = window.electronAPI?.onAppUpdateStatus?.((data) => {
         if (!data) return
-        updateChecking.value = data.state === 'checking'
-        updateAvailable.value = data.state === 'available'
+        applyUpdateStatus(data)
       })
     }, 0)
   })
@@ -314,7 +313,28 @@ onUnmounted(() => {
 function checkForUpdate() {
   if (!window.electronAPI?.checkForUpdates) return
   updateChecking.value = true
-  window.electronAPI.checkForUpdates()
+  window.electronAPI.checkForUpdates().then((result) => {
+    pendingManualCheckId.value = Number(result?.checkId || 0)
+  }).catch(() => {
+    pendingManualCheckId.value = 0
+    updateChecking.value = false
+  })
+}
+
+function applyUpdateStatus(data, options = {}) {
+  if (!data) return
+  const fromSnapshot = Boolean(options.fromSnapshot)
+  const checkId = Number(data.checkId || 0)
+  if (data.state === 'checking' && checkId > 0) {
+    pendingManualCheckId.value = checkId
+  }
+  if (!fromSnapshot && pendingManualCheckId.value > 0 && checkId > 0 && checkId < pendingManualCheckId.value) return
+
+  updateChecking.value = data.state === 'checking'
+  updateAvailable.value = data.state === 'available'
+  if (checkId > 0 && checkId === pendingManualCheckId.value && data.state !== 'checking') {
+    pendingManualCheckId.value = 0
+  }
 }
 
 function openChat(chat) {

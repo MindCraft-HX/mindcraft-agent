@@ -109,7 +109,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       callback(progress);
     });
   },
-  checkForUpdates: () => ipcRenderer.send('check-for-updates'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   clientUpdateInfoData: (callback) => {
     ipcRenderer.on("client-update-info-data", (event, progress) => {
       callback(progress);
@@ -125,6 +125,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   installUpdate: () => ipcRenderer.send('install-update'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getDiagnosticsEnabled: () => ipcRenderer.invoke('get-diagnostics-enabled'),
+  setDiagnosticsEnabled: (enabled) => ipcRenderer.invoke('set-diagnostics-enabled', { enabled }),
 
   // Clipboard
   clipboard: () => clipboard,

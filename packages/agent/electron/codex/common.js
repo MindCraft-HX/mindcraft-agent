@@ -104,12 +104,15 @@ function buildResponseFunctionCallItem(callId, name, args, status) {
  */
 function chatUsageToResponsesUsage(usage) {
   if (!usage) return null
+  const cacheReadTokens = extractChatCacheTokens(usage)
   return {
     input_tokens: usage.prompt_tokens || 0,
     output_tokens: usage.completion_tokens || 0,
     total_tokens: usage.total_tokens || 0,
+    cache_read_input_tokens: cacheReadTokens,
+    cache_creation_input_tokens: 0,
     input_tokens_details: {
-      cached_tokens: usage.prompt_tokens_details?.cached_tokens || 0,
+      cached_tokens: cacheReadTokens,
     },
     output_tokens_details: {
       reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens || 0,
@@ -131,6 +134,18 @@ function responseStatusFromFinishReason(finishReason) {
   }
 }
 
+
+function toSafeInt(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0 }
+
+function extractChatCacheTokens(usage) {
+  if (!usage) return 0
+  const fromTop = toSafeInt(usage.cache_read_input_tokens)
+  if (fromTop > 0) return fromTop
+  const fromDeepSeek = toSafeInt(usage.prompt_cache_hit_tokens)
+  if (fromDeepSeek > 0) return fromDeepSeek
+  return toSafeInt(usage.prompt_tokens_details?.cached_tokens)
+}
+
 module.exports = {
   extractReasoningFieldText,
   getContentText,
@@ -139,6 +154,7 @@ module.exports = {
   detectOpenThinkTag,
   stripLeadingThinkOpenTag,
   buildResponseFunctionCallItem,
+  extractChatCacheTokens,
   chatUsageToResponsesUsage,
   responseStatusFromFinishReason,
 }

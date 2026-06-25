@@ -2,6 +2,7 @@ const { ipcMain } = require('electron')
 const { Conf } = require('electron-conf')
 const { setupClaudeHandlers } = require('./claudeAgent')
 const { setupCodexSdkHandlers, resetCodexSdkRuntime } = require('./codexAgent')
+const { getDiagnosticsEnabled, setDiagnosticsEnabled } = require('./diagnosticsFileUtils')
 const { registerLocalSearchIpc } = require('./localSearch')
 const { setupHomeMetricsHandlers } = require('./homeMetrics')
 const { registerSessionInstructionIpc } = require('./sessionInstructionIpc')
@@ -33,6 +34,9 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
       setLocale(loc)
     }
   })
+
+  targetIpcMain.handle('get-diagnostics-enabled', () => ({ enabled: getDiagnosticsEnabled() }))
+  targetIpcMain.handle('set-diagnostics-enabled', (_e, { enabled }) => setDiagnosticsEnabled(enabled))
 }
 
 module.exports = {

@@ -671,12 +671,72 @@ test('detached provider binding is not re-imported by provider scan', () => {
     name: 'Provider title',
   }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
 
-  assert.equal(summary.chatKey, undefined)
-  assert.equal(summary.cliSessionId, 'thread-1')
+  assert.equal(summary, null)
   const records = listSessionRecords({ userDataDir })
   assert.equal(records.length, 1)
   assert.equal(records[0].chatKey, 'chat-key-1')
   assert.equal(records[0].provider.cliSessionId, '')
+})
+
+test('runtime fingerprint detach prevents old Codex thread from reappearing as a new chat', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Original thread',
+        cliSessionId: 'thread-old',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',
+        model: 'gpt-5.5',
+      }],
+    }],
+  }, { userDataDir })
+
+  const detached = detachSessionProviderBinding({
+    agent: 'codex',
+    chatKey: 'chat-key-1',
+    cliSessionId: 'thread-old',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',
+    reason: 'runtime_fingerprint_changed',
+  }, { userDataDir })
+  assert.equal(detached, 1)
+
+  const rebound = setSessionTitle('chat-key-1', 'Retargeted thread', {
+    userDataDir,
+    agent: 'codex',
+    cwd: 'D:/repo',
+    cliSessionId: 'thread-new',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-new.jsonl',
+    model: 'gpt-5.4',
+    reasoningEffort: 'high',
+  })
+  assert.equal(rebound.ok, true)
+
+  const staleSummary = attachRegistrySessionToScanSummary('codex', {
+    id: 'thread-old',
+    cliSessionId: 'thread-old',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',
+    name: 'Stale provider title',
+  }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(staleSummary, null)
+
+  const activeSummary = attachRegistrySessionToScanSummary('codex', {
+    id: 'thread-new',
+    cliSessionId: 'thread-new',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-new.jsonl',
+    name: 'Active provider title',
+  }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
+
+  assert.equal(activeSummary.chatKey, 'chat-key-1')
+  assert.equal(activeSummary.cliSessionId, 'thread-new')
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records.length, 1)
+  assert.equal(records[0].chatKey, 'chat-key-1')
+  assert.equal(records[0].provider.cliSessionId, 'thread-new')
+  assert.equal(records[0].metadata.detachedProviderBinding.reason, 'runtime_fingerprint_changed')
 })
 
 test('upsertRuntimeByProvider updates runtime for an existing provider mapping', () => {

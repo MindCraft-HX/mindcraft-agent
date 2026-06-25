@@ -25,6 +25,7 @@
 		"enterChat": "进入对话",
 		"days7": "7天",
 		"days30": "30天",
+		"statsRange": "近 {days} 天汇总",
 		"noTrendData": "暂无用量数据",
 		"input": "输入",
 		"output": "输出",

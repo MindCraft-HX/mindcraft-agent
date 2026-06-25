@@ -7,6 +7,34 @@
 
 const { applyReasoningToChatBody, inferReasoningConfig } = require('./reasoningMapper')
 
+function canonicalizeJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeJsonValue)
+  }
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const key of Object.keys(value).sort()) {
+      out[key] = canonicalizeJsonValue(value[key])
+    }
+    return out
+  }
+  return value
+}
+
+function canonicalJsonStringify(value) {
+  return JSON.stringify(canonicalizeJsonValue(value))
+}
+
+function canonicalizeJsonStringIfParseable(raw) {
+  const text = String(raw || '')
+  if (!text.trim()) return text
+  try {
+    return canonicalJsonStringify(JSON.parse(text))
+  } catch (_) {
+    return text
+  }
+}
+
 /**
  * 将 CodeX Responses API 请求转换为 OpenAI Chat Completions 请求
  *
@@ -147,8 +175,8 @@ function appendInputMessages(input, messages) {
 
   function canonicalizeOutput(output) {
     if (output === undefined || output === null) return ''
-    if (typeof output === 'string') return output
-    try { return JSON.stringify(output) } catch (_) { return String(output) }
+    if (typeof output === 'string') return canonicalizeJsonStringIfParseable(output)
+    try { return canonicalJsonStringify(output) } catch (_) { return String(output) }
   }
 
   for (const item of input) {
@@ -276,8 +304,8 @@ function responsesFunctionCallToToolCall(item) {
     function: {
       name: item.name || '',
       arguments: typeof item.arguments === 'string'
-        ? item.arguments
-        : JSON.stringify(item.arguments || {}),
+        ? canonicalizeJsonStringIfParseable(item.arguments)
+        : canonicalJsonStringify(item.arguments || {}),
     },
   }
 }
@@ -442,4 +470,6 @@ module.exports = {
   sanitizeToolChoiceForChat,
   responsesFunctionCallToToolCall,
   responsesReasoningItemText,
+  canonicalJsonStringify,
+  canonicalizeJsonStringIfParseable,
 }
