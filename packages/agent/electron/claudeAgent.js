@@ -2846,7 +2846,7 @@ function setupClaudeHandlers() {
             })
             if (metrics) {
               const mergedMetrics = latestLiveMetrics
-                ? mergeClaudeLiveMetricSamples(metrics, latestLiveMetrics)
+                ? mergeClaudeLiveMetricSamples(latestLiveMetrics, metrics)
                 : metrics
               mergedMetrics.sessionId = sessionId
               safeSend(s.event?.sender, 'claude-agent-metrics', mergedMetrics)

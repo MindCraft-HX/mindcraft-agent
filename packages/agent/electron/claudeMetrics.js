@@ -156,7 +156,8 @@ function getTokenMetrics(cliSessionId, options = {}) {
           continue
         }
         const usage = parsed.message.usage
-        const normalized = normalizeClaudeUsageForUi(usage, model || parsed.model_name || parsed.model || parsed.message?.model || '')
+        const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
+        const normalized = normalizeClaudeUsageForUi(usage, entryModel)
         // inputTokens 是 UI 口径的非缓存输入；流式消息中已有当前样本时可实时增长。
         inputTokens = Math.max(inputTokens, normalized.inputTokens || 0)
         // output/cache 是 per-round 值，仅信任已完成的轮次（避免流式跳回 0）
@@ -198,7 +199,8 @@ function getTokenMetrics(cliSessionId, options = {}) {
           if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) continue
           const usage = parsed.message.usage
           // 同上：input/output/cache 均取最后值避免跨轮不对称
-          const normalized = normalizeClaudeUsageForUi(usage, model || parsed.model_name || parsed.model || parsed.message?.model || '')
+          const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
+          const normalized = normalizeClaudeUsageForUi(usage, entryModel)
           inputTokens = normalized.inputTokens || inputTokens
           outputTokens = normalized.outputTokens || outputTokens
           cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens

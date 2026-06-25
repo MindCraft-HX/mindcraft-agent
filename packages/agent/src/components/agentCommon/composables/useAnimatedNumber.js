@@ -36,8 +36,9 @@ export function useAnimatedNumber() {
     rafId = requestAnimationFrame(tick)
   }
 
-  function update(newTarget) {
+  function update(newTarget, options = {}) {
     const now = performance.now()
+    const shouldSnap = options?.snap === true
 
     // 数据回退（切 tab / 新 session / 上游修正采样）→ 立即同步，不播放反向动画。
     // 这里必须同时比较 display 和 target：
@@ -55,6 +56,14 @@ export function useAnimatedNumber() {
 
     // 值未变 → 跳过
     if (newTarget === target) return
+    if (shouldSnap) {
+      display.value = newTarget
+      target = newTarget
+      rate = 0
+      lastTime = now
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null }
+      return
+    }
 
     // 首次调用 / reset 后首次增长 → 直接同步（无基线不猜速率）
     if (lastTime === 0 || target === 0 || snapNext) {

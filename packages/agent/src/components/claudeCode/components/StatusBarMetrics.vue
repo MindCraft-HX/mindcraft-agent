@@ -99,9 +99,9 @@ const { display: inputDisplay, update: updateInput } = useAnimatedNumber()
 const { display: outputDisplay, update: updateOutput } = useAnimatedNumber()
 const { display: cacheDisplay, update: updateCache } = useAnimatedNumber()
 
-watch(() => props.metrics.inputTokens, (nv) => { updateInput(nv) }, { immediate: true })
-watch(() => props.metrics.outputTokens, (nv) => { updateOutput(nv) }, { immediate: true })
-watch(() => (props.metrics.cacheReadTokens || 0) + (props.metrics.cacheCreationTokens || 0), (nv) => { updateCache(nv) }, { immediate: true })
+watch(() => props.metrics.inputTokens, (nv) => { updateInput(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
+watch(() => props.metrics.outputTokens, (nv) => { updateOutput(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
+watch(() => (props.metrics.cacheReadTokens || 0) + (props.metrics.cacheCreationTokens || 0), (nv) => { updateCache(nv, { snap: !props.metrics.thinking }) }, { immediate: true })
 
 const emit = defineEmits(['send-message'])
 

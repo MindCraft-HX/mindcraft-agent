@@ -33,6 +33,17 @@ function normalizeClaudeTurnUsageForUi(usage, model = '') {
   }
 }
 
+function attachTurnTokensToLastRenderableMessage(messages, turnTokens) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (!message) continue
+    if (message.role === 'assistant') {
+      message._turnTokens = turnTokens
+      return
+    }
+  }
+}
+
 /** 追加消息到 messages */
 function pushMessage(tab, onNewMessage, msg) {
   tab.messages.push(msg)
@@ -277,15 +288,18 @@ export function useClaudeAgentStream({
       // 提取 per-turn token → 附着到最后一条 assistant 消息
       if (msg.usage) {
         const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
+        const normalizedUsage = normalizeClaudeTurnUsageForUi(msg.usage, msg?.message?.model || msg?.model || tab?.model || '')
+        const turnTokens = {
+          inputTokens: normalizedUsage.inputTokens,
+          outputTokens: normalizedUsage.outputTokens,
+          cacheReadTokens: normalizedUsage.cacheReadTokens,
+          cacheCreationTokens: normalizedUsage.cacheCreationTokens,
+          durationMs: msg.duration_ms || 0,
+        }
         if (lastAssistant && !lastAssistant._turnTokens) {
-          const normalizedUsage = normalizeClaudeTurnUsageForUi(msg.usage, msg?.message?.model || msg?.model || tab?.model || '')
-          lastAssistant._turnTokens = {
-            inputTokens: normalizedUsage.inputTokens,
-            outputTokens: normalizedUsage.outputTokens,
-            cacheReadTokens: normalizedUsage.cacheReadTokens,
-            cacheCreationTokens: normalizedUsage.cacheCreationTokens,
-            durationMs: msg.duration_ms || 0,
-          }
+          lastAssistant._turnTokens = turnTokens
+        } else if (!lastAssistant) {
+          attachTurnTokensToLastRenderableMessage(msgs, turnTokens)
         }
       }
       throttledScrollBottom(tab.id, scrollBottom)
