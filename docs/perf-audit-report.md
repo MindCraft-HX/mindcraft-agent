@@ -388,7 +388,7 @@ function ipcEnd(name) {
 | 9 | P1-1 | chat-save-session 异步化/队列化 | 减少流式传输周期性微卡 | ✅ 已完成 | JSON.stringify 去格式化 + fs.promises + index 串行队列 |
 | 10 | P2-4 | 审查+合并 saveHistory immediate 调用 | 减少无效序列化 | ✅ 已完成 | persistNow/persistHistoryNow 加 500ms cooldown，流式期间自动合并 |
 | 11 | P1-3 | flatMap watcher 改为事件驱动 | 消除中间数组创建 | ⏭️ 下一轮 P2 | 可与 projectTabs 状态重构一起做 |
-| 12 | P2-3 | execClaudeCli/execCodexCli 异步化 | 插件操作不再冻结 UI | ⏭️ 下一轮 P2 | 后端 Promise 化，前端已有异步调用可复用 |
+| 12 | P2-3 | execClaudeCli/execCodexCli 异步化 | 插件操作不再冻结 UI | ✅ 已完成 | execFileSync → promisify(execFile)，codexAgent 5 个调用点加 await，claudeAgent 已是 async |
 | 13 | P2-5 | sendSync → 异步/退出前保存方案 | 关闭时不再卡渲染器 | 暂缓 | 涉及退出前持久化语义，需单独方案 |
 | 14 | P1-4 | claudeMetrics + localSearch 异步化 | metrics/search 不再阻塞主进程 | 暂缓 | 先合并重复 localSearch，再改调用方 |
 

@@ -357,6 +357,7 @@ function loadClaudeAgentSdk() {
 }
 
 const { execSync, execFileSync, exec, execFile } = require('child_process')
+const { promisify } = require('util')
 
 /** 构建包含系统 Node.js 路径的 env 对象（打包后 PATH 可能缺失 node/npm） */
 function getEnvWithNodePath() {
@@ -1272,7 +1273,8 @@ function setupClaudeHandlers() {
     const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)
     const cmd = isCmdShim ? 'cmd.exe' : claudePath
     const cmdArgs = isCmdShim ? ['/c', claudePath, ...args] : args
-    const out = execFileSync(cmd, cmdArgs, { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
+    // P2-3：execFileSync → 异步 execFile，插件安装/卸载不再冻结主进程
+    const { stdout: out } = await promisify(execFile)(cmd, cmdArgs, { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
     console.log('[claude] CLI:', args.join(' '), '→', (out || '').trim().slice(0, 200) || '(empty)')
     return out
   }

@@ -4,6 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { execSync, execFileSync, exec, execFile } = require('child_process')
+const { promisify } = require('util')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample } = require('./tokenMetrics/diagnostics')
@@ -4191,13 +4192,14 @@ function setupCodexSdkHandlers() {
   }
 
   /** 执行 codex CLI 命令，自动处理 Windows .cmd/.bat shim */
-  function execCodexCli(args, opts = {}) {
+  // P2-3：execFileSync → 异步 execFile，插件安装/卸载不再冻结主进程
+  async function execCodexCli(args, opts = {}) {
     const codexPath = findGlobalCodexPath()
     if (!codexPath) throw new Error('codex not found')
     const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath)
     const cmd = isCmdShim ? 'cmd.exe' : codexPath
     const cmdArgs = isCmdShim ? ['/c', codexPath, ...args] : args
-    const out = execFileSync(cmd, cmdArgs, { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
+    const { stdout: out } = await promisify(execFile)(cmd, cmdArgs, { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
     console.log('[codex] CLI:', args.join(' '), '→', (out || '').trim().slice(0, 200) || '(empty)')
     return out
   }
@@ -4285,10 +4287,10 @@ function setupCodexSdkHandlers() {
     return installed
   }
 
-  function codexReadInstalledPlugins() {
+  async function codexReadInstalledPlugins() {
     const installed = []
     try {
-      const out = execCodexCli(['plugin', 'list'], { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] })
+      const out = await execCodexCli(['plugin', 'list'], { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] })
       // 解析表格输出，格式：PLUGIN_ID    STATUS    ...
       // STATUS 列可能包含 "not installed"、"installed"、"enabled" 等词
       for (const line of out.split('\n')) {
@@ -4315,7 +4317,7 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-plugins-get-state', async () => {
     const plugins = codexReadMarketplacePlugins()
-    const installed = codexReadInstalledPlugins()
+    const installed = await codexReadInstalledPlugins()
     const installedMap = new Map(installed.map(p => [p.id, p]))
     for (const p of plugins) {
       const match = installedMap.get(p.id)
@@ -4327,7 +4329,7 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-plugins-install', async (_, pluginId) => {
     try {
-      execCodexCli(['plugin', 'add', pluginId])
+      await execCodexCli(['plugin', 'add', pluginId])
       _codexInstalledPluginsCache = null // 安装后清缓存
       return { ok: true }
     } catch (e) {
@@ -4339,7 +4341,7 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-plugins-uninstall', async (_, pluginId) => {
     try {
-      execCodexCli(['plugin', 'remove', pluginId])
+      await execCodexCli(['plugin', 'remove', pluginId])
       _codexInstalledPluginsCache = null
       return { ok: true }
     } catch (e) {
@@ -4352,7 +4354,7 @@ function setupCodexSdkHandlers() {
   // CodeX 没有独立的 enable/disable 命令，用 add/remove 代替
   ipcMain.handle('codex-plugins-enable', async (_, pluginId) => {
     try {
-      execCodexCli(['plugin', 'add', pluginId])
+      await execCodexCli(['plugin', 'add', pluginId])
       _codexInstalledPluginsCache = null
       return { ok: true }
     } catch (e) {
@@ -4364,7 +4366,7 @@ function setupCodexSdkHandlers() {
 
   ipcMain.handle('codex-plugins-disable', async (_, pluginId) => {
     try {
-      execCodexCli(['plugin', 'remove', pluginId])
+      await execCodexCli(['plugin', 'remove', pluginId])
       _codexInstalledPluginsCache = null
       return { ok: true }
     } catch (e) {
