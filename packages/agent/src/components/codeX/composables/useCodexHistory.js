@@ -96,6 +96,7 @@ export function useCodexHistory({
             createdAt: persistable.createdAt ?? null, updatedAt: persistable.updatedAt ?? null, fileSize: persistable.fileSize ?? null,
             titleSource: persistable.titleSource || '',
             _userRenamed: Boolean(persistable._userRenamed),
+            _resumeAllowed: persistable._resumeAllowed !== false,
           }
         }),
       })),
@@ -150,7 +151,10 @@ export function useCodexHistory({
           if (cNum > getChatCounter()) setChatCounter(cNum)
           const messages = shouldRestoreInlineMessages(c) ? normalizeMessages(c.messages) : []
           if (isSuspiciousSlashChat(c, messages)) return null
-          return makeRestoredChat(c, messages)
+          const restoredChat = makeRestoredChat(c, messages)
+          restoredChat._restoredFromPanelState = true
+          restoredChat._resumeAllowed = c._resumeAllowed !== false
+          return restoredChat
         })
         .filter(Boolean)
       )

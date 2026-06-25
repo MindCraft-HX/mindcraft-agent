@@ -68,3 +68,20 @@ test('scan merge preserves active draft chat but drops inactive idle drafts', ()
   })
   assert.deepEqual(merged.map(chat => chat.id), ['chat-scanned', 'chat-active'])
 })
+
+test('scan merge preserves restored unbound local chat during startup refresh', () => {
+  const restoredLocalChat = {
+    id: 'chat-local',
+    sessionId: 'codex-session-chat-32-1781778199275',
+    thinking: false,
+    _awaitingDone: false,
+    _restoredFromPanelState: true,
+    cliSessionId: '',
+    filePath: '',
+  }
+  const scanned = { id: 'chat-scanned', cliSessionId: 'thread-1', filePath: 'rollout-thread-1.jsonl' }
+
+  const merged = mergeScannedChatsPreservingRuntime([restoredLocalChat], [scanned], {})
+
+  assert.deepEqual(merged.map(chat => chat.id), ['chat-scanned', 'chat-local'])
+})

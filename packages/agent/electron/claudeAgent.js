@@ -5,6 +5,7 @@ const fs = require('fs')
 const os = require('os')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample } = require('./tokenMetrics/diagnostics')
+const { beginTurn, submitSample, getCurrentSnapshot, clearCurrentTurn } = require('./tokenMetrics/turnStore')
 const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
@@ -261,6 +262,59 @@ function mergeClaudeLiveMetricSamples(base = {}, next = {}) {
       toNonNegativeMetricNumber(curr.durationMs),
     ),
   }
+}
+
+/**
+ * Phase 3：通过 TurnStore 发射 metrics。
+ * 样本先进入 TurnStore，再从 snapshot 构建前端 payload。
+ * 确保 StatusBar / footer / history 消费同一套值。
+ */
+function emitClaudeMetricsViaStore(sender, sample, sessionId, model, extra = {}) {
+  const { snapshot } = submitSample({
+    provider: 'claude',
+    chatKey: sessionId,
+    providerSessionId: sample.providerSessionId || '',
+    source: sample.source,
+    inputTokens: sample.inputTokens,
+    outputTokens: sample.outputTokens,
+    cacheReadTokens: sample.cacheReadTokens,
+    cacheCreationTokens: sample.cacheCreationTokens,
+    contextUsage: sample.contextUsage,
+    contextWindow: sample.contextWindow,
+    durationMs: sample.durationMs,
+    costUsd: sample.costUsd,
+  })
+  if (!snapshot) return
+
+  logMetricSample({
+    provider: 'claude',
+    source: sample.source,
+    chatKey: sessionId,
+    providerSessionId: sample.providerSessionId || '',
+    phase: snapshot.phase,
+    inputTokens: snapshot.inputTokens,
+    outputTokens: snapshot.outputTokens,
+    cacheReadTokens: snapshot.cacheReadTokens,
+    cacheCreationTokens: snapshot.cacheCreationTokens,
+    contextUsage: snapshot.contextUsage,
+    durationMs: snapshot.durationMs,
+    rawUsage: sample.rawUsage || null,
+  })
+
+  safeSend(sender, 'claude-agent-metrics', {
+    sessionId,
+    model: model || '',
+    thinking: snapshot.phase === 'live',
+    inputTokens: snapshot.inputTokens,
+    outputTokens: snapshot.outputTokens,
+    cacheReadTokens: snapshot.cacheReadTokens,
+    cacheCreationTokens: snapshot.cacheCreationTokens,
+    contextUsage: snapshot.contextUsage,
+    contextWindow: snapshot.contextWindow,
+    durationMs: snapshot.durationMs,
+    costUsd: snapshot.costUsd,
+    ...extra,
+  })
 }
 
 /** 从用户文案里解析 Windows 绝对路径，用于 additionalDirectories（与 cwd 不同的根目录） */
@@ -2833,10 +2887,11 @@ function setupClaudeHandlers() {
             apiKey,
             runMode: mode,
           })
+          // Phase 3：TurnStore — 开始新 turn
+          beginTurn({ provider: 'claude', chatKey, startedAt: Date.now() })
           // 启动 metrics 轮询器。只推送真实 transcript 样本，不伪造中间值；
           // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
-          let latestLiveMetrics = null
           const pollInterval = setInterval(async () => {
             const s = agentSessions.get(chatKey)
             if (!s) { clearInterval(pollInterval); return }
@@ -2846,22 +2901,19 @@ function setupClaudeHandlers() {
               tokenSinceMs: pollStart,
             })
             if (metrics) {
-              const mergedMetrics = latestLiveMetrics
-                ? mergeClaudeLiveMetricSamples(latestLiveMetrics, metrics)
-                : metrics
-              mergedMetrics.sessionId = sessionId
-              logMetricSample({
-                provider: 'claude', source: 'jsonl-poll',
-                chatKey, providerSessionId: cliId, phase: 'live',
-                inputTokens: mergedMetrics.inputTokens,
-                outputTokens: mergedMetrics.outputTokens,
-                cacheReadTokens: mergedMetrics.cacheReadTokens,
-                cacheCreationTokens: mergedMetrics.cacheCreationTokens,
-                contextUsage: mergedMetrics.contextUsage,
-                durationMs: mergedMetrics.durationMs,
+              // Phase 3：TurnStore — jsonl-poll 只补 context/duration，不覆盖 in/out/cache
+              emitClaudeMetricsViaStore(s.event?.sender, {
+                source: 'jsonl-poll',
+                providerSessionId: cliId,
+                contextUsage: metrics.contextUsage,
+                contextWindow: metrics.contextWindow,
+                durationMs: metrics.durationMs,
                 rawUsage: metrics.rawUsage || null,
+              }, sessionId, model || '', {
+                speedOutputPerSec: metrics.speedOutputPerSec,
+                gitBranch: metrics.gitBranch,
+                gitChanges: metrics.gitChanges,
               })
-              safeSend(s.event?.sender, 'claude-agent-metrics', mergedMetrics)
             }
           }, CLAUDE_METRICS_POLL_INTERVAL_MS)
           metricsPollers.set(chatKey, { interval: pollInterval, startTime: pollStart })
@@ -2886,25 +2938,14 @@ function setupClaudeHandlers() {
             }
             const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
             if (liveUsageMetrics) {
-              latestLiveMetrics = mergeClaudeLiveMetricSamples(latestLiveMetrics, {
-                sessionId,
-                model: model || '',
-                thinking: true,
-                durationMs: Math.max(0, Date.now() - pollStart),
+              // Phase 3：TurnStore — sdk-live 更新 live snapshot
+              emitClaudeMetricsViaStore(sender, {
+                source: 'sdk-live',
+                providerSessionId: cliSessionIds.get(chatKey) || '',
                 ...liveUsageMetrics,
-              })
-              logMetricSample({
-                provider: 'claude', source: 'sdk-live',
-                chatKey, providerSessionId: cliSessionIds.get(chatKey) || '', phase: 'live',
-                inputTokens: latestLiveMetrics.inputTokens,
-                outputTokens: latestLiveMetrics.outputTokens,
-                cacheReadTokens: latestLiveMetrics.cacheReadTokens,
-                cacheCreationTokens: latestLiveMetrics.cacheCreationTokens,
-                contextUsage: latestLiveMetrics.contextUsage,
-                durationMs: latestLiveMetrics.durationMs,
+                durationMs: Math.max(0, Date.now() - pollStart),
                 rawUsage: msg?.message?.usage || null,
-              })
-              safeSend(sender, 'claude-agent-metrics', latestLiveMetrics)
+              }, sessionId, model || '')
             }
             if (msg.type === 'assistant' && Array.isArray(msg.message?.content)) {
               for (const block of msg.message.content) {
@@ -2936,37 +2977,20 @@ function setupClaudeHandlers() {
               // 发送最终 metrics
               const usage = msg.usage || {}
               const normalizedUsage = claudeMetrics.normalizeClaudeUsageForUi(usage, model || '')
-              const finalMetrics = {
-                sessionId,
-                model: model || '',
-                costUsd: msg.total_cost_usd || 0,
+              // Phase 3：TurnStore — sdk-result finalizes turn
+              emitClaudeMetricsViaStore(sender, {
+                source: 'sdk-result',
+                providerSessionId: msg.session_id || '',
                 inputTokens: normalizedUsage.inputTokens || 0,
                 outputTokens: normalizedUsage.outputTokens || 0,
                 cacheReadTokens: normalizedUsage.cacheReadTokens || 0,
                 cacheCreationTokens: normalizedUsage.cacheCreationTokens || 0,
                 contextUsage: normalizedUsage.contextUsage || 0,
                 durationMs: msg.duration_ms || 0,
-                numTurns: msg.num_turns || 0,
-                thinking: false,
-              }
-              // 合并 JSONL 中获取的 context 和 cost 信息（当 SDK 未提供时）
-              const jsonlMetrics = claudeMetrics.getTokenMetrics(msg.session_id)
-              if (jsonlMetrics) {
-                if (jsonlMetrics.contextUsage) finalMetrics.contextUsage = jsonlMetrics.contextUsage
-                if (jsonlMetrics.contextWindow) finalMetrics.contextWindow = jsonlMetrics.contextWindow
-                if (!finalMetrics.costUsd && jsonlMetrics.costUsd) finalMetrics.costUsd = jsonlMetrics.costUsd
-              }
-              safeSend(sender, 'claude-agent-metrics', finalMetrics)
-              logMetricSample({
-                provider: 'claude', source: 'sdk-result',
-                chatKey, providerSessionId: msg.session_id || '', phase: 'final',
-                inputTokens: finalMetrics.inputTokens,
-                outputTokens: finalMetrics.outputTokens,
-                cacheReadTokens: finalMetrics.cacheReadTokens,
-                cacheCreationTokens: finalMetrics.cacheCreationTokens,
-                contextUsage: finalMetrics.contextUsage,
-                durationMs: finalMetrics.durationMs,
+                costUsd: msg.total_cost_usd || 0,
                 rawUsage: usage || null,
+              }, sessionId, model || '', {
+                numTurns: msg.num_turns || 0,
               })
               resultReceived = true
               // result 到达即视为本 turn 结束：SDK 生成器会 return，query 对象已无法再接收 streamInput。
@@ -3053,6 +3077,8 @@ function setupClaudeHandlers() {
             clearInterval(poller.interval)
             metricsPollers.delete(chatKey)
           }
+          // Phase 3：清理 TurnStore current turn
+          clearCurrentTurn(chatKey)
           const s = agentSessions.get(chatKey)
           if (!resultReceived && s) {
             const fallbackCliSessionId = cliSessionIds.get(chatKey) || ''

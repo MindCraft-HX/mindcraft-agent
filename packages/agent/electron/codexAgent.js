@@ -7,6 +7,7 @@ const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample } = require('./tokenMetrics/diagnostics')
+const { beginTurn, submitSample, clearCurrentTurn } = require('./tokenMetrics/turnStore')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
@@ -58,6 +59,57 @@ function safeSend(sender, channel, ...args) {
 function sendMetrics(sender, payload, diag = null) {
   safeSend(sender, 'codex-agent-metrics', payload)
   if (diag) logMetricSample(diag)
+}
+
+/**
+ * Phase 3：通过 TurnStore 发射 CodeX metrics。
+ */
+function emitCodexMetricsViaStore(sender, sample, sessionId, model, extra = {}) {
+  const { snapshot } = submitSample({
+    provider: 'codex',
+    chatKey: sessionId,
+    providerSessionId: sample.providerSessionId || '',
+    source: sample.source,
+    inputTokens: sample.inputTokens,
+    outputTokens: sample.outputTokens,
+    cacheReadTokens: sample.cacheReadTokens,
+    cacheCreationTokens: sample.cacheCreationTokens,
+    contextUsage: sample.contextUsage,
+    contextWindow: sample.contextWindow,
+    durationMs: sample.durationMs,
+    costUsd: sample.costUsd,
+  })
+  if (!snapshot) return
+
+  logMetricSample({
+    provider: 'codex',
+    source: sample.source,
+    chatKey: sessionId,
+    providerSessionId: sample.providerSessionId || '',
+    phase: snapshot.phase,
+    inputTokens: snapshot.inputTokens,
+    outputTokens: snapshot.outputTokens,
+    cacheReadTokens: snapshot.cacheReadTokens,
+    cacheCreationTokens: snapshot.cacheCreationTokens,
+    contextUsage: snapshot.contextUsage,
+    durationMs: snapshot.durationMs,
+    rawUsage: sample.rawUsage || null,
+  })
+
+  safeSend(sender, 'codex-agent-metrics', {
+    sessionId,
+    model: model || '',
+    thinking: snapshot.phase === 'live',
+    inputTokens: snapshot.inputTokens,
+    outputTokens: snapshot.outputTokens,
+    cacheReadTokens: snapshot.cacheReadTokens,
+    cacheCreationTokens: snapshot.cacheCreationTokens,
+    contextUsage: snapshot.contextUsage,
+    contextWindow: snapshot.contextWindow,
+    durationMs: snapshot.durationMs,
+    costUsd: snapshot.costUsd,
+    ...extra,
+  })
 }
 
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
@@ -2311,6 +2363,8 @@ function setupCodexSdkHandlers() {
         completionPromise, resolveCompletion, diagnosticId,
       }
       codexSessions.set(sessionId, sessionState)
+      // Phase 3: begin turn for TurnStore
+      beginTurn({ provider: 'codex', chatKey: sessionId, providerSessionId: prevCliId || '', startedAt: Date.now() })
 
       appendCodexTurnDiagnostic({
         kind: 'turn.start',
@@ -2516,17 +2570,14 @@ function setupCodexSdkHandlers() {
             if (metrics) {
               metrics.sessionId = sessionId
               metrics.thinking = true
-              sendMetrics(s.event?.sender, metrics, {
-                provider: 'codex', source: 'jsonl-poll',
-                chatKey: sessionId, providerSessionId: cliId, phase: 'live',
-                inputTokens: metrics.inputTokens,
-                outputTokens: metrics.outputTokens,
-                cacheReadTokens: metrics.cacheReadTokens,
-                cacheCreationTokens: metrics.cacheCreationTokens,
+              emitCodexMetricsViaStore(s.event?.sender, {
+                source: 'jsonl-poll',
                 contextUsage: metrics.contextUsage,
+                contextWindow: metrics.contextWindow,
                 durationMs: metrics.durationMs,
+                costUsd: metrics.costUsd,
                 rawUsage: metrics.rawUsage || null,
-              })
+              }, sessionId, model || '')
             }
           }, CODEX_METRICS_POLL_INTERVAL_MS)
           codexMetricsPollers.set(sessionId, { interval: pollInterval, startTime: pollStart, runId })
@@ -2738,21 +2789,18 @@ function setupCodexSdkHandlers() {
                 turnStartTotals: session?._liveTurnStartTotals || null,
               })
               if (liveMetrics) {
-                sendMetrics(sender, {
-                  ...liveMetrics,
-                  sessionId,
-                  thinking: true,
-                }, {
-                  provider: 'codex', source: 'token-count',
-                  chatKey: sessionId, providerSessionId: cliSessionIds.get(sessionId) || '', phase: 'live',
+                emitCodexMetricsViaStore(sender, {
+                  source: 'token-count',
                   inputTokens: liveMetrics.inputTokens,
                   outputTokens: liveMetrics.outputTokens,
                   cacheReadTokens: liveMetrics.cacheReadTokens,
                   cacheCreationTokens: liveMetrics.cacheCreationTokens,
                   contextUsage: liveMetrics.contextUsage,
+                  contextWindow: liveMetrics.contextWindow,
                   durationMs: liveMetrics.durationMs,
+                  costUsd: liveMetrics.costUsd,
                   rawUsage: totalUsage || null,
-                })
+                }, sessionId, model || '')
               }
             }
 
@@ -2770,9 +2818,8 @@ function setupCodexSdkHandlers() {
               })
               const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
               const normalizedTerminalUsage = normalizeCodexUsage(ev.usage || {}) || {}
-              sendMetrics(sender, {
-                sessionId,
-                model: parsedMetrics?.model || model || '',
+              emitCodexMetricsViaStore(sender, {
+                source: 'sdk-result',
                 inputTokens: parsedMetrics?.inputTokens ?? normalizedTerminalUsage.input_tokens ?? 0,
                 outputTokens: parsedMetrics?.outputTokens ?? normalizedTerminalUsage.output_tokens ?? 0,
                 cacheReadTokens: parsedMetrics?.cacheReadTokens ?? normalizedTerminalUsage.cache_read_input_tokens ?? 0,
@@ -2780,22 +2827,13 @@ function setupCodexSdkHandlers() {
                 contextUsage: parsedMetrics?.contextUsage ?? 0,
                 contextWindow: parsedMetrics?.contextWindow ?? 0,
                 durationMs: parsedMetrics?.durationMs || durationMs,
+                costUsd: parsedMetrics?.costUsd ?? 0,
+                rawUsage: ev.usage || null,
+              }, sessionId, parsedMetrics?.model || model || '', {
                 speedOutputPerSec: parsedMetrics?.speedOutputPerSec ?? 0,
-                thinking: false,
                 gitBranch: parsedMetrics?.gitBranch || '',
                 gitChanges: parsedMetrics?.gitChanges || 0,
                 usageApiSessionPct: null,
-                costUsd: parsedMetrics?.costUsd ?? 0,
-              }, {
-                provider: 'codex', source: 'sdk-result',
-                chatKey: sessionId, providerSessionId: cliSessionIds.get(sessionId) || '', phase: 'final',
-                inputTokens: parsedMetrics?.inputTokens ?? normalizedTerminalUsage.input_tokens ?? 0,
-                outputTokens: parsedMetrics?.outputTokens ?? normalizedTerminalUsage.output_tokens ?? 0,
-                cacheReadTokens: parsedMetrics?.cacheReadTokens ?? normalizedTerminalUsage.cache_read_input_tokens ?? 0,
-                cacheCreationTokens: parsedMetrics?.cacheCreationTokens ?? normalizedTerminalUsage.cache_creation_input_tokens ?? 0,
-                contextUsage: parsedMetrics?.contextUsage ?? 0,
-                durationMs: parsedMetrics?.durationMs || durationMs,
-                rawUsage: ev.usage || null,
               })
               if (session?.runId === runId) {
                 const currentSession = codexSessions.get(sessionId)
@@ -3067,6 +3105,8 @@ function setupCodexSdkHandlers() {
           clearTimeout(bootWatch)
           clearTimeout(turnTimeout)
           if (drainTimer) { clearTimeout(drainTimer); drainTimer = null }
+          // Phase 3: clear current turn for TurnStore
+          clearCurrentTurn(sessionId)
           // 停止 metrics 轮询器
           const poller = codexMetricsPollers.get(sessionId)
           if (poller?.runId === runId || (poller && !poller.runId)) {

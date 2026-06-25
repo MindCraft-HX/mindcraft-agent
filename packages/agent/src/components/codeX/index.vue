@@ -1096,6 +1096,7 @@ function makeRestoredChat(c, messages) {
     createdAt: c.createdAt ?? null, updatedAt: c.updatedAt ?? null, fileSize: c.fileSize ?? null,
     titleSource: c.titleSource || (c._userRenamed ? 'user' : ''),
     _userRenamed: Boolean(c._userRenamed),
+    _resumeAllowed: c._resumeAllowed !== false,
     hasMoreHistory: Boolean(c.filePath),
     currentPage: 0,
     pageSize: 60,
@@ -1441,7 +1442,7 @@ async function refreshProjectSessionsInBackground(project) {
       // 即使扫描结果为空，也注册已有的 cliSessionId 映射（对齐 T046 修复）
       const sessionMap = {}
       for (const chat of project.chats || []) {
-        if (chat.sessionId && chat.cliSessionId) sessionMap[chat.sessionId] = chat.cliSessionId
+        if (chat.sessionId && chat.cliSessionId && chat._resumeAllowed !== false) sessionMap[chat.sessionId] = chat.cliSessionId
       }
       if (Object.keys(sessionMap).length) window.electronAPI.codexRegisterCliSessions?.(sessionMap)
       return { newCount: 0, changedCount: 0, totalCount: project.chats?.length || 0 }
@@ -1547,7 +1548,7 @@ async function refreshProjectSessionsInBackground(project) {
 
     const sessionMap = {}
     for (const chat of project.chats || []) {
-      if (chat.sessionId && chat.cliSessionId) sessionMap[chat.sessionId] = chat.cliSessionId
+      if (chat.sessionId && chat.cliSessionId && chat._resumeAllowed !== false) sessionMap[chat.sessionId] = chat.cliSessionId
     }
     if (Object.keys(sessionMap).length) {
       window.electronAPI.codexRegisterCliSessions?.(sessionMap)
@@ -2802,7 +2803,7 @@ onMounted(async () => {
     {
       const sessionMap = {}
       for (const c of projects.value.flatMap(pp => pp.chats || [])) {
-        if (c.sessionId && c.cliSessionId) sessionMap[c.sessionId] = c.cliSessionId
+        if (c.sessionId && c.cliSessionId && c._resumeAllowed !== false) sessionMap[c.sessionId] = c.cliSessionId
       }
       if (Object.keys(sessionMap).length) window.electronAPI.codexRegisterCliSessions?.(sessionMap)
     }

@@ -316,6 +316,18 @@ function getTurnCount(chatKey) {
   return s ? s.turns.size : 0
 }
 
+/**
+ * 便捷入口：applySample → 返回 snapshot（供 metrics emitter 使用）。
+ *
+ * @param {Object} sample — NormalizedMetricSample
+ * @returns {{ snapshot: TokenTurnSnapshot | null, accepted: boolean, phase: string }}
+ */
+function submitSample(sample) {
+  const result = applySample(sample)
+  const snapshot = getCurrentSnapshot(sample.chatKey)
+  return { snapshot, accepted: result.accepted, phase: result.phase || 'unknown' }
+}
+
 module.exports = {
   beginTurn,
   applySample,
@@ -325,4 +337,5 @@ module.exports = {
   isTurnFinalized,
   removeStore,
   getTurnCount,
+  submitSample,
 }

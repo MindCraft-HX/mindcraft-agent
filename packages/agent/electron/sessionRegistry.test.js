@@ -13,6 +13,7 @@ const {
   listSessionRecords,
   makeProviderKeys,
   repairSessionRegistry,
+  restoreMissingPanelStateChats,
   resolveSessionByProvider,
   setSessionTitle,
   setSessionInstruction,
@@ -1012,4 +1013,99 @@ test('normalizeSessionInstructionInput rejects oversized attachment payloads', (
     normalizeSessionInstructionInput({ attachments: Array.from({ length: 21 }, (_, i) => `a-${i}`) }),
     { ok: false, error: 'attachments_too_many' },
   )
+})
+
+test('restoreMissingPanelStateChats backfills missing Codex chats into existing cwd project', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        id: 'chat-1',
+        sessionId: 'chat-key-bound',
+        name: 'Bound chat',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }, {
+        id: 'chat-2',
+        sessionId: 'chat-key-local',
+        name: 'Local draft',
+        cliSessionId: '',
+        filePath: '',
+        model: 'gpt-5.1',
+        reasoningEffort: 'medium',
+        createdAt: 100,
+        updatedAt: 200,
+      }],
+    }],
+  }, { userDataDir })
+
+  const panelState = {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        id: 'chat-1',
+        sessionId: 'chat-key-bound',
+        name: 'Bound chat',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }],
+    }],
+  }
+
+  const result = restoreMissingPanelStateChats('codex', panelState, { userDataDir })
+
+  assert.equal(result.changed, true)
+  assert.equal(result.added, 1)
+  assert.equal(result.addedProjects, 0)
+  assert.equal(panelState.projects[0].chats.length, 2)
+  const restored = panelState.projects[0].chats.find(chat => chat.sessionId === 'chat-key-local')
+  assert.ok(restored)
+  assert.equal(restored.id, 'chat-chat-key-local')
+  assert.equal(restored.name, 'Local draft')
+  assert.equal(restored.cliSessionId, '')
+  assert.equal(restored.filePath, '')
+  assert.equal(restored.model, 'gpt-5.1')
+  assert.equal(restored.reasoningEffort, 'medium')
+  assert.equal(restored._resumeAllowed, true)
+})
+
+test('restoreMissingPanelStateChats rebuilds projects only when Codex panel is empty', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo-a',
+      chats: [{
+        id: 'chat-1',
+        sessionId: 'chat-key-a',
+        name: 'Repo A',
+        cliSessionId: 'thread-a',
+        filePath: 'C:/missing/thread-a.jsonl',
+      }],
+    }, {
+      id: 'project-2',
+      cwd: 'D:/repo-b',
+      chats: [{
+        id: 'chat-2',
+        sessionId: 'chat-key-b',
+        name: 'Repo B',
+        cliSessionId: '',
+        filePath: '',
+      }],
+    }],
+  }, { userDataDir })
+
+  const panelState = { projects: [] }
+  const result = restoreMissingPanelStateChats('codex', panelState, { userDataDir })
+
+  assert.equal(result.changed, true)
+  assert.equal(result.addedProjects, 2)
+  assert.equal(result.added, 2)
+  assert.deepEqual(panelState.projects.map(project => project.cwd).sort(), ['D:/repo-a', 'D:/repo-b'])
+  const restoredBound = panelState.projects.find(project => project.cwd === 'D:/repo-a').chats[0]
+  assert.equal(restoredBound.cliSessionId, 'thread-a')
+  assert.equal(restoredBound._resumeAllowed, false)
 })

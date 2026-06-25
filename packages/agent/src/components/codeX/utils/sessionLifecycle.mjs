@@ -213,7 +213,8 @@ export function mergeScannedChatsPreservingRuntime(existingChats = [], scannedCh
   for (const chat of Array.isArray(existingChats) ? existingChats : []) {
     if (!chat?.id || seen.has(chat.id)) continue
     const isUnboundRuntime = isCodexTurnLocked(chat) && !chat.cliSessionId && !chat.filePath
-    if (chat.id === activeChatId || isUnboundRuntime) {
+    const isRestoredUnbound = Boolean(chat._restoredFromPanelState) && !chat.cliSessionId && !chat.filePath
+    if (chat.id === activeChatId || isUnboundRuntime || isRestoredUnbound) {
       next.push(chat)
       seen.add(chat.id)
     }
@@ -226,6 +227,7 @@ export const mergeScannedCodexChats = mergeScannedChatsPreservingRuntime
 export function buildPersistableCodexChat(chat = {}) {
   const c = { ...chat }
   delete c[RUNTIME_FIELD]
+  delete c._restoredFromPanelState
   c._thinkingStart = c.filePath ? null : (c._thinkingStart || null)
   c._awaitingDone = c.filePath ? false : Boolean(c._awaitingDone)
   c.thinking = false

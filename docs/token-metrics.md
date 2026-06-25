@@ -456,3 +456,322 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 2. turn 结束后 final 值立即收敛且不再跳动。
 3. 刷新 / 重启后历史值仍能按统一语义恢复。
 4. 首页聚合与会话内展示明确区分 turn 口径和 session 聚合口径。
+
+---
+
+## 八、ClaudeCode cache 漂移定位与可执行重构方案（2026-06-25）
+
+### 8.1 触发问题
+
+用户在 ClaudeCode 消息脚注中观察到明显异常：
+
+```
+in 14.8k / out 10.2k / cache 3356.3k
+```
+
+随后在 CodeX 消息脚注中也观察到同类异常：
+
+```
+in 48.8k / out 78 / cache 14363.6k
+```
+
+这不是单纯的展示格式问题。当前 UI 已经把 `cache` 收口为 `cacheReadTokens`，仍然出现百万级 cache，说明异常值来自上游 metrics 样本本身。更重要的是，这次异常同时出现在：
+
+- ClaudeCode footer `_turnTokens`
+- CodeX footer `_turnTokens`
+- 运行态 StatusBar（历史上已多次出现）
+
+这证明问题范围不再是单 provider 的字段解释错误，而是 **turn ownership + consumer snapshot** 没有收口。
+
+### 8.2 当前根因判断
+
+ClaudeCode token metrics 目前有三条来源同时写同一套 UI 指标：
+
+| 来源 | 当前路径 | 用途 | 风险 |
+|------|----------|------|------|
+| SDK live usage | `claudeAgent.js` stream loop → `extractClaudeLiveUsageMetricsFromSdkMessage()` | 运行中动态展示 | 样本可能是中间 assistant snapshot，不一定是最终 turn 值 |
+| SDK result usage | `claudeAgent.js` `msg.type === 'result'` → `normalizeClaudeUsageForUi()` | turn 结束最终值 | 是当前 turn 最可信来源 |
+| JSONL poll | `claudeAgent.js` 1s poll → `claudeMetrics.pollMetrics()` → `getTokenMetrics()` | 实时补偿、context、历史读取 | 缺少稳定 turn identity，容易把 session/transcript 样本误当 current turn |
+
+当前问题的本质不是字段公式，而是**没有一个主进程内的 turn 级权威状态**：
+
+- `pollMetrics()` 扫描 transcript，靠 `tokenSinceMs` 做时间过滤，不是按 `turnId` 过滤。
+- `getTokenMetrics()` 遇到 `stop_reason` 后取最后一个非零 cache；没有 stop_reason 时 fallback 取最后 usage。
+- live、poll、final 都可以向前端发 `claude-agent-metrics`。
+- message footer `_turnTokens` 由前端从 `result.usage` 附着，StatusBar 则可能由 live/poll/final 任一来源更新。
+
+因此它们可能各自看起来合理，但不是同一个 turn snapshot。
+
+### 8.3 目标架构
+
+新增一个主进程领域层：**Token Metrics Domain**。
+
+目标不是重写 ClaudeCode / CodeX 面板，也不是替换已有 Agent event 抽象；目标是把 token metrics 的“样本归一化、turn 归属、consumer 输出”收口。
+
+```
+provider raw usage / JSONL
+  ↓
+TokenMetricsNormalizer
+  ↓
+TokenTurnStore
+  ↓
+StatusBar snapshot / final turn snapshot / history snapshot / home aggregate
+```
+
+### 8.4 数据模型
+
+#### 8.4.1 NormalizedMetricSample
+
+所有 provider 来源先转换为 sample，不能直接写 UI。
+
+```js
+{
+  provider: 'claude' | 'codex' | 'chat',
+  source: 'sdk-live' | 'sdk-result' | 'jsonl-poll' | 'jsonl-history' | 'token-count' | 'chat-result',
+  chatKey: string,
+  providerSessionId: string,
+  turnId: string,
+  phase: 'live' | 'final' | 'history' | 'session',
+  sampleTs: number,
+
+  inputTokens: number,          // UI in = regular input + cache creation
+  outputTokens: number,
+  cacheReadTokens: number,      // UI cache = cache read only
+  cacheCreationTokens: number,  // retained for cost/debug, not displayed as cache
+
+  contextUsage: number,
+  contextWindow: number,
+  durationMs: number,
+  costUsd: number,
+
+  rawUsage: object | null,
+}
+```
+
+#### 8.4.2 TokenTurnSnapshot
+
+这是 UI 唯一可消费结构。
+
+```js
+{
+  provider: 'claude' | 'codex' | 'chat',
+  chatKey: string,
+  providerSessionId: string,
+  turnId: string,
+  phase: 'live' | 'final' | 'history',
+
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number,
+  cacheCreationTokens: number,
+  contextUsage: number,
+  contextWindow: number,
+  durationMs: number,
+  costUsd: number,
+
+  updatedAt: number,
+  sources: string[],
+}
+```
+
+### 8.5 ClaudeCode 权威来源规则
+
+ClaudeCode current turn 的 token 写入规则必须收紧：
+
+| 字段 | live 阶段权威来源 | final 阶段权威来源 | JSONL poll 权限 |
+|------|------------------|-------------------|----------------|
+| `inputTokens` | SDK live usage | SDK result usage | 默认不写 current turn |
+| `outputTokens` | SDK live usage（如存在） | SDK result usage | 默认不写 current turn |
+| `cacheReadTokens` | SDK live usage（如存在） | SDK result usage | 默认不写 current turn |
+| `cacheCreationTokens` | SDK live usage（如存在） | SDK result usage | 默认不写 current turn |
+| `contextUsage/contextWindow` | 可空 | result 或 JSONL | 可写 session 字段 |
+| `durationMs` | wall clock | result.duration_ms | 可补 session 字段 |
+
+关键约束：
+
+- JSONL poll 不能直接覆盖 current turn 的 `in/out/cache`。
+- JSONL poll 只能更新 current turn 的 `contextUsage/contextWindow/duration`，除非它能证明样本属于当前 `turnId`。
+- ClaudeCode final snapshot 以 SDK `result.usage` 为准；JSONL final 只做缺失字段补偿。
+- `_turnTokens` 和 StatusBar 必须来自同一个 final snapshot，而不是前端再从 `result.usage` 解析一次。
+
+### 8.6 CodeX 权威来源规则
+
+CodeX 的来源相对稳定，但也必须进入同一个 store。2026-06-25 新增实证已经说明：即便 `token_count` 本身较稳定，只要 footer `_turnTokens`、terminal fallback、history/backfill 没有共享同一个 final snapshot，仍然会把 session 累计 cache 误当成 per-turn cache。
+
+CodeX 的来源相对稳定，但也必须进入同一个 store：
+
+| 字段 | live 阶段权威来源 | final 阶段权威来源 | JSONL 权限 |
+|------|------------------|-------------------|------------|
+| `in/out/cache` | `token_count.last_token_usage` 或由 total delta 推导 | `turn.completed` / final token_count | 可用于 history/backfill |
+| `contextUsage/contextWindow` | token_count info | token_count info | 可用于 history/backfill |
+| `durationMs` | wall clock | terminal event / inferred | 可用于 history/backfill |
+
+CodeX 可以继续消费 `token_count`，但同样不能让 StatusBar、footer、history 各自计算 delta。
+
+### 8.7 实施步骤
+
+#### Phase 0：诊断保护
+
+目标：在不改行为的前提下收集证据，避免再次盲修。
+
+改动：
+
+- 在 main 进程加 `TOKEN_METRICS_DEBUG` 开关。
+- 每次产生 metric sample 时记录：
+  - `chatKey`
+  - `providerSessionId`
+  - `source`
+  - `phase`
+  - `input/output/cacheRead/cacheCreation`
+  - `rawUsage` 摘要
+- 日志写入 app `userData` 下诊断文件，不写官方 transcript 目录。
+
+验收：
+
+- 同一 ClaudeCode turn 能看到 live/result/poll 三类样本的数值差异。
+- 能判断百万级 cache 来自 SDK result、SDK live 还是 JSONL poll。
+
+#### Phase 1：Normalizer 模块收口
+
+目标：所有 provider usage 只通过一个 normalizer。
+
+新增建议文件：
+
+- `packages/agent/electron/tokenMetrics/normalizer.js`
+- `packages/agent/electron/tokenMetrics/normalizer.test.cjs`
+
+迁移：
+
+- `claudeMetrics.normalizeClaudeUsageForUi()` 移入或委托给 normalizer。
+- `codexAgent.normalizeCodexUsage()` 移入或委托给 normalizer。
+- `homeMetrics` 只调用 normalizer，不再手写 provider 字段公式。
+- 前端不再判断 provider 口径。
+
+测试：
+
+- 原生 Claude：`input_tokens` 包含 read/creation。
+- Claude SDK 第三方 provider：`input_tokens` 常规输入，read/creation 独立。
+- CodeX：`cached_input_tokens` 是 `input_tokens` 子集。
+- cache-only 样本仍生成可见 snapshot。
+
+#### Phase 2：TokenTurnStore 最小实现
+
+目标：先只接管 ClaudeCode current turn。
+
+新增建议文件：
+
+- `packages/agent/electron/tokenMetrics/turnStore.js`
+- `packages/agent/electron/tokenMetrics/turnStore.test.cjs`
+
+接口：
+
+```js
+beginTurn({ provider, chatKey, providerSessionId, startedAt })
+applySample(sample)
+finalizeTurn(sample)
+getCurrentSnapshot(chatKey)
+getFinalSnapshot(chatKey, turnId)
+clearCurrentTurn(chatKey)
+```
+
+规则：
+
+- `beginTurn()` 创建 `turnId`，记录 `startedAt`。
+- `sdk-live` 只能更新相同 `turnId` 的 live snapshot。
+- `sdk-result` finalizes current turn。
+- `jsonl-poll` 对 current turn 默认只更新 context/duration。
+- final 后不允许 live/poll 再覆盖 `in/out/cache`。
+
+验收：
+
+- ClaudeCode 一轮运行中，StatusBar 来自 `getCurrentSnapshot()`。
+- turn 结束后，StatusBar 和 `_turnTokens` 来自同一个 final snapshot。
+- JSONL poll 中出现异常大 cache 时，不能覆盖 current turn 的 cache。
+
+#### Phase 3：消费者切换
+
+目标：先切掉用户最直观看到错误的两个 consumer —— StatusBar 与 message footer，再逐步收 history/homeMetrics。
+
+改动：
+
+- `claudeAgent.js` 不再直接发送三路 metrics payload；改为 submit sample → 读 snapshot → 发送。
+- `codexAgent.js` 的 terminal / footer / history 也改为 submit sample → 读 snapshot，禁止任一 fallback 直接把 raw total usage 塞给 `_turnTokens`。
+- `useClaudeAgentStream.js` 不再从 `result.usage` 自行生成 `_turnTokens`；改为接收 main 发来的 final snapshot 或从消息 payload 附带的 `_turnTokens` 使用。
+- `useCodexAgentStream.js` 不再把局部 delta/terminal fallback 直接当 `_turnTokens`；改为只消费主进程 final snapshot。
+- `StatusBarMetrics.vue` 只展示 snapshot 字段。
+- history restore 只读 history snapshot，不影响 current turn。
+
+验收：
+
+- StatusBar 与 assistant footer 数值一致。
+- 刷新恢复后的 footer 与运行时 final snapshot 一致。
+- 切 tab 后不会出现 cache 减半、暴涨或上一轮回灌。
+
+#### Phase 4：CodeX 接入同一 store
+
+目标：把 CodeX 已有较稳定的 token_count 链路并入统一模型。
+
+改动：
+
+- `token_count` → normalized sample → turn store。
+- `turn.completed` → final sample。
+- JSONL history → history snapshot。
+
+验收：
+
+- CodeX 动态 token 仍然实时增长。
+- terminal fallback 不绕过 normalizer。
+- StatusBar/footer/history 使用同一 snapshot。
+
+#### Phase 5：删除旧路径
+
+删除或降级以下模式：
+
+- `getTokenMetrics()` 直接作为 current turn token 来源。
+- 前端从 `result.usage` 自行生成 `_turnTokens`。
+- `homeMetrics` 手写 provider usage 公式。
+- 任意 consumer 直接解释 `input_tokens`、`cached_input_tokens`。
+
+保留：
+
+- `getTokenMetrics()` 可继续服务 history/context 查询。
+- JSONL 仍然是历史恢复和对账来源。
+
+### 8.8 测试矩阵
+
+必须补自动化测试：
+
+| 测试 | 覆盖点 |
+|------|--------|
+| `normalizer.test.cjs` | Claude 原生、Claude 第三方、CodeX、cache-only、缺字段 |
+| `turnStore.test.cjs` | live → final、final 后 poll 不覆盖、turnId 不匹配拒绝、context-only poll |
+| `claudeMetrics.test.cjs` | JSONL poll 不写 current turn token，仅补 context |
+| `homeMetrics.test.cjs` | 首页聚合复用 normalizer，第三方 provider 不低估 context |
+
+必须做人工验收：
+
+1. ClaudeCode 单轮无 tool：StatusBar final 与 footer 一致。
+2. ClaudeCode 多 tool：运行中 cache 不暴涨，结束后立即收敛。
+3. ClaudeCode 切 tab：cache 不减半、不回灌上一轮。
+4. ClaudeCode 刷新恢复：历史 footer 保留，当前 StatusBar 不显示旧 turn。
+5. CodeX 单轮与多 tool：动态增长保留，footer 与 final 一致。
+6. 首页统计：`input/cache` 与会话内新口径一致。
+
+### 8.9 风险与边界
+
+- ClaudeCode SDK 如果 live usage 本身不稳定，运行中只能展示已有真实样本；不能补假数据。
+- JSONL 没有稳定 turn identity 前，不应再承担 current turn token 权威来源。
+- 简易对话是单轮为主，不强制接入 Phase 2；可在 Phase 4 后用 `chat-result` sample 接入。
+- 不写 `~/.claude` / `~/.codex` sidecar，不污染官方 transcript。
+- 不在本轮改 Agent Protocol 通信抽象；这是 token metrics 领域层，不是 transport 重构。
+
+### 8.10 完成定义
+
+本重构完成必须同时满足：
+
+- 主进程内只有一个 provider usage normalizer。
+- ClaudeCode current turn 的 `in/out/cache` 不再由 JSONL poll 直接覆盖。
+- StatusBar、footer、history restore 读取同一类 snapshot。
+- cache creation 始终归入 `in`，cache 只显示 read。
+- 任何缺失字段不补假数据。
+- 旧调研文档不再作为任务入口。

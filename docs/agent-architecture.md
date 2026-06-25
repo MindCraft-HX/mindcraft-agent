@@ -834,7 +834,7 @@ type ModelReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 ## 16. Token Metrics 数据模型（2026-06-24 定论）
 
-> 专题研究：`docs/plan/2026-06-24-token-metrics-research.md`
+> 专题研究：`docs/token-metrics.md`
 > TODO 路由：`docs/TODO.md` → T144-T146
 
 ### 16.0 对外展示契约

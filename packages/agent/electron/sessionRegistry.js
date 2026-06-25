@@ -220,6 +220,8 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
   if (!chatKey) return null
   const createdAt = normalizeTimestamp(chat.createdAt)
   const updatedAt = normalizeTimestamp(chat.updatedAt) || createdAt || Date.now()
+  const metadata = chat.metadata && typeof chat.metadata === 'object' ? { ...chat.metadata } : {}
+  if (chat._resumeAllowed === false) metadata.resumeAllowed = false
   return {
     schemaVersion: SCHEMA_VERSION,
     chatKey,
@@ -229,7 +231,7 @@ function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
     title: normalizeString(chat.name),
     titleSource: inferTitleSource(chat),
     description: normalizeString(chat.description),
-    metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {},
+    metadata,
     provider: {
       cliSessionId: normalizeString(chat.cliSessionId),
       filePath: normalizeString(chat.filePath),
@@ -859,6 +861,102 @@ function syncPanelStateSessions(agent, panelState = {}, options = {}) {
   return count
 }
 
+function buildPanelChatFromRecord(record = {}) {
+  const provider = record.provider || {}
+  const runtime = record.runtime || {}
+  const filePath = normalizeString(provider.filePath)
+  const fileExists = Boolean(filePath && fs.existsSync(filePath))
+  const resumeAllowed = record.metadata?.resumeAllowed === false
+    ? false
+    : (!filePath || fileExists)
+  return {
+    id: `chat-${record.chatKey}`,
+    name: record.title || 'New Chat',
+    sessionId: record.chatKey,
+    messages: [],
+    metrics: null,
+    model: normalizeString(runtime.model) || null,
+    reasoningEffort: normalizeString(runtime.reasoningEffort) || null,
+    sandboxMode: null,
+    networkAccessEnabled: null,
+    webSearchMode: null,
+    _thinkingStart: null,
+    _awaitingDone: false,
+    cliSessionId: normalizeString(provider.cliSessionId),
+    filePath,
+    createdAt: record.createdAt || null,
+    updatedAt: record.updatedAt || null,
+    fileSize: fileExists ? fs.statSync(filePath).size : null,
+    titleSource: record.titleSource || '',
+    _userRenamed: normalizeTitleSource(record.titleSource) === 'user',
+    _resumeAllowed: resumeAllowed,
+  }
+}
+
+function createPanelProjectFromRecord(record = {}, usedProjectIds = new Set()) {
+  const baseId = normalizeString(record.projectId) || `proj-${usedProjectIds.size + 1}`
+  let projectId = baseId
+  let suffix = 1
+  while (usedProjectIds.has(projectId)) {
+    suffix += 1
+    projectId = `${baseId}-${suffix}`
+  }
+  usedProjectIds.add(projectId)
+  const cwd = normalizeString(record.cwd)
+  return {
+    id: projectId,
+    name: cwd ? path.basename(cwd) || 'New Project' : 'New Project',
+    cwd,
+    cwdLocked: Boolean(cwd),
+    hasDoneNotification: false,
+    additionalDirectories: [],
+    chats: [],
+  }
+}
+
+function restoreMissingPanelStateChats(agent, panelState = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const projects = Array.isArray(panelState?.projects) ? panelState.projects : []
+  let added = 0
+  let addedProjects = 0
+  const records = listSessionRecords(options)
+    .filter(record => record?.chatKey && record.agent === normalizedAgent)
+    .sort((a, b) => normalizeTimestamp(a.createdAt) - normalizeTimestamp(b.createdAt))
+  if (!records.length) return { changed: false, added: 0, addedProjects: 0, panelState }
+
+  const shouldRebuildProjects = projects.length === 0
+  const usedProjectIds = new Set(projects.map(project => normalizeString(project?.id)).filter(Boolean))
+  if (shouldRebuildProjects) {
+    const seenCwd = new Set()
+    for (const record of records) {
+      const cwd = normalizeString(record.cwd)
+      if (!cwd || seenCwd.has(cwd)) continue
+      projects.push(createPanelProjectFromRecord(record, usedProjectIds))
+      seenCwd.add(cwd)
+      addedProjects += 1
+    }
+  }
+
+  for (const record of records) {
+    const recordProjectId = normalizeString(record.projectId)
+    const recordCwd = normalizeString(record.cwd)
+    const project = projects.find(candidate => (
+      (recordCwd && normalizeString(candidate?.cwd) === recordCwd)
+      || (recordProjectId && normalizeString(candidate?.id) === recordProjectId)
+    ))
+    if (!project) continue
+
+    if (!Array.isArray(project.chats)) project.chats = []
+    const exists = project.chats.some(chat => normalizeString(chat?.sessionId) === record.chatKey)
+    if (exists) continue
+
+    project.chats.push(buildPanelChatFromRecord(record))
+    added += 1
+  }
+
+  return { changed: added > 0 || addedProjects > 0, added, addedProjects, panelState }
+}
+
 function deleteSessionRecordsByProvider({ agent, filePath, cliSessionId, chatKey } = {}, options = {}) {
   try {
     if (chatKey) return deleteSessionRecord(chatKey, options) ? 1 : 0
@@ -1222,6 +1320,7 @@ module.exports = {
   listSessionRecords,
   makeProviderKeys,
   repairSessionRegistry,
+  restoreMissingPanelStateChats,
   resolveSessionByProvider,
   setSessionTitle,
   setSessionInstruction,
