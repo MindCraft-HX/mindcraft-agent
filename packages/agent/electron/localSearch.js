@@ -1,6 +1,8 @@
 const fs = require('fs')
 const path = require('path')
-const { execFileSync } = require('child_process')
+const { execFile } = require('child_process')
+const { promisify } = require('util')
+const execFileAsync = promisify(execFile)
 
 const RG_VERSION_ARGS = ['--version']
 const DEFAULT_MAX_RESULTS = 200
@@ -18,15 +20,16 @@ function getBundledRgPath() {
   return candidates.find(candidate => candidate && fs.existsSync(candidate)) || ''
 }
 
-function readExecutableVersion(executablePath, args = RG_VERSION_ARGS) {
+async function readExecutableVersion(executablePath, args = RG_VERSION_ARGS) {
   if (!executablePath || !fs.existsSync(executablePath)) return ''
   try {
-    const output = execFileSync(executablePath, args, {
+    const { stdout } = await execFileAsync(executablePath, args, {
       encoding: 'utf8',
       timeout: 5000,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim()
+    })
+    const output = stdout.trim()
     const match = output.match(/ripgrep\s+([^\s]+)/i)
     return match ? match[1] : output
   } catch (_) {
@@ -34,9 +37,9 @@ function readExecutableVersion(executablePath, args = RG_VERSION_ARGS) {
   }
 }
 
-function probeBundledRg() {
+async function probeBundledRg() {
   const executablePath = getBundledRgPath()
-  const version = readExecutableVersion(executablePath)
+  const version = await readExecutableVersion(executablePath)
   return {
     available: Boolean(executablePath && version),
     path: executablePath,
@@ -50,25 +53,25 @@ function resolveWhereCommand(binaryName) {
     : { cmd: 'which', args: [binaryName] }
 }
 
-function getSystemRgPath() {
+async function getSystemRgPath() {
   try {
     const { cmd, args } = resolveWhereCommand('rg')
-    const output = execFileSync(cmd, args, {
+    const { stdout } = await execFileAsync(cmd, args, {
       encoding: 'utf8',
       timeout: 5000,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim()
-    const line = output.split(/\r?\n/).map(item => item.trim()).find(Boolean)
+    })
+    const line = stdout.trim().split(/\r?\n/).map(item => item.trim()).find(Boolean)
     return line || ''
   } catch (_) {
     return ''
   }
 }
 
-function probeSystemRg() {
-  const executablePath = getSystemRgPath()
-  const version = readExecutableVersion(executablePath)
+async function probeSystemRg() {
+  const executablePath = await getSystemRgPath()
+  const version = await readExecutableVersion(executablePath)
   return {
     available: Boolean(executablePath && version),
     path: executablePath,
@@ -76,10 +79,10 @@ function probeSystemRg() {
   }
 }
 
-function probePowerShell() {
+async function probePowerShell() {
   if (process.platform !== 'win32') return { available: false, source: '' }
   try {
-    execFileSync('powershell.exe', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
+    await execFileAsync('powershell.exe', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
       encoding: 'utf8',
       timeout: 5000,
       windowsHide: true,
@@ -119,18 +122,18 @@ function pickSearchBackend(state) {
   }
 }
 
-function detectLocalSearchBackend() {
+async function detectLocalSearchBackend() {
   const state = {
-    bundled: probeBundledRg(),
-    system: probeSystemRg(),
-    powershell: probePowerShell(),
+    bundled: await probeBundledRg(),
+    system: await probeSystemRg(),
+    powershell: await probePowerShell(),
   }
   return pickSearchBackend(state)
 }
 
-function getLocalSearchCapability(forceRefresh = false) {
+async function getLocalSearchCapability(forceRefresh = false) {
   if (!forceRefresh && cachedCapability) return cachedCapability
-  cachedCapability = detectLocalSearchBackend()
+  cachedCapability = await detectLocalSearchBackend()
   return cachedCapability
 }
 
@@ -257,9 +260,9 @@ function parseRgJsonOutput(output = '') {
   return results
 }
 
-function runRgTextSearch(executablePath, options = {}) {
+async function runRgTextSearch(executablePath, options = {}) {
   const args = buildRgArgs(options)
-  const output = execFileSync(executablePath, args, {
+  const { stdout: output } = await execFileAsync(executablePath, args, {
     cwd: path.resolve(options.cwd || process.cwd()),
     encoding: 'utf8',
     timeout: 15000,
@@ -270,7 +273,7 @@ function runRgTextSearch(executablePath, options = {}) {
   return normalizeRgLines(parseRgJsonOutput(output), options.maxResults)
 }
 
-function runPowerShellTextSearch(options = {}) {
+async function runPowerShellTextSearch(options = {}) {
   const resolvedCwd = path.resolve(options.cwd || process.cwd())
   const pattern = String(options.query || '')
   const script = [
@@ -281,14 +284,15 @@ function runPowerShellTextSearch(options = {}) {
     `$items = Select-String -Path (Join-Path $root '*') -Pattern $pattern -SimpleMatch -Recurse -ErrorAction SilentlyContinue | Select-Object -First $limit`,
     `$items | ForEach-Object { [PSCustomObject]@{ filePath = $_.Path; line = $_.LineNumber; column = $_.Matches[0].Index + 1; text = $_.Line } } | ConvertTo-Json -Compress`,
   ].join('; ')
-  const output = execFileSync('powershell.exe', ['-NoProfile', '-Command', script], {
+  const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], {
     encoding: 'utf8',
     cwd: resolvedCwd,
     timeout: 15000,
     windowsHide: true,
     maxBuffer: 10 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim()
+  })
+  const output = stdout.trim()
 
   if (!output) return { results: [], truncated: false }
   const parsed = JSON.parse(output)
@@ -317,11 +321,11 @@ function buildSearchError(message, backend, command, error, fallbackUsed = false
   }
 }
 
-function searchText(options = {}) {
-  const capability = getLocalSearchCapability()
+async function searchText(options = {}) {
+  const capability = await getLocalSearchCapability()
   try {
     if (capability.backend === 'bundled-rg' || capability.backend === 'system-rg') {
-      const { results, truncated } = runRgTextSearch(capability.source, options)
+      const { results, truncated } = await runRgTextSearch(capability.source, options)
       return {
         ok: true,
         backend: capability.backend,
@@ -331,7 +335,7 @@ function searchText(options = {}) {
         error: null,
       }
     }
-    const { results, truncated } = runPowerShellTextSearch(options)
+    const { results, truncated } = await runPowerShellTextSearch(options)
     return {
       ok: true,
       backend: 'powershell',
@@ -355,8 +359,8 @@ function buildRgFilesArgs({ globs = [], hidden = false } = {}) {
   return args
 }
 
-function runRgFiles(executablePath, options = {}) {
-  const output = execFileSync(executablePath, buildRgFilesArgs(options), {
+async function runRgFiles(executablePath, options = {}) {
+  const { stdout: output } = await execFileAsync(executablePath, buildRgFilesArgs(options), {
     cwd: path.resolve(options.cwd || process.cwd()),
     encoding: 'utf8',
     timeout: 15000,
@@ -378,7 +382,7 @@ function resolveFileEnumLimit(options = {}) {
   return DEFAULT_FILE_ENUM_LIMIT
 }
 
-function runPowerShellFiles(options = {}) {
+async function runPowerShellFiles(options = {}) {
   const resolvedCwd = path.resolve(options.cwd || process.cwd())
   const limit = Number.isFinite(options.maxResults) ? Number(options.maxResults) : DEFAULT_MAX_RESULTS
   const script = [
@@ -387,14 +391,15 @@ function runPowerShellFiles(options = {}) {
     `$limit = ${limit}`,
     `Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First $limit -ExpandProperty FullName | ConvertTo-Json -Compress`,
   ].join('; ')
-  const output = execFileSync('powershell.exe', ['-NoProfile', '-Command', script], {
+  const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], {
     encoding: 'utf8',
     cwd: resolvedCwd,
     timeout: 15000,
     windowsHide: true,
     maxBuffer: 10 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim()
+  })
+  const output = stdout.trim()
   if (!output) return { files: [], truncated: false }
   const parsed = JSON.parse(output)
   const files = (Array.isArray(parsed) ? parsed : [parsed]).filter(Boolean)
@@ -404,8 +409,8 @@ function runPowerShellFiles(options = {}) {
   }
 }
 
-function listFiles(options = {}) {
-  const capability = getLocalSearchCapability()
+async function listFiles(options = {}) {
+  const capability = await getLocalSearchCapability()
   const enumLimit = resolveFileEnumLimit(options)
   const fileOptions = {
     ...options,
@@ -416,7 +421,7 @@ function listFiles(options = {}) {
     : 10
   try {
     if (capability.backend === 'bundled-rg' || capability.backend === 'system-rg') {
-      const { files, truncated } = runRgFiles(capability.source, fileOptions)
+      const { files, truncated } = await runRgFiles(capability.source, fileOptions)
       const suggestions = suggestFilePaths(files, options.query || '', suggestionLimit)
       return {
         ok: true,
@@ -428,7 +433,7 @@ function listFiles(options = {}) {
         error: null,
       }
     }
-    const { files, truncated } = runPowerShellFiles(fileOptions)
+    const { files, truncated } = await runPowerShellFiles(fileOptions)
     const suggestions = suggestFilePaths(files, options.query || '', suggestionLimit)
     return {
       ok: true,
@@ -460,15 +465,16 @@ function listFiles(options = {}) {
 
 function registerLocalSearchIpc(ipcMain) {
   if (!ipcMain || typeof ipcMain.handle !== 'function') return
-  ipcMain.handle('local-search-capability', () => getLocalSearchCapability(true))
-  ipcMain.handle('local-search-text', (_, payload = {}) => searchText(payload))
-  ipcMain.handle('local-search-files', (_, payload = {}) => listFiles(payload))
-  ipcMain.handle('local-search-diagnose', () => ({
+  // P1-4：所有 handler 改为 async，匹配异步化的底层函数
+  ipcMain.handle('local-search-capability', async () => getLocalSearchCapability(true))
+  ipcMain.handle('local-search-text', async (_, payload = {}) => searchText(payload))
+  ipcMain.handle('local-search-files', async (_, payload = {}) => listFiles(payload))
+  ipcMain.handle('local-search-diagnose', async () => ({
     platform: process.platform,
-    capability: getLocalSearchCapability(true),
+    capability: await getLocalSearchCapability(true),
     bundledPath: getBundledRgPath(),
-    systemPath: getSystemRgPath(),
-    powershell: probePowerShell(),
+    systemPath: await getSystemRgPath(),
+    powershell: await probePowerShell(),
   }))
 }
 

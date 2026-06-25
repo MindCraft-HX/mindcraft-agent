@@ -1,7 +1,9 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
-const { execFileSync } = require('child_process')
+const { execFile } = require('child_process')
+const { promisify } = require('util')
+const execFileAsync = promisify(execFile)
 const https = require('https')
 
 // ==================== JSONL 文件定位 ====================
@@ -306,7 +308,8 @@ function getSpeedMetrics(cliSessionId) {
 const gitCache = new Map() // cwd -> { branch, changes, timestamp }
 const GIT_CACHE_TTL = 30000 // 30 秒
 
-function getGitInfo(cwd) {
+// P1-4：execFileSync → 异步 execFile，避免 git 操作阻塞主进程
+async function getGitInfo(cwd) {
   if (!cwd) return null
 
   const now = Date.now()
@@ -316,17 +319,17 @@ function getGitInfo(cwd) {
   }
 
   try {
-    const workTreeCheck = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] })
-    if (workTreeCheck.toString().trim() !== 'true') return null
+    const { stdout: workTreeCheck } = await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' })
+    if (workTreeCheck.trim() !== 'true') return null
 
     let branch = ''
     try {
-      branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+      branch = (await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' })).stdout.trim()
     } catch (_) {}
 
     let changes = 0
     try {
-      const shortStatus = execFileSync('git', ['status', '--short'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+      const shortStatus = (await execFileAsync('git', ['status', '--short'], { cwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' })).stdout.trim()
       if (shortStatus) {
         changes = shortStatus.split('\n').filter(l => l.trim()).length
       }
@@ -482,7 +485,7 @@ async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
 
   const tokenMetrics = getTokenMetrics(cliSessionId, options) || {}
   const speedMetrics = getSpeedMetrics(cliSessionId) || {}
-  const gitInfo = getGitInfo(cwd)
+  const gitInfo = await getGitInfo(cwd)
   const usageData = getCachedUsageData()
   const now = Date.now()
 

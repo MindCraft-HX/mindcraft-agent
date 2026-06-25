@@ -390,7 +390,7 @@ function ipcEnd(name) {
 | 11 | P1-3 | flatMap watcher 改为事件驱动 | 消除中间数组创建 | ✅ 已完成 | watcher 改为复用 projectTabs computed（已含 ...p spread），与 ClaudeCode 对齐；无需 flatMap 新建数组 |
 | 12 | P2-3 | execClaudeCli/execCodexCli 异步化 | 插件操作不再冻结 UI | ✅ 已完成 | execFileSync → promisify(execFile)，codexAgent 5 个调用点加 await，claudeAgent 已是 async |
 | 13 | P2-5 | sendSync → 异步/退出前保存方案 | 关闭时不再卡渲染器 | 暂缓 | 涉及退出前持久化语义，需单独方案 |
-| 14 | P1-4 | claudeMetrics + localSearch 异步化 | metrics/search 不再阻塞主进程 | 暂缓 | 先合并重复 localSearch，再改调用方 |
+| 14 | P1-4 | claudeMetrics + localSearch 异步化 | metrics/search 不再阻塞主进程 | ✅ 已完成 | getGitInfo 3 个 git execFileSync → promisify/execFile；localSearch 7 个 execFileSync → execFileAsync；级联 async 化 getCodexSessionMetricsByFile/getCodexSessionMetrics + 3 个 IPC handler；重复 localSearch 副本已不存在 |
 
 ---
 

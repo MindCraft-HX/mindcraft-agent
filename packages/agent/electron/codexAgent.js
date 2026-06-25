@@ -1004,7 +1004,8 @@ function buildCodexMetricsFromTokenCountPayload(payload = {}, {
 }
 
 /** 从 Codex 会话 JSONL 文件解析完整指标：tokens、cost、duration、context */
-function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
+// P1-4：级联 async — getGitInfo 已异步化
+async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
   try {
     if (!filePath || !fs.existsSync(filePath)) return null
     const lines = readJsonlLines(filePath, Infinity)
@@ -1132,7 +1133,7 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
     const speedSec = totalSpeedDurationMs / 1000
 
     if (!contextWindow) contextWindow = getCodexContextWindowForModel(model)
-    const gitInfo = getGitInfo(cwd)
+    const gitInfo = await getGitInfo(cwd)
 
     if (CODEX_DEBUG) console.log('[codex metrics] contextUsage:', contextUsage, 'contextWindow:', contextWindow, 'contextPct:', contextWindow ? Math.round((contextUsage / contextWindow) * 100) : 0, 'model:', model)
 
@@ -1156,7 +1157,8 @@ function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
 }
 
 /** 通过 sessionId 获取指标（会匹配 cliSessionId 找到对应 JSONL 文件） */
-function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
+// P1-4：级联 async — getCodexSessionMetricsByFile 已异步化
+async function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
   const cliSessionId = cliSessionIds.get(sessionId) || sessionId
   if (!cliSessionId) return null
   const files = walkFiles(SESSIONS_DIR).filter(file => file.toLowerCase().endsWith('.jsonl'))
@@ -1166,7 +1168,7 @@ function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
   })
   if (!matched) return null
   const sessionCwd = codexSessions.get(sessionId)?.cwd || fallbackCwd || ''
-  return getCodexSessionMetricsByFile(matched, model, sessionCwd)
+  return await getCodexSessionMetricsByFile(matched, model, sessionCwd)
 }
 
 function extractSessionSummary(filePath) {
@@ -2571,7 +2573,7 @@ function setupCodexSdkHandlers() {
             if (!cliId) return
             const filePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: cliId })
             if (!fs.existsSync(filePath)) return
-            const metrics = getCodexSessionMetricsByFile(filePath, model || '', s.cwd || '')
+            const metrics = await getCodexSessionMetricsByFile(filePath, model || '', s.cwd || '')
             if (metrics) {
               metrics.sessionId = sessionId
               metrics.thinking = true
@@ -3336,12 +3338,12 @@ function setupCodexSdkHandlers() {
     return readSessionFileRange(filePath, page, pageSize)
   })
 
-  ipcMain.handle('codex-agent-query-metrics', (_, { sessionId, cliSessionId, filePath, model, cwd } = {}) => {
+  ipcMain.handle('codex-agent-query-metrics', async (_, { sessionId, cliSessionId, filePath, model, cwd } = {}) => {
     if (filePath && String(filePath).toLowerCase().endsWith('.jsonl')) {
-      return getCodexSessionMetricsByFile(filePath, model || '', cwd || '') || null
+      return await getCodexSessionMetricsByFile(filePath, model || '', cwd || '') || null
     }
     if (sessionId || cliSessionId) {
-      return getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '') || null
+      return await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '') || null
     }
     return null
   })
