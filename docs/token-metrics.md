@@ -1,6 +1,6 @@
 # Token Metrics 专题文档
 
-> 最后更新：2026-06-24
+> 最后更新：2026-06-25
 > 覆盖：T144（BUG 修复）→ T145（实时增长 + 平滑计数）→ T146（Per-Turn 标注）
 
 ---
@@ -28,6 +28,7 @@
 - 主进程可以读取 provider 原始字段，但发给前端的 `inputTokens/cacheReadTokens/cacheCreationTokens/outputTokens` 必须已经符合统一 UI 语义：`inputTokens` 代表常规输入 + cache creation，`cacheReadTokens` 代表 cache read。
 - 若后续需要排障原始字段，应新增 `rawUsage` / debug 字段，不允许让状态栏直接消费原始 provider 口径。
 - 动态数字只在真实样本之间插值，不补造 token；没有本回合真实样本时不拿上一轮数据顶替。
+- `homeMetrics` 虽然是历史聚合链路，也必须复用同一 provider normalizer；不能在首页统计里再单独手写 `input_tokens` 推导公式。
 
 ## 一、架构总览
 
@@ -399,6 +400,7 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 
 - ClaudeCode 所有 live/final/poll 样本先走同一个 normalizer。
 - CodeX 所有 `token_count` / final usage / JSONL 样本先走同一个 normalizer。
+- `homeMetrics` 的 transcript 聚合也必须复用同一 normalizer；它不是例外，只是另一个 consumer。
 - 废弃前端按 provider 自行解释 `input_tokens` / `cached_input_tokens` 的逻辑。
 
 建议任务：
@@ -444,6 +446,7 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 2026-06-24 到 2026-06-25 这批修复，定位是止血，不是最终结构完成：
 
 - 已修一批明确 bug：口径错误、负数漂移、最终动画不 snap、Claude footer 直接使用 raw `input_tokens` 等。
+- 2026-06-25 追加止血：`homeMetrics.js` 已改为直接复用 `claudeMetrics.normalizeClaudeUsageForUi()`；新增 `tests/home-metrics.test.cjs`，覆盖原生 Claude 与第三方 Claude SDK provider 的首页聚合口径。
 - 这些修复提升了当前可用性。
 - 但只要 normalizer / turn store / consumer 还没完成收口，后续仍可能在新 provider、新 transcript 样本或历史恢复链路上复发。
 

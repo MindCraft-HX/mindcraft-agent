@@ -1004,6 +1004,7 @@ in 2.3k / out 5.1k / cache 8.1k
   codexOutput: number,        // Codex: 最后事件 total.output_tokens
   codexCacheRead: number,     // Codex: 最后事件 total.cached_input_tokens
   // ⚠️ homeMetrics 是历史聚合口径；状态栏 UI 口径见 §16.0-16.5
+  // 但 provider -> UI 字段映射仍必须复用同一 normalizer，不能在首页统计里再单独解释 input/cache 语义
 }
 ```
 

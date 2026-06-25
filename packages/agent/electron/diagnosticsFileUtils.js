@@ -1,7 +1,57 @@
 const fs = require('fs')
 const path = require('path')
+const { getMindCraftUserDataDir } = require('./userDataPath')
 
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024
+const DEFAULT_DIAGNOSTICS_ENABLED = false
+const APP_SETTINGS_FILE = 'app-settings.json'
+
+function getMindCraftSettingsPath(options = {}) {
+  return path.join(getMindCraftUserDataDir(options), APP_SETTINGS_FILE)
+}
+
+function readMindCraftSettings(options = {}) {
+  try {
+    const settingsPath = getMindCraftSettingsPath(options)
+    if (!fs.existsSync(settingsPath)) return {}
+    return JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  } catch (_) {
+    return {}
+  }
+}
+
+function writeMindCraftSettings(settings, options = {}) {
+  const settingsPath = getMindCraftSettingsPath(options)
+  ensureDirSync(path.dirname(settingsPath))
+  const tmp = `${settingsPath}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(settings || {}, null, 2), 'utf8')
+  try {
+    fs.renameSync(tmp, settingsPath)
+  } catch (_) {
+    fs.copyFileSync(tmp, settingsPath)
+    try { fs.unlinkSync(tmp) } catch (_) {}
+  }
+  return settingsPath
+}
+
+function getDiagnosticsEnabled(options = {}) {
+  const settings = readMindCraftSettings(options)
+  const value = settings?.diagnostics?.enabled
+  return typeof value === 'boolean' ? value : DEFAULT_DIAGNOSTICS_ENABLED
+}
+
+function setDiagnosticsEnabled(enabled, options = {}) {
+  const settings = readMindCraftSettings(options)
+  if (!settings.diagnostics || typeof settings.diagnostics !== 'object') settings.diagnostics = {}
+  settings.diagnostics.enabled = Boolean(enabled)
+  const settingsPath = writeMindCraftSettings(settings, options)
+  return { ok: true, enabled: Boolean(enabled), path: settingsPath }
+}
+
+function shouldWriteDiagnostics(options = {}) {
+  if (options.respectDiagnosticsToggle !== true) return true
+  return getDiagnosticsEnabled(options)
+}
 
 function ensureDirSync(dirPath) {
   if (!dirPath) return
@@ -43,6 +93,7 @@ function rotateLogFileIfTooLarge(filePath, maxBytes = DEFAULT_MAX_BYTES) {
 }
 
 function appendLogLineWithRotation(filePath, line, options = {}) {
+  if (!shouldWriteDiagnostics(options)) return
   const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : DEFAULT_MAX_BYTES
   ensureDirSync(path.dirname(filePath))
   rotateLogFileIfTooLarge(filePath, maxBytes)
@@ -53,6 +104,15 @@ function appendLogLineWithRotation(filePath, line, options = {}) {
 }
 
 function writeFileWithMaxBytes(filePath, content, options = {}) {
+  if (!shouldWriteDiagnostics(options)) {
+    return {
+      filePath,
+      truncated: false,
+      originalBytes: 0,
+      writtenBytes: 0,
+      skipped: true,
+    }
+  }
   const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : DEFAULT_MAX_BYTES
   ensureDirSync(path.dirname(filePath))
   const prepared = trimTextToMaxBytes(content, maxBytes, { marker: '\n[file-truncated]\n' })
@@ -69,7 +129,11 @@ module.exports = {
   DEFAULT_MAX_BYTES,
   appendLogLineWithRotation,
   ensureDirSync,
+  getDiagnosticsEnabled,
+  getMindCraftSettingsPath,
   rotateLogFileIfTooLarge,
+  setDiagnosticsEnabled,
+  shouldWriteDiagnostics,
   trimTextToMaxBytes,
   writeFileWithMaxBytes,
 }

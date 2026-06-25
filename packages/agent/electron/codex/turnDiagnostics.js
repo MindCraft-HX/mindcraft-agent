@@ -68,7 +68,10 @@ function appendCodexTurnDiagnostic(entry = {}, options = {}) {
       ts: new Date().toISOString(),
       ...entry,
     }) + '\n'
-    appendLogLineWithRotation(logFile, line, { maxBytes: MAX_DIAGNOSTIC_FILE_BYTES })
+    appendLogLineWithRotation(logFile, line, {
+      maxBytes: MAX_DIAGNOSTIC_FILE_BYTES,
+      respectDiagnosticsToggle: true,
+    })
   } catch (_) {}
 }
 
@@ -81,7 +84,10 @@ function writeCodexTurnDiagnosticArtifact(diagnosticId, name, value, options = {
     const body = options.kind === 'json'
       ? JSON.stringify(value, null, 2)
       : String(value == null ? '' : value)
-    writeFileWithMaxBytes(filePath, body, { maxBytes: MAX_DIAGNOSTIC_FILE_BYTES })
+    writeFileWithMaxBytes(filePath, body, {
+      maxBytes: MAX_DIAGNOSTIC_FILE_BYTES,
+      respectDiagnosticsToggle: true,
+    })
     return filePath
   } catch (_) {
     return ''

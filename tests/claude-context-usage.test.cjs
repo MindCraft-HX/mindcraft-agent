@@ -45,7 +45,7 @@ function runNativeClaudeUiNormalizationTest() {
   }, 'claude-sonnet-4-20250514')
 
   assert.deepEqual(metrics, {
-    inputTokens: 300,
+    inputTokens: 400,
     outputTokens: 50,
     cacheReadTokens: 800,
     cacheCreationTokens: 100,
@@ -62,7 +62,7 @@ function runThirdPartyClaudeUiNormalizationTest() {
   }, 'deepseek-v4-pro')
 
   assert.deepEqual(metrics, {
-    inputTokens: 139,
+    inputTokens: 395,
     outputTokens: 812,
     cacheReadTokens: 41344,
     cacheCreationTokens: 256,

@@ -6,6 +6,9 @@ const path = require('path')
 
 const {
   appendLogLineWithRotation,
+  getDiagnosticsEnabled,
+  getMindCraftSettingsPath,
+  setDiagnosticsEnabled,
   trimTextToMaxBytes,
   writeFileWithMaxBytes,
 } = require('./diagnosticsFileUtils')
@@ -40,4 +43,38 @@ test('writeFileWithMaxBytes caps artifact size', () => {
   assert.equal(result.truncated, true)
   assert.equal(fs.existsSync(filePath), true)
   assert.equal(fs.statSync(filePath).size <= 64, true)
+})
+
+test('diagnostics toggle defaults to disabled and persists in app settings', () => {
+  const dir = makeTempDir()
+  const options = {
+    app: { getPath: () => dir },
+    homeDir: dir,
+  }
+
+  assert.equal(getDiagnosticsEnabled(options), false)
+
+  const result = setDiagnosticsEnabled(true, options)
+  assert.equal(result.enabled, true)
+  assert.equal(result.path, getMindCraftSettingsPath(options))
+  assert.equal(getDiagnosticsEnabled(options), true)
+
+  const saved = JSON.parse(fs.readFileSync(result.path, 'utf8'))
+  assert.equal(saved?.diagnostics?.enabled, true)
+})
+
+test('diagnostics toggle only affects explicit opt-in writes', () => {
+  const dir = makeTempDir()
+  const options = {
+    app: { getPath: () => dir },
+    homeDir: dir,
+  }
+  const defaultPath = path.join(dir, 'default.log')
+  const gatedPath = path.join(dir, 'gated.log')
+
+  appendLogLineWithRotation(defaultPath, 'default-on\n', options)
+  appendLogLineWithRotation(gatedPath, 'gated-off\n', { ...options, respectDiagnosticsToggle: true })
+
+  assert.equal(fs.existsSync(defaultPath), true)
+  assert.equal(fs.existsSync(gatedPath), false)
 })

@@ -3,6 +3,7 @@ const path = require('path')
 const os = require('os')
 const { app } = require('electron')
 const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
+const { normalizeClaudeUsageForUi } = require('./claudeMetrics')
 
 // ==================== 工具函数 ====================
 
@@ -70,8 +71,9 @@ function parseClaudeLines(lines) {
   let lastFallbackTs = null
   let hasStop = false
   const dateMap = new Map()
-  // 注：Claude 的 input_tokens 已包含 cache_read + cache_creation（子集关系）
-  // UI/首页统一口径：in = 常规输入 + cache_creation = input_tokens - cache_read
+  // 注：首页统一口径必须复用 Claude metrics normalizer：
+  // 原生 Claude: in = input_tokens - cache_read
+  // 第三方 Claude SDK provider: in = input_tokens + cache_creation
   //     每轮 API 调用的 input_tokens 含全部上下文，跨轮累加会严重偏高
   //     正确做法：只取最后一个 stop_reason 轮次的值
 
@@ -93,10 +95,12 @@ function parseClaudeLines(lines) {
 
       if (parsed.type === 'assistant' && parsed.message?.usage) {
         const u = parsed.message.usage
-        const inp = u.input_tokens || 0
+        const model = parsed.model_name || parsed.model || parsed.message?.model || ''
+        const normalized = normalizeClaudeUsageForUi(u, model)
+        const inp = normalized.inputTokens || 0
         const out = u.output_tokens || 0
-        const cr = u.cache_read_input_tokens || 0
-        const cc = u.cache_creation_input_tokens || 0
+        const cr = normalized.cacheReadTokens || 0
+        const cc = normalized.cacheCreationTokens || 0
         if (ts) lastFallbackTs = ts
 
         if (parsed.message.stop_reason) {
@@ -117,7 +121,7 @@ function parseClaudeLines(lines) {
   }
 
   if (hasStop) {
-    totalInput = Math.max(0, lastStopInput - lastStopCacheRead)
+    totalInput = lastStopInput
     totalCacheRead = lastStopCacheRead
     totalCacheCreation = lastStopCacheCreation
     // 趋势图：整 session 归到最后一轮日期（避免每轮全量 input 重复累加）
@@ -129,13 +133,15 @@ function parseClaudeLines(lines) {
         const parsed = JSON.parse(line)
         if (parsed.type === 'assistant' && parsed.message?.usage) {
           const u = parsed.message.usage
-          const fallbackInput = Number.isFinite(Number(u.input_tokens)) ? Number(u.input_tokens) : totalInput
-          const fallbackCacheRead = Number.isFinite(Number(u.cache_read_input_tokens)) ? Number(u.cache_read_input_tokens) : totalCacheRead
-          totalInput = Math.max(0, fallbackInput - fallbackCacheRead)
+          const model = parsed.model_name || parsed.model || parsed.message?.model || ''
+          const normalized = normalizeClaudeUsageForUi(u, model)
+          const fallbackInput = Number.isFinite(Number(normalized.inputTokens)) ? Number(normalized.inputTokens) : totalInput
+          const fallbackCacheRead = Number.isFinite(Number(normalized.cacheReadTokens)) ? Number(normalized.cacheReadTokens) : totalCacheRead
+          totalInput = fallbackInput
           totalOutput += u.output_tokens || 0
           totalCacheRead = fallbackCacheRead
-          totalCacheCreation = Number.isFinite(Number(u.cache_creation_input_tokens))
-            ? Number(u.cache_creation_input_tokens)
+          totalCacheCreation = Number.isFinite(Number(normalized.cacheCreationTokens))
+            ? Number(normalized.cacheCreationTokens)
             : totalCacheCreation
         }
       } catch (_) {}
@@ -518,4 +524,15 @@ function setupHomeMetricsHandlers(ipcMain) {
   })
 }
 
-module.exports = { setupHomeMetricsHandlers, getTodayStats, getTokenTrend, getRecentProject }
+module.exports = {
+  setupHomeMetricsHandlers,
+  getTodayStats,
+  getTokenTrend,
+  getRecentProject,
+  __test__: {
+    parseClaudeLines,
+    parseCodexLines,
+    estimateClaudeCost,
+    estimateCodexCost,
+  },
+}

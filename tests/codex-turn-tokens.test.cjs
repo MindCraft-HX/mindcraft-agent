@@ -65,7 +65,7 @@ function runBuildPerTurnTokensFallsBackToUsageTest() {
   )
 
   assert.deepEqual(perTurn, {
-    inputTokens: 33,
+    inputTokens: 37,
     outputTokens: 9,
     cacheReadTokens: 7,
     cacheCreationTokens: 2,
@@ -119,7 +119,7 @@ function runBuildLiveMetricsFromTokenCountTotalsFallbackTest() {
     },
   })
 
-  assert.equal(metrics.inputTokens, 270)
+  assert.equal(metrics.inputTokens, 330)
   assert.equal(metrics.outputTokens, 100)
   assert.equal(metrics.cacheReadTokens, 200)
   assert.equal(metrics.cacheCreationTokens, 30)
