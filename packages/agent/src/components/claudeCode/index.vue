@@ -3773,7 +3773,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: 3px solid color-mix(in srgb, var(--cc-border) 75%, transparent);
   border-top-color: var(--cc-primary);
-  animation: cc-init-spin 0.9s linear infinite;
+  animation: cc-init-spin var(--mc-loading-spinner-duration) linear infinite;
 }
 .cc-init-title {
   font-size: 15px;

@@ -171,11 +171,10 @@ async function ensurePayloadContent(payload = {}) {
   }
 }
 
-function saveRecentDoc(payload = {}) {
+async function saveRecentDoc(payload = {}) {
   if (!payload.filePath) return
   try {
-    const key = 'mindcraft_agent_recent_docs'
-    const docs = JSON.parse(localStorage.getItem(key) || '[]')
+    const docs = await window.electronAPI?.getSetting?.('recentDocs') || []
     const name = payload.name || payload.filePath.split(/[\\/]/).pop() || ''
     const entry = {
       name,
@@ -183,10 +182,10 @@ function saveRecentDoc(payload = {}) {
       ext: name.split('.').pop() || '',
       openedAt: Date.now(),
     }
-    // 鍘婚噸 + 鏈€澶?鏉?
-    const filtered = docs.filter(d => d.filePath !== entry.filePath)
+    const filtered = Array.isArray(docs) ? docs.filter(d => d.filePath !== entry.filePath) : []
     filtered.unshift(entry)
-    localStorage.setItem(key, JSON.stringify(filtered.slice(0, 5)))
+    await window.electronAPI?.setSetting?.('recentDocs', filtered.slice(0, 5))
+    try { localStorage.removeItem('mindcraft_agent_recent_docs') } catch (_) {}
   } catch (_) {}
 }
 

@@ -386,7 +386,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   .logo-icon {
     width: 44px;
     height: 44px;
-    background-image: url(./assets/mindcraft_logo_svg.svg);
+    background-image: url(./assets/logo-white.png);
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;

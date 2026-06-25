@@ -37,6 +37,13 @@
       />
 
       <div class="cc-main">
+        <div v-if="initializing" class="cc-init-overlay">
+          <div class="cc-init-card">
+            <div class="cc-init-spinner"></div>
+            <div class="cc-init-title">{{ $t('agent.restoringSession') }}</div>
+            <div class="cc-init-sub">{{ $t('agent.restoringSessionHint') }}</div>
+          </div>
+        </div>
         <APISetting ref="apiSettingRef" @providerActivated="handleProviderActivated"></APISetting>
         <ManagePlugins ref="codexPluginsRef" api-prefix="codexPlugins" />
         <ManageSkills ref="codexSkillsRef" api-prefix="codexSkills" :cwd="activeProject?.cwd || ''" />
@@ -349,6 +356,7 @@ function buildUserContentBlocks(text, imgs = [], files = []) {
 }
 
 const codehubSwitchToAgent = inject('codehubSwitchToAgent', null)
+const initializing = ref(true)
 
 function switchToClaude() {
   if (codehubSwitchToAgent) {
@@ -2806,6 +2814,7 @@ onMounted(async () => {
     }
   }
   isReady.value = true
+  initializing.value = false
 })
 
 // --- expose for codeHub unified tabs ---
@@ -2883,6 +2892,58 @@ onUnmounted(() => {
 }
 .cc-content { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 .cc-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; }
+
+.cc-init-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--cc-bg) 86%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.cc-init-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 280px;
+  max-width: 360px;
+  padding: 22px 24px;
+  border: 1px solid var(--cc-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--cc-bg-secondary) 92%, transparent);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+}
+
+.cc-init-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--cc-border) 75%, transparent);
+  border-top-color: var(--cc-primary);
+  animation: cc-init-spin var(--mc-loading-spinner-duration) linear infinite;
+}
+
+.cc-init-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cc-text);
+}
+
+.cc-init-sub {
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--cc-text-muted);
+}
+
+@keyframes cc-init-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .cc-wrap.cc-first-query-lock :deep(.cc-toolbar) {
   pointer-events: none; opacity: 0.52; user-select: none; filter: saturate(0.7); overflow: hidden;

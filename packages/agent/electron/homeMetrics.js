@@ -18,6 +18,13 @@ function todayDateStr() {
   return formatDateLocal(Date.now())
 }
 
+function startOfLocalDayTs(offsetDays = 0) {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - offsetDays)
+  return d.getTime()
+}
+
 function walkDir(dir, maxDepth, cb) {
   if (maxDepth < 0) return
   let entries
@@ -47,6 +54,7 @@ function readJsonlLinesCached(filePath) {
   }
 }
 const _lineCache = new Map()
+const _trendCache = new Map()
 
 // ==================== Claude JSONL 解析 ====================
 
@@ -269,8 +277,15 @@ function getTodayStats() {
 // ==================== 趋势数据 ====================
 
 function getTokenTrend(days) {
+  const cached = _trendCache.get(days)
+  const now = Date.now()
+  if (cached && now - cached.time < 30000) {
+    return cached.data
+  }
+
   const claudeProjectsDir = path.join(os.homedir(), '.claude', 'projects')
   const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions')
+  const cutoffTs = startOfLocalDayTs(Math.max(days - 1, 0))
 
   // 聚合 Map: dateStr -> { claudeInput, claudeOutput, claudeCacheRead, codexInput, codexOutput, codexCacheRead, codexCacheCreation }
   const dateAgg = new Map()
@@ -278,6 +293,10 @@ function getTokenTrend(days) {
   // Claude
   if (fs.existsSync(claudeProjectsDir)) {
     walkDir(claudeProjectsDir, 2, (filePath) => {
+      try {
+        const stat = fs.statSync(filePath)
+        if (stat.mtimeMs < cutoffTs) return
+      } catch (_) { return }
       const lines = readJsonlLinesCached(filePath)
       if (!lines.length) return
       const { dateMap } = parseClaudeLines(lines)
@@ -294,6 +313,10 @@ function getTokenTrend(days) {
   // Codex
   if (fs.existsSync(codexSessionsDir)) {
     walkDir(codexSessionsDir, 1, (filePath) => {
+      try {
+        const stat = fs.statSync(filePath)
+        if (stat.mtimeMs < cutoffTs) return
+      } catch (_) { return }
       const lines = readJsonlLinesCached(filePath)
       if (!lines.length) return
       const { dateMap } = parseCodexLines(lines)
@@ -310,9 +333,9 @@ function getTokenTrend(days) {
 
   // 生成最近 N 天的数组（含零值填充）
   const result = []
-  const now = new Date()
+  const currentDate = new Date()
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now)
+    const d = new Date(currentDate)
     d.setDate(d.getDate() - i)
     const dateStr = formatDateLocal(d.getTime())
     const agg = dateAgg.get(dateStr)
@@ -345,6 +368,7 @@ function getTokenTrend(days) {
     }
   }
 
+  _trendCache.set(days, { time: now, data: result })
   return result
 }
 

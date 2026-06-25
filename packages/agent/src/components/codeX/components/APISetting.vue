@@ -193,11 +193,13 @@ const envLatestVersion = ref('')
 const validatingIdx = ref(-1)
 const settingsForm = ref({ providers: [], selectedIdx: -1, activeIdx: -1 })
 const currentProvider = ref(null)
+const envInitialized = ref(false)
 
 defineProps({ embedded: { type: Boolean, default: false } })
 const emit = defineEmits(['providerActivated'])
 
 async function checkEnvironment() {
+  envInitialized.value = true
   envChecking.value = true
   try {
     const res = await window.electronAPI?.codexCheckEnvironment?.()
@@ -294,17 +296,14 @@ function openSettings() {
   codexConfigStore.loadSandboxMode()
   codexConfigStore.loadDefaultNetworkAccess()
   codexConfigStore.loadDefaultWebSearch()
-  // 环境检测不阻塞面板打开（execSync 可能很慢）
-  checkEnvironment()
+  if (!envInitialized.value) {
+    checkEnvironment()
+  }
 }
 
 function showSandboxToast(s) {
   ElMessage.success(t('settings.sandbox.modeChanged', { label: t(s.labelKey) }))
 }
-
-// 异步组件加载完成后自动检测环境，避免 SharedSettings 首次打开时
-// openSettings() 尚未被调用导致 envStatus 为 null，显示"检测失败请重试"
-onMounted(() => { checkEnvironment() })
 
 defineExpose({ openSettings })
 

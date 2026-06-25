@@ -220,6 +220,7 @@ const settingsEffortLevel = ref('medium')
 const currentGlobalModel = ref('')
 const fullSettingsJson = ref(null)
 const formInitialConfigJson = ref(null)
+const envInitialized = ref(false)
 
 const tierItems = [
   { key: 'haiku', label: 'Haiku', defaultModel: '' },
@@ -250,6 +251,7 @@ function ensureProviderConfig(provider) {
 }
 
 async function checkEnvironment() {
+  envInitialized.value = true
   envChecking.value = true
   try {
     const res = await window.electronAPI?.claudeCheckEnvironment?.()
@@ -354,7 +356,9 @@ async function checkForUpdate() {
 
 async function openSettings() {
   editingNewProvider.value = false
-  checkEnvironment()
+  if (!envInitialized.value) {
+    checkEnvironment()
+  }
 
   let key = ''
   let url = ''
@@ -494,10 +498,6 @@ async function openSettings() {
 
   showSettings.value = true
 }
-
-// 异步组件加载完成后自动检测环境，避免 SharedSettings 首次打开时
-// openSettings() 尚未被调用导致 envStatus 为 null，显示"检测失败请重试"
-onMounted(() => { checkEnvironment() })
 
 defineExpose({ openSettings })
 

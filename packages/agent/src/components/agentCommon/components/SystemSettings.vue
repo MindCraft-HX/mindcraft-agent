@@ -122,6 +122,7 @@ const downloadProgress = ref(0)
 const isDevMode = ref(false)
 const releaseNotes = ref('')
 const forceUpdate = ref(false)
+const initialized = ref(false)
 
 let cleanupListener = null
 
@@ -155,8 +156,10 @@ function handleInstallUpdate() {
   window.electronAPI?.installUpdate?.()
 }
 
-onMounted(async () => {
-  // 获取应用版本号
+async function openSettings() {
+  if (initialized.value) return
+  initialized.value = true
+
   try {
     const v = await window.electronAPI?.getAppVersion()
     if (v) appVersion.value = v
@@ -164,7 +167,6 @@ onMounted(async () => {
     appVersion.value = 'N/A'
   }
 
-  // 获取当前更新状态
   try {
     const status = await window.electronAPI?.getAppUpdateStatus()
     if (status && status.state) {
@@ -188,11 +190,15 @@ onMounted(async () => {
     if (data.releaseNotes) releaseNotes.value = data.releaseNotes
     if (data.force) forceUpdate.value = true
   })
-})
+}
+
+onMounted(() => {})
 
 onUnmounted(() => {
   if (typeof cleanupListener === 'function') cleanupListener()
 })
+
+defineExpose({ openSettings })
 </script>
 
 <style scoped>

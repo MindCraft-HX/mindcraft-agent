@@ -1,65 +1,95 @@
 import { i18n } from '@/i18n'
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 
-const defaultStats = () => ({
-  claude: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0, sessionCount: 0 },
-  codex: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0, sessionCount: 0 },
-  combined: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0 },
-})
-
-function loadRecentDocs() {
-  try {
-    const docs = JSON.parse(localStorage.getItem('mindcraft_agent_recent_docs') || '[]')
-    if (!Array.isArray(docs)) return []
-    return docs
-      .filter(doc => doc && doc.filePath)
-      .map((doc) => {
-        const filePath = String(doc.filePath || '')
-        const name = doc.name || filePath.split(/[\\/]/).pop() || ''
-        return {
-          ...doc,
-          name,
-          ext: doc.ext || name.split('.').pop() || '',
-        }
-      })
-  } catch (_) { return [] }
+function normalizeRecentDocs(docs) {
+  if (!Array.isArray(docs)) return []
+  return docs
+    .filter(doc => doc && doc.filePath)
+    .map((doc) => {
+      const filePath = String(doc.filePath || '')
+      const name = doc.name || filePath.split(/[\\/]/).pop() || ''
+      return {
+        ...doc,
+        name,
+        ext: doc.ext || name.split('.').pop() || '',
+      }
+    })
 }
 
 export function useHomeData() {
   const recentProject = ref({ hasRecent: false })
-  const recentDocs = ref(loadRecentDocs())
-  const todayStats = ref(defaultStats())
+  const recentDocs = ref([])
   const trendData = ref([])
-  const trendDays = ref(7)
+  const trendDays = ref(1)
+  const projectLoading = ref(true)
+  const docsLoading = ref(true)
+  const statsLoading = ref(true)
   const trendLoading = ref(false)
-  const loading = ref(true)
 
-  async function refresh() {
-    loading.value = true
-    const api = window.electronAPI
-    if (!api) {
-      loading.value = false
-      return
-    }
+  const summaryStats = computed(() => {
+    const combined = trendData.value.reduce((acc, day) => {
+      acc.inputTokens += day.totalInput || 0
+      acc.outputTokens += day.totalOutput || 0
+      acc.cacheReadTokens += day.totalCache || 0
+      return acc
+    }, {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+    })
+    return combined
+  })
 
+  async function loadRecentDocs() {
+    docsLoading.value = true
     try {
-      const [project, stats] = await Promise.all([
-        api.loadRecentProject().catch(() => ({ hasRecent: false })),
-        api.loadTodayStats().catch(() => defaultStats()),
-      ])
-      if (project) recentProject.value = project
-      if (stats) todayStats.value = stats
+      const docs = await window.electronAPI?.getSetting?.('recentDocs')
+      if (Array.isArray(docs) && docs.length) {
+        recentDocs.value = normalizeRecentDocs(docs)
+        docsLoading.value = false
+        return
+      }
     } catch (_) {}
 
-    await loadTrend()
-    loading.value = false
+    try {
+      const legacyDocs = JSON.parse(localStorage.getItem('mindcraft_agent_recent_docs') || '[]')
+      const normalized = normalizeRecentDocs(legacyDocs)
+      recentDocs.value = normalized
+      if (normalized.length) {
+        await window.electronAPI?.setSetting?.('recentDocs', normalized.slice(0, 5))
+      }
+    } catch (_) {
+      recentDocs.value = []
+    }
+    docsLoading.value = false
+  }
+
+  async function loadRecentProject() {
+    projectLoading.value = true
+    const api = window.electronAPI
+    if (!api) {
+      projectLoading.value = false
+      return
+    }
+    try {
+      const project = await api.loadRecentProject().catch(() => ({ hasRecent: false }))
+      if (project) recentProject.value = project
+    } catch (_) {}
+    projectLoading.value = false
+  }
+
+  async function refresh() {
+    loadRecentProject()
+    loadRecentDocs()
   }
 
   async function loadTrend() {
+    statsLoading.value = true
     trendLoading.value = true
     const api = window.electronAPI
     if (!api) {
       trendLoading.value = false
+      statsLoading.value = false
       return
     }
 
@@ -69,6 +99,7 @@ export function useHomeData() {
     } catch (_) {}
 
     trendLoading.value = false
+    statsLoading.value = false
   }
 
   watch(trendDays, () => {
@@ -77,16 +108,24 @@ export function useHomeData() {
 
   onMounted(() => {
     refresh()
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        loadTrend()
+      }, 0)
+    })
   })
 
   return {
     recentProject,
     recentDocs,
-    todayStats,
+    summaryStats,
     trendData,
     trendDays,
+    setTrendDays: (days) => { trendDays.value = days },
+    projectLoading,
+    docsLoading,
+    statsLoading,
     trendLoading,
-    loading,
     refresh,
   }
 }

@@ -54,6 +54,13 @@
 
     <!-- ===== 内容区：始终渲染 Agent 组件 ===== -->
     <div class="codehub-content">
+      <div v-if="!initDone" class="codehub-init-overlay">
+        <div class="codehub-init-card">
+          <div class="codehub-init-spinner"></div>
+          <div class="codehub-init-title">{{ $t('agent.restoringSession') }}</div>
+          <div class="codehub-init-sub">{{ $t('agent.restoringSessionHint') }}</div>
+        </div>
+      </div>
       <template v-for="agent in agents" :key="agent.key">
         <component
           v-if="mountedMap[agent.key]"
@@ -179,8 +186,9 @@ function saveTabOrder() {
   localStorage.setItem('codehub_tab_order', JSON.stringify(tabOrder.value))
 }
 
-// 惰性挂载：记录哪些 Agent 已挂载。由 Registry 生成初始值，新增 Agent 从 false 开始
-const mountedMap = reactive(createMountedMap(['claudeCode', 'codex']))
+// 惰性挂载：仅挂载路由请求的 Agent；其余按需挂载，避免首帧同时初始化两个重面板
+const requestedInitialAgent = normalizeRequestedAgent(route.query?.agent) || 'claudeCode'
+const mountedMap = reactive(createMountedMap([requestedInitialAgent]))
 
 const ctxMenu = reactive({ visible: false, x: 0, y: 0, tab: null })
 
@@ -571,6 +579,60 @@ watch(
 <style>
 .codehub-wrap {
   width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+}
+
+.codehub-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.codehub-init-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--cc-bg, #1a1a1a) 86%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.codehub-init-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 22px;
+  border-radius: 12px;
+  border: 1px solid var(--cc-border, #2a2a2a);
+  background: var(--cc-bg, #1a1a1a);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+}
+
+.codehub-init-spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(198, 97, 63, 0.22);
+  border-top-color: var(--cc-primary, #c6613f);
+  animation: codehub-init-spin var(--mc-loading-spinner-duration) linear infinite;
+}
+
+.codehub-init-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cc-text, #e0e0e0);
+}
+
+.codehub-init-sub {
+  font-size: 12px;
+  color: var(--cc-text-dim, #888);
+}
+
+@keyframes codehub-init-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ===== 统一 Tab 栏（匹配原 claudeCode ProjectTabs 风格） ===== */

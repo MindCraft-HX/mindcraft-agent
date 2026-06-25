@@ -18,7 +18,14 @@
         </div>
 
         <div class="card-body">
-          <template v-if="recentProject.hasRecent">
+          <template v-if="projectLoading">
+            <div class="card-skeleton">
+              <div class="skeleton-line" style="width:75%"></div>
+              <div class="skeleton-line" style="width:55%"></div>
+              <div class="skeleton-line" style="width:65%"></div>
+            </div>
+          </template>
+          <template v-else-if="recentProject.hasRecent">
             <div class="project-list">
               <div
                 v-for="proj in recentProject.projects.slice(0, 4)"
@@ -72,7 +79,14 @@
         </div>
 
         <div class="card-body">
-          <template v-if="recentDocs.length">
+          <template v-if="docsLoading">
+            <div class="card-skeleton">
+              <div class="skeleton-line" style="width:75%"></div>
+              <div class="skeleton-line" style="width:55%"></div>
+              <div class="skeleton-line" style="width:65%"></div>
+            </div>
+          </template>
+          <template v-else-if="recentDocs.length">
             <div class="doc-list">
               <div
                 v-for="doc in recentDocs.slice(0, 3)"
@@ -119,7 +133,14 @@
         </div>
 
         <div class="card-body">
-          <template v-if="recentChats.length">
+          <template v-if="recentChatsLoading">
+            <div class="card-skeleton">
+              <div class="skeleton-line" style="width:72%"></div>
+              <div class="skeleton-line" style="width:58%"></div>
+              <div class="skeleton-line" style="width:66%"></div>
+            </div>
+          </template>
+          <template v-else-if="recentChats.length">
             <div class="project-list">
               <div
                 v-for="chat in recentChats.slice(0, 4)"
@@ -152,28 +173,50 @@
       <div class="stats-header">
         <h2 class="stats-title">{{ $t('home.stats') }}</h2>
         <div class="trend-toggle">
-          <button :class="{ active: trendDays === 7 }" @click="trendDays = 7">{{ $t('home.days7') }}</button>
-          <button :class="{ active: trendDays === 30 }" @click="trendDays = 30">{{ $t('home.days30') }}</button>
+          <button :class="{ active: trendDays === 1 }" @click="setTrendDays(1)">当日</button>
+          <button :class="{ active: trendDays === 7 }" @click="setTrendDays(7)">{{ $t('home.days7') }}</button>
+          <button :class="{ active: trendDays === 30 }" @click="setTrendDays(30)">{{ $t('home.days30') }}</button>
         </div>
       </div>
 
       <div class="stats-body">
-        <div class="stats-today">
+        <div v-if="statsLoading" class="stats-today-skeleton">
+          <div class="stats-stat-skeleton">
+            <div class="skeleton-line skeleton-label"></div>
+            <div class="skeleton-line skeleton-value"></div>
+          </div>
+          <div class="stats-stat-skeleton">
+            <div class="skeleton-line skeleton-label"></div>
+            <div class="skeleton-line skeleton-value"></div>
+          </div>
+          <div class="stats-stat-skeleton">
+            <div class="skeleton-line skeleton-label"></div>
+            <div class="skeleton-line skeleton-value"></div>
+          </div>
+        </div>
+        <div v-else class="stats-today">
+          <div class="stats-period-label">{{ trendDays === 1 ? '当日汇总' : `${trendDays}天汇总` }}</div>
           <div class="stat-item">
             <span class="stat-label">{{ $t('home.input') }}</span>
-            <span class="stat-value">{{ formatNumber(todayStats.combined.inputTokens) }}</span>
+            <span class="stat-value">{{ formatNumber(summaryStats.inputTokens) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">{{ $t('home.output') }}</span>
-            <span class="stat-value">{{ formatNumber(todayStats.combined.outputTokens) }}</span>
+            <span class="stat-value">{{ formatNumber(summaryStats.outputTokens) }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">{{ $t('home.cache') }}</span>
-            <span class="stat-value">{{ formatNumber(todayStats.combined.cacheReadTokens) }}</span>
+            <span class="stat-value">{{ formatNumber(summaryStats.cacheReadTokens) }}</span>
           </div>
         </div>
         <div class="stats-chart">
-          <TokenChart v-if="trendData.length" :data="trendData" />
+          <div v-if="trendLoading" class="chart-skeleton">
+            <div class="skeleton-line chart-line-lg"></div>
+            <div class="skeleton-line chart-line-md"></div>
+            <div class="skeleton-line chart-line-lg"></div>
+            <div class="skeleton-line chart-line-sm"></div>
+          </div>
+          <TokenChart v-else-if="trendData.length" :data="trendData" />
           <div v-else class="chart-empty">{{ $t('home.noTrendData') }}</div>
         </div>
       </div>
@@ -193,28 +236,46 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useClaudeThemeStore } from '@mindcraft/agent'
-import TokenChart from '@/components/Home/TokenChart.vue'
 import { useHomeData, formatNumber, formatTime } from '@/components/Home/useHomeData.js'
+
+const TokenChart = defineAsyncComponent(() => import('@/components/Home/TokenChart.vue'))
 
 const router = useRouter()
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
-const { recentProject, recentDocs, todayStats, trendData, trendDays } = useHomeData()
+const {
+  recentProject,
+  recentDocs,
+  summaryStats,
+  trendData,
+  trendDays,
+  setTrendDays,
+  projectLoading,
+  docsLoading,
+  statsLoading,
+  trendLoading,
+} = useHomeData()
 
 // 最近对话会话
 const recentChats = ref([])
+const recentChatsLoading = ref(true)
 onMounted(async () => {
-  try {
-    const api = window.electronAPI || {}
-    const result = await api.chatListSessions?.()
-    const sessions = Array.isArray(result?.sessions) ? result.sessions : []
-    recentChats.value = sessions
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-  } catch (_) {}
+  requestAnimationFrame(() => {
+    setTimeout(async () => {
+      try {
+        const api = window.electronAPI || {}
+        const result = await api.chatListSessions?.()
+        const sessions = Array.isArray(result?.sessions) ? result.sessions : []
+        recentChats.value = sessions
+          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      } catch (_) {}
+      recentChatsLoading.value = false
+    }, 0)
+  })
 })
 
 // 版本号 + 更新检测
@@ -224,21 +285,25 @@ const updateAvailable = ref(false)
 let _cleanupUpdateStatus = null
 
 onMounted(async () => {
-  try {
-    const v = await window.electronAPI?.getAppVersion()
-    if (v) appVersion.value = v
-  } catch (_) {}
+  requestAnimationFrame(() => {
+    setTimeout(async () => {
+      try {
+        const v = await window.electronAPI?.getAppVersion()
+        if (v) appVersion.value = v
+      } catch (_) {}
 
-  try {
-    const status = await window.electronAPI?.getAppUpdateStatus()
-    if (status?.state === 'available') updateAvailable.value = true
-    if (status?.state === 'checking') updateChecking.value = true
-  } catch (_) {}
+      try {
+        const status = await window.electronAPI?.getAppUpdateStatus()
+        if (status?.state === 'available') updateAvailable.value = true
+        if (status?.state === 'checking') updateChecking.value = true
+      } catch (_) {}
 
-  _cleanupUpdateStatus = window.electronAPI?.onAppUpdateStatus?.((data) => {
-    if (!data) return
-    updateChecking.value = data.state === 'checking'
-    updateAvailable.value = data.state === 'available'
+      _cleanupUpdateStatus = window.electronAPI?.onAppUpdateStatus?.((data) => {
+        if (!data) return
+        updateChecking.value = data.state === 'checking'
+        updateAvailable.value = data.state === 'available'
+      })
+    }, 0)
   })
 })
 
@@ -368,6 +433,12 @@ function dirPath(filePath) {
   flex-direction: column;
   justify-content: center;
   min-height: 0;
+}
+
+.card-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* Project list */
@@ -628,6 +699,25 @@ function dirPath(filePath) {
   justify-content: center;
 }
 
+.stats-period-label {
+  font-size: 11px;
+  color: var(--cc-text-dim, #888);
+  margin-bottom: 2px;
+}
+
+.stats-today-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  justify-content: center;
+}
+
+.stats-stat-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .stat-item {
   display: flex;
   flex-direction: column;
@@ -650,6 +740,15 @@ function dirPath(filePath) {
 .stats-chart {
   min-height: 200px;
   position: relative;
+}
+
+.chart-skeleton {
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  opacity: 0.92;
 }
 
 .chart-empty {
@@ -707,10 +806,52 @@ function dirPath(filePath) {
   height: 7px;
   border-radius: 50%;
   background: var(--cc-warning, #f0a020);
-  animation: footer-pulse 1.5s ease-in-out infinite;
+  animation: footer-pulse var(--mc-loading-pulse-duration) ease-in-out infinite;
 }
 @keyframes footer-pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--cc-bg-secondary, #1e1e1e) 0%,
+    rgba(198, 97, 63, 0.22) 35%,
+    var(--cc-panel-item-hover, #252525) 50%,
+    rgba(198, 97, 63, 0.16) 65%,
+    var(--cc-bg-secondary, #1e1e1e) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer var(--mc-loading-shimmer-duration) ease-in-out infinite;
+}
+
+.skeleton-label {
+  width: 44px;
+  height: 8px;
+}
+
+.skeleton-value {
+  width: 86px;
+  height: 22px;
+}
+
+.chart-line-lg {
+  width: 92%;
+}
+
+.chart-line-md {
+  width: 76%;
+}
+
+.chart-line-sm {
+  width: 61%;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

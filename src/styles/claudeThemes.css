@@ -3,3 +3,9 @@
 @import './cc-theme-light.css';
 @import './cc-theme-blue.css';
 @import './cc-theme-brown.css';
+
+:root {
+  --mc-loading-shimmer-duration: 1.8s;
+  --mc-loading-spinner-duration: 1.35s;
+  --mc-loading-pulse-duration: 2.2s;
+}

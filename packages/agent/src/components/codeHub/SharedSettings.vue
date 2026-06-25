@@ -15,14 +15,13 @@
         <button class="shared-settings-close" @click="close" :title="$t('common.close')">✕</button>
       </div>
       <div class="shared-settings-body">
-        <template v-for="t in tabs" :key="t.key">
-          <component
-            v-show="active === t.key"
-            :is="t.settingsComponent"
-            :ref="(el) => { if (el) settingsRefs[t.key] = el }"
-            embedded
-          />
-        </template>
+        <component
+          v-if="activeTab"
+          :is="activeTab.settingsComponent"
+          :key="activeTab.key"
+          :ref="(el) => { if (el) settingsRefs[activeTab.key] = el }"
+          embedded
+        />
       </div>
     </div>
   </div>
@@ -59,6 +58,8 @@ const tabs = computed(() => {
   })
   return agentTabs
 })
+
+const activeTab = computed(() => tabs.value.find(t => t.key === active.value) || null)
 
 function open() {
   visible.value = true
