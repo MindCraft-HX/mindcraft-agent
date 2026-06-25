@@ -17,6 +17,13 @@ const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProx
 const { normalizeFileChangeItemPreviews } = require('./codexFileChangePreview')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
 const {
+  appendCodexTurnDiagnostic,
+  makeCodexTurnDiagnosticId,
+  summarizeCodexTerminalEvent,
+  summarizeUsage,
+  writeCodexTurnDiagnosticArtifact,
+} = require('./codex/turnDiagnostics')
+const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
   normalizeGithubSkillSource,
@@ -721,6 +728,13 @@ function appendSessionLoadDiagnostic(entry = {}) {
     }) + '\n'
     fs.appendFileSync(logFile, line, 'utf8')
   } catch (_) {}
+}
+
+function summarizeCodexPromptInput(prompt = '', images = []) {
+  return {
+    promptChars: String(prompt || '').length,
+    imageCount: Array.isArray(images) ? images.length : 0,
+  }
 }
 
 /** 根据模型名返回对应上下文窗口大小（token 数） */
@@ -2301,6 +2315,7 @@ function setupCodexSdkHandlers() {
       const completionPromise = new Promise((completionResolve) => {
         resolveCompletion = completionResolve
       })
+      const diagnosticId = makeCodexTurnDiagnosticId('codex-turn')
       let gotAnyMessage = false
       let resultReceived = false
       let exitCode = 0
@@ -2311,9 +2326,29 @@ function setupCodexSdkHandlers() {
         runId, thread: null, abortController, event, model, baseURL, apiKey,
         sessionId, startTime: Date.now(), cwd: resolvedCwd,
         resultReceived: false, doneSent: false, streamClosed: false,
-        completionPromise, resolveCompletion,
+        completionPromise, resolveCompletion, diagnosticId,
       }
       codexSessions.set(sessionId, sessionState)
+
+      appendCodexTurnDiagnostic({
+        kind: 'turn.start',
+        diagnosticId,
+        sessionId,
+        runId,
+        cliSessionId: prevCliId || '',
+        provider: 'codex',
+        model: model || '',
+        baseURL: baseURL || '',
+        apiFormat: apiFormat || '',
+        reasoningEffort: reasoningEffort || '',
+        canResumePreviousThread,
+        previousFingerprint: previousFingerprint || '',
+        nextFingerprint,
+        additionalDirectoriesCount: Array.isArray(additionalDirectories) ? additionalDirectories.length : 0,
+        networkAccessEnabled: networkAccessEnabled === undefined ? null : Boolean(networkAccessEnabled),
+        webSearchMode: webSearchMode || '',
+        promptInput: summarizeCodexPromptInput(prompt, images),
+      })
 
       const bootWatch = setTimeout(() => {
         if (!gotAnyMessage && !slowNoticeSent.has(sessionId)) {
@@ -2373,6 +2408,7 @@ function setupCodexSdkHandlers() {
                 apiKey,
                 model: model || '',
                 reasoningEffort,
+                diagnosticId,
               })
               effectiveBaseUrl = proxyBaseUrl
               proxyCodexConfig = codexConfig
@@ -2421,9 +2457,26 @@ function setupCodexSdkHandlers() {
           if (prevCliId) {
             try {
               thread = codex.resumeThread(prevCliId, threadOptions)
+              appendCodexTurnDiagnostic({
+                kind: 'turn.resume-attempt',
+                diagnosticId,
+                sessionId,
+                runId,
+                previousCliSessionId: prevCliId,
+                resumed: true,
+              })
             } catch (e) {
               console.warn('[codex] resumeThread failed, starting new thread:', e?.message, 'sessionId=', sessionId, 'prevCliId=', prevCliId)
               cliSessionIds.delete(sessionId)
+              appendCodexTurnDiagnostic({
+                kind: 'turn.resume-attempt',
+                diagnosticId,
+                sessionId,
+                runId,
+                previousCliSessionId: prevCliId,
+                resumed: false,
+                error: String(e?.message || e || ''),
+              })
               thread = codex.startThread(threadOptions)
             }
           } else {
@@ -2431,6 +2484,18 @@ function setupCodexSdkHandlers() {
             console.log('[codex] startThread: sessionId=', sessionId, 'cwd=', resolvedCwd, 'sandboxMode=', sandboxMode, 'hasPrompt=', !!prompt)
             thread = codex.startThread(threadOptions)
           }
+
+          appendCodexTurnDiagnostic({
+            kind: 'turn.thread-bound',
+            diagnosticId,
+            sessionId,
+            runId,
+            cliSessionId: thread?.id || '',
+            cwd: resolvedCwd,
+            sandboxMode: sandboxMode || '',
+            hasPrompt: Boolean(prompt),
+            imageCount: Array.isArray(images) ? images.length : 0,
+          })
 
           const inputParts = []
           if (prompt) inputParts.push({ type: 'text', text: prompt })
@@ -2726,6 +2791,15 @@ function setupCodexSdkHandlers() {
                   currentSession._liveLastTotals = null
                 }
               }
+              appendCodexTurnDiagnostic({
+                kind: 'turn.terminal-event',
+                diagnosticId,
+                sessionId,
+                runId,
+                cliSessionId: thread?.id || '',
+                pendingItems: pendingItemIds.size,
+                terminal: summarizeCodexTerminalEvent(ev),
+              })
             }
 
             // 转发 item 事件到前端
@@ -2847,6 +2921,16 @@ function setupCodexSdkHandlers() {
               }
               const sender = session?.event?.sender || event.sender
               const errorText = ev.message || ev.error?.message || ev.payload?.error?.message || ev.error?.type || ev.payload?.error?.type || ''
+              appendCodexTurnDiagnostic({
+                kind: 'turn.error-event',
+                diagnosticId,
+                sessionId,
+                runId,
+                cliSessionId: thread?.id || '',
+                pendingItems: pendingItemIds.size,
+                detachResumeOnDone: Boolean(detachResumeOnDone),
+                terminal: summarizeCodexTerminalEvent(ev),
+              })
               safeSend(sender, 'codex-agent-message', {
                 sessionId,
                 msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: errorText }) }] } },
@@ -2919,6 +3003,17 @@ function setupCodexSdkHandlers() {
           exitCode = -1
           const errMsg = err?.message || String(err)
           const canEmitTerminalSignals = shouldEmitCodexSessionTerminalSignals(codexSessions, sessionId, runId)
+          appendCodexTurnDiagnostic({
+            kind: 'turn.catch',
+            diagnosticId,
+            sessionId,
+            runId,
+            cliSessionId: thread?.id || '',
+            errorName: String(err?.name || ''),
+            errorMessage: errMsg,
+            canEmitTerminalSignals,
+            resultReceived,
+          })
 
           // 用户主动中断不算错误
           if (err?.name === 'AbortError' || errMsg.includes('AbortError') || errMsg.includes('The operation was aborted')) {
@@ -2981,6 +3076,38 @@ function setupCodexSdkHandlers() {
             console.error(`[codex] stream ended without turn.completed: sessionId=${sessionId} runId=${runId} cliId=${thread?.id || ''} pendingItems=${pendingItemIds.size}`)
           }
           console.log(`[codex] cleanup: sessionId=${sessionId} runId=${runId} resultReceived=${resultReceived} doneSent=${doneSent} turnTimedOut=${turnTimedOut} pendingItems=${pendingItemIds.size}`)
+          appendCodexTurnDiagnostic({
+            kind: 'turn.cleanup',
+            diagnosticId,
+            sessionId,
+            runId,
+            cliSessionId: thread?.id || '',
+            resultReceived,
+            doneSent,
+            doneReason,
+            turnTimedOut,
+            pendingItems: pendingItemIds.size,
+            detachResumeOnDone: Boolean(detachResumeOnDone),
+            finalState: finalized,
+          })
+          writeCodexTurnDiagnosticArtifact(diagnosticId, 'main-cleanup-summary', {
+            diagnosticId,
+            sessionId,
+            runId,
+            cliSessionId: thread?.id || '',
+            model: model || '',
+            baseURL: baseURL || '',
+            apiFormat: apiFormat || '',
+            reasoningEffort: reasoningEffort || '',
+            resultReceived,
+            doneSent,
+            doneReason,
+            turnTimedOut,
+            pendingItems: pendingItemIds.size,
+            detachResumeOnDone: Boolean(detachResumeOnDone),
+            usage: summarizeUsage(sessionState?._liveLastTotals),
+            finalState: finalized,
+          }, { kind: 'json' })
 
           // 确保 codex-agent-done 始终发送（drain timer 可能在 for 循环结束后
           // 被 finally 取消，且 resultReceived=true 时也不会走 if 分支）。

@@ -10,10 +10,101 @@
  */
 
 const http = require('http')
+const crypto = require('crypto')
 const { StringDecoder } = require('string_decoder')
 const { responsesToChatCompletions } = require('./transformRequest')
 const { chatCompletionToResponse, chatErrorToResponseError } = require('./transformResponse')
 const { createResponsesSseFromChat } = require('./transformStream')
+const {
+  appendCodexTurnDiagnostic,
+  summarizeChatMessages,
+  summarizeResponsesInputItems,
+  summarizeSsePayload,
+  writeCodexTurnDiagnosticArtifact,
+} = require('./turnDiagnostics')
+
+const requestPrefixHistory = new Map()
+
+function canonicalizeForHash(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeForHash)
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const key of Object.keys(value).sort()) out[key] = canonicalizeForHash(value[key])
+    return out
+  }
+  return value
+}
+
+function stableStringify(value) {
+  return JSON.stringify(canonicalizeForHash(value))
+}
+
+function normalizeMessageForPrefix(message = {}) {
+  const normalized = { role: message.role || '' }
+  if (message.content !== undefined) normalized.content = canonicalizeForHash(message.content)
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length) normalized.tool_calls = canonicalizeForHash(message.tool_calls)
+  if (message.reasoning_content) normalized.reasoning_content = String(message.reasoning_content)
+  if (message.tool_call_id) normalized.tool_call_id = String(message.tool_call_id)
+  return normalized
+}
+
+function findFirstDiffIndex(prev = [], next = []) {
+  const max = Math.max(prev.length, next.length)
+  for (let i = 0; i < max; i++) {
+    if (stableStringify(prev[i]) !== stableStringify(next[i])) return i
+  }
+  return -1
+}
+
+function logPrefixStability(upstream, chatBody) {
+  const haystack = `${chatBody?.model || ''} ${upstream || ''}`.toLowerCase()
+  if (!haystack.includes('deepseek')) return
+
+  const normalizedMessages = Array.isArray(chatBody?.messages)
+    ? chatBody.messages.map(normalizeMessageForPrefix)
+    : []
+  const fingerprint = [
+    String(upstream || '').replace(/\/+$/, ''),
+    String(chatBody?.model || '').trim(),
+  ].join('|')
+  const serialized = stableStringify(normalizedMessages)
+  const hash = crypto.createHash('sha256').update(serialized).digest('hex').slice(0, 16)
+  const previous = requestPrefixHistory.get(fingerprint)
+
+  const summary = {
+    upstream: String(upstream || '').replace(/\/+$/, ''),
+    model: chatBody?.model || '',
+    messageCount: normalizedMessages.length,
+    hash,
+  }
+
+  if (!previous) {
+    console.log('[codex-proxy] prefix-stability:', { ...summary, baseline: true })
+    requestPrefixHistory.set(fingerprint, { normalizedMessages, hash })
+    return
+  }
+
+  const same = previous.hash === hash
+  if (same) {
+    console.log('[codex-proxy] prefix-stability:', { ...summary, sameAsPrevious: true })
+    requestPrefixHistory.set(fingerprint, { normalizedMessages, hash })
+    return
+  }
+
+  const diffIndex = findFirstDiffIndex(previous.normalizedMessages, normalizedMessages)
+  const prevMsg = diffIndex >= 0 ? previous.normalizedMessages[diffIndex] : null
+  const nextMsg = diffIndex >= 0 ? normalizedMessages[diffIndex] : null
+  console.warn('[codex-proxy] prefix-stability:', {
+    ...summary,
+    sameAsPrevious: false,
+    diffIndex,
+    previousHash: previous.hash,
+    previousMessageCount: previous.normalizedMessages.length,
+    previousPreview: prevMsg ? stableStringify(prevMsg).slice(0, 240) : '',
+    currentPreview: nextMsg ? stableStringify(nextMsg).slice(0, 240) : '',
+  })
+  requestPrefixHistory.set(fingerprint, { normalizedMessages, hash })
+}
 
 /**
  * 启动本地 CodeX 协议转换代理
@@ -35,8 +126,20 @@ async function startCodexProxy(opts) {
     throw new Error('Codex proxy requires upstream URL')
   }
 
+  const diagnosticRoutes = new Map()
+  function registerDiagnosticRoute(diagnosticId = '') {
+    const token = crypto.randomBytes(6).toString('hex')
+    diagnosticRoutes.set(token, String(diagnosticId || ''))
+    return token
+  }
+
   const server = http.createServer((req, res) => {
-    handleRequest(req, res, { upstream, apiKey, model, reasoningEffort }).catch(err => {
+    const rawUrl = String(req.url || '/')
+    const diagMatch = rawUrl.match(/^\/diag\/([a-f0-9]+)(\/.*)?$/i)
+    const routeDiagnosticId = diagMatch ? (diagnosticRoutes.get(diagMatch[1]) || '') : ''
+    const normalizedUrl = diagMatch ? (diagMatch[2] || '/') : rawUrl
+    if (diagMatch) req.url = normalizedUrl
+    handleRequest(req, res, { upstream, apiKey, model, reasoningEffort, diagnosticId: routeDiagnosticId }).catch(err => {
       console.error('[codex-proxy] unhandled error:', err)
       if (!res.writableEnded) {
         res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -53,6 +156,7 @@ async function startCodexProxy(opts) {
       console.log(`[codex-proxy] listening on 127.0.0.1:${port}, upstream: ${upstream}`)
       resolve({
         port,
+        registerDiagnosticRoute,
         close: () => new Promise((r) => {
           console.log('[codex-proxy] closing...')
           server.close(() => {
@@ -111,7 +215,7 @@ async function handleRequest(req, res, opts) {
  * 处理 POST /v1/responses — 核心协议转换
  */
 async function handleResponses(req, res, opts) {
-  const { upstream, apiKey, model, reasoningEffort } = opts
+  const { upstream, apiKey, model, reasoningEffort, diagnosticId } = opts
 
   let body
   try {
@@ -154,6 +258,25 @@ async function handleResponses(req, res, opts) {
   })))
 
   const chatBody = responsesToChatCompletions(body, model, upstream, reasoningEffort)
+  logPrefixStability(upstream, chatBody)
+
+  if (diagnosticId) {
+    appendCodexTurnDiagnostic({
+      kind: 'proxy.request',
+      diagnosticId,
+      upstream,
+      model: chatBody?.model || body?.model || '',
+      stream: Boolean(chatBody?.stream),
+      originalInput: summarizeResponsesInputItems(body?.input),
+      finalRequest: summarizeChatMessages(chatBody?.messages),
+      toolCount: Array.isArray(chatBody?.tools) ? chatBody.tools.length : 0,
+      toolChoice: chatBody?.tool_choice || null,
+      parallelToolCalls: chatBody?.parallel_tool_calls ?? null,
+      reasoningEffort: chatBody?.reasoning_effort || body?.reasoning?.effort || '',
+    })
+    writeCodexTurnDiagnosticArtifact(diagnosticId, 'proxy-original-request', body, { kind: 'json' })
+    writeCodexTurnDiagnosticArtifact(diagnosticId, 'proxy-final-chat-request', chatBody, { kind: 'json' })
+  }
 
   // 🔍 诊断日志：确认代理实际发送的请求
   const upstreamTarget = `${upstream}/chat/completions`
@@ -196,7 +319,7 @@ async function handleResponses(req, res, opts) {
   }, null, 2))
 
   if (isStream) {
-    return handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatBody)
+    return handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatBody, { diagnosticId, upstream })
   }
 
   let upstreamRes = await fetchUpstreamChat(upstreamTarget, apiKey, chatBody)
@@ -215,6 +338,17 @@ async function handleResponses(req, res, opts) {
     let errorBody = ''
     try { errorBody = await upstreamRes.text() } catch (_) {}
     console.error('[codex-proxy] upstream error:', { status: upstreamRes.status, headers: Object.fromEntries(upstreamRes.headers.entries()), body: errorBody.slice(0, 500) })
+    if (diagnosticId) {
+      appendCodexTurnDiagnostic({
+        kind: 'proxy.upstream-error',
+        diagnosticId,
+        upstream,
+        status: upstreamRes.status,
+        contentType: upstreamRes.headers.get('content-type') || '',
+        bodyPreview: errorBody.slice(0, 800),
+      })
+      writeCodexTurnDiagnosticArtifact(diagnosticId, 'proxy-upstream-error-body', errorBody, { kind: 'text', ext: 'txt' })
+    }
     const normalizedError = chatErrorToResponseError(errorBody, upstreamRes.status)
     res.writeHead(upstreamRes.status, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify(normalizedError))
@@ -346,9 +480,11 @@ async function streamResponsesWithPrefixRetry(upstreamRes, res) {
   }
 }
 
-async function handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatBody) {
+async function handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatBody, diagnostic = {}) {
   const maxAttempts = 3
   let lastCollected = null
+  const diagnosticId = diagnostic?.diagnosticId || ''
+  const upstream = diagnostic?.upstream || ''
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const attemptBody = buildRetryChatBody(chatBody, attempt)
@@ -368,6 +504,18 @@ async function handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatB
       let errorBody = ''
       try { errorBody = await upstreamRes.text() } catch (_) {}
       console.error('[codex-proxy] upstream error:', { status: upstreamRes.status, headers: Object.fromEntries(upstreamRes.headers.entries()), body: errorBody.slice(0, 500) })
+      if (diagnosticId) {
+        appendCodexTurnDiagnostic({
+          kind: 'proxy.upstream-error',
+          diagnosticId,
+          upstream,
+          attempt: attempt + 1,
+          status: upstreamRes.status,
+          contentType: upstreamRes.headers.get('content-type') || '',
+          bodyPreview: errorBody.slice(0, 800),
+        })
+        writeCodexTurnDiagnosticArtifact(diagnosticId, `proxy-upstream-error-body-attempt-${attempt + 1}`, errorBody, { kind: 'text', ext: 'txt' })
+      }
       const normalizedError = chatErrorToResponseError(errorBody, upstreamRes.status)
       res.writeHead(upstreamRes.status, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify(normalizedError))
@@ -380,6 +528,18 @@ async function handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatB
       let fullBody = ''
       try { fullBody = await upstreamRes.text() } catch (_) {}
       console.log('[codex-proxy] ← RAW body (first 500):', fullBody.slice(0, 500))
+      if (diagnosticId) {
+        appendCodexTurnDiagnostic({
+          kind: 'proxy.non-sse-response',
+          diagnosticId,
+          upstream,
+          attempt: attempt + 1,
+          status: upstreamRes.status,
+          contentType: upstreamContentType,
+          bodyPreview: fullBody.slice(0, 800),
+        })
+        writeCodexTurnDiagnosticArtifact(diagnosticId, `proxy-non-sse-response-attempt-${attempt + 1}`, fullBody, { kind: 'text', ext: 'json.txt' })
+      }
 
       let chatResponse
       try { chatResponse = JSON.parse(fullBody) } catch (_) {
@@ -395,6 +555,23 @@ async function handleStreamingChatWithRetries(res, upstreamTarget, apiKey, chatB
     console.log('[codex-proxy] upstream response:', { status: upstreamRes.status, contentType: upstreamContentType, attempt: attempt + 1 })
     const collected = await streamResponsesWithPrefixRetry(upstreamRes, res)
     lastCollected = collected
+    if (diagnosticId) {
+      appendCodexTurnDiagnostic({
+        kind: 'proxy.sse-summary',
+        diagnosticId,
+        upstream,
+        attempt: attempt + 1,
+        status: upstreamRes.status,
+        contentType: upstreamContentType,
+        sseEventCount: collected.sseEventCount,
+        rawChunkCount: collected.rawChunkCount,
+        startedWriting: collected.startedWriting,
+        emptyUpstream: collected.emptyUpstream,
+        prefixEventsCount: Array.isArray(collected.prefixEvents) ? collected.prefixEvents.length : 0,
+        rawSummary: summarizeSsePayload(collected.totalRawText),
+      })
+      writeCodexTurnDiagnosticArtifact(diagnosticId, `proxy-upstream-sse-attempt-${attempt + 1}`, collected.totalRawText, { kind: 'sse' })
+    }
 
     if (collected.emptyUpstream && attempt < maxAttempts - 1) {
       console.warn('[codex-proxy] empty upstream stream, retrying:', {

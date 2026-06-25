@@ -13,7 +13,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 - Claude 正常完成：完成音只响一次；`run.done` 后能继续发下一轮；切 tab / 切项目后历史和 metrics 不明显回退。
 - Claude 异常路径：主动 abort、max turns、SDK error 不播放完成音；pending tool 能标记 interrupted / failed；不会卡 thinking。
 - CodeX 正常完成：完成音只响一次；`terminal_seen` 到 `run.done` 之间 send lock 不提前释放；queued input 能在 done 后正确 flush。
-- CodeX 异常路径：abort / turn.failed / empty upstream 不播放完成音；detachResume 不重新绑定坏 session。
+- CodeX 异常路径：abort / turn.failed / empty upstream 不播放完成音；detachResume 不重新绑定坏 session。`turn.failed` thread 级排查先看 `docs/codex-turn-failed-diagnostics.md` 与 `{userData}/diagnostics/codex-turn-diagnostics.log`。
 - CodeHub 双面板：ClaudeCode + CodeX 同时挂载时，同一个 `agent:event` 不重复播放；切换 active agent 不影响后台完成提醒。
 - 后台提醒：后台项目完成仍有 tab 高亮、侧边栏红点、任务栏闪烁；前台活跃项目不误标后台提醒。
 

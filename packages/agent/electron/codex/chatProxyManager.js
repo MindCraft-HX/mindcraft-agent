@@ -42,19 +42,25 @@ function buildProxyCodexConfig(proxyBaseUrl) {
 }
 
 async function ensureProxy(opts) {
-  const { upstreamUrl, apiKey, model, reasoningEffort } = opts
+  const { upstreamUrl, apiKey, model, reasoningEffort, diagnosticId } = opts
   const fingerprint = proxyFingerprint(upstreamUrl, apiKey, model, reasoningEffort)
   const existing = serversByFingerprint.get(fingerprint)
 
   if (existing) {
-    const baseUrl = `http://127.0.0.1:${existing.port}/v1`
+    const routeToken = existing.registerDiagnosticRoute ? existing.registerDiagnosticRoute(diagnosticId) : ''
+    const baseUrl = routeToken
+      ? `http://127.0.0.1:${existing.port}/diag/${routeToken}/v1`
+      : `http://127.0.0.1:${existing.port}/v1`
     return { port: existing.port, baseUrl, codexConfig: buildProxyCodexConfig(baseUrl) }
   }
 
-  const server = await startCodexProxy({ upstreamUrl, apiKey, model, reasoningEffort })
+  const server = await startCodexProxy({ upstreamUrl, apiKey, model, reasoningEffort, diagnosticId })
   serversByFingerprint.set(fingerprint, server)
 
-  const baseUrl = `http://127.0.0.1:${server.port}/v1`
+  const routeToken = server.registerDiagnosticRoute ? server.registerDiagnosticRoute(diagnosticId) : ''
+  const baseUrl = routeToken
+    ? `http://127.0.0.1:${server.port}/diag/${routeToken}/v1`
+    : `http://127.0.0.1:${server.port}/v1`
   console.log('[codex] proxy started:', { port: server.port, upstream: upstreamUrl })
   return { port: server.port, baseUrl, codexConfig: buildProxyCodexConfig(baseUrl) }
 }
