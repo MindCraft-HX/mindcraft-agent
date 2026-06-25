@@ -2433,11 +2433,16 @@ function setupClaudeHandlers() {
     } catch (_) {}
     return { sessions: [] }
   }
-  function writeChatIndex(data) {
-    ensureChatSessionsDir()
-    const tmp = CHAT_SESSIONS_INDEX + '.tmp'
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-    fs.renameSync(tmp, CHAT_SESSIONS_INDEX)
+  // P1-1：index 写入串行队列，避免 chat-save-session 高频调用时 read-modify-write 覆盖
+  let _indexWriteQueue = Promise.resolve()
+  async function writeChatIndexAsync(data) {
+    _indexWriteQueue = _indexWriteQueue.then(async () => {
+      ensureChatSessionsDir()
+      const tmp = CHAT_SESSIONS_INDEX + '.tmp'
+      await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf8')
+      await fs.promises.rename(tmp, CHAT_SESSIONS_INDEX)
+    })
+    return _indexWriteQueue
   }
 
   ipcMain.handle('chat-list-sessions', () => readChatIndex())
@@ -2450,14 +2455,15 @@ function setupClaudeHandlers() {
     return null
   })
 
-  ipcMain.handle('chat-save-session', (_, { id, data }) => {
+  ipcMain.handle('chat-save-session', async (_, { id, data }) => {
     ensureChatSessionsDir()
     const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
     const tmp = file + '.tmp'
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-    fs.renameSync(tmp, file)
+    // P1-1：去掉缩进格式化，节省 CPU；异步写入不在主线程阻塞
+    await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf8')
+    await fs.promises.rename(tmp, file)
 
-    // 更新 index
+    // 更新 index（串行队列防竞态）
     const idx = readChatIndex()
     const existing = idx.sessions.findIndex(s => s.id === id)
     const entry = {
@@ -2471,16 +2477,16 @@ function setupClaudeHandlers() {
     if (existing >= 0) idx.sessions[existing] = entry
     else idx.sessions.unshift(entry)
     idx.sessions.sort((a, b) => b.updatedAt - a.updatedAt)
-    writeChatIndex(idx)
+    await writeChatIndexAsync(idx)
     return true
   })
 
-  ipcMain.handle('chat-delete-session', (_, id) => {
+  ipcMain.handle('chat-delete-session', async (_, id) => {
     const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
     try { if (fs.existsSync(file)) fs.unlinkSync(file) } catch (_) {}
     const idx = readChatIndex()
     idx.sessions = idx.sessions.filter(s => s.id !== id)
-    writeChatIndex(idx)
+    await writeChatIndexAsync(idx)
     return true
   })
 

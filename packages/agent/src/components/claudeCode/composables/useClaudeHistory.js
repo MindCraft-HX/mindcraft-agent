@@ -99,7 +99,14 @@ export function useClaudeHistory({
     })
   }
 
+  // P2-4：even immediate saves get a short cooldown to batch rapid-fire calls during streaming
+  let _lastPersistMs = 0
+  const IMMEDIATE_COOLDOWN_MS = 500
+
   function persistHistoryNow() {
+    const now = Date.now()
+    if (now - _lastPersistMs < IMMEDIATE_COOLDOWN_MS) return
+    _lastPersistMs = now
     const payload = buildPanelStatePayload({ skipStreamingMessages: true })
     // JSON 序列化再反序列化：剥离 Vue 响应式代理、函数引用等非序列化对象
     // 避免 IPC 传输时抛出 "An object could not be cloned"

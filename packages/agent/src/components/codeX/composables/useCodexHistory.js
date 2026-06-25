@@ -103,7 +103,14 @@ export function useCodexHistory({
     }
   }
 
+  // P2-4：even immediate saves get a short cooldown to batch rapid-fire calls during streaming
+  let _lastPersistMs = 0
+  const IMMEDIATE_COOLDOWN_MS = 500
+
   function persistNow() {
+    const now = Date.now()
+    if (now - _lastPersistMs < IMMEDIATE_COOLDOWN_MS) return
+    _lastPersistMs = now
     const payload = buildPanelState({ skipStreaming: true })
     try {
       const clean = JSON.parse(JSON.stringify(payload))

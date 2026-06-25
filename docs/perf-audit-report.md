@@ -385,8 +385,8 @@ function ipcEnd(name) {
 | 7 | P1-2 | projectTabs computed 去嵌套遍历 | 降低项目 tab 派生状态的分配和历史扫描成本 | ✅ 轻量优化完成 | 深度增量状态需 profiling 后单独做 |
 | 8 | P0-2 | 会话文件分页读取避免全文件扫描 | 激活长历史 session 时只读需要的 60 条附近数据 | ✅ 已完成 | 人工回归长历史切换和向上加载 |
 | 8a | CodeX | CodeX 历史分页读取避免 page>0 全文件扫描 | CodeX 长历史向上加载不再因总文件很大卡住 | ✅ 已完成 | 人工回归 CodeX 长历史和 file_change 卡片 |
-| 9 | P1-1 | chat-save-session 异步化/队列化 | 减少流式传输周期性微卡 | ⏭️ 下一轮 P1 | 需要写入队列，避免 read-modify-write 覆盖 |
-| 10 | P2-4 | 审查+合并 saveHistory immediate 调用 | 减少无效序列化 | ⏭️ 下一轮 P1 | 先统计调用频率，再删冗余 immediate |
+| 9 | P1-1 | chat-save-session 异步化/队列化 | 减少流式传输周期性微卡 | ✅ 已完成 | JSON.stringify 去格式化 + fs.promises + index 串行队列 |
+| 10 | P2-4 | 审查+合并 saveHistory immediate 调用 | 减少无效序列化 | ✅ 已完成 | persistNow/persistHistoryNow 加 500ms cooldown，流式期间自动合并 |
 | 11 | P1-3 | flatMap watcher 改为事件驱动 | 消除中间数组创建 | ⏭️ 下一轮 P2 | 可与 projectTabs 状态重构一起做 |
 | 12 | P2-3 | execClaudeCli/execCodexCli 异步化 | 插件操作不再冻结 UI | ⏭️ 下一轮 P2 | 后端 Promise 化，前端已有异步调用可复用 |
 | 13 | P2-5 | sendSync → 异步/退出前保存方案 | 关闭时不再卡渲染器 | 暂缓 | 涉及退出前持久化语义，需单独方案 |
