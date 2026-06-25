@@ -914,7 +914,7 @@ function createPanelProjectFromRecord(record = {}, usedProjectIds = new Set()) {
   }
 }
 
-function restoreMissingPanelStateChats(agent, panelState = {}, options = {}) {
+function restorePanelStateFromSessionRegistry(agent, panelState = {}, options = {}) {
   const normalizedAgent = normalizeAgent(agent)
   const projects = Array.isArray(panelState?.projects) ? panelState.projects : []
   let added = 0
@@ -956,6 +956,8 @@ function restoreMissingPanelStateChats(agent, panelState = {}, options = {}) {
 
   return { changed: added > 0 || addedProjects > 0, added, addedProjects, panelState }
 }
+
+const restoreMissingPanelStateChats = restorePanelStateFromSessionRegistry
 
 function deleteSessionRecordsByProvider({ agent, filePath, cliSessionId, chatKey } = {}, options = {}) {
   try {
@@ -1320,6 +1322,7 @@ module.exports = {
   listSessionRecords,
   makeProviderKeys,
   repairSessionRegistry,
+  restorePanelStateFromSessionRegistry,
   restoreMissingPanelStateChats,
   resolveSessionByProvider,
   setSessionTitle,

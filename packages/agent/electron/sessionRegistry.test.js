@@ -1108,4 +1108,8 @@ test('restoreMissingPanelStateChats rebuilds projects only when Codex panel is e
   const restoredBound = panelState.projects.find(project => project.cwd === 'D:/repo-a').chats[0]
   assert.equal(restoredBound.cliSessionId, 'thread-a')
   assert.equal(restoredBound._resumeAllowed, false)
+
+  syncPanelStateSessions('codex', panelState, { userDataDir })
+  const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: 'thread-a' }, { userDataDir })
+  assert.equal(record.metadata.resumeAllowed, false)
 })

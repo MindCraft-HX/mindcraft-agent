@@ -13,7 +13,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, restoreMissingPanelStateChats, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
+const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, restorePanelStateFromSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -3889,7 +3889,7 @@ function setupCodexSdkHandlers() {
           writePanelState(normalized)
         }
         syncPanelStateSessions('codex', normalized)
-        const backfill = restoreMissingPanelStateChats('codex', normalized)
+        const backfill = restorePanelStateFromSessionRegistry('codex', normalized)
         if (backfill?.changed) writePanelState(normalized)
         const repair = repairSessionRegistry()
         if (repair?.changed) {
