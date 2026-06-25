@@ -1,5 +1,5 @@
 import { i18n } from '@/i18n'
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 
 function normalizeRecentDocs(docs) {
   if (!Array.isArray(docs)) return []
@@ -20,25 +20,21 @@ export function useHomeData() {
   const recentProject = ref({ hasRecent: false })
   const recentDocs = ref([])
   const trendData = ref([])
-  const trendDays = ref(1)
+  const trendDays = ref(7)
   const projectLoading = ref(true)
   const docsLoading = ref(true)
   const statsLoading = ref(true)
   const trendLoading = ref(false)
-
-  const summaryStats = computed(() => {
-    const combined = trendData.value.reduce((acc, day) => {
-      acc.inputTokens += day.totalInput || 0
-      acc.outputTokens += day.totalOutput || 0
-      acc.cacheReadTokens += day.totalCache || 0
-      return acc
-    }, {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-    })
-    return combined
+  const summaryStats = ref({
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
   })
+
+  function toSafeNumber(value) {
+    const n = Number(value)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
 
   async function loadRecentDocs() {
     docsLoading.value = true
@@ -83,13 +79,38 @@ export function useHomeData() {
     loadRecentDocs()
   }
 
-  async function loadTrend() {
+  async function loadTodaySummary() {
     statsLoading.value = true
+    const api = window.electronAPI
+    if (!api) {
+      statsLoading.value = false
+      return
+    }
+
+    try {
+      const data = await api.loadTodayStats?.().catch(() => null)
+      const combined = data?.combined || {}
+      summaryStats.value = {
+        inputTokens: toSafeNumber(combined.inputTokens),
+        outputTokens: toSafeNumber(combined.outputTokens),
+        cacheReadTokens: toSafeNumber(combined.cacheReadTokens),
+      }
+    } catch (_) {
+      summaryStats.value = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+      }
+    }
+
+    statsLoading.value = false
+  }
+
+  async function loadTrend() {
     trendLoading.value = true
     const api = window.electronAPI
     if (!api) {
       trendLoading.value = false
-      statsLoading.value = false
       return
     }
 
@@ -99,7 +120,6 @@ export function useHomeData() {
     } catch (_) {}
 
     trendLoading.value = false
-    statsLoading.value = false
   }
 
   watch(trendDays, () => {
@@ -110,6 +130,7 @@ export function useHomeData() {
     refresh()
     requestAnimationFrame(() => {
       setTimeout(() => {
+        loadTodaySummary()
         loadTrend()
       }, 0)
     })

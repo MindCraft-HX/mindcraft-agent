@@ -23,6 +23,8 @@
 		"noProjectChat": "无需选择项目，快速问答、联网搜索与图片识别",
 		"reuseApi": "复用已配置的 API，开箱即用",
 		"enterChat": "进入对话",
+		"today": "今天",
+		"todayRange": "当日汇总",
 		"days7": "7天",
 		"days30": "30天",
 		"statsRange": "近 {days} 天汇总",

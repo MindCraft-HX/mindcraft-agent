@@ -195,7 +195,7 @@
           </div>
         </div>
         <div v-else class="stats-today">
-          <div class="stats-period-label">{{ trendDays === 1 ? $t('home.todayRange') : $t('home.statsRange', { days: trendDays }) }}</div>
+          <div class="stats-period-label">{{ $t('home.todayRange') }}</div>
           <div class="stat-item">
             <span class="stat-label">{{ $t('home.input') }}</span>
             <span class="stat-value">{{ formatNumber(summaryStats.inputTokens) }}</span>
