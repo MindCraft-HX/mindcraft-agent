@@ -1,5 +1,21 @@
 # TODO
 
+## 2026-06-25 通知音回归修复
+
+现象：完成音音量偏轻，并且同一 ClaudeCode 会话里经常只有第一轮完成会响，后续轮次不响。
+
+结论：PR3 的通知音触发方向正确，仍应走 `agent.turn.terminal` + `agentNotificationGate`，不要回退到旧 `onAgentDone` 播放声音。实际问题在去重窗口语义过强：Claude 目前可能复用同一个 `chatKey + cliSessionId + completed` dedupe key，多轮完成会被长期当成重复事件压掉。
+
+已修复：
+- `agentNotificationGate` 从永久保留最近 32 个 key 改为 1.5s TTL 去重：仍能挡住 CodeHub 双面板/重复事件造成的双响，但同一 Claude 会话后续轮次可以重新播放。
+- `playDoneSound` 从单个提示音改为两段低频柔和 sine 音，感知更清楚且不刺耳。
+- `notificationAudio` 增加用户交互后的 WebAudio unlock，降低 AudioContext suspended 导致的静默概率。
+- 增加回归测试：同一 Claude `chatKey + cliSessionId` 在 TTL 后必须允许再次播放。
+
+验证：
+- 通过：`node --test tests/agent-notification-gate.test.mjs tests/agent-protocol.test.mjs tests/agent-event-emit.test.mjs`
+- 注意：顺手带跑 `tests/codex-agent-done-reason.test.mjs` 时，`detachResume done clears stale cli mapping` 仍失败，实际值为 `old-cli`，与本次通知音链路无直接关系，需单独排查。
+
 ## 2026-06-24 架构重构稳定观察
 
 Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / Agent Client 雏形、Main 双发 `agent:event`、通知音迁移到 `agent.turn.terminal` + 去重闸门。旧 `claude-agent-*` / `codex-agent-*` 通道仍保留为收尾和兼容路径。

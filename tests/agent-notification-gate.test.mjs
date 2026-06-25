@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import {
+  DEDUPE_TTL_MS,
   shouldPlayNotificationSound,
   _resetDedupeWindow,
   _getDedupeWindowSize,
@@ -159,12 +160,28 @@ describe('dedup key prevents duplicates', () => {
       hasAssistantOutput: true,
     })
 
-    const r1 = shouldPlayNotificationSound(evt1)
+    const r1 = shouldPlayNotificationSound(evt1, { now: 1000 })
     assert.equal(r1.shouldPlay, true, `first should play, got ${r1.reason}`)
 
-    const r2 = shouldPlayNotificationSound(evt2)
+    const r2 = shouldPlayNotificationSound(evt2, { now: 1000 })
     assert.equal(r2.shouldPlay, false, `second should be duplicate, got ${r2.reason}`)
     assert.equal(r2.reason, 'duplicate')
+  })
+
+  it('same Claude session+cliSessionId can play again after the dedupe TTL', () => {
+    const evt = buildAgentTurnTerminalEvent({
+      agent: 'claudeCode',
+      chatKey: 'session-repeat-turns',
+      cliSessionId: 'same-claude-session',
+      terminalKind: TerminalKind.COMPLETED,
+      hasAssistantOutput: true,
+    })
+
+    const r1 = shouldPlayNotificationSound(evt, { now: 1000 })
+    assert.equal(r1.shouldPlay, true, `first turn should play, got ${r1.reason}`)
+
+    const r2 = shouldPlayNotificationSound(evt, { now: 1000 + DEDUPE_TTL_MS + 1 })
+    assert.equal(r2.shouldPlay, true, `later turn should play again, got ${r2.reason}`)
   })
 
   it('CodeX duplicate (same session+runId) blocked', () => {
@@ -185,10 +202,10 @@ describe('dedup key prevents duplicates', () => {
       hasAssistantOutput: true,
     })
 
-    const r1 = shouldPlayNotificationSound(evt1)
+    const r1 = shouldPlayNotificationSound(evt1, { now: 2000 })
     assert.equal(r1.shouldPlay, true, `first should play, got ${r1.reason}`)
 
-    const r2 = shouldPlayNotificationSound(evt2)
+    const r2 = shouldPlayNotificationSound(evt2, { now: 2000 })
     assert.equal(r2.shouldPlay, false, `second should be duplicate, got ${r2.reason}`)
     assert.equal(r2.reason, 'duplicate')
   })

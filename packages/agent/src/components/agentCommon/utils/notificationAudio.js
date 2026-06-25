@@ -1,5 +1,6 @@
 let audioContext = null
 let nextStartAt = 0
+let unlockInstalled = false
 
 function getAudioContext() {
   if (typeof window === 'undefined') return null
@@ -11,15 +12,43 @@ function getAudioContext() {
   return audioContext
 }
 
+function clampVolume(volume) {
+  const normalized = Number(volume)
+  if (!Number.isFinite(normalized)) return 0.14
+  return Math.min(Math.max(normalized, 0.0001), 1)
+}
+
+export function installNotificationAudioUnlock() {
+  if (unlockInstalled || typeof window === 'undefined') return
+  unlockInstalled = true
+
+  const unlock = async () => {
+    try {
+      const ctx = getAudioContext()
+      if (ctx?.state === 'suspended') {
+        await ctx.resume()
+      }
+    } catch (_) {
+      // Notification sounds are best-effort only.
+    }
+  }
+
+  window.addEventListener('pointerdown', unlock, { passive: true })
+  window.addEventListener('keydown', unlock)
+  window.addEventListener('touchstart', unlock, { passive: true })
+}
+
 function setGainEnvelope(gainNode, at, volume, duration) {
+  const safeVolume = clampVolume(volume)
   gainNode.gain.cancelScheduledValues(at)
   gainNode.gain.setValueAtTime(0.0001, at)
-  gainNode.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0001), at + 0.01)
+  gainNode.gain.exponentialRampToValueAtTime(safeVolume, at + 0.01)
   gainNode.gain.exponentialRampToValueAtTime(0.0001, at + duration)
 }
 
 export async function playToneSequence(tones = []) {
   try {
+    installNotificationAudioUnlock()
     const ctx = getAudioContext()
     if (!ctx || !tones.length) return
     if (ctx.state === 'suspended') {
