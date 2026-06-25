@@ -1611,9 +1611,9 @@ const { sidebarOpen } = useCodexTabs({
 const codehubHasNotification = inject('codehubHasNotification', null)
 
 // ── 侧边栏「项目」通知指示器 ──
-// 与 ClaudeCode 对称：监测所有项目的所有 tab 通知状态，自动清除
+// P1-3：对齐 ClaudeCode — 复用 projectTabs computed（已含 ...p spread），避免 flatMap 每次创建新数组
 watch(
-  () => projects.value.flatMap(p => p?.chats || []).some(t => t.hasDoneNotification),
+  () => projectTabs.value.some(t => t.hasDoneNotification),
   (has) => {
     if (codehubHasNotification) codehubHasNotification.value = has
   },
