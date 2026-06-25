@@ -1175,6 +1175,10 @@ function setHistoryTopSentinelRef(el) { historyTopSentinelRef.value = el }
 
 function smartScrollBottom(chatId) {
   const id = chatId || activeChatId.value
+  if (id === activeChatId.value) {
+    scrollToBottomActive(false)
+    return
+  }
   requestAnimationFrame(() => {
     const el = msgRefs[id]
     if (!el) return
