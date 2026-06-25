@@ -342,6 +342,7 @@ import { buildDiffLines, applyToolResult, safeIpcPayload, stripSystemContextTags
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
+import { countVisibleClaudeUserMessages, isClaudeMetaUserEntry } from './utils/internalPromptFilter.mjs'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
 import { analyzeClaudeSessionIntegrity, markDanglingClaudeToolsInterrupted } from './utils/sessionIntegrity.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
@@ -496,7 +497,7 @@ function resetScrollPrev() {
 function updateScrollPrevBtn() {
   const tab = activeTab.value
   if (!tab) { showScrollPrevBtn.value = false; scrollPrevCurrentId = null; return }
-  const userCount = tab.messages.filter(m => m.role === 'user').length
+  const userCount = countVisibleClaudeUserMessages(tab.messages)
   if (userCount <= 1) { showScrollPrevBtn.value = false; scrollPrevCurrentId = null; return }
   showScrollPrevBtn.value = true
 }
@@ -1125,6 +1126,9 @@ function normalizeSessionEventsToUiMessages(rawData, { recoverDanglingTools = fa
 
     // user：主要关心 tool_result blocks（session 文件里可能包在 user.message.content）
     if (entryType === 'user') {
+      if (isClaudeMetaUserEntry(entry)) {
+        continue
+      }
       currentAssistantId = null
       const content = entry.message?.content
       // 跳过 SDK 内部的 command 标签消息（/compact 等本地命令的 caveat/command 包装）
@@ -1375,6 +1379,9 @@ function normalizeFlatSessionMessagesToUiMessages(rawData, { recoverDanglingTool
 
     // user：把 text/image/file 组装成 content blocks（保持与实时发送一致）
     if (role === 'user') {
+      if (isClaudeMetaUserEntry(entry)) {
+        continue
+      }
       currentAssistantId = null
       const content = entry.content
       // 跳过 SDK 内部的 command 标签消息（/compact 等本地命令的 caveat/command 包装）
@@ -2821,7 +2828,7 @@ async function sendMessage() {
       files,
     })
     // 第一条消息自动作为标题（除非用户已手动重命名）
-    if (tab.messages.filter(m => m.role === 'user').length === 1 && !tab._userRenamed) {
+    if (countVisibleClaudeUserMessages(tab.messages) === 1 && !tab._userRenamed) {
       tab.name = text ? text.slice(0, 24) + (text.length > 24 ? '…' : '') : files.map(f => f.name).join(', ')
     }
     scrollBottom(tab.id, true)
@@ -3099,7 +3106,7 @@ async function sendMessage() {
     files, // 兼容旧逻辑
   })
   // 第一条消息自动作为标题（除非用户已手动重命名）
-  if (tab.messages.filter(m => m.role === 'user').length === 1 && !tab._userRenamed) {
+  if (countVisibleClaudeUserMessages(tab.messages) === 1 && !tab._userRenamed) {
     tab.name = text ? text.slice(0, 24) + (text.length > 24 ? '…' : '') : files.map(f => f.name).join(', ')
   }
   scrollBottom(tab.id)

@@ -276,6 +276,7 @@ import {
 import { mergeCodexMetrics } from './utils/codexMetricsMerge.mjs'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useCodexConfigStore } from '../../stores/codexConfig.js'
+import { countVisibleCodexUserMessages, isVisibleCodexUserMessage } from './utils/visibleUserMessages.mjs'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
@@ -1675,7 +1676,7 @@ function updateScrollPrevFromScroll(el) {
 function updateScrollPrevBtn() {
   const tab = activeTab.value
   if (!tab) { showScrollPrevBtn.value = false; scrollPrevCurrentId = null; return }
-  const userCount = tab.messages.filter(m => m.role === 'user').length
+  const userCount = countVisibleCodexUserMessages(tab.messages)
   if (userCount <= 1) { showScrollPrevBtn.value = false; scrollPrevCurrentId = null; return }
   showScrollPrevBtn.value = true
 }
@@ -2102,8 +2103,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
     }))
   const queuedInputMessageId = isQueuedFlush ? tab._queuedInputMessageId : null
   const existingQueuedUserMsg = queuedInputMessageId
-    ? tab.messages.find(m => m.id === queuedInputMessageId && m.role === 'user')
-    : null
+    ? tab.messages.find(m => m.id === queuedInputMessageId && isVisibleCodexUserMessage(m))
+      : null
   const userMsg = existingQueuedUserMsg || {
     id: nextMsgId(),
     role: 'user',
@@ -2663,6 +2664,7 @@ function filterCodexSystemMessages(messages) {
           return b
         })
       }
+      if (!isVisibleCodexUserMessage(m)) return false
     }
 
     return true

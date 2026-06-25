@@ -1,3 +1,5 @@
+import { isVisibleClaudeUserMessage } from './internalPromptFilter.mjs'
+
 export function normalizeClaudeSessionPath(value) {
   return typeof value === 'string' ? value.replace(/\\/g, '/') : ''
 }
@@ -24,7 +26,7 @@ export function isDraftClaudeChat(chat) {
 
 export function hasClaudeUserMessage(chat) {
   const messages = Array.isArray(chat?.messages) ? chat.messages : []
-  return messages.some(message => message?.role === 'user')
+  return messages.some(isVisibleClaudeUserMessage)
 }
 
 export function isPendingClaudeSessionBindingCandidate(chat) {

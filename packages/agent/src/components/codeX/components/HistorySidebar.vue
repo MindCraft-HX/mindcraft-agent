@@ -150,6 +150,7 @@
 </template>
 
 <script setup>
+import { findFirstVisibleCodexUserMessage } from '../utils/visibleUserMessages.mjs'
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -368,7 +369,7 @@ function formatSessionTitle(session) {
   }
   const idPrefix = `会话 ${session.id.slice(0, 8)}`
   if (session.messages && session.messages.length > 0) {
-    const firstUserMsg = session.messages.find(m => m.role === 'user')
+    const firstUserMsg = findFirstVisibleCodexUserMessage(session.messages)
     if (firstUserMsg) {
       let content = ''
       if (typeof firstUserMsg.content === 'string') {

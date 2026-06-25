@@ -1,6 +1,7 @@
 import { buildClaudePanelStatePayload } from '../utils/historyPersistenceSanitizer.mjs'
 import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
 import { buildPersistableClaudeChat } from '../utils/claudeRuntimeState.mjs'
+import { isClaudeMetaUserPromptMessage } from '../utils/internalPromptFilter.mjs'
 
 export function useClaudeHistory({
   projects,
@@ -143,6 +144,9 @@ export function useClaudeHistory({
           return false
         }
         if (isPureSystemContextMessage(m)) {
+          return false
+        }
+        if (isClaudeMetaUserPromptMessage(m)) {
           return false
         }
         return true

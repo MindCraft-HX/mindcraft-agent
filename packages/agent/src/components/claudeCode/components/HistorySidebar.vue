@@ -127,6 +127,7 @@
 </template>
 
 <script setup>
+import { findFirstVisibleClaudeUserMessage } from '../utils/internalPromptFilter.mjs'
 import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { shouldDeferClaudeSessionMessageTitle } from '../utils/pendingSessionBinding.mjs'
@@ -326,7 +327,7 @@ function formatSessionTitle(session) {
     return session.name || t('chat.newChat')
   }
   if (session.messages && session.messages.length > 0) {
-    const firstUserMsg = session.messages.find(m => m.role === 'user')
+    const firstUserMsg = findFirstVisibleClaudeUserMessage(session.messages)
     if (firstUserMsg) {
       let content = ''
       if (typeof firstUserMsg.content === 'string') {

@@ -166,7 +166,7 @@ export function stripSystemContextTags(text) {
   // Pass 3: SDK 注入的纯文本标记行（非 XML 包装）
   // "<name>.md instructions for <path>" — 如 AGENTS.md / CLAUDE.md 等
   // 这些行在对应的 <INSTRUCTIONS> 块被 Pass 2 剥离后残留在消息文本中
-  result = result.replace(/^[A-Z]+\.md instructions for .+$/gim, '')
+  result = result.replace(/^\s{0,3}#{0,6}\s*[A-Z]+\.md instructions for .+$/gim, '')
 
   return result.trim()
 }

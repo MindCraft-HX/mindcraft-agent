@@ -1,6 +1,7 @@
 import { shouldPersistInlineMessages, shouldRestoreInlineMessages } from '../utils/historyLoadSafety.mjs'
 import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
 import { buildPersistableCodexChat } from '../utils/codexRuntimeState.mjs'
+import { isVisibleCodexUserMessage } from '../utils/visibleUserMessages.mjs'
 
 export function useCodexHistory({
   projects, setProjects, getProjectCounter, setProjectCounter,
@@ -29,7 +30,7 @@ export function useCodexHistory({
     const arr = Array.isArray(messages) ? messages : []
     if (!arr.length) return true
     const userTexts = arr
-      .filter(m => m?.role === 'user')
+      .filter(isVisibleCodexUserMessage)
       .map(m => String(m?.text || '').trim())
       .filter(Boolean)
     if (!userTexts.length) return true
