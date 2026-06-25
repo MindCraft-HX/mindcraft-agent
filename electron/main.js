@@ -19,6 +19,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require('child_process');
+const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require("../packages/agent/electron/diagnosticsFileUtils");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -425,7 +426,7 @@ app.whenReady().then(async () => {
     fs.mkdirSync(logDir, { recursive: true })
     const logPath = path.join(logDir, 'task-diag.log')
     const ts = new Date().toISOString()
-    fs.appendFileSync(logPath, `${ts} ${line}\n`)
+    appendLogLineWithRotation(logPath, `${ts} ${line}\n`, { maxBytes: DEFAULT_MAX_BYTES })
   })
 
 

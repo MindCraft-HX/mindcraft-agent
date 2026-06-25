@@ -2,9 +2,11 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { getMindCraftUserDataDir } = require('../userDataPath')
+const { DEFAULT_MAX_BYTES, appendLogLineWithRotation, ensureDirSync, writeFileWithMaxBytes } = require('../diagnosticsFileUtils')
 
 const MAX_DIAGNOSTIC_DIRS = 20
 const DEFAULT_PREVIEW_CHARS = 240
+const MAX_DIAGNOSTIC_FILE_BYTES = DEFAULT_MAX_BYTES
 
 function getDiagnosticsRoot(options = {}) {
   return path.join(getMindCraftUserDataDir(options), 'diagnostics')
@@ -16,11 +18,6 @@ function getCodexTurnDiagnosticsDir(options = {}) {
 
 function getCodexTurnDiagnosticsLogFile(options = {}) {
   return path.join(getDiagnosticsRoot(options), 'codex-turn-diagnostics.log')
-}
-
-function ensureDirSync(dirPath) {
-  if (!dirPath) return
-  fs.mkdirSync(dirPath, { recursive: true })
 }
 
 function sanitizeFileName(name) {
@@ -67,12 +64,11 @@ function ensureDiagnosticBucket(diagnosticId, options = {}) {
 function appendCodexTurnDiagnostic(entry = {}, options = {}) {
   try {
     const logFile = getCodexTurnDiagnosticsLogFile(options)
-    ensureDirSync(path.dirname(logFile))
     const line = JSON.stringify({
       ts: new Date().toISOString(),
       ...entry,
     }) + '\n'
-    fs.appendFileSync(logFile, line, 'utf8')
+    appendLogLineWithRotation(logFile, line, { maxBytes: MAX_DIAGNOSTIC_FILE_BYTES })
   } catch (_) {}
 }
 
@@ -85,7 +81,7 @@ function writeCodexTurnDiagnosticArtifact(diagnosticId, name, value, options = {
     const body = options.kind === 'json'
       ? JSON.stringify(value, null, 2)
       : String(value == null ? '' : value)
-    fs.writeFileSync(filePath, body, 'utf8')
+    writeFileWithMaxBytes(filePath, body, { maxBytes: MAX_DIAGNOSTIC_FILE_BYTES })
     return filePath
   } catch (_) {
     return ''

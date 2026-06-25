@@ -3,6 +3,7 @@ const { Conf } = require('electron-conf')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
 const claudeMemory = require('./claudeMemory')
@@ -34,7 +35,7 @@ const {
   writeSkillsCatalogCache,
 } = require('./skillsCatalogCache')
 
-const CLAUDE_FREEZE_DIAG_MAX_BYTES = 5 * 1024 * 1024
+const CLAUDE_FREEZE_DIAG_MAX_BYTES = DEFAULT_MAX_BYTES
 const CLAUDE_METRICS_POLL_INTERVAL_MS = 1000
 let sessionRegistryOptionsForTest = null
 
@@ -164,21 +165,13 @@ function appendClaudeFreezeDiag(stage, payload = {}) {
   if (!getClaudeFreezeDiagEnabled()) return
   try {
     const logPath = getClaudeFreezeDiagLogPath()
-    const dir = path.dirname(logPath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    try {
-      const stat = fs.statSync(logPath)
-      if (stat.size >= CLAUDE_FREEZE_DIAG_MAX_BYTES) {
-        fs.writeFileSync(logPath, '', 'utf8')
-      }
-    } catch (_) {}
     const line = JSON.stringify({
       ts: new Date().toISOString(),
       pid: process.pid,
       stage,
       ...payload,
-    })
-    fs.appendFileSync(logPath, line + '\n', 'utf8')
+    }) + '\n'
+    appendLogLineWithRotation(logPath, line, { maxBytes: CLAUDE_FREEZE_DIAG_MAX_BYTES })
   } catch (_) {}
 }
 
@@ -3807,4 +3800,3 @@ module.exports = {
     writeClaudeSessionMeta,
   },
 }
-

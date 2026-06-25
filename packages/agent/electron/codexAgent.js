@@ -5,6 +5,7 @@ const fs = require('fs')
 const os = require('os')
 const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { getMindCraftUserDataDir } = require('./userDataPath')
+const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
@@ -61,6 +62,7 @@ const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
 const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
 let SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
 const CODEX_METRICS_POLL_INTERVAL_MS = 1000
+const CODEX_SESSION_LOAD_LOG_MAX_BYTES = DEFAULT_MAX_BYTES
 
 function getCodexUploadsDir() {
   return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')
@@ -720,13 +722,11 @@ function collectSessionTailRiskSummary(filePath, maxLines = 80) {
 function appendSessionLoadDiagnostic(entry = {}) {
   try {
     const logFile = getSessionLoadLogFile()
-    const logDir = path.dirname(logFile)
-    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
     const line = JSON.stringify({
       ts: new Date().toISOString(),
       ...entry,
     }) + '\n'
-    fs.appendFileSync(logFile, line, 'utf8')
+    appendLogLineWithRotation(logFile, line, { maxBytes: CODEX_SESSION_LOAD_LOG_MAX_BYTES })
   } catch (_) {}
 }
 
