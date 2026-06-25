@@ -120,6 +120,7 @@ import { normalizeRequestedAgent, pickInitialCodeHubTab } from './agentRoutePref
 import { resolveCodeHubSyncedTabId } from './activeTabSync.mjs'
 import { orderCodeHubTabs, reconcileCodeHubTabOrder } from './tabOrder.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
+import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
@@ -132,6 +133,8 @@ const sharedSettingsRef = ref(null)
 const showAgentPicker = ref(false)
 const activeTabId = ref(null)
 const tabOrder = ref(loadTabOrder())
+const { register } = useKeyboardShortcuts()
+const _shortcutUnregisters = []
 const CODEHUB_TAB_DEBUG = import.meta.env?.DEV
 let lastTabDebugSignature = ''
 
@@ -398,10 +401,38 @@ onMounted(() => {
       showAgentPicker.value = true
     }
   }, 5000)
+
+  // ── 快捷键：Tab 切换 ──
+  _shortcutUnregisters.push(register('codehub.nextTab', () => {
+    if (!unifiedTabs.value.length) return
+    const idx = unifiedTabs.value.findIndex(t => t.id === activeTabId.value)
+    const nextIdx = idx < 0 ? 0 : (idx + 1) % unifiedTabs.value.length
+    activateTab(unifiedTabs.value[nextIdx])
+  }, { priority: 10 }))
+
+  _shortcutUnregisters.push(register('codehub.prevTab', () => {
+    if (!unifiedTabs.value.length) return
+    const idx = unifiedTabs.value.findIndex(t => t.id === activeTabId.value)
+    const prevIdx = idx < 0
+      ? unifiedTabs.value.length - 1
+      : (idx - 1 + unifiedTabs.value.length) % unifiedTabs.value.length
+    activateTab(unifiedTabs.value[prevIdx])
+  }, { priority: 10 }))
+
+  for (let i = 1; i <= 9; i++) {
+    _shortcutUnregisters.push(register(`codehub.tab${i}`, () => {
+      const index = i - 1
+      if (index < unifiedTabs.value.length) {
+        activateTab(unifiedTabs.value[index])
+      }
+    }, { priority: 10 }))
+  }
 })
 
 onUnmounted(() => {
   if (_initTimer) clearTimeout(_initTimer)
+  _shortcutUnregisters.forEach(fn => fn())
+  _shortcutUnregisters.length = 0
 })
 
 // ── 监听 route query 变化（keep-alive 下 onMounted 不会重新触发） ──

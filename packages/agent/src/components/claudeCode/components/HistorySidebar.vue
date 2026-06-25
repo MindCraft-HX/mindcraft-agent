@@ -76,8 +76,9 @@
             v-for="session in g.items"
             :key="session.id"
             class="sidebar-item"
-            :class="{ active: session.id === activeId }"
-            @click="!loading && emit('switchTab', session.id)"
+            :class="{ active: session.id === activeId, 'keyboard-highlighted': session.id === keyboardHighlightedId }"
+            :data-kb-sid="session.id"
+            @click="!loading && emit('switchTab', session.id); clearKeyboardHighlight()"
           >
             <template v-if="renamingId === session.id">
               <input
@@ -128,9 +129,10 @@
 
 <script setup>
 import { findFirstVisibleClaudeUserMessage } from '../utils/internalPromptFilter.mjs'
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { shouldDeferClaudeSessionMessageTitle } from '../utils/pendingSessionBinding.mjs'
+import { useKeyboardShortcuts } from '../../../composables/useKeyboardShortcuts.js'
 
 const { t } = useI18n()
 
@@ -176,6 +178,97 @@ const emit = defineEmits([
   'refresh',
   'rename',
 ])
+
+// ── 键盘导航快捷键 ──
+const { register } = useKeyboardShortcuts()
+const _shortcutUnregisters = []
+
+const codehubActiveAgent = inject('codehubActiveAgent', null)
+const AGENT_KEY = 'claudeCode'
+
+function isPanelActive() {
+  if (!codehubActiveAgent) return true
+  return codehubActiveAgent.value === AGENT_KEY
+}
+
+/** visibleDateGroups 展平为线性列表 */
+const flatSessionList = computed(() => {
+  const result = []
+  for (const g of visibleDateGroups.value) {
+    if (!g || !g.items) continue
+    for (const s of g.items) {
+      if (s && s.id) result.push(s)
+    }
+  }
+  return result
+})
+
+const keyboardHighlightedId = ref(null)
+
+async function scrollToHighlighted() {
+  await nextTick()
+  const el = document.querySelector(`.sidebar-item[data-kb-sid="${keyboardHighlightedId.value}"]`)
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+function openHighlightedSession() {
+  if (!keyboardHighlightedId.value) return
+  if (!props.sidebarOpen) emit('update:sidebarOpen', true)
+  if (flatSessionList.value.some(s => s.id === keyboardHighlightedId.value)) {
+    emit('switchTab', keyboardHighlightedId.value)
+  }
+}
+
+function clearKeyboardHighlight() {
+  keyboardHighlightedId.value = null
+}
+
+function registerHistoryShortcuts() {
+  _shortcutUnregisters.push(register('history.nextSession', async () => {
+    if (!flatSessionList.value.length) return
+    if (!props.sidebarOpen) {
+      emit('update:sidebarOpen', true)
+      await nextTick()
+    }
+    const idx = keyboardHighlightedId.value
+      ? flatSessionList.value.findIndex(s => s.id === keyboardHighlightedId.value)
+      : -1
+    const nextIdx = idx < flatSessionList.value.length - 1 ? idx + 1 : idx < 0 ? 0 : idx
+    if (nextIdx >= 0 && nextIdx < flatSessionList.value.length) {
+      keyboardHighlightedId.value = flatSessionList.value[nextIdx].id
+      await scrollToHighlighted()
+    }
+  }, { priority: 100, enabled: isPanelActive }))
+
+  _shortcutUnregisters.push(register('history.prevSession', async () => {
+    if (!flatSessionList.value.length) return
+    if (!props.sidebarOpen) {
+      emit('update:sidebarOpen', true)
+      await nextTick()
+    }
+    const idx = keyboardHighlightedId.value
+      ? flatSessionList.value.findIndex(s => s.id === keyboardHighlightedId.value)
+      : flatSessionList.value.length
+    const prevIdx = idx > 0 ? idx - 1 : idx >= flatSessionList.value.length ? flatSessionList.value.length - 1 : 0
+    if (prevIdx >= 0 && prevIdx < flatSessionList.value.length) {
+      keyboardHighlightedId.value = flatSessionList.value[prevIdx].id
+      await scrollToHighlighted()
+    }
+  }, { priority: 100, enabled: isPanelActive }))
+
+  _shortcutUnregisters.push(register('history.openSession', () => {
+    openHighlightedSession()
+  }, { priority: 100, enabled: isPanelActive }))
+}
+
+onMounted(() => {
+  registerHistoryShortcuts()
+})
+
+onUnmounted(() => {
+  _shortcutUnregisters.forEach(fn => fn())
+  _shortcutUnregisters.length = 0
+})
 
 // 当前日期标签
 const todayLabel = ref(t('dateGroup.today'))
@@ -284,6 +377,10 @@ function onScroll(e) {
 watch([searchQuery, () => props.sessions], () => {
   loadedCount.value = PAGE_SIZE
 })
+
+// ── 键盘高亮清除：搜索变化 / activeId 变化 ──
+watch(() => props.activeId, clearKeyboardHighlight)
+watch(searchQuery, clearKeyboardHighlight)
 
 // 重命名
 const renamingId = ref(null)
@@ -659,6 +756,12 @@ function formatSessionTime(timestamp) {
 .sib-btn.edit:hover {
   background: var(--cc-btn-bg);
   color: var(--cc-primary);
+}
+
+/* 键盘导航高亮 */
+.sidebar-item.keyboard-highlighted {
+  outline: 2px solid var(--cc-primary);
+  outline-offset: -2px;
 }
 
 /* 内联重命名输入框 */
