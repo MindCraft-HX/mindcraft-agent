@@ -281,6 +281,8 @@ function emitClaudeMetricsViaStore(sender, sample, sessionId, model, extra = {})
     chatKey: sessionId,
     providerSessionId: sample.providerSessionId || '',
     source: sample.source,
+    scope: sample.scope,
+    allowTurnTokens: sample.allowTurnTokens,
     inputTokens: sample.inputTokens,
     outputTokens: sample.outputTokens,
     cacheReadTokens: sample.cacheReadTokens,
@@ -2921,6 +2923,7 @@ function setupClaudeHandlers() {
               // 若 SDK 中途没给 usage，也允许用真实 jsonl 样本驱动当前 turn 的状态栏增长。
               emitClaudeMetricsViaStore(s.event?.sender, {
                 source: 'jsonl-poll',
+                scope: 'turn-live',
                 providerSessionId: cliId,
                 inputTokens: metrics.inputTokens,
                 outputTokens: metrics.outputTokens,
@@ -2964,6 +2967,7 @@ function setupClaudeHandlers() {
               // Phase 3：TurnStore — sdk-live 更新 live snapshot
               emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-live',
+                scope: 'turn-live',
                 providerSessionId: cliSessionIds.get(chatKey) || '',
                 ...liveUsageMetrics,
                 durationMs: Math.max(0, Date.now() - pollStart),
@@ -2995,6 +2999,7 @@ function setupClaudeHandlers() {
               const normalizedUsage = claudeMetrics.normalizeClaudeUsageForUi(usage, model || '')
               const snapshot = emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-result',
+                scope: 'turn-final',
                 providerSessionId: msg.session_id || '',
                 inputTokens: normalizedUsage.inputTokens || 0,
                 outputTokens: normalizedUsage.outputTokens || 0,

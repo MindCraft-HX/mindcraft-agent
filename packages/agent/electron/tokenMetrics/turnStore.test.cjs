@@ -154,6 +154,30 @@ test('jsonl-poll only updates context/duration, not in/out/cache', () => {
   assert.strictEqual(snap.durationMs, 5000)    // updated
 })
 
+test('session-total scope never updates current-turn token fields', () => {
+  reset()
+  beginTurn({ provider: 'codex', chatKey: 'test-chat' })
+  applySample({ provider: 'codex', source: 'token-count', scope: 'turn-live', chatKey: 'test-chat', inputTokens: 100, outputTokens: 20 })
+  applySample({
+    provider: 'codex',
+    source: 'jsonl-poll',
+    scope: 'session-total',
+    chatKey: 'test-chat',
+    inputTokens: 99999999,
+    outputTokens: 99999999,
+    cacheReadTokens: 88888888,
+    contextUsage: 12345,
+    contextWindow: 258400,
+  })
+
+  const snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.inputTokens, 100)
+  assert.strictEqual(snap.outputTokens, 20)
+  assert.strictEqual(snap.cacheReadTokens, 0)
+  assert.strictEqual(snap.contextUsage, 12345)
+  assert.strictEqual(snap.contextWindow, 258400)
+})
+
 test('jsonl-poll can update current-turn tokens when explicitly scoped to this turn', () => {
   reset()
   beginTurn({ provider: 'claude', chatKey: 'test-chat' })

@@ -83,6 +83,45 @@ function getOrCreateStore(chatKey) {
   return s
 }
 
+function inferSampleScope(sample = {}) {
+  if (sample.scope) return sample.scope
+  switch (sample.source) {
+    case 'sdk-live':
+    case 'token-count':
+      return 'turn-live'
+    case 'sdk-result':
+      return 'turn-final'
+    case 'jsonl-poll':
+      return sample.allowTurnTokens === true ? 'turn-live' : 'session-context'
+    default:
+      return 'unknown'
+  }
+}
+
+function stripTurnTokens(sample = {}) {
+  return {
+    ...sample,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  }
+}
+
+function updateSessionContextSnapshot(snapshot, sample = {}) {
+  snapshot.contextUsage = pickSessionMetricValue(sample.contextUsage, snapshot.contextUsage)
+  snapshot.contextWindow = pickSessionMetricValue(sample.contextWindow, snapshot.contextWindow)
+  snapshot.durationMs = sample.durationMs ?? snapshot.durationMs ?? 0
+  snapshot.costUsd = sample.costUsd ?? snapshot.costUsd ?? 0
+  if (sample.source) {
+    const srcSet = new Set(snapshot.sources || [])
+    srcSet.add(sample.source)
+    snapshot.sources = [...srcSet]
+  }
+  snapshot.updatedAt = Date.now()
+  return snapshot
+}
+
 function buildLiveSnapshot(sample) {
   return {
     inputTokens: sample.inputTokens ?? 0,
@@ -184,53 +223,34 @@ function beginTurn({ provider, chatKey, providerSessionId, startedAt } = {}) {
  */
 function applySample(sample = {}) {
   const { chatKey, source, provider, providerSessionId } = sample
+  const scope = inferSampleScope(sample)
   if (!chatKey) return { accepted: false, reason: 'missing chatKey' }
 
   const s = getOrCreateStore(chatKey)
   const turn = s.currentTurn
 
-  // 没有 active turn 时，不允许 live/poll 创建（应由 beginTurn 显式创建）
   if (!turn) {
-    if (source === 'sdk-result' || source === 'token-count' || source === 'sdk-live') {
-      // 自动 begin
+    if (scope === 'turn-live' || scope === 'turn-final') {
+      // Auto-begin only for real turn samples. Session context/total samples must not create a turn.
       beginTurn({ provider, chatKey, providerSessionId })
       return applySample(sample)
     }
     return { accepted: false, reason: 'no active turn' }
   }
 
-  // jsonl-poll：默认只补 context/duration。
-  // 如果上游已通过 tokenSinceMs 等边界把样本限定为“当前 turn 的真实 transcript token”，
-  // 则允许它像 live sample 一样推进 in/out/cache。
-  if (source === 'jsonl-poll') {
+  // Session context/total samples can update only context/duration/cost.
+  // They must never overwrite current-turn in/out/cache even if those fields are present.
+  if (scope === 'session-context' || scope === 'session-total') {
     if (turn.finalized) return { accepted: false, reason: 'turn already finalized' }
-    const allowTurnTokens = sample.allowTurnTokens === true
     if (!turn.liveSnapshot) {
-      turn.liveSnapshot = allowTurnTokens
-        ? buildLiveSnapshot(sample)
-        : buildLiveSnapshot({ ...sample, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
+      turn.liveSnapshot = buildLiveSnapshot(stripTurnTokens(sample))
     } else {
-      if (allowTurnTokens) {
-        turn.liveSnapshot = mergeLiveSnapshot(turn.liveSnapshot, sample)
-      } else {
-        // 只更新 context/duration
-        turn.liveSnapshot.contextUsage = pickSessionMetricValue(sample.contextUsage, turn.liveSnapshot.contextUsage)
-        turn.liveSnapshot.contextWindow = pickSessionMetricValue(sample.contextWindow, turn.liveSnapshot.contextWindow)
-        turn.liveSnapshot.durationMs = sample.durationMs ?? turn.liveSnapshot.durationMs ?? 0
-        turn.liveSnapshot.costUsd = sample.costUsd ?? turn.liveSnapshot.costUsd ?? 0
-        if (sample.source) {
-          const srcSet = new Set(turn.liveSnapshot.sources || [])
-          srcSet.add(sample.source)
-          turn.liveSnapshot.sources = [...srcSet]
-        }
-        turn.liveSnapshot.updatedAt = Date.now()
-      }
+      updateSessionContextSnapshot(turn.liveSnapshot, sample)
     }
     return { accepted: true, phase: 'live' }
   }
 
-  // sdk-live / token-count：更新 live snapshot
-  if (source === 'sdk-live' || source === 'token-count') {
+  if (scope === 'turn-live') {
     if (turn.finalized) return { accepted: false, reason: 'turn already finalized' }
     if (turn.liveSnapshot) {
       turn.liveSnapshot = mergeLiveSnapshot(turn.liveSnapshot, sample)
@@ -240,25 +260,17 @@ function applySample(sample = {}) {
     return { accepted: true, phase: 'live' }
   }
 
-  // sdk-result：finalize
-  if (source === 'sdk-result') {
+  if (scope === 'turn-final') {
     if (turn.finalized) return { accepted: false, reason: 'turn already finalized' }
     const final = buildFinalSnapshot(turn, sample)
     turn.finalized = final
-    turn.liveSnapshot = final // live snapshot 收敛到 final
+    turn.liveSnapshot = final
     s.turns.set(turn.turnId, final)
     return { accepted: true, phase: 'final' }
   }
 
-  return { accepted: false, reason: `unknown source: ${source}` }
+  return { accepted: false, reason: `unknown metric sample scope: ${scope} source: ${source}` }
 }
-
-/**
- * 获取当前 turn live snapshot（StatusBar 用）。
- *
- * @param {string} chatKey
- * @returns {TokenTurnSnapshot | null}
- */
 function getCurrentSnapshot(chatKey) {
   const s = stores.get(chatKey)
   if (!s?.currentTurn) return null

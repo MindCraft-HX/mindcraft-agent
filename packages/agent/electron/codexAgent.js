@@ -2578,6 +2578,7 @@ function setupCodexSdkHandlers() {
               metrics.thinking = true
               emitCodexMetricsViaStore(s.event?.sender, {
                 source: 'jsonl-poll',
+                scope: 'session-context',
                 contextUsage: metrics.contextUsage,
                 contextWindow: metrics.contextWindow,
                 durationMs: metrics.durationMs,
@@ -2797,6 +2798,7 @@ function setupCodexSdkHandlers() {
               if (liveMetrics) {
                 emitCodexMetricsViaStore(sender, {
                   source: 'token-count',
+                  scope: 'turn-live',
                   inputTokens: liveMetrics.inputTokens,
                   outputTokens: liveMetrics.outputTokens,
                   cacheReadTokens: liveMetrics.cacheReadTokens,
@@ -2821,6 +2823,7 @@ function setupCodexSdkHandlers() {
               // Phase 4：先 finalize TurnStore，再从 snapshot 构建 _perTurnTokens
               const snapshot = emitCodexMetricsViaStore(sender, {
                 source: 'sdk-result',
+                scope: 'turn-final',
                 // normalizeCodexUsage 返回 snake_case 字段（phase 1 wrapper），需用正确 key
                 inputTokens: normalizedTerminalUsage.input_tokens ?? 0,
                 outputTokens: normalizedTerminalUsage.output_tokens ?? 0,

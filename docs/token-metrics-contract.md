@@ -89,6 +89,8 @@ Goal: fix known clearly wrong values without changing UI behavior.
 
 Goal: make invalid source/consumer combinations hard to express.
 
+Status: started. TurnStore now accepts an explicit `scope` (`turn-live`, `turn-final`, `session-context`, `session-total`). Session context/total samples are stripped of turn token fields before they can update live snapshots.
+
 - Introduce or formalize `MetricSample` fields:
   - `scope`: `turn-live` / `turn-final` / `session-context` / `session-total`
   - `source`: provider source name
