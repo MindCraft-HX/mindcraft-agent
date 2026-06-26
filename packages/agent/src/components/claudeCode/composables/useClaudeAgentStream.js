@@ -44,8 +44,8 @@ function attachTurnTokensToLastRenderableMessage(messages, turnTokens, { nextMsg
   for (let i = messages.length - 1; i > lastUserIndex; i -= 1) {
     const message = messages[i]
     if (!message) continue
-    if (message.role === 'assistant' && !message._turnTokens) {
-      message._turnTokens = turnTokens
+    if (message.role === 'assistant') {
+      if (!message._turnTokens) message._turnTokens = turnTokens
       return
     }
   }

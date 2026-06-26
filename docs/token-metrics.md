@@ -15,6 +15,14 @@
 - ClaudeCode 某些 turn 可能只有工具调用或无 assistant 文本。result 已有 `_turnTokens` 时，前端必须把 footer 绑定到最后一条 user 之后的 assistant；如果没有 assistant，就创建一个空文本 assistant 作为 `TokenMetaRow` 容器，不能错挂到上一轮 assistant。
 - 状态栏动画只在真实采样点之间插值；如果 provider 在 turn 结束前没有中间 usage，UI 只能在最终样本到达后展示，不伪造 token 增长。
 
+后续架构完善建议：
+
+- 保留当前 `normalizer -> TurnStore -> StatusBar/TokenMetaRow` 主链路，不再在前端或历史恢复中新增 provider 专属 token 公式。
+- 下一阶段应移除 ClaudeCode 前端从 `msg.usage` 直接生成 `_turnTokens` 的兼容 fallback；正常路径必须只消费主进程附带的 TurnStore final snapshot。
+- CodeX 的历史恢复、terminal fallback、JSONL backfill 仍应继续收敛到同一类 final snapshot，避免某个 consumer 再把 session aggregate 当成 per-turn 数据。
+- `contextUsage/contextWindow` 只服务 session context 与压缩入口；禁止用它推导本轮 `in/out/cache`，也禁止让本轮 token 反向影响 context 比例。
+- 如果后续还出现同一模块连续回归，应优先重写 metrics consumer 边界，而不是继续在 UI 展示层补丁。
+
 ## 0. 当前决策：UI 只展示统一语义
 
 2026-06-24 追加结论：状态栏和每轮脚注不能直接暴露 ClaudeCode / CodeX / 第三方 provider 的原始 usage 字段语义。对用户只展示一套统一口径：

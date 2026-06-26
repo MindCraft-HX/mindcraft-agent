@@ -262,3 +262,45 @@ test('result turn tokens attach to current turn instead of previous assistant', 
     durationMs: 1234,
   })
 })
+
+test('result turn tokens do not create duplicate footer host when current assistant already has tokens', () => {
+  const { tab, stream } = createHarness()
+  tab.messages.push(
+    { id: 'new-user', role: 'user', text: 'hello' },
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      text: 'answer',
+      _turnTokens: {
+        inputTokens: 80,
+        outputTokens: 8,
+        cacheReadTokens: 10,
+        cacheCreationTokens: 0,
+        durationMs: 1000,
+      },
+    },
+  )
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'result',
+      _turnTokens: {
+        inputTokens: 100,
+        outputTokens: 5,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 0,
+        durationMs: 1234,
+      },
+    },
+  })
+
+  assert.equal(tab.messages.length, 2)
+  assert.deepEqual(tab.messages[1]._turnTokens, {
+    inputTokens: 80,
+    outputTokens: 8,
+    cacheReadTokens: 10,
+    cacheCreationTokens: 0,
+    durationMs: 1000,
+  })
+})
