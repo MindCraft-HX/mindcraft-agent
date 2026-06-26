@@ -2,6 +2,7 @@ import { shouldPersistInlineMessages, shouldRestoreInlineMessages } from '../uti
 import { stripSystemContextTags } from '../../agentCommon/utils/helpers.js'
 import { buildPersistableCodexChat } from '../utils/codexRuntimeState.mjs'
 import { isVisibleCodexUserMessage } from '../utils/visibleUserMessages.mjs'
+import { isMeaningfulCodexLocalDraft } from '../../agentCommon/utils/codexEmptyDraft.mjs'
 
 export function useCodexHistory({
   projects, setProjects, getProjectCounter, setProjectCounter,
@@ -158,6 +159,7 @@ export function useCodexHistory({
           if (cNum > getChatCounter()) setChatCounter(cNum)
           const messages = shouldRestoreInlineMessages(c) ? normalizeMessages(c.messages) : []
           if (isSuspiciousSlashChat(c, messages)) return null
+          if (!isMeaningfulCodexLocalDraft(c, messages)) return null
           const restoredChat = makeRestoredChat(c, messages)
           restoredChat._restoredFromPanelState = true
           restoredChat._resumeAllowed = c._resumeAllowed !== false

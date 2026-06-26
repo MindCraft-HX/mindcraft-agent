@@ -16,10 +16,28 @@ const rawHtml = renderHtml(`<script>docs/TODO.md</script>
 
 <code>src/main.js</code>
 
+Inline code \`packages/agent/electron/claudeAgent.js\`
+
 Regular docs/TODO.md`)
 
 assert.ok(rawHtml.includes('<script>docs/TODO.md</script>'), 'raw script contents should not be linkified')
 assert.ok(rawHtml.includes('<code>src/main.js</code>'), 'raw code tag contents should not be linkified')
+assert.ok(rawHtml.includes('<code>packages/agent/electron/claudeAgent.js</code>'), 'markdown inline code should not be linkified by the viewer plugin')
 assert.equal((rawHtml.match(/data-path-candidate=/g) || []).length, 1, 'only ordinary text outside protected tags should be linkified')
+
+const pathWithUnderscores = renderHtml('实际路径 E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf。')
+
+assert.ok(
+  pathWithUnderscores.includes('data-path-candidate="E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf"'),
+  'windows paths with underscores should become one local path candidate'
+)
+assert.ok(
+  !pathWithUnderscores.includes('data-path-candidate="E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf。"'),
+  'trailing Chinese punctuation should not be included in viewer path candidates'
+)
+assert.ok(
+  !pathWithUnderscores.includes('<em>manager\\XRADIO</em>'),
+  'viewer should not render underscores inside windows paths as emphasis'
+)
 
 console.log('markdown it local link test passed')

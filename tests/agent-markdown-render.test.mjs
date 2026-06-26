@@ -278,4 +278,35 @@ assert.ok(renderContent('/home/user/file.txt').includes('data-path-candidate="/h
 // E6: 英文短语假阳性过滤
 assert.ok(!renderContent('he/she.go').includes('data-path-candidate'), 'E6: he/she.go should NOT be clickable (false positive filter)')
 
+const windowsUnderscorePath = '实际路径 E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf'
+const windowsUnderscorePathHtml = renderContent(windowsUnderscorePath)
+assert.ok(
+  windowsUnderscorePathHtml.includes('data-path-candidate="E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf"'),
+  'E7: windows path with underscores should stay clickable'
+)
+assert.ok(
+  windowsUnderscorePathHtml.includes('Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf'),
+  'E7: windows path with underscores should preserve underscore characters'
+)
+assert.ok(
+  !windowsUnderscorePathHtml.includes('<em>manager\\XRADIO</em>'),
+  'E7: underscores inside paths should not trigger emphasis parsing'
+)
+
+const fencedWindowsUnderscorePathMarkdown = '```md\nE:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf\n```'
+const fencedWindowsUnderscorePathHtml = renderContent(fencedWindowsUnderscorePathMarkdown)
+
+assert.ok(
+  fencedWindowsUnderscorePathHtml.includes('data-path-candidate="E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf"'),
+  'E8: fenced code windows path with underscores should stay clickable as one full candidate'
+)
+assert.ok(
+  fencedWindowsUnderscorePathHtml.includes('E:\\work\\Timer_manager\\XRADIO_Flash_Developer_Guide-CN.pdf</a>'),
+  'E8: fenced code windows path with underscores should preserve the full visible label'
+)
+assert.ok(
+  !fencedWindowsUnderscorePathHtml.includes('hljs-emphasis'),
+  'E8: fenced code windows path should not be split into highlight emphasis fragments'
+)
+
 console.log('agent markdown render test passed')

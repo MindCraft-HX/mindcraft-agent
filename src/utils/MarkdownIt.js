@@ -2,7 +2,7 @@ import MarkdownIt from "markdown-it";
 import markdownItMermaid from "@DatatracCorporation/markdown-it-mermaid";
 import hljs from "highlight.js";
 import { useMitt } from "./mitt.js";
-import { isStrongLocalPathCandidate, linkifyHtmlTextNodes } from "@mindcraft/agent/render";
+import { markdownItLocalPathPlugin } from "@mindcraft/agent/render";
 
 const mitt = useMitt();
 
@@ -72,6 +72,7 @@ const md_ = new MarkdownIt({
   },
 });
 md_.use(markdownItMermaid);
+md_.use(markdownItLocalPathPlugin);
 
 const slugify = (text) =>
   String(text || "")
@@ -95,24 +96,6 @@ md_.renderer.rules.heading_open = function (tokens, idx, options, env, self) {
     if (slug) tokens[idx].attrSet("id", slug);
   }
   return defaultHeadingOpen(tokens, idx, options, env, self);
-};
-
-const defaultLinkOpen =
-  md_.renderer.rules.link_open ||
-  function (tokens, idx, options, env, self) {
-    return self.renderToken(tokens, idx, options);
-  };
-
-md_.renderer.rules.link_open = function (tokens, idx, options, env, self) {
-  const href = tokens[idx].attrGet("href") || "";
-  if (/^https?:\/\//i.test(href)) {
-    tokens[idx].attrSet("target", "_blank");
-    tokens[idx].attrSet("rel", "noopener noreferrer");
-  } else if (isStrongLocalPathCandidate(href)) {
-    tokens[idx].attrSet("href", "#");
-    tokens[idx].attrSet("data-path-candidate", href);
-  }
-  return defaultLinkOpen(tokens, idx, options, env, self);
 };
 
 md_.renderer.rules.bullet_list_open = function (tokens, idx, options, env, self) {
@@ -209,8 +192,7 @@ export const renderHtml = (markdown) => {
   let rendered = md_.render(protected_);
   // 还原公式占位符
   rendered = rendered.replace(/@@BLOCK_(\d+)@@/g, (_, i) => blocks[+i]);
-  // 对纯文本路径做链接化（与聊天气泡行为一致）
-  return linkifyHtmlTextNodes(rendered);
+  return rendered;
 };
 
 export const codeBlockRegex = (markdown) => {

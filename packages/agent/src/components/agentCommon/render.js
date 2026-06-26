@@ -1,4 +1,12 @@
 import hljs from 'highlight.js/lib/common'
+import {
+  isAbsoluteFilePath,
+  isStrongLocalPathCandidate,
+  normalizeLocalPathHref,
+  splitLocalPathText,
+  trimLocalPathCandidate,
+} from './markdown/localPathTokenizer.js'
+export { markdownItLocalPathPlugin } from './markdown/localPathPlugin.js'
 
 function getPathContext(target) {
   const container = target?.closest?.('[data-path-context-cwd]')
@@ -86,47 +94,6 @@ function escapeAttr(str) {
   return escapeHtml(str).replace(/"/g, '&quot;')
 }
 
-function isAbsoluteFilePath(value = '') {
-  const candidate = String(value || '').trim()
-  if (!candidate) return false
-  if (/^file:\/\//i.test(candidate)) return true
-  if (/^\/[a-zA-Z]:[\\/]/.test(candidate)) return true
-  // Windows 绝对路径 (D:\) / UNC (\\server) / Unix 绝对路径 (/home/...)
-  return /^[a-zA-Z]:[\\/]/.test(candidate) || /^\\\\/.test(candidate) || /^\/(?!\/)./.test(candidate)
-}
-
-function normalizeLocalPathHref(value = '') {
-  const candidate = String(value || '').trim()
-  if (!candidate) return ''
-  if (/^file:\/\//i.test(candidate)) {
-    return candidate.replace(/^file:\/\/\/?/i, '')
-  }
-  if (/^\/[a-zA-Z]:[\\/]/.test(candidate)) {
-    return candidate.slice(1)
-  }
-  return candidate
-}
-
-function isStrongLocalPathCandidate(text = '') {
-  const value = String(text || '').trim()
-  if (!value) return false
-  if (isAbsoluteFilePath(value)) return true
-  const normalized = value.replace(/\\/g, '/')
-  if (/^\.{1,2}\//.test(normalized)) return true
-  // 已知工程目录前缀白名单
-  if (/^(docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)\//.test(normalized)) return true
-  // 通用兜底：≥3 字符目录名 + 常见源码扩展名的文件（如 foo/bar.ts）
-  // 最短目录名限制过滤掉 he/she.go 等英文短语假阳性
-  return /^[a-zA-Z_][\w.-]{2,}\/[^\s]+\.(?:tsx?|jsx?|cjs|mjs|vue|py|rb|java|go|rs|c|cc|cpp|h|hpp|css|scss|less|html?|xml|ya?ml|json|toml|ini|conf|env|sh|ps1|bat|cmd|sql|md|txt|log|svg|png|jpe?g|gif|ico)$/i.test(normalized)
-}
-
-function trimLocalPathCandidate(value = '') {
-  return String(value || '')
-    .trim()
-    .replace(/^[`'"\u2018\u2019\u201c\u201d]+/g, '')
-    .replace(/[`'"\u2018\u2019\u201c\u201d)>.,;:\u3002\uff0c\uff1b\uff1a\u3001\uff09\u3011\u300b]+$/g, '')
-}
-
 function createPathCandidateAnchor(label, candidate) {
   const escapedCandidate = escapeAttr(candidate)
   return `<a class="md-link md-file-link" href="#" title="打开 ${escapedCandidate}" data-path-candidate="${escapedCandidate}">${label}</a>`
@@ -139,14 +106,10 @@ function createInlineCodePathCandidateAnchor(code) {
 }
 
 function linkifyStrongLocalPaths(input = '') {
-  // 匹配 Windows 绝对路径 | UNC | Unix 绝对路径 | 工程目录前缀 | 目录/文件 模式 | ./ 或 ../
-  const candidatePattern = /(^|[\s(\[:：])((?:[a-zA-Z]:[\\/][^\s<>"')\]]+)|(?:\\\\[^\s<>"')\]]+)|(?:\/[^\s<>"')\]]+)|(?:(?:docs|src|electron|tests|build|packages|docs\/plan|lib|dist|config|scripts|app|public|assets)(?:[\\/][^\s<>"')\]]+)+)|(?:(?:[a-zA-Z_][\w.-]*)(?:[\\/][^\s<>"')\]]+)*[\\/][^\s<>"')\]]+\.[a-zA-Z]{1,6})|(?:\.{1,2}[\\/][^\s<>"')\]]+))/g
-  return String(input || '').replace(candidatePattern, (match, prefix, candidate) => {
-    const cleanCandidate = trimLocalPathCandidate(candidate)
-    if (!isStrongLocalPathCandidate(cleanCandidate)) return match
-    const suffix = candidate.slice(cleanCandidate.length)
-    return `${prefix}${createPathCandidateAnchor(cleanCandidate, cleanCandidate)}${suffix}`
-  })
+  return splitLocalPathText(input).map((segment) => {
+    if (segment.type !== 'path') return segment.content
+    return createPathCandidateAnchor(escapeHtmlPreserveEntities(segment.content), segment.candidate)
+  }).join('')
 }
 
 function linkifyHtmlTextNodes(html = '') {
@@ -226,6 +189,24 @@ function highlightCode(code, lang) {
   return quickHighlight(trimmed)
 }
 
+function highlightCodePreservePathCandidates(code, lang) {
+  const placeholders = []
+  const protectedCode = splitLocalPathText(code).map((segment) => {
+    if (segment.type !== 'path') return segment.content
+    const token = `\x00MCPATH${placeholders.length}\x00`
+    placeholders.push({ token, candidate: segment.candidate, label: segment.content })
+    return token
+  }).join('')
+
+  let highlighted = highlightCode(protectedCode, lang)
+  for (const item of placeholders) {
+    const tokenHtml = escapeHtml(item.token)
+    const anchor = createPathCandidateAnchor(escapeHtmlPreserveEntities(item.label), item.candidate)
+    highlighted = highlighted.split(tokenHtml).join(anchor)
+  }
+  return highlighted
+}
+
 function renderInline(text) {
   if (!text) return ''
   let s = escapeHtmlPreserveEntities(text)
@@ -243,7 +224,7 @@ function renderInline(text) {
   })
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
-  s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>')
+  s = s.replace(/(^|[^\w\u4e00-\u9fa5])_([^_\n]+)_(?=($|[^\w\u4e00-\u9fa5]))/g, '$1<em>$2</em>')
   s = s.replace(/~~(.+?)~~/g, '<del>$1</del>')
   s = s.replace(/!\[([^\]]*)\]\(([^\s)]+)\)/g, (_, alt, src) =>
     `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" class="md-img" loading="lazy">`
@@ -540,7 +521,7 @@ export function renderContent(text) {
         i += 1
       }
       const code = codeLines.join('\n')
-      const highlighted = linkifyHtmlTextNodes(highlightCode(code, lang))
+      const highlighted = highlightCodePreservePathCandidates(code, lang)
       const langLabel = lang || 'text'
       out.push(
         `<div class="code-block"><div class="code-header"><span class="code-lang">${escapeHtml(langLabel)}</span></div><pre><code class="hljs">${highlighted}</code></pre></div>`
@@ -636,7 +617,18 @@ export function renderContent(text) {
 }
 
 export { escapeHtml }
-export { getDocumentOpenErrorMessage, openPathCandidateFromElement, isStrongLocalPathCandidate, linkifyStrongLocalPaths, linkifyHtmlTextNodes, createPathCandidateAnchor }
+export {
+  getDocumentOpenErrorMessage,
+  openPathCandidateFromElement,
+  isAbsoluteFilePath,
+  isStrongLocalPathCandidate,
+  normalizeLocalPathHref,
+  trimLocalPathCandidate,
+  splitLocalPathText,
+  linkifyStrongLocalPaths,
+  linkifyHtmlTextNodes,
+  createPathCandidateAnchor,
+}
 
 const hljsCache = new Map()
 const HLJS_CACHE_LIMIT = 2000

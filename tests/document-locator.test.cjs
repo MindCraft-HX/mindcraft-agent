@@ -47,6 +47,38 @@ test('resolveCandidatePath accepts absolute file paths', async () => {
   assert.equal(normalize(result.filePath), normalize(absolutePath))
 })
 
+test('resolveCandidatePath accepts file:// absolute file paths', async () => {
+  const absolutePath = 'D:\\repo\\docs\\TODO.md'
+  const result = await __test__.resolveCandidatePath({
+    rawText: 'file:///D:/repo/docs/TODO.md',
+    workspaceRoot: 'D:\\repo',
+    cwd: 'D:\\repo\\src',
+    pathExists: (value) => normalize(value) === normalize(absolutePath),
+    searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.matchType, 'absolute')
+  assert.equal(result.rawText, 'D:/repo/docs/TODO.md')
+  assert.equal(normalize(result.filePath), normalize(absolutePath))
+})
+
+test('resolveCandidatePath accepts slash-prefixed windows absolute file paths', async () => {
+  const absolutePath = 'D:\\repo\\docs\\TODO.md'
+  const result = await __test__.resolveCandidatePath({
+    rawText: '/D:/repo/docs/TODO.md',
+    workspaceRoot: 'D:\\repo',
+    cwd: 'D:\\repo\\src',
+    pathExists: (value) => normalize(value) === normalize(absolutePath),
+    searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.matchType, 'absolute')
+  assert.equal(result.rawText, '/D:/repo/docs/TODO.md')
+  assert.equal(normalize(result.filePath), normalize(absolutePath))
+})
+
 test('resolveCandidatePath falls back to cwd when workspaceRoot misses', async () => {
   const cwdTarget = 'D:\\repo\\src\\notes\\readme.md'
   const result = await __test__.resolveCandidatePath({

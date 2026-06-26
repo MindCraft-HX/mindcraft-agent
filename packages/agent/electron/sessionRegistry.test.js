@@ -90,6 +90,30 @@ test('syncPanelStateSessions writes records under userData session-registry', ()
   assert.equal(index.providers['codex:path:c:/users/demo/.codex/sessions/thread-1.jsonl'], 'chat-key-1')
 })
 
+test('syncPanelStateSessions skips empty Codex local drafts', () => {
+  const userDataDir = makeTempUserData()
+
+  const count = syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        id: 'chat-1',
+        sessionId: 'chat-key-empty',
+        name: '新对话',
+        cliSessionId: '',
+        filePath: '',
+        createdAt: 100,
+        updatedAt: 200,
+      }],
+    }],
+  }, { userDataDir })
+
+  assert.equal(count, 0)
+  assert.equal(fs.existsSync(getSessionRecordPath('chat-key-empty', { userDataDir })), false)
+  assert.deepEqual(listSessionRecords({ userDataDir }), [])
+})
+
 test('makeProviderKeys normalizes agent and file paths', () => {
   assert.deepEqual(makeProviderKeys('CodeX', {
     cliSessionId: 'thread-1',
@@ -1112,4 +1136,63 @@ test('restoreMissingPanelStateChats rebuilds projects only when Codex panel is e
   syncPanelStateSessions('codex', panelState, { userDataDir })
   const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: 'thread-a' }, { userDataDir })
   assert.equal(record.metadata.resumeAllowed, false)
+})
+
+test('restoreMissingPanelStateChats skips legacy empty Codex local drafts from registry', () => {
+  const userDataDir = makeTempUserData()
+  const recordPath = getSessionRecordPath('chat-key-empty', { userDataDir })
+  fs.mkdirSync(path.dirname(recordPath), { recursive: true })
+  fs.writeFileSync(recordPath, JSON.stringify({
+    schemaVersion: 1,
+    chatKey: 'chat-key-empty',
+    agent: 'codex',
+    projectId: 'project-1',
+    cwd: 'D:/repo',
+    title: '新对话',
+    titleSource: 'provider',
+    description: '',
+    metadata: {},
+    provider: {
+      cliSessionId: '',
+      filePath: '',
+    },
+    runtime: {
+      model: 'gpt-5.4',
+      reasoningEffort: 'high',
+    },
+    createdAt: 100,
+    updatedAt: 200,
+  }, null, 2), 'utf8')
+  fs.writeFileSync(path.join(userDataDir, 'session-registry', 'index.json'), JSON.stringify({
+    schemaVersion: 2,
+    sessions: {
+      'chat-key-empty': {
+        agent: 'codex',
+        projectId: 'project-1',
+        cwd: 'D:/repo',
+        title: '新对话',
+        titleSource: 'provider',
+        description: '',
+        cliSessionId: '',
+        filePath: '',
+        updatedAt: 200,
+        path: 'sessions/chat-key-empty.json',
+      },
+    },
+    providers: {},
+  }, null, 2), 'utf8')
+
+  const panelState = {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [],
+    }],
+  }
+
+  const result = restoreMissingPanelStateChats('codex', panelState, { userDataDir })
+
+  assert.equal(result.changed, false)
+  assert.equal(result.added, 0)
+  assert.equal(panelState.projects[0].chats.length, 0)
 })

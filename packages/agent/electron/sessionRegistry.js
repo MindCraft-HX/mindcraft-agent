@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const { getMindCraftUserDataDir } = require('./userDataPath')
+const { isMeaningfulCodexLocalDraft } = require('../src/components/agentCommon/utils/codexEmptyDraft.cjs')
 
 const REGISTRY_DIR_NAME = 'session-registry'
 const SCHEMA_VERSION = 1
@@ -218,6 +219,7 @@ function normalizeTimestamp(value) {
 function buildSessionRecordFromChat(agent, project = {}, chat = {}) {
   const chatKey = normalizeString(chat.sessionId) || normalizeString(chat.id)
   if (!chatKey) return null
+  if (normalizeAgent(agent) === 'codex' && !isMeaningfulCodexLocalDraft(chat, chat.messages)) return null
   const createdAt = normalizeTimestamp(chat.createdAt)
   const updatedAt = normalizeTimestamp(chat.updatedAt) || createdAt || Date.now()
   const metadata = chat.metadata && typeof chat.metadata === 'object' ? { ...chat.metadata } : {}
@@ -862,6 +864,16 @@ function syncPanelStateSessions(agent, panelState = {}, options = {}) {
 }
 
 function buildPanelChatFromRecord(record = {}) {
+  if (normalizeAgent(record.agent) === 'codex' && !isMeaningfulCodexLocalDraft({
+    name: record.title,
+    title: record.title,
+    description: record.description,
+    cliSessionId: record.provider?.cliSessionId,
+    filePath: record.provider?.filePath,
+    instruction: record.instruction,
+  }, [])) {
+    return null
+  }
   const provider = record.provider || {}
   const runtime = record.runtime || {}
   const filePath = normalizeString(provider.filePath)
@@ -950,7 +962,9 @@ function restorePanelStateFromSessionRegistry(agent, panelState = {}, options = 
     const exists = project.chats.some(chat => normalizeString(chat?.sessionId) === record.chatKey)
     if (exists) continue
 
-    project.chats.push(buildPanelChatFromRecord(record))
+    const panelChat = buildPanelChatFromRecord(record)
+    if (!panelChat) continue
+    project.chats.push(panelChat)
     added += 1
   }
 

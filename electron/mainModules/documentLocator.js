@@ -46,13 +46,16 @@ function normalizeCandidate(rawText = '') {
   return String(rawText || '')
     .trim()
     .replace(/^[`'"\u2018\u2019\u201c\u201d]+|[`'"\u2018\u2019\u201c\u201d]+$/g, '')
-    .replace(/^file:\/\//i, '')
+    .replace(/^file:\/\/\/?/i, '')
     .replace(/[)>.,;:\u3002\uff0c\uff1b\uff1a\u3001\uff09\u3011\u300b]+$/g, '')
 }
 
 function isAbsoluteFilePath(value = '') {
-  const candidate = String(value || '')
-  // Windows 绝对路径 (D:\) / UNC (\\server) / Unix 绝对路径 (/home/...)
+  const candidate = String(value || '').trim()
+  if (!candidate) return false
+  if (/^file:\/\//i.test(candidate)) return true
+  if (/^\/[a-zA-Z]:[\\/]/.test(candidate)) return true
+  // Windows absolute path (D:\) / UNC (\\server) / Unix absolute path (/home/...)
   return /^[a-zA-Z]:[\\/]/.test(candidate) || candidate.startsWith('\\\\') || /^\/(?!\/)./.test(candidate)
 }
 
@@ -71,7 +74,8 @@ function pickFallbackMatches(files = [], candidate = '') {
 
 function toAbsoluteIfExists(candidatePath, pathExists) {
   if (!candidatePath) return ''
-  const resolved = path.normalize(candidatePath)
+  const normalizedInput = String(candidatePath || '').replace(/^\/([a-zA-Z]:[\\/])/, '$1')
+  const resolved = path.normalize(normalizedInput)
   return pathExists(resolved) ? resolved : ''
 }
 
