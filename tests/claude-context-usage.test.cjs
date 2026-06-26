@@ -3,6 +3,9 @@ const assert = require('assert')
 const {
   __test__,
 } = require('../packages/agent/electron/claudeMetrics.js')
+const {
+  __test__: claudeAgentTest,
+} = require('../packages/agent/electron/claudeAgent.js')
 
 function runNativeClaudeModelTest() {
   const total = __test__.getClaudeContextUsageFromUsageLike({
@@ -106,6 +109,28 @@ function runAssistantUsageDoesNotFallbackToContextTest() {
   assert.equal(metrics.contextWindow, 0)
 }
 
+function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
+  const metrics = claudeAgentTest.extractClaudeLiveUsageMetricsFromSdkMessage({
+    message: {
+      model: 'deepseek-v4-pro',
+      usage: {
+        input_tokens: 7900,
+        cache_read_input_tokens: 619600,
+        cache_creation_input_tokens: 0,
+        output_tokens: 2600,
+      },
+    },
+  })
+
+  assert.deepEqual(metrics, {
+    inputTokens: 7900,
+    outputTokens: 2600,
+    cacheReadTokens: 619600,
+    cacheCreationTokens: 0,
+  })
+  assert.equal(Object.prototype.hasOwnProperty.call(metrics, 'contextUsage'), false)
+}
+
 function run() {
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
@@ -114,6 +139,7 @@ function run() {
   runThirdPartyClaudeUiNormalizationTest()
   runClaudeTurnDurationTest()
   runAssistantUsageDoesNotFallbackToContextTest()
+  runClaudeAgentLiveUsageDoesNotEmitContextTest()
   console.log('claude context usage tests passed')
 }
 

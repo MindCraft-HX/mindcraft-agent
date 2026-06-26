@@ -42,7 +42,7 @@
 | Claude SDK 第三方 provider | `input_tokens` 常见为常规输入 | `input_tokens + cache_creation_input_tokens` | `cache_read_input_tokens` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` |
 | CodeX | `cached_input_tokens` 通常是 `input_tokens` 的子集 | `max(0, input_tokens - cached_input_tokens) + cache_creation_input_tokens` | `cached_input_tokens` | `input_tokens` |
 
-`contextUsage` 的表格口径只允许用于明确的 session context 样本（例如 `system context_usage`、`token_count info`、compact 边界）。禁止从 assistant per-turn `usage` fallback 推导 context；第三方 Claude SDK provider 的 assistant usage 里可能包含大量 cache read，直接反推会把本轮计费 token 污染成上下文占用，进而误触发压缩入口。
+`contextUsage` 的表格口径只允许用于明确的 session context 样本（例如 `system context_usage`、`token_count info`、compact 边界）。禁止从 assistant per-turn `usage` 推导 context，包括 SDK live、SDK result、JSONL assistant fallback；第三方 Claude SDK provider 的 assistant usage 里可能包含大量 cache read，直接反推会把本轮计费 token 污染成上下文占用，进而误触发压缩入口。
 
 约束：
 - 主进程可以读取 provider 原始字段，但发给前端的 `inputTokens/cacheReadTokens/cacheCreationTokens/outputTokens` 必须已经符合统一 UI 语义：`inputTokens` 代表常规输入 + cache creation，`cacheReadTokens` 代表 cache read。
@@ -611,7 +611,7 @@ ClaudeCode current turn 的 token 写入规则必须收紧：
 
 - JSONL poll 不能直接覆盖 current turn 的 `in/out/cache`。
 - JSONL poll 只能更新 current turn 的 `contextUsage/contextWindow/duration`，除非它能证明样本属于当前 `turnId`。
-- ClaudeCode 的 context 圆环和自动压缩判断只能消费明确 context 样本；没有明确样本时保持为空或沿用已有可信 session context，不能用 assistant usage 的 cache read 填充。
+- ClaudeCode 的 context 圆环和自动压缩判断只能消费明确 context 样本；没有明确样本时保持为空或沿用已有可信 session context，不能用 SDK/JSONL assistant usage 的 cache read 填充。
 - ClaudeCode final snapshot 以 SDK `result.usage` 为准；JSONL final 只做缺失字段补偿。
 - `_turnTokens` 和 StatusBar 必须来自同一个 final snapshot，而不是前端再从 `result.usage` 解析一次。
 

@@ -232,7 +232,13 @@ function toNonNegativeMetricNumber(value) {
 function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
   const usage = msg?.message?.usage
   if (!usage || typeof usage !== 'object') return null
-  return claudeMetrics.normalizeClaudeUsageForUi(usage, msg?.message?.model || msg?.model || fallbackModel || '')
+  const normalized = claudeMetrics.normalizeClaudeUsageForUi(usage, msg?.message?.model || msg?.model || fallbackModel || '')
+  return {
+    inputTokens: normalized.inputTokens || 0,
+    outputTokens: normalized.outputTokens || 0,
+    cacheReadTokens: normalized.cacheReadTokens || 0,
+    cacheCreationTokens: normalized.cacheCreationTokens || 0,
+  }
 }
 
 function mergeClaudeLiveMetricSamples(base = {}, next = {}) {
@@ -2987,7 +2993,6 @@ function setupClaudeHandlers() {
                 outputTokens: normalizedUsage.outputTokens || 0,
                 cacheReadTokens: normalizedUsage.cacheReadTokens || 0,
                 cacheCreationTokens: normalizedUsage.cacheCreationTokens || 0,
-                contextUsage: normalizedUsage.contextUsage || 0,
                 durationMs: msg.duration_ms || 0,
                 costUsd: msg.total_cost_usd || 0,
                 rawUsage: usage || null,
@@ -3872,6 +3877,7 @@ module.exports = {
     buildClaudeAgentDonePayload,
     deleteClaudeSessionArtifacts,
     finalizeClaudeDoneReason,
+    extractClaudeLiveUsageMetricsFromSdkMessage,
     getClaudeProjectsRootDir,
     readClaudeSessionMeta,
     readClaudeSessionMetaByFilePath,
