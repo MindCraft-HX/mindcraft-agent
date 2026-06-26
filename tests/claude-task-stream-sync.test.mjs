@@ -226,3 +226,39 @@ test('stream sync keeps TaskUpdate statusChange results completed without replac
   ])
   assert.equal(snapshot.phase, 'done')
 })
+
+test('result turn tokens attach to current turn instead of previous assistant', () => {
+  const { tab, stream } = createHarness()
+  tab.messages.push(
+    { id: 'old-user', role: 'user', text: 'previous question' },
+    { id: 'old-assistant', role: 'assistant', text: 'previous answer' },
+    { id: 'new-user', role: 'user', text: 'run tool only' },
+    { id: 'tool-1', role: 'tool', toolName: 'Bash', status: 'done', text: 'ok' },
+  )
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'result',
+      _turnTokens: {
+        inputTokens: 100,
+        outputTokens: 5,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 0,
+        durationMs: 1234,
+      },
+    },
+  })
+
+  assert.equal(tab.messages.find(m => m.id === 'old-assistant')._turnTokens, undefined)
+  const footerHost = tab.messages.at(-1)
+  assert.equal(footerHost.role, 'assistant')
+  assert.equal(footerHost.text, '')
+  assert.deepEqual(footerHost._turnTokens, {
+    inputTokens: 100,
+    outputTokens: 5,
+    cacheReadTokens: 20,
+    cacheCreationTokens: 0,
+    durationMs: 1234,
+  })
+})

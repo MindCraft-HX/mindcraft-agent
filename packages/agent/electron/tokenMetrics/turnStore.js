@@ -97,6 +97,13 @@ function buildLiveSnapshot(sample) {
   }
 }
 
+function pickSessionMetricValue(nextValue, previousValue) {
+  const next = Number(nextValue)
+  if (Number.isFinite(next) && next > 0) return next
+  const previous = Number(previousValue)
+  return Number.isFinite(previous) && previous > 0 ? previous : 0
+}
+
 function buildFinalSnapshot(turn, sample) {
   const live = turn.liveSnapshot || {}
   const now = Date.now()
@@ -111,8 +118,8 @@ function buildFinalSnapshot(turn, sample) {
     outputTokens: sample.outputTokens ?? live.outputTokens ?? 0,
     cacheReadTokens: sample.cacheReadTokens ?? live.cacheReadTokens ?? 0,
     cacheCreationTokens: sample.cacheCreationTokens ?? live.cacheCreationTokens ?? 0,
-    contextUsage: sample.contextUsage ?? live.contextUsage ?? 0,
-    contextWindow: sample.contextWindow ?? live.contextWindow ?? 0,
+    contextUsage: pickSessionMetricValue(sample.contextUsage, live.contextUsage),
+    contextWindow: pickSessionMetricValue(sample.contextWindow, live.contextWindow),
     durationMs: sample.durationMs ?? live.durationMs ?? 0,
     costUsd: sample.costUsd ?? live.costUsd ?? 0,
     sources: [...new Set([...(live.sources || []), sample.source || 'unknown'])],
@@ -131,8 +138,8 @@ function mergeLiveSnapshot(existing, sample) {
     cacheReadTokens: Math.max(existing.cacheReadTokens || 0, sample.cacheReadTokens || 0),
     cacheCreationTokens: Math.max(existing.cacheCreationTokens || 0, sample.cacheCreationTokens || 0),
     // context/duration/cost 覆写（取最新值）
-    contextUsage: sample.contextUsage ?? existing.contextUsage ?? 0,
-    contextWindow: sample.contextWindow ?? existing.contextWindow ?? 0,
+    contextUsage: pickSessionMetricValue(sample.contextUsage, existing.contextUsage),
+    contextWindow: pickSessionMetricValue(sample.contextWindow, existing.contextWindow),
     durationMs: sample.durationMs ?? existing.durationMs ?? 0,
     costUsd: sample.costUsd ?? existing.costUsd ?? 0,
     sources: [...sources],
@@ -198,8 +205,8 @@ function applySample(sample = {}) {
       turn.liveSnapshot = buildLiveSnapshot({ ...sample, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
     } else {
       // 只更新 context/duration
-      turn.liveSnapshot.contextUsage = sample.contextUsage ?? turn.liveSnapshot.contextUsage ?? 0
-      turn.liveSnapshot.contextWindow = sample.contextWindow ?? turn.liveSnapshot.contextWindow ?? 0
+      turn.liveSnapshot.contextUsage = pickSessionMetricValue(sample.contextUsage, turn.liveSnapshot.contextUsage)
+      turn.liveSnapshot.contextWindow = pickSessionMetricValue(sample.contextWindow, turn.liveSnapshot.contextWindow)
       turn.liveSnapshot.durationMs = sample.durationMs ?? turn.liveSnapshot.durationMs ?? 0
       turn.liveSnapshot.costUsd = sample.costUsd ?? turn.liveSnapshot.costUsd ?? 0
       if (sample.source) {

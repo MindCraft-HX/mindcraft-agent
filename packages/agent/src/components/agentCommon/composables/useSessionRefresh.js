@@ -21,7 +21,7 @@ export function useSessionRefresh(onRefresh) {
   function onWindowFocus() {
     if (_focusRefreshTimer) return
     _focusRefreshTimer = setTimeout(() => { _focusRefreshTimer = null }, FOCUS_REFRESH_COOLDOWN)
-    onRefresh()
+    onRefresh({ silent: true })
   }
 
   function onGlobalKeydown(e) {

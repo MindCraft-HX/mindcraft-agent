@@ -43,7 +43,7 @@
         <span v-else class="sb-val sb-compacting-text">{{ $t('agent.compactTitle') }}</span>
         <span class="sb-tooltip">
           <template v-if="!compacting">
-            <span class="sb-tooltip-title">{{ $t('agent.contextUsed') }} {{ contextPct }}%（{{ fmtK(m.contextUsage) }} / {{ fmtK(m.contextWindow) }} tokens）</span>
+            <span class="sb-tooltip-title">{{ $t('agent.contextUsed', { percent: contextPct, used: fmtK(m.contextUsage), total: fmtK(m.contextWindow) }) }}</span>
             <span class="sb-tooltip-sub">{{ $t('agent.codexAutoCompactDesc') }}</span>
           </template>
           <span v-else class="sb-tooltip-title">{{ $t('agent.codexAutoCompacting') }}</span>

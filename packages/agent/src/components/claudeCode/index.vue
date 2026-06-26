@@ -541,13 +541,15 @@ let metricsLiveTimer = null
 let _unregAgentEvent = null
 
 function buildNewClaudeTurnMetrics(tab) {
+  const previous = tab?.metrics || {}
   return {
-    ...(tab?.metrics || {}),
+    ...previous,
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
-    contextUsage: 0,
+    contextUsage: previous.contextUsage || 0,
+    contextWindow: previous.contextWindow || 0,
     durationMs: 0,
     speedOutputPerSec: 0,
   }
@@ -2160,15 +2162,15 @@ function sortChatsByRecency(chats = []) {
   })
 }
 
-async function handleRefreshSessions() {
+async function handleRefreshSessions({ silent = false } = {}) {
   const p = activeProject.value
   if (!p?.cwd || sidebarRefreshing.value) return
-  sidebarLoading.value = true
+  if (!silent) sidebarLoading.value = true
   sidebarRefreshing.value = true
   try {
     await refreshProjectSessionsInBackground(p)
   } finally {
-    sidebarLoading.value = false
+    if (!silent) sidebarLoading.value = false
     sidebarRefreshing.value = false
   }
 }

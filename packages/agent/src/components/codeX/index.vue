@@ -1560,17 +1560,17 @@ async function refreshProjectSessionsInBackground(project) {
   return null
 }
 
-async function handleRefreshSessions() {
+async function handleRefreshSessions({ silent = false } = {}) {
   const project = activeProject.value
   if (!project?.cwd || sidebarRefreshing.value) return
-  sidebarLoading.value = true
+  if (!silent) sidebarLoading.value = true
   sidebarRefreshing.value = true
   try {
     await refreshProjectSessionsInBackground(project)
   } catch (_) {
     // 静默处理刷新失败
   } finally {
-    sidebarLoading.value = false
+    if (!silent) sidebarLoading.value = false
     sidebarRefreshing.value = false
   }
 }
@@ -2388,13 +2388,15 @@ const defaultMetrics = () => ({
 })
 
 function buildNewTurnMetrics(tab) {
+  const previous = tab?.metrics || {}
   return {
-    ...(tab?.metrics || {}),
+    ...previous,
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
-    contextUsage: 0,
+    contextUsage: previous.contextUsage || 0,
+    contextWindow: previous.contextWindow || 0,
     durationMs: 0,
     speedOutputPerSec: 0,
   }

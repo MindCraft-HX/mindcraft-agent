@@ -230,14 +230,17 @@ function registerHistoryShortcuts() {
       emit('update:sidebarOpen', true)
       await nextTick()
     }
+    // 基准线：当前 keyboard 高亮 → 当前激活 session → 第一个
     const idx = keyboardHighlightedId.value
       ? flatSessionList.value.findIndex(s => s.id === keyboardHighlightedId.value)
-      : -1
-    const nextIdx = idx < flatSessionList.value.length - 1 ? idx + 1 : idx < 0 ? 0 : idx
-    if (nextIdx >= 0 && nextIdx < flatSessionList.value.length) {
-      keyboardHighlightedId.value = flatSessionList.value[nextIdx].id
-      await scrollToHighlighted()
-    }
+      : (() => {
+          const activeIdx = flatSessionList.value.findIndex(s => s.id === props.activeId)
+          return activeIdx >= 0 ? activeIdx : 0
+      })()
+    // 循环下移：到底后回顶
+    const nextIdx = (idx + 1) % flatSessionList.value.length
+    keyboardHighlightedId.value = flatSessionList.value[nextIdx].id
+    await scrollToHighlighted()
   }, { priority: 100, enabled: isPanelActive }))
 
   _shortcutUnregisters.push(register('history.prevSession', async () => {
@@ -246,14 +249,17 @@ function registerHistoryShortcuts() {
       emit('update:sidebarOpen', true)
       await nextTick()
     }
+    // 基准线：当前 keyboard 高亮 → 当前激活 session → 第一个
     const idx = keyboardHighlightedId.value
       ? flatSessionList.value.findIndex(s => s.id === keyboardHighlightedId.value)
-      : flatSessionList.value.length
-    const prevIdx = idx > 0 ? idx - 1 : idx >= flatSessionList.value.length ? flatSessionList.value.length - 1 : 0
-    if (prevIdx >= 0 && prevIdx < flatSessionList.value.length) {
-      keyboardHighlightedId.value = flatSessionList.value[prevIdx].id
-      await scrollToHighlighted()
-    }
+      : (() => {
+          const activeIdx = flatSessionList.value.findIndex(s => s.id === props.activeId)
+          return activeIdx >= 0 ? activeIdx : 0
+      })()
+    // 循环上移：到顶后回底
+    const prevIdx = (idx - 1 + flatSessionList.value.length) % flatSessionList.value.length
+    keyboardHighlightedId.value = flatSessionList.value[prevIdx].id
+    await scrollToHighlighted()
   }, { priority: 100, enabled: isPanelActive }))
 
   _shortcutUnregisters.push(register('history.openSession', () => {

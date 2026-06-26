@@ -33,14 +33,25 @@ function normalizeClaudeTurnUsageForUi(usage, model = '') {
   }
 }
 
-function attachTurnTokensToLastRenderableMessage(messages, turnTokens) {
+function attachTurnTokensToLastRenderableMessage(messages, turnTokens, { nextMsgId, onNewMessage } = {}) {
+  let lastUserIndex = -1
   for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === 'user') {
+      lastUserIndex = i
+      break
+    }
+  }
+  for (let i = messages.length - 1; i > lastUserIndex; i -= 1) {
     const message = messages[i]
     if (!message) continue
-    if (message.role === 'assistant') {
+    if (message.role === 'assistant' && !message._turnTokens) {
       message._turnTokens = turnTokens
       return
     }
+  }
+  if (typeof nextMsgId === 'function') {
+    messages.push({ id: nextMsgId(), role: 'assistant', text: '', _turnTokens: turnTokens })
+    onNewMessage?.()
   }
 }
 
@@ -289,7 +300,6 @@ export function useClaudeAgentStream({
       // Phase 4：优先使用后端 TurnStore snapshot（msg._turnTokens），
       // fallback 到 raw usage 解析（向后兼容旧版后端；如果触发，说明 _turnTokens 未正常附加）
       if (msg._turnTokens || msg.usage) {
-        const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant')
         let turnTokens
         if (msg._turnTokens) {
           turnTokens = { ...msg._turnTokens }
@@ -305,11 +315,7 @@ export function useClaudeAgentStream({
             durationMs: msg.duration_ms || 0,
           }
         }
-        if (lastAssistant && !lastAssistant._turnTokens) {
-          lastAssistant._turnTokens = turnTokens
-        } else if (!lastAssistant) {
-          attachTurnTokensToLastRenderableMessage(msgs, turnTokens)
-        }
+        attachTurnTokensToLastRenderableMessage(msgs, turnTokens, { nextMsgId, onNewMessage })
       }
       throttledScrollBottom(tab.id, scrollBottom)
     }
