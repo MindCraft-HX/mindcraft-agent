@@ -2917,13 +2917,20 @@ function setupClaudeHandlers() {
               tokenSinceMs: pollStart,
             })
             if (metrics) {
-              // Phase 3：TurnStore — jsonl-poll 只补 context/duration，不覆盖 in/out/cache
+              // Phase 3：TurnStore — jsonl transcript 已经按 tokenSinceMs 隔离到当前 turn。
+              // 若 SDK 中途没给 usage，也允许用真实 jsonl 样本驱动当前 turn 的状态栏增长。
               emitClaudeMetricsViaStore(s.event?.sender, {
                 source: 'jsonl-poll',
                 providerSessionId: cliId,
+                inputTokens: metrics.inputTokens,
+                outputTokens: metrics.outputTokens,
+                cacheReadTokens: metrics.cacheReadTokens,
+                cacheCreationTokens: metrics.cacheCreationTokens,
                 contextUsage: metrics.contextUsage,
                 contextWindow: metrics.contextWindow,
                 durationMs: metrics.durationMs,
+                costUsd: metrics.costUsd,
+                allowTurnTokens: true,
                 rawUsage: metrics.rawUsage || null,
               }, sessionId, model || '', {
                 speedOutputPerSec: metrics.speedOutputPerSec,

@@ -6,7 +6,8 @@
  * 核心规则：
  * - sdk-live/token-count 只能更新当前 turn 的 live snapshot
  * - sdk-result finalizes 当前 turn，之后 live/poll 不能再覆盖 in/out/cache
- * - jsonl-poll 对 current turn 默认只更新 context/duration
+ * - jsonl-poll 默认只更新 context/duration；仅当样本已被上游隔离为当前 turn
+ *   的真实 token 样本时，才允许补 current turn 的 in/out/cache
  * - final 后的 turn 存入历史，不可变
  *
  * 这是 StatusBar、footer、history restore 的唯一 token 数据源。
@@ -198,23 +199,32 @@ function applySample(sample = {}) {
     return { accepted: false, reason: 'no active turn' }
   }
 
-  // jsonl-poll：只能补 context/duration，绝不覆盖 in/out/cache
+  // jsonl-poll：默认只补 context/duration。
+  // 如果上游已通过 tokenSinceMs 等边界把样本限定为“当前 turn 的真实 transcript token”，
+  // 则允许它像 live sample 一样推进 in/out/cache。
   if (source === 'jsonl-poll') {
     if (turn.finalized) return { accepted: false, reason: 'turn already finalized' }
+    const allowTurnTokens = sample.allowTurnTokens === true
     if (!turn.liveSnapshot) {
-      turn.liveSnapshot = buildLiveSnapshot({ ...sample, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
+      turn.liveSnapshot = allowTurnTokens
+        ? buildLiveSnapshot(sample)
+        : buildLiveSnapshot({ ...sample, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
     } else {
-      // 只更新 context/duration
-      turn.liveSnapshot.contextUsage = pickSessionMetricValue(sample.contextUsage, turn.liveSnapshot.contextUsage)
-      turn.liveSnapshot.contextWindow = pickSessionMetricValue(sample.contextWindow, turn.liveSnapshot.contextWindow)
-      turn.liveSnapshot.durationMs = sample.durationMs ?? turn.liveSnapshot.durationMs ?? 0
-      turn.liveSnapshot.costUsd = sample.costUsd ?? turn.liveSnapshot.costUsd ?? 0
-      if (sample.source) {
-        const srcSet = new Set(turn.liveSnapshot.sources || [])
-        srcSet.add(sample.source)
-        turn.liveSnapshot.sources = [...srcSet]
+      if (allowTurnTokens) {
+        turn.liveSnapshot = mergeLiveSnapshot(turn.liveSnapshot, sample)
+      } else {
+        // 只更新 context/duration
+        turn.liveSnapshot.contextUsage = pickSessionMetricValue(sample.contextUsage, turn.liveSnapshot.contextUsage)
+        turn.liveSnapshot.contextWindow = pickSessionMetricValue(sample.contextWindow, turn.liveSnapshot.contextWindow)
+        turn.liveSnapshot.durationMs = sample.durationMs ?? turn.liveSnapshot.durationMs ?? 0
+        turn.liveSnapshot.costUsd = sample.costUsd ?? turn.liveSnapshot.costUsd ?? 0
+        if (sample.source) {
+          const srcSet = new Set(turn.liveSnapshot.sources || [])
+          srcSet.add(sample.source)
+          turn.liveSnapshot.sources = [...srcSet]
+        }
+        turn.liveSnapshot.updatedAt = Date.now()
       }
-      turn.liveSnapshot.updatedAt = Date.now()
     }
     return { accepted: true, phase: 'live' }
   }

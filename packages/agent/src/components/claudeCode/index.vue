@@ -784,7 +784,19 @@ function toggleActiveTaskBarCollapsed() {
 // 同步活跃消息容器 ref 给 useScrollBottom hook
 watch(activeChatId, (id) => {
   activeMsgContainer.value = id ? msgRefs[id] : null
+  const chat = id ? (activeProject.value?.chats || []).find(c => c.id === id) || null : null
+  inputText.value = typeof chat?.draftText === 'string' ? chat.draftText : ''
+  refreshMetricsForChat(chat)
   void refreshActiveSessionInstructionState()
+})
+
+watch(inputText, (value) => {
+  const chat = activeTab.value
+  if (!chat) return
+  const next = typeof value === 'string' ? value : ''
+  if (chat.draftText === next) return
+  chat.draftText = next
+  saveHistory()
 })
 
 watch(() => activeTab.value?.sessionId, () => {
@@ -1869,6 +1881,7 @@ function createChat() {
     effort: claudeDefaultEffort.value || 'medium',
     modelTier: null,
     runMode: 'edit_automatically',
+    draftText: '',
     thinking: false,
     messages: [],
     currentAssistantId: null,
@@ -2841,6 +2854,7 @@ async function sendMessage() {
     scrollBottom(tab.id, true)
     saveHistory({ immediate: true })
     pendingImages.value = []
+    tab.draftText = ''
     inputText.value = ''
     nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
     // fire-and-forget：消息通过 claude-agent-message 事件通道回来
@@ -2861,6 +2875,7 @@ async function sendMessage() {
   // slash 命令：仅保留少量本地命令，其余 /xxx 透传给 Claude（skills/commands）
   if (text && text.startsWith('/')) {
     const [cmd] = text.split(/\s+/)
+    tab.draftText = ''
     inputText.value = ''
     slashSuggestions.value = []
     if (cmd === '/clear') {

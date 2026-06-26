@@ -98,6 +98,11 @@ SDK stream loop (claudeAgent.js L2808-2891)
 前端 `useClaudeAgentStream.js` 在 `result` 分支提取并附着到 assistant 消息的 `_turnTokens` 字段。
 **StatusBar 动态语义**：优先使用 SDK 流中的真实 `assistant.message.usage` 做实时增长；`result` 与 JSONL 轮询负责最终对账。JSONL 轮询是 session transcript 来源，必须先隔离到当前回合，不能把上一轮 `out/cache` 回灌到新回合状态栏。
 
+2026-06-26 补充：
+- ClaudeCode 如果 SDK 流中没有持续 `assistant.message.usage`，但 JSONL transcript 已经写出了当前 turn 的 usage 样本，则允许 1s `jsonl-poll` 在 `tokenSinceMs` 已隔离当前 turn 的前提下，推进当前 turn 的 `in/out/cache`。
+- 这仍然属于“真实样本驱动”，不是 UI 伪造中间 token；如果 transcript 在 turn 结束前没有写出 usage，状态栏就不会提前涨。
+- session draft 属于 MindCraft 自有 panel state，本轮仅持久化文字草稿，不持久化附件草稿，避免把 `dataUrl/File` 附件对象写入 panel state。
+
 ### 2.2 CodeX
 
 ```

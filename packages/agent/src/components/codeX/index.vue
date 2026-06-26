@@ -1312,6 +1312,7 @@ function createNewChat() {
     id, name: t('chat.newChat'), sessionId: `codex-session-${id}-${Date.now()}`,
     cwd: activeProject.value?.cwd || '',
     createdAt: Date.now(),
+    draftText: '',
     thinking: false, messages: [], currentAssistantId: null,
     metrics: null,
     model: codexDefaultModel.value || null,
@@ -2061,6 +2062,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
 
   if (isCodexTurnLocked(tab)) {
     tab._queuedInput = text
+    tab.draftText = ''
     if (!isQueuedFlush) inputText.value = ''
     return
   }
@@ -2137,6 +2139,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }))
   if (!isQueuedFlush) {
     pendingImages.value = []
+    tab.draftText = ''
     inputText.value = ''
     // 重置 textarea 高度，避免多行内容发送后输入框被撑大
     nextTick(() => {
@@ -2238,11 +2241,13 @@ async function sendMessage(textOverride = null, targetTab = null) {
 function sendFromStatusBar(text) {
   if (text === '/compact' && metricsData.value.compacting) return
   inputText.value = String(text || '')
+  if (activeTab.value) activeTab.value.draftText = inputText.value
   if (inputEl.value) inputEl.value.value = inputText.value
   sendMessage(inputText.value)
 }
 
 async function openModelPicker() {
+  if (activeTab.value) activeTab.value.draftText = ''
   inputText.value = ''
   slashSuggestions.value = []
   const tab = activeTab.value
@@ -2522,11 +2527,21 @@ watch(
   }),
   () => {
     const tab = activeTab.value
+    inputText.value = typeof tab?.draftText === 'string' ? tab.draftText : ''
     syncMetricsTimerForActiveTab()
     void refreshMetricsForChat(tab)
   },
   { immediate: true }
 )
+
+watch(inputText, (value) => {
+  const tab = activeTab.value
+  if (!tab) return
+  const next = typeof value === 'string' ? value : ''
+  if (tab.draftText === next) return
+  tab.draftText = next
+  saveHistory()
+})
 
 const canSend = computed(() => {
   if (!activeProject.value?.cwdLocked || !activeTab.value) return false

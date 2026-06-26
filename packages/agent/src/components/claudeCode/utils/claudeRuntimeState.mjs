@@ -134,6 +134,7 @@ export function buildPersistableClaudeChat(chat = {}) {
   c.thinking = false
   c._thinkingStart = null
   c.currentAssistantId = null
+  c.draftText = typeof c.draftText === 'string' ? c.draftText : ''
   if (c.metrics) c.metrics = { ...c.metrics, thinking: false }
   return c
 }

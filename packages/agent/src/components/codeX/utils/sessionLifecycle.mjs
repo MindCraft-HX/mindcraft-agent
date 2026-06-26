@@ -233,6 +233,7 @@ export function buildPersistableCodexChat(chat = {}) {
   c._awaitingDone = c.filePath ? false : Boolean(c._awaitingDone)
   c.thinking = false
   c.currentAssistantId = null
+  c.draftText = typeof c.draftText === 'string' ? c.draftText : ''
   if (c.metrics) c.metrics = { ...c.metrics, thinking: false }
   return c
 }

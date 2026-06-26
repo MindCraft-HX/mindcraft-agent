@@ -154,6 +154,30 @@ test('jsonl-poll only updates context/duration, not in/out/cache', () => {
   assert.strictEqual(snap.durationMs, 5000)    // updated
 })
 
+test('jsonl-poll can update current-turn tokens when explicitly scoped to this turn', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  applySample({
+    provider: 'claude',
+    source: 'jsonl-poll',
+    chatKey: 'test-chat',
+    inputTokens: 120,
+    outputTokens: 40,
+    cacheReadTokens: 30,
+    contextUsage: 9000,
+    durationMs: 3000,
+    allowTurnTokens: true,
+  })
+
+  const snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.phase, 'live')
+  assert.strictEqual(snap.inputTokens, 120)
+  assert.strictEqual(snap.outputTokens, 40)
+  assert.strictEqual(snap.cacheReadTokens, 30)
+  assert.strictEqual(snap.contextUsage, 9000)
+  assert.strictEqual(snap.durationMs, 3000)
+})
+
 test('sdk-result with empty context preserves live context', () => {
   reset()
   beginTurn({ provider: 'claude', chatKey: 'test-chat' })
