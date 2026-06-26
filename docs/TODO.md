@@ -1370,3 +1370,11 @@ DEPRECATION WARNING [legacy-js-api]: The legacy JS API is deprecated and will be
 - 在 AssistantMessageBubble 底部追加 `🕐 12.3s · 📊 in 5.2k / out 1.8k · 💰 $0.12`
 - 三条线数据来源：Claude `result` 消息 / Codex `turn.completed` 事件 / 简易对话 `invoke()`
 - 改动范围：3 个 AssistantBubble + 3 个 stream handler
+
+### 2026-06-26 下一阶段：Token Metrics 边界收口重构
+
+- 不做大重写，保留 `normalizer -> TurnStore -> StatusBar/TokenMetaRow` 主链路。
+- Phase A：移除 ClaudeCode 前端从 `msg.usage` 直接生成 `_turnTokens` 的兼容 fallback，footer 只消费主进程 final snapshot。
+- Phase B：收敛 CodeX history / terminal / JSONL backfill 到同一类 final snapshot，禁止各自再算 delta。
+- Phase C：继续约束 `contextUsage/contextWindow` 只由 session context / compact 边界写入，不参与 turn token 推导；ClaudeCode 已禁止从 assistant usage fallback 反推 context，避免 cache read 污染压缩入口。
+- Phase D：补齐运行中切换会话的状态栏同步；CodeX active tab 切换/运行状态变化时主动刷新 metrics 并同步 timer。

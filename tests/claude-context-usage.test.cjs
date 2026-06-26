@@ -70,12 +70,50 @@ function runThirdPartyClaudeUiNormalizationTest() {
   })
 }
 
+function runClaudeTurnDurationTest() {
+  assert.equal(__test__.pickClaudeTurnDurationMs(1000, 4500, null), 3500)
+  assert.equal(__test__.pickClaudeTurnDurationMs(null, 4500, 2800), 2800)
+  assert.equal(__test__.pickClaudeTurnDurationMs(5000, 3000, 1200), 1200)
+  assert.equal(__test__.pickClaudeTurnDurationMs(null, null, null), null)
+}
+
+function runAssistantUsageDoesNotFallbackToContextTest() {
+  const metrics = __test__.collectClaudeTokenMetricsFromLines([
+    JSON.stringify({
+      type: 'user',
+      timestamp: '2026-06-26T10:00:00.000Z',
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:00:05.000Z',
+      model_name: 'deepseek-v4-pro',
+      message: {
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 7900,
+          cache_read_input_tokens: 619600,
+          cache_creation_input_tokens: 0,
+          output_tokens: 2600,
+        },
+      },
+    }),
+  ])
+
+  assert.equal(metrics.inputTokens, 7900)
+  assert.equal(metrics.outputTokens, 2600)
+  assert.equal(metrics.cacheReadTokens, 619600)
+  assert.equal(metrics.contextUsage, 0)
+  assert.equal(metrics.contextWindow, 0)
+}
+
 function run() {
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
   runUnknownModelFallsBackToConservativeSumTest()
   runNativeClaudeUiNormalizationTest()
   runThirdPartyClaudeUiNormalizationTest()
+  runClaudeTurnDurationTest()
+  runAssistantUsageDoesNotFallbackToContextTest()
   console.log('claude context usage tests passed')
 }
 

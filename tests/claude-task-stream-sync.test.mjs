@@ -304,3 +304,27 @@ test('result turn tokens do not create duplicate footer host when current assist
     durationMs: 1000,
   })
 })
+
+test('result usage without _turnTokens does not synthesize footer in renderer', () => {
+  const { tab, stream } = createHarness()
+  tab.messages.push(
+    { id: 'new-user', role: 'user', text: 'hello' },
+    { id: 'assistant-1', role: 'assistant', text: 'answer' },
+  )
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'result',
+      usage: {
+        input_tokens: 100,
+        output_tokens: 5,
+        cache_read_input_tokens: 20,
+      },
+      duration_ms: 1234,
+    },
+  })
+
+  assert.equal(tab.messages.length, 2)
+  assert.equal(tab.messages[1]._turnTokens, undefined)
+})

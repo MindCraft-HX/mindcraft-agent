@@ -15,24 +15,6 @@ import {
   markClaudeStreamActivity,
 } from '../utils/claudeRuntimeState.mjs'
 
-function normalizeClaudeTurnUsageForUi(usage, model = '') {
-  const rawInputTokens = Number(usage?.input_tokens || 0)
-  const cacheReadTokens = Number(usage?.cache_read_input_tokens || 0)
-  const cacheCreationTokens = Number(usage?.cache_creation_input_tokens || 0)
-  const isNativeClaudeModel = String(model || '').toLowerCase().includes('claude')
-    || String(model || '').toLowerCase().includes('sonnet')
-    || String(model || '').toLowerCase().includes('opus')
-    || String(model || '').toLowerCase().includes('haiku')
-  return {
-    inputTokens: isNativeClaudeModel
-      ? Math.max(0, rawInputTokens - cacheReadTokens)
-      : rawInputTokens + cacheCreationTokens,
-    outputTokens: Number(usage?.output_tokens || 0),
-    cacheReadTokens,
-    cacheCreationTokens,
-  }
-}
-
 function attachTurnTokensToLastRenderableMessage(messages, turnTokens, { nextMsgId, onNewMessage } = {}) {
   let lastUserIndex = -1
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -296,26 +278,14 @@ export function useClaudeAgentStream({
           break
         }
       }
-      // 提取 per-turn token → 附着到最后一条 assistant 消息
-      // Phase 4：优先使用后端 TurnStore snapshot（msg._turnTokens），
-      // fallback 到 raw usage 解析（向后兼容旧版后端；如果触发，说明 _turnTokens 未正常附加）
-      if (msg._turnTokens || msg.usage) {
-        let turnTokens
-        if (msg._turnTokens) {
-          turnTokens = { ...msg._turnTokens }
-        } else {
-          // 诊断：_turnTokens 缺失意味着后端未附加 TurnStore snapshot，走了绕过路径
-          console.warn('[perf] claudeAgentStream: _turnTokens missing, falling back to raw msg.usage — TurnStore bypass detected', { hasUsage: !!msg.usage, msgType: msg.type })
-          const normalizedUsage = normalizeClaudeTurnUsageForUi(msg.usage, msg?.message?.model || msg?.model || tab?.model || '')
-          turnTokens = {
-            inputTokens: normalizedUsage.inputTokens,
-            outputTokens: normalizedUsage.outputTokens,
-            cacheReadTokens: normalizedUsage.cacheReadTokens,
-            cacheCreationTokens: normalizedUsage.cacheCreationTokens,
-            durationMs: msg.duration_ms || 0,
-          }
-        }
-        attachTurnTokensToLastRenderableMessage(msgs, turnTokens, { nextMsgId, onNewMessage })
+      // 只消费主进程附带的 final snapshot，前端不再自行解释 raw usage。
+      if (msg._turnTokens) {
+        attachTurnTokensToLastRenderableMessage(msgs, { ...msg._turnTokens }, { nextMsgId, onNewMessage })
+      } else if (msg.usage) {
+        console.warn('[perf] claudeAgentStream: result usage received without _turnTokens — final snapshot missing', {
+          hasUsage: true,
+          msgType: msg.type,
+        })
       }
       throttledScrollBottom(tab.id, scrollBottom)
     }

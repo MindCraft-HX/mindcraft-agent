@@ -116,11 +116,22 @@ function readJsonlLines(filePath) {
   }
 }
 
+function pickClaudeTurnDurationMs(turnStartTs, turnEndTs, fallbackDurationMs = null) {
+  if (typeof turnStartTs === 'number' && typeof turnEndTs === 'number' && turnEndTs >= turnStartTs) {
+    return turnEndTs - turnStartTs
+  }
+  return typeof fallbackDurationMs === 'number' && fallbackDurationMs > 0 ? fallbackDurationMs : null
+}
+
 function getTokenMetrics(cliSessionId, options = {}) {
   const filePath = resolveJsonlPath(cliSessionId)
   if (!filePath) return null
 
   const lines = readJsonlLines(filePath)
+  return collectClaudeTokenMetricsFromLines(lines, options)
+}
+
+function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   if (lines.length === 0) return null
   const tokenSinceMs = Number.isFinite(options?.tokenSinceMs) ? Number(options.tokenSinceMs) : null
 
@@ -130,8 +141,9 @@ function getTokenMetrics(cliSessionId, options = {}) {
   let cacheCreationTokens = 0
   let contextUsage = 0
   let contextWindow = 0
-  let firstTimestamp = null
-  let lastTimestamp = null
+  let lastUserTimestamp = null
+  let lastAssistantTimestamp = null
+  let lastTurnDurationMs = null
   let lastContextUsage = null
   let lastContextWindow = null
 
@@ -140,9 +152,8 @@ function getTokenMetrics(cliSessionId, options = {}) {
     try {
       const parsed = JSON.parse(line)
       const ts = parseClaudeTimestampMs(parsed.timestamp)
-      if (typeof ts === 'number') {
-        if (firstTimestamp === null) firstTimestamp = ts
-        lastTimestamp = ts
+      if (parsed.type === 'user' && typeof ts === 'number') {
+        lastUserTimestamp = ts
       }
 
       // 提取 token usage
@@ -151,6 +162,7 @@ function getTokenMetrics(cliSessionId, options = {}) {
           // 本轮状态栏只消费本轮开始后的 token 样本；context 仍可继续用 session 级数据。
           continue
         }
+        if (typeof ts === 'number') lastAssistantTimestamp = ts
         const usage = parsed.message.usage
         const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
         const normalized = normalizeClaudeUsageForUi(usage, entryModel)
@@ -162,6 +174,7 @@ function getTokenMetrics(cliSessionId, options = {}) {
           outputTokens = normalized.outputTokens || outputTokens
           cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens
           cacheCreationTokens = normalized.cacheCreationTokens || cacheCreationTokens
+          lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, ts, lastTurnDurationMs)
         }
       }
 
@@ -201,25 +214,21 @@ function getTokenMetrics(cliSessionId, options = {}) {
           outputTokens = normalized.outputTokens || outputTokens
           cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens
           cacheCreationTokens = normalized.cacheCreationTokens || cacheCreationTokens
+          lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, ts, lastTurnDurationMs)
         }
       } catch (_) {}
     }
   }
 
-  // 如果仍然没有 context 数据，从最后一个 assistant 消息的 usage 中提取
+  if (lastTurnDurationMs === null) {
+    lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, lastAssistantTimestamp, null)
+  }
+
+  // Do not derive context from assistant usage: cache-read tokens are billable
+  // per-turn usage, not reliable session context occupancy.
   if (!contextWindow && !lastContextUsage) {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const parsed = JSON.parse(lines[i])
-        if (parsed.type === 'assistant' && parsed.message?.usage) {
-          const u = parsed.message.usage
-          const model = parsed.model_name || parsed.model || parsed.message?.model || ''
-          contextUsage = getClaudeContextUsageFromUsageLike(u, model)
-          contextWindow = getContextWindowForModel(model)
-          break
-        }
-      } catch (_) {}
-    }
+    contextUsage = 0
+    contextWindow = 0
   }
 
   if (lastContextUsage !== null) {
@@ -242,7 +251,7 @@ function getTokenMetrics(cliSessionId, options = {}) {
     contextUsage,
     contextWindow,
     costUsd,
-    durationMs: firstTimestamp && lastTimestamp ? (lastTimestamp - firstTimestamp) : null,
+    durationMs: lastTurnDurationMs,
   }
 }
 
@@ -563,6 +572,8 @@ module.exports = {
     getClaudeContextUsageFromUsageLike,
     isNativeClaudeModel,
     normalizeClaudeUsageForUi,
+    collectClaudeTokenMetricsFromLines,
+    pickClaudeTurnDurationMs,
     parseClaudeTimestampMs,
   },
 }

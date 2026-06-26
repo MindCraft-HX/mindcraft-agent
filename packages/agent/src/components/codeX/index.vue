@@ -2496,6 +2496,22 @@ watch(() => activeTab.value?.sessionId, () => {
   void refreshActiveSessionInstructionState()
 }, { immediate: true })
 
+watch(
+  () => ({
+    id: activeTab.value?.id || '',
+    sessionId: activeTab.value?.sessionId || '',
+    cliSessionId: activeTab.value?.cliSessionId || '',
+    thinking: Boolean(activeTab.value?.thinking),
+    thinkingStart: activeTab.value?._thinkingStart || 0,
+  }),
+  () => {
+    const tab = activeTab.value
+    syncMetricsTimerForActiveTab()
+    void refreshMetricsForChat(tab)
+  },
+  { immediate: true }
+)
+
 const canSend = computed(() => {
   if (!activeProject.value?.cwdLocked || !activeTab.value) return false
   if (isActiveTabHistoryDeferred.value) return false
