@@ -155,8 +155,9 @@ async function confirmSelection(key) {
 
     resolveOpen?.({ key, label, model, effort, effortLabel })
   } else {
-    // 同一 tier：仅可能更新当前 session 的 effort
-    resolveOpen?.({ key, label, model: openModelValue.value || displayModel(key), effort, effortLabel })
+    // 同一 tier：优先取当前配置的 tier model，fallback 到当前 session model
+    // displayModel(key) 在每次 open() 时从 backend 刷新，切换配置后也能拿到新值
+    resolveOpen?.({ key, label, model: displayModel(key) || openModelValue.value, effort, effortLabel })
   }
 
   resolveOpen = null
