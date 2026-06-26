@@ -3205,7 +3205,7 @@ function setupClaudeHandlers() {
   })
 
   // 主动查询会话 metrics（用于切换 tab 时恢复历史数据）
-  ipcMain.handle('claude-agent-query-metrics', (_, { cliSessionId, model }) => {
+  ipcMain.handle('claude-agent-query-metrics', async (_, { cliSessionId, model }) => {
     if (!cliSessionId) return null
     const diagStart = Date.now()
     const resolveStart = Date.now()
@@ -3214,6 +3214,7 @@ function setupClaudeHandlers() {
       model: model || '',
     })
     const jsonlPath = claudeMetrics.resolveJsonlPath(cliSessionId)
+    const metricsCwd = claudeMetrics.getLatestSessionCwd?.(cliSessionId) || ''
     const resolveMs = Date.now() - resolveStart
     appendClaudeFreezeDiag('metrics.resolve.done', {
       cliSessionId: String(cliSessionId).slice(-12),
@@ -3231,6 +3232,7 @@ function setupClaudeHandlers() {
     const speedStart = Date.now()
     const speedMetrics = claudeMetrics.getSpeedMetrics(cliSessionId)
     const speedMs = Date.now() - speedStart
+    const gitInfo = metricsCwd ? await claudeMetrics.getGitInfo(metricsCwd) : null
     const totalMs = Date.now() - diagStart
     appendClaudeFreezeDiag('metrics.speed.done', {
       cliSessionId: String(cliSessionId).slice(-12),
@@ -3266,6 +3268,8 @@ function setupClaudeHandlers() {
       contextWindow: jsonlMetrics.contextWindow || 0,
       durationMs: jsonlMetrics.durationMs || 0,
       speedOutputPerSec: outputPerSec,
+      gitBranch: gitInfo?.branch || '',
+      gitChanges: gitInfo?.changes || 0,
     }
   })
 

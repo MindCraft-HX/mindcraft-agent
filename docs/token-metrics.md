@@ -42,7 +42,7 @@
 | Claude SDK 第三方 provider | `input_tokens` 常见为常规输入 | `input_tokens + cache_creation_input_tokens` | `cache_read_input_tokens` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` |
 | CodeX | `cached_input_tokens` 通常是 `input_tokens` 的子集 | `max(0, input_tokens - cached_input_tokens) + cache_creation_input_tokens` | `cached_input_tokens` | `input_tokens` |
 
-`contextUsage` 的表格口径只允许用于明确的 session context 样本（例如 `system context_usage`、`token_count info`、compact 边界）。禁止从 assistant per-turn `usage` 推导 context，包括 SDK live、SDK result、JSONL assistant fallback；第三方 Claude SDK provider 的 assistant usage 里可能包含大量 cache read，直接反推会把本轮计费 token 污染成上下文占用，进而误触发压缩入口。
+`contextUsage` 的表格口径只允许用于明确的 session context 样本（例如 `system context_usage`、`token_count info`、compact 边界）。Claude transcript 的 compact 边界以真实 JSONL 字段 `system subtype=compact_boundary + compactMetadata.preTokens/postTokens` 为准；优先使用 `postTokens` 作为压缩后的当前 context，占用恢复/刷新时不得忽略这条链路。禁止从 assistant per-turn `usage` 推导 context，包括 SDK live、SDK result、JSONL assistant fallback；第三方 Claude SDK provider 的 assistant usage 里可能包含大量 cache read，直接反推会把本轮计费 token 污染成上下文占用，进而误触发压缩入口。
 
 约束：
 - 主进程可以读取 provider 原始字段，但发给前端的 `inputTokens/cacheReadTokens/cacheCreationTokens/outputTokens` 必须已经符合统一 UI 语义：`inputTokens` 代表常规输入 + cache creation，`cacheReadTokens` 代表 cache read。

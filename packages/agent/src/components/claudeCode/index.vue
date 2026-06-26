@@ -993,6 +993,14 @@ function buildClaudeHistoryTurnTokensFromEntry(entry) {
   }
 }
 
+function readClaudeCompactBoundaryTokens(entry = {}) {
+  const meta = entry?.compactMetadata || entry?.compact_metadata || {}
+  return {
+    pre: Number(meta.preTokens ?? meta.pre_tokens ?? 0),
+    post: Number(meta.postTokens ?? meta.post_tokens ?? 0),
+  }
+}
+
 function attachClaudeHistoryTurnTokens(messages, entry) {
   const turnTokens = buildClaudeHistoryTurnTokensFromEntry(entry)
   if (!turnTokens) return
@@ -1245,9 +1253,7 @@ function normalizeSessionEventsToUiMessages(rawData, { recoverDanglingTools = fa
         continue
       }
       if (subtype === 'compact_boundary') {
-        const meta = entry.compact_metadata || {}
-        const pre = Number(meta.pre_tokens || 0)
-        const post = Number(meta.post_tokens || 0)
+        const { pre, post } = readClaudeCompactBoundaryTokens(entry)
         const saved = pre > 0 && post > 0 ? Math.max(0, pre - post) : 0
         const compactTitle = pre > 0 && post > 0
           ? t('agent.compactTokens', { pre, post, saved })
@@ -1480,9 +1486,7 @@ function normalizeFlatSessionMessagesToUiMessages(rawData, { recoverDanglingTool
         continue
       }
       if (subtype === 'compact_boundary') {
-        const meta = entry.compact_metadata || {}
-        const pre = Number(meta.pre_tokens || 0)
-        const post = Number(meta.post_tokens || 0)
+        const { pre, post } = readClaudeCompactBoundaryTokens(entry)
         const saved = pre > 0 && post > 0 ? Math.max(0, pre - post) : 0
         const compactTitle = pre > 0 && post > 0
           ? t('agent.compactTokens', { pre, post, saved })

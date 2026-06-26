@@ -43,7 +43,7 @@
         <span v-else class="sb-val sb-compacting-text">{{ $t('agent.compactTitle') }}</span>
         <span class="sb-tooltip">
           <template v-if="!compacting">
-            <span class="sb-tooltip-title">{{ $t('agent.contextUsed', { percent: contextPct, used: fmtK(m.contextUsage), total: fmtK(m.contextWindow) }) }}</span>
+            <span class="sb-tooltip-title">{{ contextTooltipText }}</span>
             <span class="sb-tooltip-sub">{{ $t('agent.compactHint') }}</span>
           </template>
           <span v-else class="sb-tooltip-title">{{ $t('agent.compacting') }}</span>
@@ -119,6 +119,15 @@ const hasCache = computed(() => m.value.cacheReadTokens > 0)
 const contextPct = computed(() => {
   if (!m.value.contextUsage || !m.value.contextWindow) return 0
   return Math.min(100, Math.round((m.value.contextUsage / m.value.contextWindow) * 100))
+})
+
+const contextTooltipText = computed(() => {
+  if (!m.value.contextWindow) return $t('agent.compactHint')
+  return $t('agent.contextUsed', {
+    percent: contextPct.value,
+    used: fmtK(m.value.contextUsage),
+    total: fmtK(m.value.contextWindow),
+  })
 })
 
 const displayDurationMs = computed(() => {

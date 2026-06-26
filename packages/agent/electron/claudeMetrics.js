@@ -195,6 +195,23 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextWindow = contextWindow
         }
       }
+
+      if (parsed.type === 'system' && parsed.subtype === 'compact_boundary') {
+        const meta = parsed.compactMetadata || parsed.compact_metadata || {}
+        const preTokens = toSafeTokenCount(meta.preTokens ?? meta.pre_tokens)
+        const postTokens = toSafeTokenCount(meta.postTokens ?? meta.post_tokens)
+        if (postTokens > 0) {
+          contextUsage = postTokens
+          contextWindow = getContextWindowForModel('')
+          lastContextUsage = contextUsage
+          lastContextWindow = contextWindow
+        } else if (preTokens > 0) {
+          contextUsage = preTokens
+          contextWindow = getContextWindowForModel('')
+          lastContextUsage = contextUsage
+          lastContextWindow = contextWindow
+        }
+      }
     } catch (_) {}
   }
 
@@ -253,6 +270,25 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     costUsd,
     durationMs: lastTurnDurationMs,
   }
+}
+
+function getLatestSessionCwdFromLines(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return ''
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const parsed = JSON.parse(lines[i])
+      const cwd = typeof parsed?.cwd === 'string' ? parsed.cwd.trim() : ''
+      if (cwd) return cwd
+    } catch (_) {}
+  }
+  return ''
+}
+
+function getLatestSessionCwd(cliSessionId) {
+  const filePath = resolveJsonlPath(cliSessionId)
+  if (!filePath) return ''
+  const lines = readJsonlLines(filePath)
+  return getLatestSessionCwdFromLines(lines)
 }
 
 function getSpeedMetrics(cliSessionId) {
@@ -573,6 +609,8 @@ module.exports = {
     isNativeClaudeModel,
     normalizeClaudeUsageForUi,
     collectClaudeTokenMetricsFromLines,
+    getLatestSessionCwdFromLines,
+    getLatestSessionCwd,
     pickClaudeTurnDurationMs,
     parseClaudeTimestampMs,
   },

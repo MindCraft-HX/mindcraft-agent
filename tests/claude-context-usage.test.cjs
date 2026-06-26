@@ -131,6 +131,31 @@ function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
   assert.equal(Object.prototype.hasOwnProperty.call(metrics, 'contextUsage'), false)
 }
 
+function runCompactBoundaryProvidesContextTest() {
+  const metrics = __test__.collectClaudeTokenMetricsFromLines([
+    JSON.stringify({
+      type: 'system',
+      subtype: 'compact_boundary',
+      timestamp: '2026-06-26T10:00:00.000Z',
+      compactMetadata: {
+        preTokens: 167615,
+        postTokens: 4580,
+      },
+    }),
+  ])
+
+  assert.equal(metrics.contextUsage, 4580)
+  assert.equal(metrics.contextWindow, 200000)
+}
+
+function runLatestSessionCwdFromLinesTest() {
+  const cwd = __test__.getLatestSessionCwdFromLines([
+    JSON.stringify({ type: 'assistant', cwd: '' }),
+    JSON.stringify({ type: 'system', cwd: 'D:\\company\\mindcraft-agent' }),
+  ])
+  assert.equal(cwd, 'D:\\company\\mindcraft-agent')
+}
+
 function run() {
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
@@ -140,6 +165,8 @@ function run() {
   runClaudeTurnDurationTest()
   runAssistantUsageDoesNotFallbackToContextTest()
   runClaudeAgentLiveUsageDoesNotEmitContextTest()
+  runCompactBoundaryProvidesContextTest()
+  runLatestSessionCwdFromLinesTest()
   console.log('claude context usage tests passed')
 }
 

@@ -2402,6 +2402,22 @@ function buildNewTurnMetrics(tab) {
   }
 }
 
+function hasCodexTurnTokenSample(data = {}) {
+  return ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheCreationTokens']
+    .some(key => Object.prototype.hasOwnProperty.call(data, key) && Number(data[key]) > 0)
+}
+
+function mergeCodexRuntimeMetrics(current = {}, data = {}, tab = null) {
+  const next = { ...data }
+  if (tab?.thinking && !hasCodexTurnTokenSample(data)) {
+    delete next.inputTokens
+    delete next.outputTokens
+    delete next.cacheReadTokens
+    delete next.cacheCreationTokens
+  }
+  return mergeCodexMetrics(current, next, { sessionId: data.sessionId || current.sessionId || tab?.sessionId || '' })
+}
+
 const metricsData = computed(() => {
   const tab = activeTab.value
   if (!tab) return defaultMetrics()
@@ -2473,7 +2489,7 @@ function onMetricsUpdate(data) {
   const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
   if (!tab) return
   const { thinking: metricsThinking, ...metricsPayload } = data
-  tab.metrics = mergeCodexMetrics(tab.metrics || {}, metricsPayload, { sessionId: data.sessionId })
+  tab.metrics = mergeCodexRuntimeMetrics(tab.metrics || {}, metricsPayload, tab)
   if (data.model) tab.model = data.model
   if (typeof metricsThinking === 'boolean') {
     applyCodexMetrics(tab, { ...data, thinking: metricsThinking })

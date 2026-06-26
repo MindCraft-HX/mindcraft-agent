@@ -43,6 +43,14 @@ function pushMessage(tab, onNewMessage, msg) {
   onNewMessage?.()
 }
 
+function readClaudeCompactBoundaryTokens(msg = {}) {
+  const meta = msg?.compactMetadata || msg?.compact_metadata || {}
+  return {
+    pre: Number(meta.preTokens ?? meta.pre_tokens ?? 0),
+    post: Number(meta.postTokens ?? meta.post_tokens ?? 0),
+  }
+}
+
 /** 滚动节流：同一个 tab 在一个 tick 内只滚一次 */
 const scrollPending = new Set()
 function throttledScrollBottom(tabId, scrollBottom) {
@@ -389,9 +397,7 @@ export function useClaudeAgentStream({
         const compactingMsg = tab.messages.find(m => m._isCompact && m._compacting)
         if (compactingMsg) compactingMsg._compacting = false
         tab._compacting = false
-        const meta = msg.compact_metadata || {}
-        const pre = Number(meta.pre_tokens || 0)
-        const post = Number(meta.post_tokens || 0)
+        const { pre, post } = readClaudeCompactBoundaryTokens(msg)
         const saved = pre > 0 && post > 0 ? Math.max(0, pre - post) : 0
         const compactTitle = pre > 0 && post > 0
           ? `上下文已压缩：${pre} → ${post} tokens（减少 ${saved}）`
