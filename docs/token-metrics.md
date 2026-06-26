@@ -614,6 +614,7 @@ ClaudeCode current turn 的 token 写入规则必须收紧：
 - ClaudeCode 的 context 圆环和自动压缩判断只能消费明确 context 样本；没有明确样本时保持为空或沿用已有可信 session context，不能用 SDK/JSONL assistant usage 的 cache read 填充。
 - ClaudeCode final snapshot 以 SDK `result.usage` 为准；JSONL final 只做缺失字段补偿。
 - `_turnTokens` 和 StatusBar 必须来自同一个 final snapshot，而不是前端再从 `result.usage` 解析一次。
+- ClaudeCode history restore 也必须复用共享 `normalizeClaudeUsage()`，不能在 renderer 再维护一份 native/third-party 判定公式。
 
 ### 8.6 CodeX 权威来源规则
 

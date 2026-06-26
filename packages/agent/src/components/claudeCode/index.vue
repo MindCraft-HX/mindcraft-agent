@@ -255,8 +255,11 @@ import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, next
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { createRequire } from 'module'
 
 const { t } = useI18n()
+const require = createRequire(import.meta.url)
+const { normalizeClaudeUsage } = require('../../electron/tokenMetrics/normalizer.js')
 
 defineOptions({ name: 'claudeCode' })
 
@@ -972,25 +975,22 @@ function buildClaudeHistoryTurnTokensFromEntry(entry) {
   const usage = entry?.message?.usage
   if (!usage || typeof usage !== 'object') return null
   const model = entry?.message?.model || entry?.model || ''
-  const inputTokens = Number(usage.input_tokens || 0)
-  const cacheReadTokens = Number(usage.cache_read_input_tokens || 0)
-  const cacheCreationTokens = Number(usage.cache_creation_input_tokens || 0)
-  const outputTokens = Number(usage.output_tokens || 0)
-  const normalizedInputTokens = String(model || '').toLowerCase().includes('claude')
-    || String(model || '').toLowerCase().includes('sonnet')
-    || String(model || '').toLowerCase().includes('opus')
-    || String(model || '').toLowerCase().includes('haiku')
-    ? Math.max(0, inputTokens - cacheReadTokens)
-    : inputTokens + cacheCreationTokens
+  const normalized = normalizeClaudeUsage(usage, model)
   const durationMs = Number(entry?.duration_ms || 0)
-  if (normalizedInputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && cacheCreationTokens <= 0 && durationMs <= 0) {
+  if (
+    (normalized.inputTokens || 0) <= 0
+    && (normalized.outputTokens || 0) <= 0
+    && (normalized.cacheReadTokens || 0) <= 0
+    && (normalized.cacheCreationTokens || 0) <= 0
+    && durationMs <= 0
+  ) {
     return null
   }
   return {
-    inputTokens: normalizedInputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheCreationTokens,
+    inputTokens: normalized.inputTokens || 0,
+    outputTokens: normalized.outputTokens || 0,
+    cacheReadTokens: normalized.cacheReadTokens || 0,
+    cacheCreationTokens: normalized.cacheCreationTokens || 0,
     durationMs,
   }
 }
