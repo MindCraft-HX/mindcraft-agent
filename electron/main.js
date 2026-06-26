@@ -141,6 +141,39 @@ function createWindow() {
   ipcMain.on('window-close', () => win?.close());
   ipcMain.handle('window-is-maximized', () => win?.isMaximized() ?? false);
 
+  // ── 窗口拖拽性能优化 ──
+  // 拖拽期间通知渲染端暂停 CSS 动画/重渲染，减少与 OS 合成器的 GPU 争抢
+  let dragTimer = null
+  let dragSafetyTimer = null
+  let isDragging = false
+  const DRAG_END_DELAY = 150   // 停止移动 150ms 后认为拖拽结束
+  const DRAG_MAX_DURATION = 3000 // 安全网：超过 3s 强制恢复
+
+  function setDragState(state) {
+    if (isDragging === state) return
+    isDragging = state
+    clearTimeout(dragSafetyTimer)
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('window-drag-state', state)
+    }
+    if (state) {
+      dragSafetyTimer = setTimeout(() => setDragState(false), DRAG_MAX_DURATION)
+    }
+  }
+
+  win.on('move', () => {
+    if (!isDragging) setDragState(true)
+    clearTimeout(dragTimer)
+    dragTimer = setTimeout(() => setDragState(false), DRAG_END_DELAY)
+  })
+
+  // resize 也当拖拽处理（窗口边缘拖拽改变大小时同样卡顿）
+  win.on('resize', () => {
+    if (!isDragging) setDragState(true)
+    clearTimeout(dragTimer)
+    dragTimer = setTimeout(() => setDragState(false), DRAG_END_DELAY)
+  })
+
   // 开发模式从 dev server 加载（支持 HMR），生产模式从 dist 文件加载
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(initUrl);
@@ -178,6 +211,14 @@ function createWindow() {
   win.webContents.on('render-process-gone', (_e, details) => {
     console.error('[main] renderer gone:', JSON.stringify(details));
   });
+  // 关闭窗口时清理拖拽计时器
+  win.on('closed', () => {
+    clearTimeout(dragTimer)
+    clearTimeout(dragSafetyTimer)
+    dragTimer = null
+    dragSafetyTimer = null
+  })
+
   // 关闭窗口：开发模式直接退出（避免进程残留占用端口），生产模式隐藏到托盘
   win.on('close', (e) => {
     if (NODE_ENV === 'development') {
@@ -218,10 +259,12 @@ function createWindow() {
   win.webContents.on("context-menu", async (e, params) => {
     const contextMenu = new Menu();
 
-    // 添加标准的复制、剪切、粘贴等选项
-    contextMenu.append(
-      new MenuItem({ label: "复制", role: "copy", accelerator: "CmdOrCtrl+C" })
-    );
+    // 添加标准的复制、剪切、粘贴等选项（图片上跳过"复制"，用下面的"复制图片"替代）
+    if (params.mediaType !== "image") {
+      contextMenu.append(
+        new MenuItem({ label: "复制", role: "copy", accelerator: "CmdOrCtrl+C" })
+      );
+    }
     if (params.isEditable) {
       contextMenu.append(
         new MenuItem({ label: "剪切", role: "cut", accelerator: "CmdOrCtrl+X" })
@@ -357,19 +400,22 @@ ipcMain.on("openEmail", (event, emailAddress) => {
 //   });
 // }
 
-// 获取图片，支持本地和远程
+// 获取图片，支持 base64 data URL、远程和本地文件路径
 async function fetchImage(imageUrl) {
   try {
+    if (imageUrl.startsWith("data:")) {
+      // 粘贴/拖拽的 base64 data URL
+      return nativeImage.createFromDataURL(imageUrl)
+    }
     if (imageUrl.startsWith("http")) {
       // 远程图片
       const response = await axios.get(imageUrl, {
         responseType: "arraybuffer",
       });
       return nativeImage.createFromBuffer(Buffer.from(response.data));
-    } else {
-      // 本地图片
-      return nativeImage.createFromPath(imageUrl);
     }
+    // 本地文件路径
+    return nativeImage.createFromPath(imageUrl);
   } catch (error) {
     console.error("Failed to fetch image:", error);
     return null;
