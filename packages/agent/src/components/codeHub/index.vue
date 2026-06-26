@@ -189,9 +189,9 @@ function saveTabOrder() {
   localStorage.setItem('codehub_tab_order', JSON.stringify(tabOrder.value))
 }
 
-// 惰性挂载：仅挂载路由请求的 Agent；其余按需挂载，避免首帧同时初始化两个重面板
-const requestedInitialAgent = normalizeRequestedAgent(route.query?.agent) || 'claudeCode'
-const mountedMap = reactive(createMountedMap([requestedInitialAgent]))
+// 统一 Tab 目前依赖各 Agent panel 暴露的 projectTabData；未挂载的 panel 不会执行 loadHistory。
+// 在 CodeHub 级 session index 独立出来前，启动时必须挂载所有已注册 Agent，避免冷启动丢失历史 Tab。
+const mountedMap = reactive(createMountedMap(agentKeys.value))
 
 const ctxMenu = reactive({ visible: false, x: 0, y: 0, tab: null })
 
