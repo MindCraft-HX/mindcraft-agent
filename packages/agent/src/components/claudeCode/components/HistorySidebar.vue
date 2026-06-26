@@ -811,12 +811,12 @@ function formatSessionTime(timestamp) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--cc-primary);
-  animation: hs-pulse 1s ease-in-out infinite;
+  background: var(--cc-text-dim);
+  animation: hs-pulse 1.6s ease-in-out infinite;
 }
 @keyframes hs-pulse {
-  0%, 100% { opacity: 0.35; transform: scale(0.85); }
-  50% { opacity: 1; transform: scale(1.1); }
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.55; }
 }
 
 /* 加载更多按钮 */
