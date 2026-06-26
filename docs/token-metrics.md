@@ -1,9 +1,19 @@
 # Token Metrics 专题文档
 
-> 最后更新：2026-06-25
+> 最后更新：2026-06-26
 > 覆盖：T144（BUG 修复）→ T145（实时增长 + 平滑计数）→ T146（Per-Turn 标注）
 
 ---
+
+## 2026-06-26 补充：context 与 turn token 必须解耦
+
+本轮定位结论：
+
+- `contextUsage/contextWindow` 是 session 级状态，用于状态栏比例和自动压缩判断；不能在新 turn 开始时跟 `inputTokens/outputTokens/cacheReadTokens` 一起清零。
+- `sdk-result` / terminal final 如果没有提供有效 context（0、空值、缺字段），不能覆盖 live/poll 已经得到的正数 context。否则会出现“对话过程中 context 极低，刷新后恢复正常”的渲染假象，并可能干扰自动压缩入口。
+- `in/out/cache` 是 current turn 级状态，新 turn 开始必须清零，等待真实 SDK/token_count/jsonl 样本更新；不得拿上一轮或 session aggregate 顶替。
+- ClaudeCode 某些 turn 可能只有工具调用或无 assistant 文本。result 已有 `_turnTokens` 时，前端必须把 footer 绑定到最后一条 user 之后的 assistant；如果没有 assistant，就创建一个空文本 assistant 作为 `TokenMetaRow` 容器，不能错挂到上一轮 assistant。
+- 状态栏动画只在真实采样点之间插值；如果 provider 在 turn 结束前没有中间 usage，UI 只能在最终样本到达后展示，不伪造 token 增长。
 
 ## 0. 当前决策：UI 只展示统一语义
 
