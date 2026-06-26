@@ -1563,7 +1563,7 @@ async function refreshProjectSessionsInBackground(project) {
 async function handleRefreshSessions({ silent = false } = {}) {
   const project = activeProject.value
   if (!project?.cwd || sidebarRefreshing.value) return
-  if (!silent) sidebarLoading.value = true
+  if (!silent && !(project?.chats?.length)) sidebarLoading.value = true
   sidebarRefreshing.value = true
   try {
     await refreshProjectSessionsInBackground(project)
@@ -1946,7 +1946,7 @@ function selectDir(project) {
     proj.cwdLocked = true
     setLastProjectCwd(dir)
     loadProjectSettings(proj)
-    sidebarLoading.value = true
+    if (!(proj.chats?.length)) sidebarLoading.value = true
     try {
       await loadProjectChatsFromCodexSessions(proj, dir)
     } finally {

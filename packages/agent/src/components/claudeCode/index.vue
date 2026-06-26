@@ -2165,7 +2165,7 @@ function sortChatsByRecency(chats = []) {
 async function handleRefreshSessions({ silent = false } = {}) {
   const p = activeProject.value
   if (!p?.cwd || sidebarRefreshing.value) return
-  if (!silent) sidebarLoading.value = true
+  if (!silent && !(p?.chats?.length)) sidebarLoading.value = true
   sidebarRefreshing.value = true
   try {
     await refreshProjectSessionsInBackground(p)
@@ -2392,7 +2392,7 @@ async function selectDir(project, onAfterSelect) {
   project.cwd = dir
   project.cwdLocked = true
   setLastProjectCwd(dir)
-  sidebarLoading.value = true
+  if (!(project.chats?.length)) sidebarLoading.value = true
   try {
     const sessions = await loadProjectSessions(dir)
     if (Array.isArray(sessions) && sessions.length) {
