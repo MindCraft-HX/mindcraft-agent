@@ -23,6 +23,10 @@
 - `contextUsage/contextWindow` 只服务 session context 与压缩入口；禁止用它推导本轮 `in/out/cache`，也禁止让本轮 token 反向影响 context 比例。
 - 如果后续还出现同一模块连续回归，应优先重写 metrics consumer 边界，而不是继续在 UI 展示层补丁。
 
+## 2026-06-26 补充：CodeX token_count total/last 边界
+- CodeX `token_count.total_token_usage` 是 session 累计值，不能直接作为当前 turn 的 `in/out/cache`。
+- `last_token_usage` 一旦存在，必须作为一组完整的 per-turn/request 样本使用；其中 `cached_input_tokens: 0` 是有效值，不能 fallback 到 `total_token_usage.cached_input_tokens`。否则长会话会把累计 cache（例如 98M）显示为当前回合 cache。
+- 若没有 `last_token_usage`，才允许使用 `total_token_usage - turnStartTotals` 的 delta。
 ## 0. 当前决策：UI 只展示统一语义
 
 2026-06-24 追加结论：状态栏和每轮脚注不能直接暴露 ClaudeCode / CodeX / 第三方 provider 的原始 usage 字段语义。对用户只展示一套统一口径：

@@ -920,10 +920,28 @@ function buildCodexPerTurnTokens(parsedMetrics, usage = null) {
   }
 }
 
+function hasCodexUsageFields(usage = {}) {
+  if (!usage || typeof usage !== 'object') return false
+  return ['input_tokens', 'output_tokens', 'cached_input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'total_tokens']
+    .some(key => Object.prototype.hasOwnProperty.call(usage, key))
+}
+
 function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = {}, fallbackLastUsage = null) {
+  // Codex token_count carries both session cumulative totals and last request usage.
+  // If last_token_usage is present, use it as a coherent per-turn sample. A zero
+  // cached_input_tokens is meaningful and must not fall back to session totals.
+  if (hasCodexUsageFields(fallbackLastUsage)) {
+    const last = normalizeCodexUsage(fallbackLastUsage) || {}
+    return {
+      inputTokens: toNonNegativeNumber(last.input_tokens),
+      outputTokens: toNonNegativeNumber(last.output_tokens),
+      cacheReadTokens: toNonNegativeNumber(last.cache_read_input_tokens),
+      cacheCreationTokens: toNonNegativeNumber(last.cache_creation_input_tokens),
+    }
+  }
+
   const normalizedTotal = normalizeCodexUsage(totalUsage) || {}
   const normalizedStart = normalizeCodexUsage(turnStartTotals) || {}
-  const normalizedFallback = normalizeCodexUsage(fallbackLastUsage || {}) || {}
 
   const rawTotalInput = toNonNegativeNumber(normalizedTotal.raw_input_tokens, normalizedTotal.input_tokens)
   const rawStartInput = toNonNegativeNumber(normalizedStart.raw_input_tokens, normalizedStart.input_tokens)
@@ -934,29 +952,11 @@ function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = 
   const totalCacheCreation = toNonNegativeNumber(normalizedTotal.cache_creation_input_tokens)
   const startCacheCreation = toNonNegativeNumber(normalizedStart.cache_creation_input_tokens)
 
-  const derivedCacheReadTokens = Math.max(0, totalCacheRead - startCacheRead)
-  const derivedCacheCreationTokens = Math.max(0, totalCacheCreation - startCacheCreation)
-  const derivedRawInputTokens = Math.max(0, rawTotalInput - rawStartInput)
-  const derivedInputTokens = Math.max(0, derivedRawInputTokens - derivedCacheReadTokens) + derivedCacheCreationTokens
-  const derivedOutputTokens = Math.max(0, totalOutput - startOutput)
-
-  const fallbackInputTokens = Number(normalizedFallback.input_tokens)
-  const fallbackOutputTokens = Number(normalizedFallback.output_tokens)
-  const fallbackCacheReadTokens = Number(normalizedFallback.cache_read_input_tokens)
-  const fallbackCacheCreationTokens = Number(normalizedFallback.cache_creation_input_tokens)
-
-  const inputTokens = Number.isFinite(fallbackInputTokens) && fallbackInputTokens > 0
-    ? fallbackInputTokens
-    : derivedInputTokens
-  const outputTokens = Number.isFinite(fallbackOutputTokens) && fallbackOutputTokens > 0
-    ? fallbackOutputTokens
-    : derivedOutputTokens
-  const cacheReadTokens = Number.isFinite(fallbackCacheReadTokens) && fallbackCacheReadTokens > 0
-    ? fallbackCacheReadTokens
-    : derivedCacheReadTokens
-  const cacheCreationTokens = Number.isFinite(fallbackCacheCreationTokens) && fallbackCacheCreationTokens > 0
-    ? fallbackCacheCreationTokens
-    : derivedCacheCreationTokens
+  const cacheReadTokens = Math.max(0, totalCacheRead - startCacheRead)
+  const cacheCreationTokens = Math.max(0, totalCacheCreation - startCacheCreation)
+  const rawInputTokens = Math.max(0, rawTotalInput - rawStartInput)
+  const inputTokens = Math.max(0, rawInputTokens - cacheReadTokens) + cacheCreationTokens
+  const outputTokens = Math.max(0, totalOutput - startOutput)
 
   return {
     inputTokens,
@@ -965,7 +965,6 @@ function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = 
     cacheCreationTokens,
   }
 }
-
 function buildCodexMetricsFromTokenCountPayload(payload = {}, {
   model = '',
   durationMs = 0,

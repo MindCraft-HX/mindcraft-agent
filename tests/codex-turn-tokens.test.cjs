@@ -95,6 +95,31 @@ function runBuildLiveMetricsFromTokenCountPayloadTest() {
   assert.equal(metrics.durationMs, 2000)
 }
 
+function runBuildLiveMetricsKeepsZeroCacheFromLastUsageTest() {
+  const metrics = __test__.buildCodexMetricsFromTokenCountPayload({
+    info: {
+      total_token_usage: {
+        input_tokens: 116782647,
+        cached_input_tokens: 98299392,
+        output_tokens: 449623,
+        total_tokens: 117232270,
+      },
+      last_token_usage: {
+        input_tokens: 134112,
+        cached_input_tokens: 0,
+        output_tokens: 767,
+        total_tokens: 134879,
+      },
+      model_context_window: 258400,
+    },
+  }, { model: 'gpt-5-codex' })
+
+  assert.equal(metrics.inputTokens, 134112)
+  assert.equal(metrics.outputTokens, 767)
+  assert.equal(metrics.cacheReadTokens, 0)
+  assert.equal(metrics.contextUsage, 134879)
+}
+
 function runBuildLiveMetricsFromTokenCountTotalsFallbackTest() {
   const metrics = __test__.buildCodexMetricsFromTokenCountPayload({
     info: {
@@ -201,6 +226,7 @@ function run() {
   runBuildPerTurnTokensPrefersParsedMetricsTest()
   runBuildPerTurnTokensFallsBackToUsageTest()
   runBuildLiveMetricsFromTokenCountPayloadTest()
+  runBuildLiveMetricsKeepsZeroCacheFromLastUsageTest()
   runBuildLiveMetricsFromTokenCountTotalsFallbackTest()
   runBuildPerTurnTokensReturnsNullForEmptyTest()
   runNormalizeCodexUsageTerminalSnapshotTest()
