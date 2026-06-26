@@ -150,6 +150,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   close: () => ipcRenderer.send('window-close'),
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
 
+  // 窗口拖拽状态（性能优化：拖拽期间通知渲染端降低负载）
+  onWindowPerformanceState: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('window-performance-state', handler)
+    return () => ipcRenderer.removeListener('window-performance-state', handler)
+  },
+  onWindowDragState: (callback) => {
+    const handler = (_event, payload) => callback(Boolean(payload?.active && payload?.reason === 'drag'))
+    ipcRenderer.on('window-performance-state', handler)
+    return () => ipcRenderer.removeListener('window-performance-state', handler)
+  },
+
   // ── 插件市场（MindCraft 原生插件，非 Claude/Codex SDK 插件）──
   pluginGetInstalled: () => ipcRenderer.invoke('plugin-get-installed'),
   pluginMarketListing: () => ipcRenderer.invoke('plugin-marketplace-listing'),

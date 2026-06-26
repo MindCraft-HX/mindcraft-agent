@@ -149,16 +149,45 @@ function createWindow() {
   const DRAG_END_DELAY = 150   // 停止移动 150ms 后认为拖拽结束
   const DRAG_MAX_DURATION = 3000 // 安全网：超过 3s 强制恢复
 
+  function buildWindowPerformanceState(active) {
+    return active
+      ? {
+          active: true,
+          reason: 'drag',
+          frameRate: 30,
+          effectsReduced: true,
+          since: Date.now(),
+        }
+      : {
+          active: false,
+          reason: '',
+          frameRate: 60,
+          effectsReduced: false,
+          since: 0,
+        }
+  }
+
   function setDragState(state) {
     if (isDragging === state) return
     isDragging = state
     clearTimeout(dragSafetyTimer)
+    console.log(`[main] drag ${state ? 'START' : 'END'} — frameRate ${state ? 30 : 60}`)
     if (win && !win.isDestroyed()) {
-      win.webContents.send('window-drag-state', state)
+      // 拖拽期间适度降帧，降低 GPU 争抢，但避免 15fps 带来的明显顿挫感
+      win.webContents.setFrameRate(state ? 30 : 60)
+      win.webContents.send('window-performance-state', buildWindowPerformanceState(state))
     }
     if (state) {
       dragSafetyTimer = setTimeout(() => setDragState(false), DRAG_MAX_DURATION)
     }
+  }
+
+  function clearDragState() {
+    clearTimeout(dragTimer)
+    clearTimeout(dragSafetyTimer)
+    dragTimer = null
+    dragSafetyTimer = null
+    setDragState(false)
   }
 
   win.on('move', () => {
@@ -173,6 +202,9 @@ function createWindow() {
     clearTimeout(dragTimer)
     dragTimer = setTimeout(() => setDragState(false), DRAG_END_DELAY)
   })
+
+  win.on('blur', clearDragState)
+  win.on('unresponsive', clearDragState)
 
   // 开发模式从 dev server 加载（支持 HMR），生产模式从 dist 文件加载
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -213,10 +245,7 @@ function createWindow() {
   });
   // 关闭窗口时清理拖拽计时器
   win.on('closed', () => {
-    clearTimeout(dragTimer)
-    clearTimeout(dragSafetyTimer)
-    dragTimer = null
-    dragSafetyTimer = null
+    clearDragState()
   })
 
   // 关闭窗口：开发模式直接退出（避免进程残留占用端口），生产模式隐藏到托盘
