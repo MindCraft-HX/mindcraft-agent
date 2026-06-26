@@ -39,6 +39,13 @@ function attachTurnTokensToLastRenderableMessage(messages, turnTokens, { nextMsg
 
 /** 追加消息到 messages */
 function pushMessage(tab, onNewMessage, msg) {
+  const last = Array.isArray(tab?.messages) ? tab.messages[tab.messages.length - 1] : null
+  if (last && msg && last.role === msg.role) {
+    const sameText = typeof last.text === 'string' && typeof msg.text === 'string' && last.text === msg.text
+    const sameCompact = Boolean(last._isCompact) === Boolean(msg._isCompact)
+    const sameTool = String(last.toolName || '') === String(msg.toolName || '')
+    if (sameText && sameCompact && sameTool) return
+  }
   tab.messages.push(msg)
   onNewMessage?.()
 }

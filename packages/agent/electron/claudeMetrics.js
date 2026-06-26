@@ -156,19 +156,25 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
         lastUserTimestamp = ts
       }
 
-      // 提取 token usage
+      // 鎻愬彇 token usage
       if (parsed.type === 'assistant' && parsed.message?.usage) {
-        if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) {
-          // 本轮状态栏只消费本轮开始后的 token 样本；context 仍可继续用 session 级数据。
-          continue
-        }
         if (typeof ts === 'number') lastAssistantTimestamp = ts
         const usage = parsed.message.usage
         const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
         const normalized = normalizeClaudeUsageForUi(usage, entryModel)
-        // inputTokens 是 UI 口径的输入侧成本（常规输入 + cache creation）。
+        if (normalized.contextUsage > 0) {
+          contextUsage = normalized.contextUsage
+          contextWindow = getContextWindowForModel(entryModel)
+          lastContextUsage = contextUsage
+          lastContextWindow = contextWindow
+        }
+        if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) {
+          // Assistant usage before tokenSinceMs still contributes session context.
+          continue
+        }
+        // inputTokens 鏄?UI 鍙ｅ緞鐨勮緭鍏ヤ晶鎴愭湰锛堝父瑙勮緭鍏?+ cache creation锛夈€?
         inputTokens = Math.max(inputTokens, normalized.inputTokens || 0)
-        // output/cache 是 per-round 值，仅信任已完成的轮次（避免流式跳回 0）
+        // output/cache 鏄?per-round 鍊硷紝浠呬俊浠诲凡瀹屾垚鐨勮疆娆★紙閬垮厤娴佸紡璺冲洖 0锛?
         const stopReason = parsed.message.stop_reason
         if (stopReason) {
           outputTokens = normalized.outputTokens || outputTokens

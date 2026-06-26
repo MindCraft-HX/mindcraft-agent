@@ -80,7 +80,7 @@ function runClaudeTurnDurationTest() {
   assert.equal(__test__.pickClaudeTurnDurationMs(null, null, null), null)
 }
 
-function runAssistantUsageDoesNotFallbackToContextTest() {
+function runAssistantUsageUpdatesSessionContextTest() {
   const metrics = __test__.collectClaudeTokenMetricsFromLines([
     JSON.stringify({
       type: 'user',
@@ -105,8 +105,8 @@ function runAssistantUsageDoesNotFallbackToContextTest() {
   assert.equal(metrics.inputTokens, 7900)
   assert.equal(metrics.outputTokens, 2600)
   assert.equal(metrics.cacheReadTokens, 619600)
-  assert.equal(metrics.contextUsage, 0)
-  assert.equal(metrics.contextWindow, 0)
+  assert.equal(metrics.contextUsage, 627500)
+  assert.equal(metrics.contextWindow, 200000)
 }
 
 function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
@@ -156,6 +156,37 @@ function runLatestSessionCwdFromLinesTest() {
   assert.equal(cwd, 'D:\\company\\mindcraft-agent')
 }
 
+function runCompactBoundaryThenAssistantUsageUsesLatestContextTest() {
+  const metrics = __test__.collectClaudeTokenMetricsFromLines([
+    JSON.stringify({
+      type: 'system',
+      subtype: 'compact_boundary',
+      timestamp: '2026-06-26T10:00:00.000Z',
+      compactMetadata: {
+        preTokens: 167615,
+        postTokens: 4580,
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:10:00.000Z',
+      model_name: 'deepseek-v4-pro',
+      message: {
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 275,
+          cache_read_input_tokens: 123264,
+          cache_creation_input_tokens: 0,
+          output_tokens: 59,
+        },
+      },
+    }),
+  ])
+
+  assert.equal(metrics.contextUsage, 123539)
+  assert.equal(metrics.contextWindow, 200000)
+}
+
 function run() {
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
@@ -163,9 +194,10 @@ function run() {
   runNativeClaudeUiNormalizationTest()
   runThirdPartyClaudeUiNormalizationTest()
   runClaudeTurnDurationTest()
-  runAssistantUsageDoesNotFallbackToContextTest()
+  runAssistantUsageUpdatesSessionContextTest()
   runClaudeAgentLiveUsageDoesNotEmitContextTest()
   runCompactBoundaryProvidesContextTest()
+  runCompactBoundaryThenAssistantUsageUsesLatestContextTest()
   runLatestSessionCwdFromLinesTest()
   console.log('claude context usage tests passed')
 }

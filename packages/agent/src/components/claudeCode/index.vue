@@ -3274,7 +3274,17 @@ const {
   inferToolFailureFromText,
   createToolMessage,
   onCompactBoundary(postTokens) {
+    const tab = activeTab.value
+    const contextWindow = (tab?.metrics?.contextWindow || metricsData.value.contextWindow || 200000)
+    if (tab) {
+      tab.metrics = {
+        ...(tab.metrics || {}),
+        contextUsage: postTokens,
+        contextWindow,
+      }
+    }
     metricsData.value.contextUsage = postTokens
+    metricsData.value.contextWindow = contextWindow
   },
   onNewMessage: bumpScrollCount,
   trimMessages,
