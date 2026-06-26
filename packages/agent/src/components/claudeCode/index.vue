@@ -255,11 +255,9 @@ import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, next
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { createRequire } from 'module'
+import { normalizeClaudeUsage } from './utils/normalizeClaudeUsage.mjs'
 
 const { t } = useI18n()
-const require = createRequire(import.meta.url)
-const { normalizeClaudeUsage } = require('../../electron/tokenMetrics/normalizer.js')
 
 defineOptions({ name: 'claudeCode' })
 

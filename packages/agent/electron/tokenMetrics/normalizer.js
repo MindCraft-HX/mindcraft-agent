@@ -19,58 +19,7 @@
  * @property {number} [contextUsage]  — context 占用，Claude 可见
  */
 
-// ==================== Helpers ====================
-
-function toSafeInt(v) {
-  const n = Number(v)
-  return Number.isFinite(n) && n >= 0 ? n : 0
-}
-
-/**
- * 判断是否为原生 Claude 模型（SDK 直接调用 Anthropic API）。
- * 原生 Claude 的 input_tokens 已包含 cache_read + cache_creation，
- * 第三方 provider 则分开上报。
- *
- * 与 claudeMetrics.js 中的判断逻辑保持一致。
- */
-function isNativeClaudeModel(model) {
-  const lower = String(model || '').toLowerCase()
-  if (!lower) return false
-  return lower.includes('claude') ||
-    lower.includes('sonnet') ||
-    lower.includes('opus') ||
-    lower.includes('haiku')
-}
-
-// ==================== Provider Normalizers ====================
-
-/**
- * 归一化 Claude SDK usage → 统一 UI 语义。
- *
- * @param {Object} usage  — SDK 返回的 usage 对象
- * @param {string} [model] — 模型标识，用于区分原生/第三方
- * @returns {NormalizedUsage}
- */
-function normalizeClaudeUsage(usage, model) {
-  if (!usage || typeof usage !== 'object') {
-    return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
-  }
-
-  const rawInput = toSafeInt(usage.input_tokens)
-  const cacheRead = toSafeInt(usage.cache_read_input_tokens)
-  const cacheCreation = toSafeInt(usage.cache_creation_input_tokens)
-
-  const inputTokens = isNativeClaudeModel(model)
-    ? Math.max(0, rawInput - cacheRead)
-    : rawInput + cacheCreation
-
-  return {
-    inputTokens,
-    outputTokens: toSafeInt(usage.output_tokens),
-    cacheReadTokens: cacheRead,
-    cacheCreationTokens: cacheCreation,
-  }
-}
+const { normalizeClaudeUsage, isNativeClaudeModel, toSafeInt } = require('../../src/components/claudeCode/utils/normalizeClaudeUsage.cjs')
 
 /**
  * 归一化 CodeX usage → 统一 UI 语义。
