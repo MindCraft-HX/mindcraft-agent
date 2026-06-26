@@ -26,6 +26,8 @@
         <pre class="tool-error-output">{{ msg.toolError }}</pre>
       </details>
 
+      <component :is="detailComponent" v-if="detailComponent" :msg="msg" v-bind="detailProps" @expand="showDiffModal = true" />
+
       <div v-if="msg.status === 'pending'" class="tool-permission">
         <div class="perm-desc">{{ msg.permDesc }}</div>
         <div class="perm-actions">
@@ -33,8 +35,6 @@
           <button class="perm-btn deny" @click.stop="emit('respondPermission', msg, false)">{{ $t('agent.deny') }}</button>
         </div>
       </div>
-
-      <component :is="detailComponent" v-if="detailComponent" :msg="msg" v-bind="detailProps" @expand="showDiffModal = true" />
     </div>
   </div>
 
