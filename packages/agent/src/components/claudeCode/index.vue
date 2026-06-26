@@ -344,6 +344,7 @@ import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotific
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { countVisibleClaudeUserMessages, isClaudeMetaUserEntry } from './utils/internalPromptFilter.mjs'
 import { shouldReloadClaudeChatFromDisk } from './utils/sessionRefreshGuard.mjs'
+import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
 import { analyzeClaudeSessionIntegrity, markDanglingClaudeToolsInterrupted } from './utils/sessionIntegrity.mjs'
 import { resolveClaudeHistorySelection } from './utils/historyRestoreSelection.mjs'
 import { sanitizeClaudeProjectsForPersistence } from './utils/historyPersistenceSanitizer.mjs'
@@ -2080,11 +2081,11 @@ async function refreshProjectSessionsInBackground(p) {
         // 如果该会话是当前正在查看的对话，重置加载状态并清空消息，让 UI 重新加载最新内容
         if (canReloadMessages && cached.id === activeChatId.value) {
           cached._messagesLoaded = false
-          cached.messages = []
+          if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
           // 标记需要在刷新结束后重新加载当前对话
           s._needReloadActiveChat = true
         } else if (canReloadMessages && (!cached.messages || cached.messages.length === 0)) {
-          cached.messages = []
+          if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
           cached._messagesLoaded = false
         }
       } else {
@@ -2215,7 +2216,7 @@ function switchChat(id) {
   refreshMetricsForChat(chat)
   // 有 filePath 且未从磁盘加载过时，从文件加载
   // 注意：不用 messages.length 判断——中断恢复后内存中可能有部分消息，也需覆盖
-  if (chat?.filePath && !chat._messagesLoaded) {
+  if (chat?.filePath && !chat._messagesLoaded && canHydrateChatFromDisk(chat)) {
     chat._loadingMessages = true
     void ensureChatMessagesLoaded(chat).finally(() => {
       chat._loadingMessages = false
@@ -2237,6 +2238,7 @@ async function ensureChatMessagesLoaded(chat) {
       pageSize: 60
     })
     if (!rawData?.messages?.length) return
+    if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
     const looksLikeFlatMessages = rawData.messages.some(e =>
       e && (typeof e.role === 'string' || Array.isArray(e.content) || typeof e.content === 'string')
     )

@@ -282,6 +282,7 @@ import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared 
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
+import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
 import { normalizeCodexReasoningEffort } from './utils/providerToml.mjs'
 import { buildCodexModelSlots } from './utils/modelSlots.mjs'
 
@@ -1495,16 +1496,16 @@ async function refreshProjectSessionsInBackground(project) {
           cached.fileSize = summary.fileSize
           if (allowHydrateFromDisk && cached.id === activeChatId.value) {
             cached._messagesLoaded = false
-            cached.messages = []
+            if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
             summary._needReloadActiveChat = true
           } else if (allowHydrateFromDisk && (!cached.messages || cached.messages.length === 0)) {
-            cached.messages = []
+            if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
             cached._messagesLoaded = false
           }
         } else {
           cached.fileSize = summary.fileSize || null
           if (allowHydrateFromDisk && !cached.messages?.length) {
-            cached.messages = []
+            if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
             cached._messagesLoaded = false
             if (cached.id === activeChatId.value) {
               summary._needReloadActiveChat = true
@@ -1844,7 +1845,7 @@ function switchChat(id) {
       activeMsgContainer.value = null
       inputEl.value?.blur?.()
     })
-  } else if (chat?.filePath && shouldHydrateHistoryFromDisk(chat)) {
+  } else if (chat?.filePath && shouldHydrateHistoryFromDisk(chat) && canHydrateChatFromDisk(chat)) {
     chat._loadingMessages = true
     void ensureChatMessagesLoaded(chat).finally(() => {
       chat._loadingMessages = false
@@ -2736,6 +2737,7 @@ async function ensureChatMessagesLoaded(chat) {
     })
     if (CODEX_DEBUG) console.log(rawData,'rawData--------------------------')
     if (!rawData?.messages?.length) return
+    if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
     const allMessages = filterCodexSystemMessages(rawData.messages)
     const n = Math.min(MAX_MESSAGES, allMessages.length)
     chat.messages = allMessages.slice(-n)
