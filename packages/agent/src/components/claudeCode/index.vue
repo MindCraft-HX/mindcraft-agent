@@ -255,7 +255,6 @@ import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, next
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { normalizeClaudeUsage } from './utils/normalizeClaudeUsage.mjs'
 
 const { t } = useI18n()
 
@@ -981,30 +980,6 @@ function applyToolResultToHistoryMessages(messages, toolUseId, content, isErrorF
 // Phase 4：此函数公式与 tokenMetrics/normalizer.normalizeClaudeUsage 完全一致。
 // 由于历史恢复在 renderer 进程中运行，无法直接 require Node.js 模块，
 // 此处保持内联公式。若修改 native/third-party 判断逻辑，须同步更新 normalizer。
-function buildClaudeHistoryTurnTokensFromEntry(entry) {
-  const usage = entry?.message?.usage
-  if (!usage || typeof usage !== 'object') return null
-  const model = entry?.message?.model || entry?.model || ''
-  const normalized = normalizeClaudeUsage(usage, model)
-  const durationMs = Number(entry?.duration_ms || 0)
-  if (
-    (normalized.inputTokens || 0) <= 0
-    && (normalized.outputTokens || 0) <= 0
-    && (normalized.cacheReadTokens || 0) <= 0
-    && (normalized.cacheCreationTokens || 0) <= 0
-    && durationMs <= 0
-  ) {
-    return null
-  }
-  return {
-    inputTokens: normalized.inputTokens || 0,
-    outputTokens: normalized.outputTokens || 0,
-    cacheReadTokens: normalized.cacheReadTokens || 0,
-    cacheCreationTokens: normalized.cacheCreationTokens || 0,
-    durationMs,
-  }
-}
-
 function readClaudeCompactBoundaryTokens(entry = {}) {
   const meta = entry?.compactMetadata || entry?.compact_metadata || {}
   return {
@@ -1014,7 +989,7 @@ function readClaudeCompactBoundaryTokens(entry = {}) {
 }
 
 function attachClaudeHistoryTurnTokens(messages, entry) {
-  const turnTokens = buildClaudeHistoryTurnTokensFromEntry(entry)
+  const turnTokens = entry?._turnTokens
   if (!turnTokens) return
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]

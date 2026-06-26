@@ -90,6 +90,7 @@ Goal: fix known clearly wrong values without changing UI behavior.
 Goal: make invalid source/consumer combinations hard to express.
 
 Status: started. TurnStore now accepts an explicit `scope` (`turn-live`, `turn-final`, `session-context`, `session-total`). Session context/total samples are stripped of turn token fields before they can update live snapshots.
+Claude history restore is now also part of this boundary: the main process annotates transcript assistant entries with normalized `_turnTokens`, and the renderer consumes that payload only. Renderer-side raw `message.usage` formulas are forbidden.
 
 - Introduce or formalize `MetricSample` fields:
   - `scope`: `turn-live` / `turn-final` / `session-context` / `session-total`

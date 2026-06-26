@@ -8,6 +8,7 @@ const { logMetricSample } = require('./tokenMetrics/diagnostics')
 const { beginTurn, submitSample, getCurrentSnapshot, clearCurrentTurn } = require('./tokenMetrics/turnStore')
 const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
+const { normalizeClaudeUsage } = require('./tokenMetrics/normalizer')
 const claudeMemory = require('./claudeMemory')
 const { extractClaudeSessionTitle } = require('./sessionTitleUtils')
 const { augmentEnvWithBundledRg } = require('./localSearch')
@@ -76,6 +77,37 @@ function writeMindCraftSettings(settings) {
     try { fs.unlinkSync(tmp) } catch (_) {}
   }
   return settingsPath
+}
+
+function buildClaudeHistoryTurnTokensFromEntry(entry) {
+  const usage = entry?.message?.usage
+  if (!usage || typeof usage !== 'object') return null
+  const model = entry?.message?.model || entry?.model || ''
+  const normalized = normalizeClaudeUsage(usage, model)
+  const durationMs = Number(entry?.duration_ms || 0)
+  if (
+    (normalized.inputTokens || 0) <= 0
+    && (normalized.outputTokens || 0) <= 0
+    && (normalized.cacheReadTokens || 0) <= 0
+    && (normalized.cacheCreationTokens || 0) <= 0
+    && durationMs <= 0
+  ) {
+    return null
+  }
+  return {
+    inputTokens: normalized.inputTokens || 0,
+    outputTokens: normalized.outputTokens || 0,
+    cacheReadTokens: normalized.cacheReadTokens || 0,
+    cacheCreationTokens: normalized.cacheCreationTokens || 0,
+    durationMs,
+  }
+}
+
+function annotateClaudeHistoryEntryWithTurnTokens(msgData, entry) {
+  const turnTokens = buildClaudeHistoryTurnTokensFromEntry(entry)
+  if (!turnTokens || !msgData || typeof msgData !== 'object') return msgData
+  msgData._turnTokens = turnTokens
+  return msgData
 }
 
 function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
@@ -1106,6 +1138,7 @@ function setupClaudeHandlers() {
               msgData._is_user_wrapper = true
             } else if (sourceType === 'assistant') {
               msgData._is_assistant_wrapper = true
+              annotateClaudeHistoryEntryWithTurnTokens(msgData, entry)
             } else if (entry.type === 'command' || entry.type === 'skill' || entry.type === 'tool_use') {
               msgData._is_tool_message = true
             }
@@ -1176,7 +1209,10 @@ function setupClaudeHandlers() {
               : entry.type
             msgData._source_type = sourceType
             if (entry.type === 'user' && entry.message) msgData._is_user_wrapper = true
-            else if (sourceType === 'assistant') msgData._is_assistant_wrapper = true
+            else if (sourceType === 'assistant') {
+              msgData._is_assistant_wrapper = true
+              annotateClaudeHistoryEntryWithTurnTokens(msgData, entry)
+            }
             else if (entry.type === 'command' || entry.type === 'skill' || entry.type === 'tool_use') msgData._is_tool_message = true
             messages.push(msgData)
           } else if (entry.type === 'ai-title') {
@@ -3899,6 +3935,7 @@ module.exports = {
     readClaudeSessionMetaByFilePath,
     resolveClaudeDoneReasonFromError,
     scanCliSessionsForProject,
+    buildClaudeHistoryTurnTokensFromEntry,
     setSessionRegistryOptionsForTest: (options) => { sessionRegistryOptionsForTest = options || null },
     writeClaudeSessionMeta,
   },

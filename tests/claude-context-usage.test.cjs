@@ -156,6 +156,29 @@ function runLatestSessionCwdFromLinesTest() {
   assert.equal(cwd, 'D:\\company\\mindcraft-agent')
 }
 
+function runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest() {
+  const tokens = claudeAgentTest.buildClaudeHistoryTurnTokensFromEntry({
+    duration_ms: 4321,
+    message: {
+      model: 'deepseek-v4-pro',
+      usage: {
+        input_tokens: 139,
+        cache_read_input_tokens: 41344,
+        cache_creation_input_tokens: 256,
+        output_tokens: 812,
+      },
+    },
+  })
+
+  assert.deepEqual(tokens, {
+    inputTokens: 395,
+    outputTokens: 812,
+    cacheReadTokens: 41344,
+    cacheCreationTokens: 256,
+    durationMs: 4321,
+  })
+}
+
 function runCompactBoundaryThenAssistantUsageUsesLatestContextTest() {
   const metrics = __test__.collectClaudeTokenMetricsFromLines([
     JSON.stringify({
@@ -197,6 +220,7 @@ function run() {
   runAssistantUsageUpdatesSessionContextTest()
   runClaudeAgentLiveUsageDoesNotEmitContextTest()
   runCompactBoundaryProvidesContextTest()
+  runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest()
   runCompactBoundaryThenAssistantUsageUsesLatestContextTest()
   runLatestSessionCwdFromLinesTest()
   console.log('claude context usage tests passed')
