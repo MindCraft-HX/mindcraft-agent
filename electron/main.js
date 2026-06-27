@@ -171,7 +171,6 @@ function createWindow() {
     if (isDragging === state) return
     isDragging = state
     clearTimeout(dragSafetyTimer)
-    console.log(`[main] drag ${state ? 'START' : 'END'} — frameRate ${state ? 30 : 60}`)
     if (win && !win.isDestroyed()) {
       // 拖拽期间适度降帧，降低 GPU 争抢，但避免 15fps 带来的明显顿挫感
       win.webContents.setFrameRate(state ? 30 : 60)

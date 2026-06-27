@@ -324,8 +324,11 @@ export default class AudioVisual {
     //  实时录音绘制波形
     refreshUI() {
         if (!this.isRecord) return
-        let buffer = this.getBuffer()
-        this.draw(buffer)
+        // 窗口拖拽期间跳过绘制（减少 GPU 争抢），但保持 rAF 循环存活
+        if (!window.__isWindowDragging) {
+            let buffer = this.getBuffer()
+            this.draw(buffer)
+        }
         requestAnimationFrame(this.refreshUI.bind(this))
     }
 
@@ -335,7 +338,10 @@ export default class AudioVisual {
         const currentTime = performance.now(); // 获取当前时间
         const elapsedTime = currentTime - this.startTime; // 计算已过去的时间
         if (elapsedTime >= this.sourceDuration) return
-        this.draw3()
+        // 窗口拖拽期间跳过绘制，但保持 rAF 循环存活
+        if (!window.__isWindowDragging) {
+            this.draw3()
+        }
         requestAnimationFrame(this.refreshRecordUI.bind(this))
     }
 
