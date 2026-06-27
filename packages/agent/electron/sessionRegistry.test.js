@@ -597,6 +597,33 @@ test('deleteSessionRecordsByProvider removes matching provider filePath records'
   assert.deepEqual(index.providers, {})
 })
 
+test('deleteSessionRecordsByProvider removes matching Codex metadata-only record by chatKey', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-meta-only',
+        name: 'Metadata only',
+        cliSessionId: '',
+        filePath: '',
+      }],
+    }],
+  }, { userDataDir })
+
+  const deleted = deleteSessionRecordsByProvider({
+    agent: 'codex',
+    chatKey: 'chat-key-meta-only',
+  }, { userDataDir })
+
+  assert.equal(deleted, 1)
+  assert.deepEqual(listSessionRecords({ userDataDir }), [])
+  const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
+  assert.deepEqual(index.sessions, {})
+  assert.deepEqual(index.providers, {})
+})
+
 test('detachSessionProviderBinding disables resume without deleting provider identity', () => {
   const userDataDir = makeTempUserData()
   syncPanelStateSessions('codex', {

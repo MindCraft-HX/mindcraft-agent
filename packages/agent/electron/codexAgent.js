@@ -3706,6 +3706,36 @@ function setupCodexSdkHandlers() {
     }
   })
 
+  ipcMain.handle('codex-delete-session', (_, payload = {}) => {
+    try {
+      const filePath = typeof payload?.filePath === 'string' ? payload.filePath : ''
+      const cliSessionId = typeof payload?.cliSessionId === 'string' ? payload.cliSessionId : ''
+      const chatKey = typeof payload?.chatKey === 'string' ? payload.chatKey : ''
+      let deletedTranscript = false
+
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath)
+        deletedTranscript = true
+      }
+
+      const deletedRecords = deleteSessionRecordsByProvider({
+        agent: 'codex',
+        filePath,
+        cliSessionId,
+        chatKey,
+      })
+
+      return {
+        ok: deletedTranscript || deletedRecords > 0,
+        deletedTranscript,
+        deletedRecords,
+      }
+    } catch (e) {
+      console.warn('[codex-delete-session] failed:', e?.message || e)
+      return { ok: false, error: e?.message || String(e), deletedTranscript: false, deletedRecords: 0 }
+    }
+  })
+
   ipcMain.handle('codex-rename-session', async (_, { sessionId, title }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {

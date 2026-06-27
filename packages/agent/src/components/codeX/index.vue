@@ -1896,7 +1896,11 @@ async function requestDeleteChat(chat) {
   if (!ok) return
   window.electronAPI.codexAgentAbort?.(chat.sessionId)
   // 删除磁盘上的 JSONL 会话文件，防止刷新时重新出现
-  if (chat.filePath) window.electronAPI.codexDeleteSessionFile?.(chat.filePath)
+  await window.electronAPI.codexDeleteSession?.({
+    chatKey: chat.sessionId,
+    filePath: chat.filePath || '',
+    cliSessionId: chat.cliSessionId || '',
+  })
   const p = activeProject.value
   if (!p) return
   const idx = p.chats.findIndex(c => c.id === chat.id)
@@ -1905,7 +1909,7 @@ async function requestDeleteChat(chat) {
     activeChatId.value = p.chats[idx]?.id || p.chats[idx - 1]?.id || null
     if (!p.chats.length) newChat()
   }
-  saveHistory()
+  saveHistory({ immediate: true })
 }
 
 async function handleRenameChat(session, newName) {

@@ -160,6 +160,7 @@ function createAgentBridge(ipcRenderer) {
   codexUnregisterCliSession: (sessionId) => ipcRenderer.invoke('codex-unregister-cli-session', sessionId),
   codexListSessionsByCwd: (cwd) => ipcRenderer.invoke('codex-list-sessions-by-cwd', cwd),
   codexRenameSession: (payload) => ipcRenderer.invoke('codex-rename-session', payload),
+  codexDeleteSession: (payload) => ipcRenderer.invoke('codex-delete-session', payload),
   codexDeleteSessionFile: (filePath) => ipcRenderer.invoke('codex-delete-session-file', { filePath }),
   codexReadSessionFileRange: (params) => ipcRenderer.invoke('codex-read-session-file-range', params),
   codexListSlashCommands: (payload) => ipcRenderer.invoke('codex-list-slash-commands', payload),
