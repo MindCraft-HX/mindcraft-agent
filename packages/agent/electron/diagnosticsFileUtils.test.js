@@ -61,6 +61,7 @@ test('diagnostics toggle defaults to disabled and persists in app settings', () 
 
   const saved = JSON.parse(fs.readFileSync(result.path, 'utf8'))
   assert.equal(saved?.diagnostics?.enabled, true)
+  assert.equal(saved?.diagnostics?.tokenMetricsDebug, true)
 })
 
 test('diagnostics toggle only affects explicit opt-in writes', () => {

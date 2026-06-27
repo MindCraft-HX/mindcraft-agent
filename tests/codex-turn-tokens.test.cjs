@@ -157,8 +157,80 @@ function runBuildPerTurnTokensReturnsNullForEmptyTest() {
   assert.equal(perTurn, null)
 }
 
+function runBuildCodexFinalTurnMetricsFallsBackToLiveSnapshotTest() {
+  const result = __test__.buildCodexFinalTurnMetricsFromTerminalUsage({
+    input_tokens: 144925215,
+    cached_input_tokens: 120227200,
+    output_tokens: 530325,
+    total_tokens: 145455540,
+  }, {
+    liveSnapshot: {
+      inputTokens: 420,
+      outputTokens: 88,
+      cacheReadTokens: 120,
+      cacheCreationTokens: 0,
+    },
+    turnStartTotals: {
+      input_tokens: 1000,
+      cached_input_tokens: 800,
+      output_tokens: 20,
+      cache_creation_input_tokens: 0,
+    },
+    tokenCountSeen: false,
+  })
+
+  assert.equal(result.authority, 'live-snapshot')
+  assert.equal(result.inputTokens, undefined)
+  assert.equal(result.outputTokens, undefined)
+  assert.equal(result.cacheReadTokens, undefined)
+  assert.equal(result.cacheCreationTokens, undefined)
+}
+
+function runBuildCodexFinalTurnMetricsRejectsAmbiguousSessionTotalsTest() {
+  const result = __test__.buildCodexFinalTurnMetricsFromTerminalUsage({
+    input_tokens: 144925215,
+    cached_input_tokens: 120227200,
+    output_tokens: 530325,
+    total_tokens: 145455540,
+  }, {
+    liveSnapshot: null,
+    turnStartTotals: {
+      input_tokens: 144700000,
+      cached_input_tokens: 120000000,
+      output_tokens: 529000,
+      cache_creation_input_tokens: 0,
+    },
+    tokenCountSeen: false,
+  })
+
+  assert.equal(result.authority, 'ambiguous-session-total')
+  assert.equal(result.inputTokens, undefined)
+  assert.equal(result.outputTokens, undefined)
+  assert.equal(result.cacheReadTokens, undefined)
+  assert.equal(result.cacheCreationTokens, undefined)
+}
+
 // 发现 1 回归：验证 normalizeCodexUsage 返回 snake_case 字段的值非零，
 // 确保 turn.completed 用正确 key 读取后 emitCodexMetricsViaStore 不会传全 0
+function runBuildCodexFinalTurnMetricsRejectsUntrustedHugeTerminalUsageTest() {
+  const result = __test__.buildCodexFinalTurnMetricsFromTerminalUsage({
+    input_tokens: 164228228,
+    cached_input_tokens: 137255936,
+    output_tokens: 610990,
+    reasoning_output_tokens: 167890,
+  }, {
+    liveSnapshot: null,
+    turnStartTotals: null,
+    tokenCountSeen: false,
+  })
+
+  assert.equal(result.authority, 'untrusted-terminal-usage')
+  assert.equal(result.inputTokens, undefined)
+  assert.equal(result.outputTokens, undefined)
+  assert.equal(result.cacheReadTokens, undefined)
+  assert.equal(result.cacheCreationTokens, undefined)
+}
+
 function runNormalizeCodexUsageTerminalSnapshotTest() {
   const usage = {
     input_tokens: 1200,
@@ -221,7 +293,74 @@ function runReadSessionFileRangeBackfillsTurnTokensTest() {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 }
 
-function run() {
+function runExtractLatestCodexLiveTurnMetricsFromJsonlTest() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-live-turn-metrics-'))
+  const filePath = path.join(tmpDir, 'session.jsonl')
+  const rows = [
+    { timestamp: '2026-06-24T09:59:59.000Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 9000, cached_input_tokens: 8000, output_tokens: 900, total_tokens: 9900 }, model_context_window: 258400 } } },
+    { timestamp: '2026-06-24T10:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'hello' } },
+    { timestamp: '2026-06-24T10:00:03.000Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 144655, cached_input_tokens: 7552, output_tokens: 654, total_tokens: 145309 }, model_context_window: 258400 } } },
+  ]
+  fs.writeFileSync(filePath, rows.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf8')
+
+  const metrics = __test__.extractLatestCodexLiveTurnMetricsFromJsonl(filePath, {
+    turnStartedAt: Date.parse('2026-06-24T10:00:00.000Z'),
+    model: 'gpt-5.5',
+  })
+
+  assert.ok(metrics)
+  assert.equal(metrics.inputTokens, 137103)
+  assert.equal(metrics.outputTokens, 654)
+  assert.equal(metrics.cacheReadTokens, 7552)
+  assert.equal(metrics.contextUsage, 145309)
+  assert.equal(metrics.contextWindow, 258400)
+
+  fs.rmSync(tmpDir, { recursive: true, force: true })
+}
+
+function runQueryCodexStatusBarMetricsPrefersJsonlFinalTurnSnapshotTest() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-statusbar-final-'))
+  const filePath = path.join(tmpDir, 'session.jsonl')
+  const rows = []
+
+  for (let i = 0; i < 90; i += 1) {
+    rows.push({
+      timestamp: `2026-06-24T09:00:${String(i % 60).padStart(2, '0')}.000Z`,
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: [{ type: 'output_text', text: `noise-${i}` }],
+      },
+    })
+  }
+
+  rows.push(
+    { timestamp: '2026-06-24T10:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'hello' } },
+    { timestamp: '2026-06-24T10:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] } },
+    { timestamp: '2026-06-24T10:00:02.000Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 600, cached_input_tokens: 500, output_tokens: 80, total_tokens: 680 }, model_context_window: 258400 } } },
+    { timestamp: '2026-06-24T10:00:03.000Z', type: 'event_msg', payload: { type: 'task_complete', duration_ms: 3000 } },
+  )
+
+  fs.writeFileSync(filePath, rows.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf8')
+
+  return __test__.queryCodexStatusBarMetrics({
+    sessionId: 'statusbar-final-chat',
+    filePath,
+    model: 'gpt-5',
+    cwd: tmpDir,
+  }).then((metrics) => {
+    assert.ok(metrics)
+    assert.equal(metrics.inputTokens, 100)
+    assert.equal(metrics.outputTokens, 80)
+    assert.equal(metrics.cacheReadTokens, 500)
+    assert.equal(metrics.durationMs, 3000)
+  }).finally(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+}
+
+async function run() {
   runNormalizeCodexUsageTest()
   runBuildPerTurnTokensPrefersParsedMetricsTest()
   runBuildPerTurnTokensFallsBackToUsageTest()
@@ -229,9 +368,17 @@ function run() {
   runBuildLiveMetricsKeepsZeroCacheFromLastUsageTest()
   runBuildLiveMetricsFromTokenCountTotalsFallbackTest()
   runBuildPerTurnTokensReturnsNullForEmptyTest()
+  runBuildCodexFinalTurnMetricsFallsBackToLiveSnapshotTest()
+  runBuildCodexFinalTurnMetricsRejectsAmbiguousSessionTotalsTest()
+  runBuildCodexFinalTurnMetricsRejectsUntrustedHugeTerminalUsageTest()
   runNormalizeCodexUsageTerminalSnapshotTest()
   runReadSessionFileRangeBackfillsTurnTokensTest()
+  runExtractLatestCodexLiveTurnMetricsFromJsonlTest()
+  await runQueryCodexStatusBarMetricsPrefersJsonlFinalTurnSnapshotTest()
   console.log('codex turn tokens tests passed')
 }
 
-run()
+run().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

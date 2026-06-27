@@ -1,3 +1,5 @@
+import { sanitizePersistedMetrics } from '../../agentCommon/utils/persistedMetrics.mjs'
+
 export const CLAUDE_RUNTIME_STATES = Object.freeze({
   IDLE: 'idle',
   STARTING: 'starting',
@@ -135,6 +137,8 @@ export function buildPersistableClaudeChat(chat = {}) {
   c._thinkingStart = null
   c.currentAssistantId = null
   c.draftText = typeof c.draftText === 'string' ? c.draftText : ''
-  if (c.metrics) c.metrics = { ...c.metrics, thinking: false }
+  c.metrics = sanitizePersistedMetrics(c.metrics)
   return c
 }
+
+export const sanitizeClaudePersistedMetrics = sanitizePersistedMetrics

@@ -341,7 +341,8 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 | 前端 | `chat/MessageBubble.vue` | 简易对话消息气泡 |
 | 文档 | `docs/TODO.md` | 任务追踪 |
 | 文档 | `docs/plan/2026-06-24-token-metrics-research.md` | 早期调研稿（已过时） |
-| 文档 | `docs/agent-architecture.md` §16 | 架构文档中的 Token Metrics 章节 |
+| 文档 | `docs/token-metrics-contract.md` | Token Metrics 当前契约与验收标准 |
+| 文档 | `docs/agent-architecture.md` | 项目架构入口与文档路由 |
 
 ---
 
@@ -468,6 +469,7 @@ inputTokens = Math.max(inputTokens, usage.input_tokens || 0)
 - 前端组件自己判断 `input_tokens` 是否包含 cache。
 - 轮询读到 transcript 最后一条样本后，直接覆盖当前回合 UI。
 - `_turnTokens`、StatusBar、history restore 各自做 delta 计算。
+- CodeX / ClaudeCode 的 session JSONL aggregate helper 只能服务 history/home/context；不得把 aggregate `in/out/cache` 直接喂给 StatusBar。StatusBar 只能吃 current-turn live/final snapshot。
 - `homeMetrics` 复用 StatusBar 的 turn 口径，或反过来。
 
 ### 7.6 当前修复的定位

@@ -11,22 +11,206 @@ const {
   __test__,
 } = require('../packages/agent/electron/codexAgent.js')
 
-function withTempDir(run) {
+async function withTempDir(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-git-'))
   try {
-    run(dir)
+    return await run(dir)
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
   }
 }
 
-function run() {
-  withTempDir((dir) => {
-    const nonRepo = getGitInfo(dir)
+function runStatusBarQueryUsesTurnSnapshotTokensTest() {
+  const turnStore = require('../packages/agent/electron/tokenMetrics/turnStore.js')
+  turnStore.removeStore('status-bar-chat')
+  turnStore.beginTurn({ provider: 'codex', chatKey: 'status-bar-chat' })
+  turnStore.applySample({
+    provider: 'codex',
+    source: 'token-count',
+    scope: 'turn-live',
+    chatKey: 'status-bar-chat',
+    inputTokens: 3100,
+    outputTokens: 736,
+    cacheReadTokens: 224300,
+    cacheCreationTokens: 0,
+    contextUsage: 120000,
+    contextWindow: 200000,
+    durationMs: 23800,
+  })
+
+  const result = __test__.mergeCodexTurnSnapshotWithSessionMetrics(
+    turnStore.getCurrentSnapshot('status-bar-chat'),
+    {
+      inputTokens: 1539400,
+      outputTokens: 42700,
+      cacheReadTokens: 10691300,
+      cacheCreationTokens: 0,
+      contextUsage: 176000,
+      contextWindow: 200000,
+      gitBranch: 'develop',
+      gitChanges: 3,
+      speedOutputPerSec: 11,
+    },
+    { sessionId: 'status-bar-chat', model: 'gpt-5.4' }
+  )
+
+  assert.equal(result.inputTokens, 3100)
+  assert.equal(result.outputTokens, 736)
+  assert.equal(result.cacheReadTokens, 224300)
+  assert.equal(result.contextUsage, 176000)
+  assert.equal(result.gitBranch, 'develop')
+  turnStore.removeStore('status-bar-chat')
+}
+
+function runStatusBarQueryFallsBackToHistoryTurnTokensTest() {
+  const turnStore = require('../packages/agent/electron/tokenMetrics/turnStore.js')
+  turnStore.removeStore('history-status-bar-chat')
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-history-status-'))
+  const filePath = path.join(dir, 'session.jsonl')
+  fs.writeFileSync(filePath, [
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:00.000Z',
+      type: 'event_msg',
+      payload: { type: 'user_message' },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:01.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'done' }],
+      },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:02.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: 600,
+            cached_input_tokens: 500,
+            output_tokens: 80,
+            total_tokens: 680,
+          },
+          model_context_window: 258400,
+        },
+      },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:03.000Z',
+      type: 'event_msg',
+      payload: { type: 'task_complete', duration_ms: 3000 },
+    }),
+    '',
+  ].join('\n'), 'utf8')
+
+  return __test__.queryCodexStatusBarMetrics({
+    sessionId: 'history-status-bar-chat',
+    filePath,
+    model: 'gpt-5',
+    cwd: dir,
+  }).then((result) => {
+    assert.ok(result)
+    assert.equal(result.inputTokens, 100)
+    assert.equal(result.outputTokens, 80)
+    assert.equal(result.cacheReadTokens, 500)
+    assert.equal(result.durationMs, 3000)
+  }).finally(() => {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+    turnStore.removeStore('history-status-bar-chat')
+  })
+}
+
+function runStatusBarQueryIgnoresContextOnlyTurnSnapshotTest() {
+  const turnStore = require('../packages/agent/electron/tokenMetrics/turnStore.js')
+  turnStore.removeStore('context-only-status-bar-chat')
+  turnStore.beginTurn({ provider: 'codex', chatKey: 'context-only-status-bar-chat' })
+  turnStore.applySample({
+    provider: 'codex',
+    source: 'jsonl-poll',
+    scope: 'session-context',
+    chatKey: 'context-only-status-bar-chat',
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    contextUsage: 207288,
+    contextWindow: 258400,
+    durationMs: 597884,
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-context-only-'))
+  const filePath = path.join(dir, 'session.jsonl')
+  fs.writeFileSync(filePath, [
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:00.000Z',
+      type: 'event_msg',
+      payload: { type: 'user_message' },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:01.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'done' }],
+      },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:02.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: 7937,
+            cached_input_tokens: 199040,
+            output_tokens: 311,
+            total_tokens: 207288,
+          },
+          model_context_window: 258400,
+        },
+      },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:03.000Z',
+      type: 'event_msg',
+      payload: { type: 'task_complete', duration_ms: 597045 },
+    }),
+    '',
+  ].join('\n'), 'utf8')
+
+  return __test__.queryCodexStatusBarMetrics({
+    sessionId: 'context-only-status-bar-chat',
+    filePath,
+    model: 'gpt-5',
+    cwd: dir,
+  }).then((result) => {
+    assert.ok(result)
+    assert.equal(result.inputTokens, 0)
+    assert.equal(result.outputTokens, 311)
+    assert.equal(result.cacheReadTokens, 199040)
+    assert.equal(result.durationMs, 597045)
+    assert.equal(result.contextUsage, 207288)
+  }).finally(() => {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+    turnStore.removeStore('context-only-status-bar-chat')
+  })
+}
+
+async function run() {
+  runStatusBarQueryUsesTurnSnapshotTokensTest()
+  await runStatusBarQueryFallsBackToHistoryTurnTokensTest()
+  await runStatusBarQueryIgnoresContextOnlyTurnSnapshotTest()
+  await withTempDir(async (dir) => {
+    const nonRepo = await getGitInfo(dir)
     assert.equal(nonRepo, null)
   })
 
-  withTempDir((dir) => {
+  await withTempDir(async (dir) => {
     execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' })
     execFileSync('git', ['config', 'user.name', 'MindCraft Test'], { cwd: dir, stdio: 'ignore' })
     execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir, stdio: 'ignore' })
@@ -60,13 +244,13 @@ function run() {
       '',
     ].join('\n'), 'utf8')
 
-    const metrics = __test__.getCodexSessionMetricsByFile(filePath, '', dir)
+    const metrics = await __test__.getCodexSessionMetricsByFile(filePath, '', dir)
     assert.ok(metrics)
     assert.ok(metrics.gitBranch)
     assert.equal(metrics.gitChanges > 0, true)
   })
 
-  withTempDir((dir) => {
+  await withTempDir(async (dir) => {
     const filePath = path.join(dir, 'session-turn-metrics.jsonl')
     fs.writeFileSync(filePath, [
       JSON.stringify({
@@ -124,16 +308,16 @@ function run() {
       '',
     ].join('\n'), 'utf8')
 
-    const metrics = __test__.getCodexSessionMetricsByFile(filePath, '', dir)
+    const metrics = await __test__.getCodexSessionMetricsByFile(filePath, '', dir)
     assert.ok(metrics)
-    assert.equal(metrics.inputTokens, 600)
+    assert.equal(metrics.inputTokens, 300)
     assert.equal(metrics.outputTokens, 80)
     assert.equal(metrics.cacheReadTokens, 300)
     assert.equal(metrics.contextUsage, 900)
     assert.equal(metrics.durationMs, 7000)
   })
 
-  withTempDir((dir) => {
+  await withTempDir(async (dir) => {
     const filePath = path.join(dir, 'session-history.jsonl')
     fs.writeFileSync(filePath, [
       JSON.stringify({
@@ -162,7 +346,7 @@ function run() {
       '',
     ].join('\n'), 'utf8')
 
-    const history = __test__.readSessionFileRange(filePath, 0, 20)
+    const history = await __test__.readSessionFileRange(filePath, 0, 20)
     assert.ok(history)
     assert.ok(Array.isArray(history.messages))
     const toolMsg = history.messages.find(msg => msg.role === 'tool' && msg.toolName === 'edit')
@@ -175,7 +359,7 @@ function run() {
     })
   })
 
-  withTempDir((dir) => {
+  await withTempDir(async (dir) => {
     const filePath = path.join(dir, 'session-history-new-tools.jsonl')
     fs.writeFileSync(filePath, [
       JSON.stringify({
@@ -226,7 +410,7 @@ function run() {
       '',
     ].join('\n'), 'utf8')
 
-    const history = __test__.readSessionFileRange(filePath, 0, 20)
+    const history = await __test__.readSessionFileRange(filePath, 0, 20)
     assert.ok(history)
     assert.ok(Array.isArray(history.messages))
 
@@ -249,7 +433,7 @@ function run() {
     })
   })
 
-  withTempDir((dir) => {
+  await withTempDir(async (dir) => {
     const filePath = path.join(dir, 'session-history-repeated-replies.jsonl')
     fs.writeFileSync(filePath, [
       JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '收到请回复即可' }] } }),
@@ -271,4 +455,7 @@ function run() {
   console.log('codex git metrics tests passed')
 }
 
-run()
+run().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

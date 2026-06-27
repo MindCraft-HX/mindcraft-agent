@@ -14,28 +14,7 @@ import {
   markClaudeDone,
   markClaudeStreamActivity,
 } from '../utils/claudeRuntimeState.mjs'
-
-function attachTurnTokensToLastRenderableMessage(messages, turnTokens, { nextMsgId, onNewMessage } = {}) {
-  let lastUserIndex = -1
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i]?.role === 'user') {
-      lastUserIndex = i
-      break
-    }
-  }
-  for (let i = messages.length - 1; i > lastUserIndex; i -= 1) {
-    const message = messages[i]
-    if (!message) continue
-    if (message.role === 'assistant') {
-      if (!message._turnTokens) message._turnTokens = turnTokens
-      return
-    }
-  }
-  if (typeof nextMsgId === 'function') {
-    messages.push({ id: nextMsgId(), role: 'assistant', text: '', _turnTokens: turnTokens })
-    onNewMessage?.()
-  }
-}
+import { attachTurnTokensToLastRenderableMessage } from '../../agentCommon/utils/turnTokensAttachment.mjs'
 
 /** 追加消息到 messages */
 function pushMessage(tab, onNewMessage, msg) {

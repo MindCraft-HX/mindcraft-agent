@@ -356,6 +356,7 @@ import {
   markClaudeIdle,
   markClaudeStreamActivity,
   markClaudeTurnStarting,
+  sanitizeClaudePersistedMetrics,
 } from './utils/claudeRuntimeState.mjs'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import {
@@ -604,21 +605,30 @@ function mergeClaudeRuntimeMetrics(current = {}, data = {}, tab = null) {
   }
 }
 
+function findClaudeTabBySessionId(sessionId = '') {
+  if (!sessionId) return null
+  return projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === sessionId) || null
+}
+
 function onMetricsUpdate(data) {
   if (!data || _refreshingMetrics) return
-  // 只更新当前活跃 tab 的 metrics
-  const tab = activeTab.value
-  if (tab && data.sessionId && data.sessionId !== tab.sessionId) return
-  if (tab) {
-    tab.metrics = {
-      ...mergeClaudeRuntimeMetrics(tab.metrics || {}, data, tab),
-      sessionId: tab.sessionId,
-    }
+  const targetTab = data.sessionId ? findClaudeTabBySessionId(data.sessionId) : activeTab.value
+  if (!targetTab) return
+
+  targetTab.metrics = {
+    ...mergeClaudeRuntimeMetrics(targetTab.metrics || {}, data, targetTab),
+    sessionId: targetTab.sessionId,
   }
-  Object.assign(metricsData.value, mergeClaudeRuntimeMetrics(metricsData.value, data, tab))
-  if (tab && typeof data.thinking === 'boolean') applyClaudeMetrics(tab, data)
-  syncMetricsTimerForClaudeTab(tab, data.durationMs || 0)
+
+  if (typeof data.thinking === 'boolean') applyClaudeMetrics(targetTab, data)
+
+  const active = activeTab.value
+  if (active && active.id === targetTab.id) {
+    Object.assign(metricsData.value, mergeClaudeRuntimeMetrics(metricsData.value, data, targetTab))
+    syncMetricsTimerForClaudeTab(targetTab, data.durationMs || 0)
+  }
 }
+
 
 function resetMetrics() {
   stopMetricsLiveTimer()
@@ -1826,6 +1836,7 @@ const {
     const n = Math.min(MAX_MESSAGES, msgs.length)
     return {
       ...c,
+      metrics: sanitizeClaudePersistedMetrics(c.metrics),
       messages: msgs.slice(-n),
       thinking: false,
       currentAssistantId: null,

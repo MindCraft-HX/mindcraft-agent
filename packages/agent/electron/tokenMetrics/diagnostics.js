@@ -114,6 +114,31 @@ function logMetricSample(sample, options = {}) {
   }
 }
 
+function logTurnSampleSummary(summary, options = {}) {
+  if (!isTokenMetricsDebugEnabled(options)) return
+  try {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      kind: 'turn-sample-summary',
+      provider: summary.provider || 'unknown',
+      chatKey: summary.chatKey || '',
+      providerSessionId: summary.providerSessionId || '',
+      turnId: summary.turnId || '',
+      liveSamples: {
+        sdkLive: toSafeInt(summary.sdkLiveCount),
+        jsonlPoll: toSafeInt(summary.jsonlPollCount),
+        tokenCount: toSafeInt(summary.tokenCountCount),
+      },
+      finalSamples: {
+        sdkResult: toSafeInt(summary.sdkResultCount),
+      },
+      sawLiveTurnTokens: Boolean(summary.sawLiveTurnTokens),
+      sawFinalTurnTokens: Boolean(summary.sawFinalTurnTokens),
+    })
+    appendLogLineWithRotation(getLogPath(options), line + '\n', { respectDiagnosticsToggle: false })
+  } catch (_) {}
+}
+
 function toSafeInt(v) {
   const n = Number(v)
   return Number.isFinite(n) && n >= 0 ? n : 0
@@ -123,6 +148,7 @@ module.exports = {
   getLogPath,
   isTokenMetricsDebugEnabled,
   logMetricSample,
+  logTurnSampleSummary,
   setTokenMetricsDebugEnabled,
   summarizeRawUsage,
 }

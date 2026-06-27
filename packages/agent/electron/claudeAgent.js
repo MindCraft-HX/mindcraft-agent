@@ -4,7 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
-const { logMetricSample } = require('./tokenMetrics/diagnostics')
+const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
 const { beginTurn, submitSample, getCurrentSnapshot, clearCurrentTurn } = require('./tokenMetrics/turnStore')
 const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
@@ -2709,6 +2709,7 @@ function setupClaudeHandlers() {
       const abortController = new AbortController()
       let gotAnyMessage = false
       let resultReceived = false
+      const liveSampleCounts = { sdkLiveCount: 0, jsonlPollCount: 0, tokenCountCount: 0, sdkResultCount: 0, sawLiveTurnTokens: false, sawFinalTurnTokens: false }
       let _agentRunDoneFilePath = '' // PR 2：在 result/fallback 捕获 filePath，finally 使用
       let exitCode = 0
       const resolvedCwd = path.resolve(cwd || process.cwd())
@@ -2955,6 +2956,8 @@ function setupClaudeHandlers() {
               tokenSinceMs: pollStart,
             })
             if (metrics) {
+              liveSampleCounts.jsonlPollCount += 1
+              if ((metrics.inputTokens || 0) > 0 || (metrics.outputTokens || 0) > 0 || (metrics.cacheReadTokens || 0) > 0 || (metrics.cacheCreationTokens || 0) > 0) liveSampleCounts.sawLiveTurnTokens = true
               // Phase 3：TurnStore — jsonl transcript 已经按 tokenSinceMs 隔离到当前 turn。
               // 若 SDK 中途没给 usage，也允许用真实 jsonl 样本驱动当前 turn 的状态栏增长。
               emitClaudeMetricsViaStore(s.event?.sender, {
@@ -3000,6 +3003,8 @@ function setupClaudeHandlers() {
             }
             const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
             if (liveUsageMetrics) {
+              liveSampleCounts.sdkLiveCount += 1
+              if ((liveUsageMetrics.inputTokens || 0) > 0 || (liveUsageMetrics.outputTokens || 0) > 0 || (liveUsageMetrics.cacheReadTokens || 0) > 0 || (liveUsageMetrics.cacheCreationTokens || 0) > 0) liveSampleCounts.sawLiveTurnTokens = true
               // Phase 3：TurnStore — sdk-live 更新 live snapshot
               emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-live',
@@ -3031,6 +3036,7 @@ function setupClaudeHandlers() {
             }
             // Phase 4：对 result 消息，先 finalize TurnStore 再发送，确保前端收到 TurnStore snapshot
             if (msg.type === 'result') {
+              liveSampleCounts.sdkResultCount += 1
               const usage = msg.usage || {}
               const normalizedUsage = claudeMetrics.normalizeClaudeUsageForUi(usage, model || '')
               const snapshot = emitClaudeMetricsViaStore(sender, {
@@ -3048,6 +3054,7 @@ function setupClaudeHandlers() {
                 numTurns: msg.num_turns || 0,
               })
               if (snapshot) {
+                if ((snapshot.inputTokens || 0) > 0 || (snapshot.outputTokens || 0) > 0 || (snapshot.cacheReadTokens || 0) > 0 || (snapshot.cacheCreationTokens || 0) > 0) liveSampleCounts.sawFinalTurnTokens = true
                 msg._turnTokens = {
                   inputTokens: snapshot.inputTokens,
                   outputTokens: snapshot.outputTokens,
@@ -3151,6 +3158,13 @@ function setupClaudeHandlers() {
             clearInterval(poller.interval)
             metricsPollers.delete(chatKey)
           }
+          logTurnSampleSummary({
+            provider: 'claude',
+            chatKey,
+            providerSessionId: cliSessionIds.get(chatKey) || '',
+            turnId: chatKey,
+            ...liveSampleCounts,
+          })
           // Phase 3：清理 TurnStore current turn
           clearCurrentTurn(chatKey)
           const s = agentSessions.get(chatKey)

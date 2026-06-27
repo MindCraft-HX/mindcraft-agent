@@ -1,5 +1,27 @@
 # TODO
 
+## 2026-06-27 Docs Knowledge Base Cleanup
+
+现状：`docs/` 已积累多轮计划、验收、专题和历史排障记录，部分文件存在重复主题、过期状态和编码异常。`AGENTS.md` / `CLAUDE.md` 已收敛为入口路由，但下游文档仍需要整理，否则会继续误导 token metrics、session、CodeX proxy 等高风险任务。
+
+待办：
+- 新增 `docs/README.md` 作为知识库索引，只保留当前有效文档入口。
+- 整理 `docs/TODO.md`：保留活跃 P0/P1 和近期验收结论，历史长文迁移到 `docs/archive/`。
+- 合并 token metrics 重复材料，保留 `docs/token-metrics-contract.md` 作为契约，`docs/token-metrics.md` 作为实现/复盘，删除或归档过期 plan。
+- 合并 CodeX chat proxy 相关文档，明确 Responses 不启 proxy、Chat 才启 proxy 的配置事实源。
+- 修复或替换乱码文档段落；无法恢复语义的内容归档，不再作为任务依据。
+
+## 2026-06-27 Metrics Follow-up Risks
+
+现状：本轮已修住一批 Token Metrics 明确错误值与 `CodeX` idle 无限刷新的问题，但仍有几类“首次渲染/消费层不对称”隐患没有彻底收口。如果不记录，后续极易再次洗煤球。
+
+待办：
+- ClaudeCode 首次切入某个历史会话时，底部 `StatusBarMetrics` 偶发不出现；再次点击该会话后才恢复。优先排查首次进入时的 `activeTab -> refreshMetricsForChat -> onMetricsUpdate` 顺序，以及 Claude renderer 是否仍依赖 `activeTab` 而非稳定 `sessionId` 路由。
+- 收敛 ClaudeCode / CodeX renderer metrics 消费方式：当前主进程归一化与 TurnStore 已基本统一，但 renderer 的触发链、首次 hydrate 时机、live update 路由仍不完全对称，容易导致“一边正常、一边首次不渲染”。
+- 为“首次进入历史会话时 status bar 应展示最近一轮 final snapshot”补契约测试或最小回归测试，至少覆盖 ClaudeCode 与 CodeX 各一条。
+- 补一份 renderer metrics 生命周期图：`history restore`、`switch chat`、`active tab watch`、`history loaded`、`done-retry`、`main-process push` 各自职责与禁止覆盖范围。
+- 文档整理时，把这类“消费层分叉”明确标成架构问题，而不是 provider 口径问题，避免后续继续误判为 token 公式 bug。
+
 ## 2026-06-25 通知音回归修复
 
 现象：完成音音量偏轻，并且同一 ClaudeCode 会话里经常只有第一轮完成会响，后续轮次不响。
@@ -61,7 +83,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T144 | bug | **Token Metrics 统计 BUG 修复**：已完成一轮止血修复——✅ `tab.metrics` 初始化、✅ contextUsage 口径修正（原生 Claude 与第三方 Claude SDK provider 分开计算）、✅ 切 tab 闪烁+竞态、✅ homeMetrics 首页 4 BUG、✅ 若干 footer / live merge / final snap 明确 bug、✅ `homeMetrics` 改为复用 `claudeMetrics.normalizeClaudeUsageForUi()` 并补 `tests/home-metrics.test.cjs`。当前判断：问题已从“点状 bug”升级为“结构分叉”，后续不能继续靠零散 patch 维持。 | P1 | 🔧 进行中 |
 | T145 | feature | **Token 数据实时增长**：✅ 平滑数字计数 (rAF 插值，仅在真实采样点之间动画，不补假数据)；✅ ClaudeCode / CodeX Agent metrics 轮询由 3s 下调到 1s。当前剩余风险不是动画本身，而是 live 样本来源和 turn 归属仍未完全收口：ClaudeCode 需杜绝上一轮 JSONL 样本回灌当前 turn；CodeX 需确保 live `token_count` 与 final/history 走同一套语义映射。详见 `docs/token-metrics.md` §5.5/§5.6 与 §7。 | P1 | 🔧 进行中 |
 | T146 | feature | **对话 Per-Turn Token/时间标注**：✅ 共享组件 `TokenMetaRow.vue`；✅ ClaudeCode / CodeX / 简易对话底部 token/时间展示；✅ CodeX `response.completed.usage` 捕获；✅ 历史消息从官方 JSONL 回填 `_turnTokens`；✅ Phase 4 完成后 footer、StatusBar、历史恢复已统一读取 TurnStore snapshot，不再各自算 delta。详见 `docs/token-metrics.md` §7。 | P2 | ✅ 已完成 |
-| T149 | refactor | **Token Metrics Normalizer 收口**：在主进程建立唯一 provider→UI 语义归一化入口；ClaudeCode live/final/poll、CodeX `token_count`/final/history、以及 `homeMetrics` transcript 聚合全部先走同一 normalizer，再向前端发统一 `in/out/cache/context`。当前已确认新口径：`in = 常规输入 + cache creation`，`cache = cache read`。目标是彻底停止前端或独立 consumer 自行解释 `input_tokens` / `cached_input_tokens`。详见 `docs/token-metrics.md` §8.7 Phase 1 与 `docs/agent-architecture.md` §16。 | P1 | ✅ 已完成 |
+| T149 | refactor | **Token Metrics Normalizer 收口**：在主进程建立唯一 provider→UI 语义归一化入口；ClaudeCode live/final/poll、CodeX `token_count`/final/history、以及 `homeMetrics` transcript 聚合全部先走同一 normalizer，再向前端发统一 `in/out/cache/context`。当前已确认新口径：`in = 常规输入 + cache creation`，`cache = cache read`。目标是彻底停止前端或独立 consumer 自行解释 `input_tokens` / `cached_input_tokens`。详见 `docs/token-metrics-contract.md` 与 `docs/token-metrics.md`。 | P1 | ✅ 已完成 |
 | T150 | refactor | **Token Turn Store**：为每个 `chatKey` 维护统一的 turn 级 store，引入 `turnId + phase(live/final/history)`；ClaudeCode current turn 的 `in/out/cache` 不再由 JSONL poll 直接覆盖，poll 默认只补 context/duration。目标是阻断上一轮样本回灌下一轮 UI。详见 `docs/token-metrics.md` §8.7 Phase 2。 | P1 | ✅ 已完成 |
 | T151 | refactor | **Metrics Consumer 收口**：StatusBar、assistant message `_turnTokens`、历史恢复、`homeMetrics` 统一改为读取标准化 turn/session snapshot，不再各自做 delta 计算或混用 turn 口径与 session 聚合口径。Phase 3+4 已完成：ClaudeCode + CodeX 全部 6 个发射点接入 TurnStore，前端 footer 优先使用 TurnStore snapshot，历史恢复与 normalizer 对齐。详见 `docs/token-metrics.md` §8.7 Phase 3-4。 | P1 | ✅ 已完成 |
 | T152 | refactor/bug | **Markdown 渲染与本地路径链接化收口**：当前下划线路径误渲染根因不是 `markdown-it` 不合适，而是 Agent 气泡仍维护一套手写 inline markdown parser，并在 HTML 字符串层继续做路径 linkify，导致 `_`、`\`、`)`、中文标点等字符语义互相抢占。短期已修复 Windows 路径中 `_` 被解析为 emphasis 的回归；已完成 Phase 1/2：抽出共享本地路径 tokenizer，新增 `markdown-it` token 级路径插件，Markdown Viewer 停止渲染后 HTML 字符串盲扫；后续再推进 Agent 气泡全量切换到共享 `markdown-it` renderer。详见 `docs/plan/2026-06-26-markdown-renderer-consolidation.md` 和 `docs/qa/2026-06-26-markdown-local-path-link-acceptance.md`。 | P1 | 🔄 Phase 1/2 已完成，待 Agent renderer 收口 |
@@ -113,7 +135,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T114 | ux | **CodeX Settings sandbox toast 文案**：旧 toast 含"仅对新创建的会话生效"省略 → 补充"默认"限定 + 改 i18n | P3 | ✅ 已修复 2026-06-16 |
 | T115 | housekeeping | **CodeX migrateValue 去重**：`codexConfig.js` 和 `codeX/index.vue` 的 migrateValue 逻辑相同 → 提取到 `sandboxHelpers.js` | P3 | ✅ 已修复 2026-06-16 |
 | T107 | bug | **CodeX queued input / busy 竞态 (B029)**：B029 修复（`56f9488`）在版本升级（`5f7416d`）中意外丢失 — `markCodexSessionDoneSent()` 只保留 `doneSent=true`，遗漏 `streamClosed=true` + `resolveCompletion()`。恢复后：`triggerDone()` 在发送 `codex-agent-done` 前标记 stream 已关闭，消除前端 flush 时的 2.5s `session_close_timeout` 窗口。前端 T107 flushQueuedInput 方案已回退（后端修复为根因）。后续修复：① `resolve({accepted:true})` 防 toast 误报 (`716eecf`) ② abort 即时反馈 (`9432b44`) ③ 保留用户气泡 (`daa1bde`) ④ **thinking 卡住**：乐观 `thinking=true` 前移到 await 之前 (`f57545e`)，根因是 finally 中 resolve 晚于 codex-agent-done 导致 thinking 被覆盖。关联 `docs/plan/2026-06-15-codex-queue-race-plan.md`。 | P0 | ✅ 已修复 (`551ca6b`, `716eecf`, `9432b44`, `daa1bde`, `f57545e`) |
-| T068 | feature | **简易对话（Chat）**：不绑定文件夹的轻量对话，支持知识问答 + 网页搜索 + 图片输入，复用已有 Provider 配置。含上下文清空 + LLM 压缩按钮。 | P1 | ✅ 已完成 (2026-06-13)，commit `d1eb6d2`；详见 `docs/agent-architecture.md` §10 简易对话 |
+| T068 | feature | **简易对话（Chat）**：不绑定文件夹的轻量对话，支持知识问答 + 网页搜索 + 图片输入，复用已有 Provider 配置。含上下文清空 + LLM 压缩按钮。 | P1 | ✅ 已完成 (2026-06-13)，commit `d1eb6d2`；架构入口见 `docs/agent-architecture.md`，细节以后应拆到独立 Chat 专题文档 |
 | T069 | housekeeping | **死依赖清理**：移除 19 个未使用的 npm 包 + 对应死代码，node_modules 减 ~90 MB | P1 | ✅ 已完成 (2026-06-12) |
 | T039 | feature | **语音输入能力**：支持把语音转文字输入到编程智能体对话。当前不是核心路径，已有输入框/图片/文件引用更高频；实现前需先确定本地录音权限、STT provider、隐私提示和跨平台权限。 | P3 | ⏸️ 暂缓研究 |
 | T040 | eval | **Remote 远程接入方案研究**：远程项目/远程 Agent 接入。涉及认证、隧道/SSH、文件系统映射、权限隔离、会话持久化，产品边界未定；不作为近期实现项。 | P3 | ⏸️ 暂缓研究 |
@@ -401,7 +423,7 @@ CodeX 刷新后，用户气泡显示 SDK 注入的完整系统上下文：`<INST
 | 2026-06-16 | bug | 表格渲染修复：表头/数据行检测切换为 splitTableRow + 列数一致性校验，支持缺首尾管道；分隔行连字符 ≥3→≥1（GFM）；段落断行同步更新。新增 14 项表格测试。 |
 | 2026-06-16 | bug | 文档路径链接化修复：`linkifyStrongLocalPaths` 正则恢复白名单目录前缀分支（`docs\|src\|packages\|...`），修复 `docs/TODO` 等无扩展名路径无法渲染为可点击链接的回归。新增 12 项路径链接化回归测试。 |
 | 2026-06-16 | docs | **settings.json 污染分析 v2**：基于 `sdk.d.ts` Settings interface 重新验证，纠正 `autoCompactWindow` 误判（合法 SDK 字段）、补充 `effortLevel` 三处定义不一致分析。新建 `docs/sdk-feature-gaps.md` 全量 SDK 未集成功能全景（入口函数/query options/运行时控制/hooks/MCP/插件/Codex）。TODO 新增 T118（污染清理）、T119（CLAUDE.md 红线修正）。 |
-| 2026-06-16 | bug | T105: ClaudeCode effortLevel 白名单补 xhigh（`b53be01`）；T108-T111: CodeX sandbox 重构 permissionPolicy→sandboxMode（`171c936`）；T113-T115: sandbox labels 国际化 + toast 文案 + migrateValue 去重；T107/B029: 恢复 `streamClosed=true` in triggerDone，前端 flushQueuedInput 回退（`551ca6b`）；**架构文档 SDK 接口核对**（`docs/agent-architecture.md` §11-14 新增） |
+| 2026-06-16 | bug | T105: ClaudeCode effortLevel 白名单补 xhigh（`b53be01`）；T108-T111: CodeX sandbox 重构 permissionPolicy→sandboxMode（`171c936`）；T113-T115: sandbox labels 国际化 + toast 文案 + migrateValue 去重；T107/B029: 恢复 `streamClosed=true` in triggerDone，前端 flushQueuedInput 回退（`551ca6b`）；SDK 接口核对入口现为 `docs/sdk-feature-gaps.md` + 本地 `.d.ts` |
 | 2026-06-13 | refactor | Chat：删除 Chat Completions 回退，统一用 Responses API；新增 `reasoning_summary_text.delta` 处理；CodeX 通路 60s 超时 + thinking 50K 上限；渲染端 timeout stop_reason 处理；gitignore `_test/` 测试目录（commit `d1eb6d2`） |
 | 2026-06-13 | bug | Chat thinking/卡死修复（commit `b19846b`）：Anthropic 通路 thinking 50K 上限 + 60s 超时；实测 `thinking: { type: 'disabled' }` 对 deepseek-v4-flash 有效；实测 OpenAI 通路 `reasoning.effort` 影响耗时但 reasoning 文本几乎不可见 |
 | 2026-06-12 | housekeeping | 死依赖清理（T069）：移除 19 个未使用 npm 包 + 5 个死代码文件 + .babelrc + vite vendor chunk，node_modules 减少约 90 MB |

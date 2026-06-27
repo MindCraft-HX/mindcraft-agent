@@ -1,6 +1,6 @@
 ﻿# Token Metrics Contract
 
-> Last updated: 2026-06-26
+> Last updated: 2026-06-27
 > Purpose: replace ad-hoc token metric fixes with a strict data contract for ClaudeCode and CodeX.
 
 ## 1. Decision
@@ -41,10 +41,19 @@ Consumer boundaries:
 
 | Consumer | Reads | Must not read |
 | --- | --- | --- |
-| StatusBarMetrics | Current turn live/final snapshot + session context | Session cumulative totals as current turn |
+| StatusBarMetrics | Current turn live/final snapshot + session context | Session cumulative totals as current turn; transcript/session aggregate token totals |
 | TokenMetaRow | Final turn snapshot | Live samples after finalization |
 | Compact icon | Session context snapshot | Current turn `in/out/cache` |
 | History/Home aggregate | Historical final snapshots / provider aggregate | Current live StatusBar state |
+| Panel state | Session UI state such as model/context/git/draft | Persisted current-turn `in/out/cache/duration/cost` |
+
+Clarification:
+- `StatusBarMetrics` and `TokenMetaRow` are not the same UI, and they must not be forced to show the same thing at the same time.
+- They do share the same normalized snapshot contract and turn ownership rules.
+- The difference is consumer scope:
+  - `TokenMetaRow` renders one finalized snapshot for one completed assistant turn.
+  - `StatusBarMetrics` renders the active session's current live snapshot while running, and the latest finalized snapshot for that same session when idle.
+- "Shared source" means shared normalized snapshot family, not shared renderer state and not identical display semantics.
 
 ## 3. Provider Source Semantics
 
@@ -74,6 +83,7 @@ Rules:
 - If `last_token_usage` exists, use it as one coherent sample. A zero field is valid.
 - `last_token_usage.cached_input_tokens = 0` must not fallback to `total_token_usage.cached_input_tokens`.
 - `total_token_usage` can enter current turn only as `total - turnStartTotals`.
+- `turn.completed.usage` must not be treated as per-turn final when it looks session-cumulative and no current-turn live authority exists. In that case, degrade conservatively instead of fabricating precise turn tokens.
 
 ## 4. Phase Plan
 
@@ -99,6 +109,7 @@ Claude history restore is now also part of this boundary: the main process annot
 - TurnStore should accept current-turn tokens only from `turn-live` or `turn-final` samples.
 - Session context updates must not carry `in/out/cache`.
 - Frontend metrics updates must consume snapshots, not raw usage.
+- Session/file aggregate helpers may provide `contextUsage/contextWindow`, but they must not feed StatusBar `inputTokens/outputTokens/cacheReadTokens`.
 
 ### Phase 2: Golden Fixtures
 
@@ -130,11 +141,121 @@ Goal: restore dynamic display only after contract correctness.
 - StatusBar can animate only between real increasing samples.
 - If a provider emits no intermediate usage, StatusBar shows time/context during run and final tokens after result.
 - No fake token growth, no reuse of previous turn tokens.
+- Dynamic display does not mean continuous growth. Stepwise jumps are acceptable when provider samples are sparse.
+- ClaudeCode and CodeX have different live sample ceilings: CodeX can usually advance on `token_count`; ClaudeCode can advance only when SDK `assistant.message.usage` or isolated current-turn JSONL usage exists before final result.
+- Next implementation step is consumer convergence, not visual interpolation: ClaudeCode runtime metrics should route by `sessionId` like CodeX, instead of depending on `activeTab` during live updates.
 
-## 5. Acceptance Criteria
+## 5. Live Sample Diagnostics
+
+Use this only for debugging why StatusBar live tokens do or do not move.
+
+- Recommended: enable diagnostics from the app System Settings toggle. This also enables `diagnostics.tokenMetricsDebug` automatically.
+- Manual fallback: set `diagnostics.tokenMetricsDebug = true` in `app-settings.json`.
+- Run the app in `dev`, reproduce one ClaudeCode turn or one CodeX turn, then inspect `token-metrics-diagnostics.log`.
+- Each completed turn now writes one `turn-sample-summary` line.
+
+Interpretation:
+
+- `codex.tokenCount > 0` but live UI still does not move: the problem is in our routing/render path, not in provider sample availability.
+- `claude.sdkLive = 0` and `claude.jsonlPoll = 0`: that turn had no real live token sample before final result; UI should not fabricate growth.
+- `jsonlPoll > 0` but `sawLiveTurnTokens = false`: transcript polling saw session activity/context, but not isolated current-turn token growth.
+
+## 6. Acceptance Criteria
 
 - CodeX long sessions never show session cumulative totals as current-turn `in/cache`.
 - Claude compact context never pollutes current-turn tokens.
-- StatusBar and TokenMetaRow share the same TurnStore final snapshot for completed turns.
+- StatusBar and TokenMetaRow share the same final snapshot contract for completed turns, but remain different consumers.
 - Refreshing a session does not convert historical aggregate into current turn metrics.
 - Dynamic token growth appears only when real live samples exist.
+
+## 6.1 Dirty State Audit
+
+When metrics look unstable, check these in order before changing provider formulas:
+
+1. `panel state`
+   - Must not persist current-turn fields: `inputTokens/outputTokens/cacheReadTokens/cacheCreationTokens/durationMs/costUsd`.
+   - Allowed only: model, git, context snapshot, draft, session UI state.
+2. `TurnStore current/final`
+   - `session-context` samples may update only `context/duration`.
+   - Context-only snapshots must not win over a real final turn snapshot.
+3. `history/jsonl restore`
+   - Footer/history must come from finalized `_turnTokens` or finalized snapshot reconstruction.
+   - Session aggregate helpers must not be treated as current-turn tokens.
+4. `renderer tab.metrics`
+   - Repeated identical payloads should not rewrite state.
+   - Idle tab restore must not trigger perpetual refresh loops.
+5. `main-process pollers`
+   - A run-scoped poller must stop once `streamClosed`, `doneSent`, or `resultReceived` is true.
+   - Same `sessionId` must not keep more than one active poller.
+
+## 6.2 Performance Guardrails
+
+- `1s` polling is acceptable only for active runs or bounded done-retry windows.
+- Idle sessions may query once on switch/restore/history load, but must not keep polling forever.
+- If diagnostics show repeated `jsonl-poll` rows for the same idle `sessionId`, treat it as a lifecycle bug, not a rendering issue.
+
+## 6.3 Renderer Convergence Gap
+
+Current status:
+
+- Main-process semantics are mostly converged: `normalizer -> TurnStore -> snapshot`.
+- Renderer semantics are not fully converged yet, especially on first hydrate and live routing.
+
+Known gap:
+
+- ClaudeCode still has renderer paths that depend on `activeTab` timing more directly than CodeX.
+- This can produce a split where history/footer is already correct, but the first `StatusBarMetrics` render for that session is empty until the user clicks the session again.
+
+Required direction:
+
+- ClaudeCode and CodeX renderer layers should both consume metrics by stable `sessionId/chatKey` ownership, not by incidental active-tab timing.
+- First entry into a historical session must render the latest final snapshot without requiring a second manual click.
+- Renderer convergence is a remaining architecture task, not an optional polish item.
+
+Renderer acceptance:
+- For one completed turn, that turn's `TokenMetaRow` shows that turn's own finalized snapshot only.
+- For the active session, `StatusBarMetrics` shows:
+  - running turn: current live snapshot for that turn
+  - idle session after completion: latest finalized snapshot for that session
+  - after refresh/reopen: reconstructed latest finalized snapshot for that session, not stale panel state and not session aggregate totals
+- Refresh must not produce any of these split-brain states:
+  - footer populated but StatusBar empty
+  - footer correct but StatusBar showing panel-state leftovers
+  - compact/context icon correct while StatusBar `in/out/cache` comes from session totals
+
+Non-goals:
+- Do not make `StatusBarMetrics` render every historical turn at once.
+- Do not let `TokenMetaRow` subscribe to live token samples after the turn is finalized.
+
+## 7. Incident Review: Persisted Panel Metrics
+
+2026-06-27 root cause from the `token消耗展示` production session:
+
+- The provider/TurnStore path was not the only StatusBar source.
+- CodeX panel state had persisted dirty `tab.metrics` values such as huge `inputTokens` and `cacheReadTokens`.
+- On reload, renderer restored those values before query/JSONL/TurnStore could replace them.
+- Message footer looked correct because it consumed JSONL `_turnTokens`; bottom StatusBar looked wrong because it consumed restored panel state.
+- Existing tests covered provider samples, TurnStore, JSONL fallback, and final turn snapshots, but did not cover dirty persisted renderer state.
+
+Permanent contract:
+
+- Panel state may persist session UI fields: model, effort, context snapshot, git snapshot, draft, active chat/project, registry mapping.
+- Panel state must not persist current-turn token/cost fields:
+  - `inputTokens`
+  - `outputTokens`
+  - `cacheReadTokens`
+  - `cacheCreationTokens`
+  - `durationMs`
+  - `costUsd`
+- Restore code must sanitize legacy panel state before assigning `tab.metrics`.
+- Persist code must strip those fields before writing panel state.
+
+Regression coverage:
+
+- `tests/persisted-metrics.test.mjs` verifies the shared persisted metrics sanitizer.
+- `tests/claude-runtime-state.test.mjs` verifies Claude persisted metrics exclude current-turn token fields.
+- `tests/codex-runtime-state.test.mjs` verifies CodeX persisted metrics exclude current-turn token fields.
+
+Debug rule:
+
+- If StatusBar and message footer disagree after refresh, first inspect panel state restore/persist paths before changing provider formulas.

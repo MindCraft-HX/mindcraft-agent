@@ -7,8 +7,8 @@ const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { promisify } = require('util')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
-const { logMetricSample } = require('./tokenMetrics/diagnostics')
-const { beginTurn, submitSample, clearCurrentTurn } = require('./tokenMetrics/turnStore')
+const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
+const { beginTurn, submitSample, clearCurrentTurn, getCurrentSnapshot, getFinalSnapshot } = require('./tokenMetrics/turnStore')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
@@ -60,6 +60,191 @@ function safeSend(sender, channel, ...args) {
 function sendMetrics(sender, payload, diag = null) {
   safeSend(sender, 'codex-agent-metrics', payload)
   if (diag) logMetricSample(diag)
+}
+
+function mergeCodexTurnSnapshotWithSessionMetrics(turnSnapshot = null, sessionMetrics = null, { sessionId = '', model = '' } = {}) {
+  const session = sessionMetrics && typeof sessionMetrics === 'object' ? sessionMetrics : {}
+  const turn = turnSnapshot && typeof turnSnapshot === 'object' ? turnSnapshot : null
+  return {
+    ...session,
+    sessionId: sessionId || session.sessionId || '',
+    model: model || session.model || turn?.model || '',
+    inputTokens: turn?.inputTokens ?? 0,
+    outputTokens: turn?.outputTokens ?? 0,
+    cacheReadTokens: turn?.cacheReadTokens ?? 0,
+    cacheCreationTokens: turn?.cacheCreationTokens ?? 0,
+    durationMs: turn?.durationMs ?? 0,
+    costUsd: turn?.costUsd ?? 0,
+  }
+}
+
+function hasMeaningfulTurnTokenSnapshot(snapshot = null) {
+  if (!snapshot || typeof snapshot !== 'object') return false
+  return (
+    toNonNegativeNumber(snapshot.inputTokens) > 0
+    || toNonNegativeNumber(snapshot.outputTokens) > 0
+    || toNonNegativeNumber(snapshot.cacheReadTokens) > 0
+    || toNonNegativeNumber(snapshot.cacheCreationTokens) > 0
+  )
+}
+
+function extractLatestCodexHistoryTurnSnapshot(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null
+  const history = readSessionFileRange(filePath, 0, 60)
+  const messages = Array.isArray(history?.messages) ? history.messages : []
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const turnTokens = messages[i]?._turnTokens
+    if (!turnTokens) continue
+    return {
+      inputTokens: toNonNegativeNumber(turnTokens.inputTokens),
+      outputTokens: toNonNegativeNumber(turnTokens.outputTokens),
+      cacheReadTokens: toNonNegativeNumber(turnTokens.cacheReadTokens),
+      cacheCreationTokens: toNonNegativeNumber(turnTokens.cacheCreationTokens),
+      durationMs: toNonNegativeNumber(turnTokens.durationMs),
+      costUsd: 0,
+    }
+  }
+  return null
+}
+
+function extractLatestCodexFinalTurnSnapshotFromJsonl(filePath, { model = '' } = {}) {
+  if (!filePath || !fs.existsSync(filePath)) return null
+  const lines = readJsonlTailLines(filePath, 200)
+  if (!lines.length) return null
+
+  let historyModel = model || ''
+  let activeTurnTokens = null
+  let latestFinalTurnSnapshot = null
+
+  function ensureActiveTurnTokens(ts = null) {
+    if (!activeTurnTokens) {
+      activeTurnTokens = {
+        startedAt: ts,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        durationMs: 0,
+      }
+    } else if (!activeTurnTokens.startedAt && ts) {
+      activeTurnTokens.startedAt = ts
+    }
+    return activeTurnTokens
+  }
+
+  function finalizeActiveTurnTokens() {
+    if (!activeTurnTokens) return
+    latestFinalTurnSnapshot = {
+      inputTokens: toNonNegativeNumber(activeTurnTokens.inputTokens),
+      outputTokens: toNonNegativeNumber(activeTurnTokens.outputTokens),
+      cacheReadTokens: toNonNegativeNumber(activeTurnTokens.cacheReadTokens),
+      cacheCreationTokens: toNonNegativeNumber(activeTurnTokens.cacheCreationTokens),
+      durationMs: toNonNegativeNumber(activeTurnTokens.durationMs),
+      costUsd: 0,
+    }
+    activeTurnTokens = null
+  }
+
+  for (const line of lines) {
+    const row = safeJsonParse(line)
+    if (!row) continue
+    const parsedTs = Date.parse(row.timestamp || '')
+    const ts = Number.isFinite(parsedTs) ? parsedTs : null
+
+    if (row.type === 'turn_context' && row.payload?.model) historyModel = historyModel || row.payload.model
+    if (row.type === 'session_meta' && row.payload?.model) historyModel = historyModel || row.payload.model
+
+    if (row.type === 'event_msg' && row.payload?.type === 'user_message') {
+      finalizeActiveTurnTokens()
+      activeTurnTokens = {
+        startedAt: ts,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        durationMs: 0,
+      }
+      continue
+    }
+
+    if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+      const metrics = buildCodexMetricsFromTokenCountPayload(row.payload, {
+        model: historyModel,
+        durationMs: activeTurnTokens?.startedAt && ts ? Math.max(0, ts - activeTurnTokens.startedAt) : 0,
+      })
+      if (!metrics) continue
+      const turn = ensureActiveTurnTokens(ts)
+      turn.inputTokens = toNonNegativeNumber(metrics.inputTokens, turn.inputTokens)
+      turn.outputTokens = toNonNegativeNumber(metrics.outputTokens, turn.outputTokens)
+      turn.cacheReadTokens = toNonNegativeNumber(metrics.cacheReadTokens, turn.cacheReadTokens)
+      turn.cacheCreationTokens = toNonNegativeNumber(metrics.cacheCreationTokens, turn.cacheCreationTokens)
+      turn.durationMs = toNonNegativeNumber(metrics.durationMs, turn.durationMs)
+      continue
+    }
+
+    if (row.type === 'event_msg' && row.payload?.type === 'task_complete') {
+      const turn = ensureActiveTurnTokens(ts)
+      turn.durationMs = toNonNegativeNumber(row.payload?.duration_ms, turn.durationMs)
+      if (!turn.durationMs && turn.startedAt && ts) {
+        turn.durationMs = Math.max(0, ts - turn.startedAt)
+      }
+      finalizeActiveTurnTokens()
+    }
+  }
+
+  return latestFinalTurnSnapshot
+}
+
+async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '' } = {}) {
+  const resolvedFilePath = resolveCodexSessionFilePath({
+    sessionId,
+    cliSessionId,
+    fallbackFilePath: filePath,
+  })
+  const currentTurnSnapshot = getCurrentSnapshot(sessionId) || null
+  const finalTurnSnapshot = getFinalSnapshot(sessionId) || null
+  const turnSnapshot = hasMeaningfulTurnTokenSnapshot(currentTurnSnapshot)
+    ? currentTurnSnapshot
+    : (hasMeaningfulTurnTokenSnapshot(finalTurnSnapshot) ? finalTurnSnapshot : null)
+  const historyTurnSnapshot = turnSnapshot
+    || extractLatestCodexFinalTurnSnapshotFromJsonl(resolvedFilePath, { model })
+    || extractLatestCodexHistoryTurnSnapshot(resolvedFilePath)
+  let sessionMetrics = null
+  if (resolvedFilePath && String(resolvedFilePath).toLowerCase().endsWith('.jsonl')) {
+    sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '')
+  } else if (sessionId || cliSessionId) {
+    sessionMetrics = await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '')
+  }
+  logMetricSample({
+    provider: 'codex',
+    source: 'statusbar-query',
+    chatKey: sessionId,
+    providerSessionId: cliSessionId || '',
+    phase: turnSnapshot ? 'live-or-final' : (historyTurnSnapshot ? 'history-final' : 'session'),
+    inputTokens: historyTurnSnapshot?.inputTokens,
+    outputTokens: historyTurnSnapshot?.outputTokens,
+    cacheReadTokens: historyTurnSnapshot?.cacheReadTokens,
+    cacheCreationTokens: historyTurnSnapshot?.cacheCreationTokens,
+    contextUsage: sessionMetrics?.contextUsage,
+    durationMs: historyTurnSnapshot?.durationMs,
+    rawUsage: {
+      resolvedFilePath,
+      hasCurrentTurnSnapshot: Boolean(currentTurnSnapshot),
+      hasFinalTurnSnapshot: Boolean(finalTurnSnapshot),
+      usingTurnSnapshot: Boolean(turnSnapshot),
+      hasHistoryTurnSnapshot: Boolean(historyTurnSnapshot),
+      hasSessionMetrics: Boolean(sessionMetrics),
+      sessionMetricsInputTokens: sessionMetrics?.inputTokens,
+      sessionMetricsOutputTokens: sessionMetrics?.outputTokens,
+      sessionMetricsCacheReadTokens: sessionMetrics?.cacheReadTokens,
+      sessionMetricsDurationMs: sessionMetrics?.durationMs,
+    },
+  })
+  if (!historyTurnSnapshot && !sessionMetrics) return null
+  return mergeCodexTurnSnapshotWithSessionMetrics(historyTurnSnapshot, sessionMetrics, {
+    sessionId,
+    model: model || '',
+  })
 }
 
 /**
@@ -752,6 +937,33 @@ function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
   }
 }
 
+function extractLatestCodexLiveTurnMetricsFromJsonl(filePath, {
+  model = '',
+  turnStartedAt = 0,
+  now = Date.now(),
+} = {}) {
+  if (!filePath || !fs.existsSync(filePath)) return null
+  const startedAt = Number(turnStartedAt) || 0
+  if (startedAt <= 0) return null
+  const minTs = startedAt - 2000
+  const lines = readJsonlTailLines(filePath, 120)
+  let latest = null
+  for (const line of lines) {
+    const row = safeJsonParse(line)
+    if (!row || row.type !== 'event_msg' || row.payload?.type !== 'token_count') continue
+    const ts = Date.parse(row.timestamp || '')
+    if (!Number.isFinite(ts) || ts < minTs) continue
+    latest = { row, ts }
+  }
+  if (!latest) return null
+  const metrics = buildCodexMetricsFromTokenCountPayload(latest.row.payload, {
+    model,
+    durationMs: Math.max(0, latest.ts - startedAt || now - startedAt),
+  })
+  if (!metrics || !hasMeaningfulCodexTurnMetrics(metrics)) return null
+  return metrics
+}
+
 function collectSessionTailRiskSummary(filePath, maxLines = 80) {
   const lines = readJsonlTailLines(filePath, maxLines)
   let tailLargeOutputCount = 0
@@ -926,6 +1138,73 @@ function hasCodexUsageFields(usage = {}) {
     .some(key => Object.prototype.hasOwnProperty.call(usage, key))
 }
 
+function hasMeaningfulCodexTurnMetrics(metrics = null) {
+  if (!metrics || typeof metrics !== 'object') return false
+  return (
+    toNonNegativeNumber(metrics.inputTokens) > 0 ||
+    toNonNegativeNumber(metrics.outputTokens) > 0 ||
+    toNonNegativeNumber(metrics.cacheReadTokens) > 0 ||
+    toNonNegativeNumber(metrics.cacheCreationTokens) > 0
+  )
+}
+
+function isCodexTerminalUsageCompatibleWithSessionTotals(usage = {}, turnStartTotals = {}) {
+  if (!hasCodexUsageFields(usage) || !hasCodexUsageFields(turnStartTotals)) return false
+
+  return (
+    toNonNegativeNumber(usage.input_tokens) >= toNonNegativeNumber(turnStartTotals.input_tokens) &&
+    toNonNegativeNumber(usage.output_tokens) >= toNonNegativeNumber(turnStartTotals.output_tokens) &&
+    toNonNegativeNumber(usage.cache_read_input_tokens, usage.cached_input_tokens) >= toNonNegativeNumber(turnStartTotals.cache_read_input_tokens, turnStartTotals.cached_input_tokens) &&
+    toNonNegativeNumber(usage.cache_creation_input_tokens) >= toNonNegativeNumber(turnStartTotals.cache_creation_input_tokens)
+  )
+}
+
+function buildCodexFinalTurnMetricsFromTerminalUsage(terminalUsage = {}, {
+  turnStartTotals = null,
+  liveSnapshot = null,
+  tokenCountSeen = false,
+} = {}) {
+  if (hasMeaningfulCodexTurnMetrics(liveSnapshot)) {
+    return {
+      authority: 'live-snapshot',
+      inputTokens: undefined,
+      outputTokens: undefined,
+      cacheReadTokens: undefined,
+      cacheCreationTokens: undefined,
+    }
+  }
+
+  if (!hasCodexUsageFields(terminalUsage)) {
+    return {
+      authority: 'no-terminal-usage',
+      inputTokens: undefined,
+      outputTokens: undefined,
+      cacheReadTokens: undefined,
+      cacheCreationTokens: undefined,
+    }
+  }
+
+  const hasTurnStartTotals = hasCodexUsageFields(turnStartTotals) && hasMeaningfulCodexTurnMetrics(buildCodexLiveTurnMetricsFromTotals(turnStartTotals, {}, null))
+
+  if (tokenCountSeen && hasTurnStartTotals && isCodexTerminalUsageCompatibleWithSessionTotals(terminalUsage, turnStartTotals || {})) {
+    return {
+      authority: 'token-count-total-delta',
+      ...buildCodexLiveTurnMetricsFromTotals(terminalUsage, turnStartTotals || {}, null),
+    }
+  }
+
+  // Codex turn.completed.usage has been observed as session/context cumulative
+  // data. Without a live snapshot or a reliable start total, keep it diagnostic
+  // only; do not fabricate current-turn precision for StatusBar/footer.
+  return {
+    authority: hasTurnStartTotals ? 'ambiguous-session-total' : 'untrusted-terminal-usage',
+    inputTokens: undefined,
+    outputTokens: undefined,
+    cacheReadTokens: undefined,
+    cacheCreationTokens: undefined,
+  }
+}
+
 function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = {}, fallbackLastUsage = null) {
   // Codex token_count carries both session cumulative totals and last request usage.
   // If last_token_usage is present, use it as a coherent per-turn sample. A zero
@@ -1004,6 +1283,9 @@ function buildCodexMetricsFromTokenCountPayload(payload = {}, {
 
 /** 从 Codex 会话 JSONL 文件解析完整指标：tokens、cost、duration、context */
 // P1-4：级联 async — getGitInfo 已异步化
+// NOTE: Transcript/session aggregate helper only. Valid for history restore, diagnostics,
+// and session context refresh. Its aggregate token totals must never be used as StatusBar
+// current-turn `in/out/cache`; StatusBar must read TurnStore live/final snapshots.
 async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
   try {
     if (!filePath || !fs.existsSync(filePath)) return null
@@ -2119,6 +2401,20 @@ const cliSessionIds = new Map()
 const sessionFingerprints = new Map()
 const slowNoticeSent = new Set()
 const codexMetricsPollers = new Map() // sessionId -> { interval, startTime }
+
+function stopCodexMetricsPoller(sessionId, runId = null) {
+  const poller = codexMetricsPollers.get(sessionId)
+  if (!poller) return false
+  if (runId && poller.runId && poller.runId !== runId) return false
+  clearInterval(poller.interval)
+  codexMetricsPollers.delete(sessionId)
+  return true
+}
+
+function startCodexMetricsPoller(sessionId, poller) {
+  stopCodexMetricsPoller(sessionId)
+  codexMetricsPollers.set(sessionId, poller)
+}
 let codexSessionRunSeq = 0
 
 function nextCodexSessionRunId() {
@@ -2332,8 +2628,7 @@ function setupCodexSdkHandlers() {
       console.warn('[codex] query collision: session already running, aborting old and starting new. sessionId=', sessionId)
       try { settledExisting.abortController?.abort?.() } catch (_) {}
       // 清除旧 poller
-      const oldPoller = codexMetricsPollers.get(sessionId)
-      if (oldPoller) { clearInterval(oldPoller.interval); codexMetricsPollers.delete(sessionId) }
+      stopCodexMetricsPoller(sessionId)
       // 立即清除旧 turnTimeout，防止旧 IIFE 的 finally 延迟清除导致二次超时消息
       if (settledExisting.__turnTimeout) { clearTimeout(settledExisting.__turnTimeout); settledExisting.__turnTimeout = null }
       if (settledExisting.__bootWatch) { clearTimeout(settledExisting.__bootWatch); settledExisting.__bootWatch = null }
@@ -2358,6 +2653,7 @@ function setupCodexSdkHandlers() {
       const diagnosticId = makeCodexTurnDiagnosticId('codex-turn')
       let gotAnyMessage = false
       let resultReceived = false
+      const liveSampleCounts = { sdkLiveCount: 0, jsonlPollCount: 0, tokenCountCount: 0, sdkResultCount: 0, sawLiveTurnTokens: false, sawFinalTurnTokens: false }
       let exitCode = 0
       let doneReason = 'completed'
       let detachResumeOnDone = false
@@ -2566,14 +2862,46 @@ function setupCodexSdkHandlers() {
           const pollStart = Date.now()
           const pollInterval = setInterval(async () => {
             const s = codexSessions.get(sessionId)
-            if (!s) { clearInterval(pollInterval); return }
-            if (s.runId !== runId) { clearInterval(pollInterval); return }
+            if (!s) {
+              stopCodexMetricsPoller(sessionId, runId)
+              return
+            }
+            if (s.runId !== runId) {
+              stopCodexMetricsPoller(sessionId, runId)
+              return
+            }
+            if (s.streamClosed || s.doneSent || s.resultReceived) {
+              stopCodexMetricsPoller(sessionId, runId)
+              return
+            }
             const cliId = cliSessionIds.get(sessionId)
             if (!cliId) return
             const filePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: cliId })
             if (!fs.existsSync(filePath)) return
+            const liveMetrics = extractLatestCodexLiveTurnMetricsFromJsonl(filePath, {
+              model: model || '',
+              turnStartedAt: s.startTime || pollStart,
+            })
+            if (liveMetrics) {
+              liveSampleCounts.jsonlPollCount += 1
+              liveSampleCounts.sawLiveTurnTokens = true
+              emitCodexMetricsViaStore(s.event?.sender, {
+                source: 'jsonl-poll',
+                scope: 'turn-live',
+                inputTokens: liveMetrics.inputTokens,
+                outputTokens: liveMetrics.outputTokens,
+                cacheReadTokens: liveMetrics.cacheReadTokens,
+                cacheCreationTokens: liveMetrics.cacheCreationTokens,
+                contextUsage: liveMetrics.contextUsage,
+                contextWindow: liveMetrics.contextWindow,
+                durationMs: liveMetrics.durationMs,
+                costUsd: liveMetrics.costUsd,
+                rawUsage: liveMetrics.rawUsage || null,
+              }, sessionId, model || '')
+            }
             const metrics = await getCodexSessionMetricsByFile(filePath, model || '', s.cwd || '')
             if (metrics) {
+              liveSampleCounts.jsonlPollCount += 1
               metrics.sessionId = sessionId
               metrics.thinking = true
               emitCodexMetricsViaStore(s.event?.sender, {
@@ -2587,7 +2915,7 @@ function setupCodexSdkHandlers() {
               }, sessionId, model || '')
             }
           }, CODEX_METRICS_POLL_INTERVAL_MS)
-          codexMetricsPollers.set(sessionId, { interval: pollInterval, startTime: pollStart, runId })
+          startCodexMetricsPoller(sessionId, { interval: pollInterval, startTime: pollStart, runId })
 
           const { events } = await thread.runStreamed(input, { signal: abortController.signal })
 
@@ -2766,6 +3094,7 @@ function setupCodexSdkHandlers() {
             }
 
             if (ev.type === 'token_count' || ev.payload?.type === 'token_count') {
+              liveSampleCounts.tokenCountCount += 1
               const session = codexSessions.get(sessionId)
               const sender = session?.event?.sender || event.sender
               const tokenPayload = ev.payload?.type === 'token_count' ? ev.payload : ev
@@ -2796,6 +3125,7 @@ function setupCodexSdkHandlers() {
                 turnStartTotals: session?._liveTurnStartTotals || null,
               })
               if (liveMetrics) {
+                if ((liveMetrics.inputTokens || 0) > 0 || (liveMetrics.outputTokens || 0) > 0 || (liveMetrics.cacheReadTokens || 0) > 0 || (liveMetrics.cacheCreationTokens || 0) > 0) liveSampleCounts.sawLiveTurnTokens = true
                 emitCodexMetricsViaStore(sender, {
                   source: 'token-count',
                   scope: 'turn-live',
@@ -2813,27 +3143,36 @@ function setupCodexSdkHandlers() {
             }
 
             if (ev.type === 'turn.completed' || ev.type === 'turn.failed' || ev.type === 'task_complete') {
+              liveSampleCounts.sdkResultCount += 1
               console.log(`[codex] turn terminal: type=${ev.type} sessionId=${sessionId} pendingItems=${pendingItemIds.size}`)
               resultReceived = true
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
               const sender = session?.event?.sender || event.sender
               const durationMs = Math.max(0, Date.now() - (session?.startTime || Date.now()))
-              const normalizedTerminalUsage = normalizeCodexUsage(ev.usage || {}) || {}
+              const liveSnapshot = getCurrentSnapshot(sessionId) || null
+              const finalTurnMetrics = buildCodexFinalTurnMetricsFromTerminalUsage(ev.usage || {}, {
+                turnStartTotals: session?._liveTurnStartTotals || null,
+                liveSnapshot,
+                tokenCountSeen: liveSampleCounts.tokenCountCount > 0,
+              })
               // Phase 4：先 finalize TurnStore，再从 snapshot 构建 _perTurnTokens
               const snapshot = emitCodexMetricsViaStore(sender, {
                 source: 'sdk-result',
                 scope: 'turn-final',
                 // normalizeCodexUsage 返回 snake_case 字段（phase 1 wrapper），需用正确 key
-                inputTokens: normalizedTerminalUsage.input_tokens ?? 0,
-                outputTokens: normalizedTerminalUsage.output_tokens ?? 0,
-                cacheReadTokens: normalizedTerminalUsage.cache_read_input_tokens ?? 0,
-                cacheCreationTokens: normalizedTerminalUsage.cache_creation_input_tokens ?? 0,
+                inputTokens: finalTurnMetrics.inputTokens,
+                outputTokens: finalTurnMetrics.outputTokens,
+                cacheReadTokens: finalTurnMetrics.cacheReadTokens,
+                cacheCreationTokens: finalTurnMetrics.cacheCreationTokens,
                 contextUsage: 0,
                 contextWindow: 0,
                 durationMs,
                 costUsd: 0,
-                rawUsage: ev.usage || null,
+                rawUsage: {
+                  authority: finalTurnMetrics.authority,
+                  usage: ev.usage || null,
+                },
               }, sessionId, model || '', {
                 speedOutputPerSec: 0,
                 gitBranch: '',
@@ -2841,6 +3180,7 @@ function setupCodexSdkHandlers() {
                 usageApiSessionPct: null,
               })
               // 从 TurnStore snapshot 构建 perTurnTokens（与 StatusBar 同源）
+              if (snapshot && ((snapshot.inputTokens || 0) > 0 || (snapshot.outputTokens || 0) > 0 || (snapshot.cacheReadTokens || 0) > 0 || (snapshot.cacheCreationTokens || 0) > 0)) liveSampleCounts.sawFinalTurnTokens = true
               const perTurnTokens = snapshot ? {
                 inputTokens: snapshot.inputTokens,
                 outputTokens: snapshot.outputTokens,
@@ -2866,6 +3206,7 @@ function setupCodexSdkHandlers() {
                 runId,
                 cliSessionId: thread?.id || '',
                 pendingItems: pendingItemIds.size,
+                tokenMetricAuthority: finalTurnMetrics.authority,
                 terminal: summarizeCodexTerminalEvent(ev),
               })
             }
@@ -3122,14 +3463,17 @@ function setupCodexSdkHandlers() {
           clearTimeout(bootWatch)
           clearTimeout(turnTimeout)
           if (drainTimer) { clearTimeout(drainTimer); drainTimer = null }
+          logTurnSampleSummary({
+            provider: 'codex',
+            chatKey: sessionId,
+            providerSessionId: thread?.id || cliSessionIds.get(sessionId) || '',
+            turnId: runId,
+            ...liveSampleCounts,
+          })
           // Phase 3: clear current turn for TurnStore
           clearCurrentTurn(sessionId)
           // 停止 metrics 轮询器
-          const poller = codexMetricsPollers.get(sessionId)
-          if (poller?.runId === runId || (poller && !poller.runId)) {
-            clearInterval(poller.interval)
-            codexMetricsPollers.delete(sessionId)
-          }
+          stopCodexMetricsPoller(sessionId, runId)
           // 同步清除 session 上存储的 timeout 引用（防御性清理）
           const finalized = finalizeCodexSessionDoneState({ resultReceived, doneReason })
           doneReason = finalized.doneReason
@@ -3240,11 +3584,7 @@ function setupCodexSdkHandlers() {
       if (s.__turnTimeout) { clearTimeout(s.__turnTimeout); s.__turnTimeout = null }
       if (s.__bootWatch) { clearTimeout(s.__bootWatch); s.__bootWatch = null }
       // 停止 metrics 轮询器
-      const poller = codexMetricsPollers.get(sessionId)
-      if (poller) {
-        clearInterval(poller.interval)
-        codexMetricsPollers.delete(sessionId)
-      }
+      stopCodexMetricsPoller(sessionId)
       // 额外尝试终止 thread（如果 SDK 暴露了 stop/cancel 方法）
       try {
         if (s.thread && typeof s.thread.cancel === 'function') await s.thread.cancel()
@@ -3340,14 +3680,11 @@ function setupCodexSdkHandlers() {
     return readSessionFileRange(filePath, page, pageSize)
   })
 
+  // NOTE: Easy-to-misuse bridge. StatusBar current-turn token fields must come from
+  // TurnStore snapshots. Session/file aggregate metrics may only supplement session-level
+  // fields such as context usage, git info, and speed.
   ipcMain.handle('codex-agent-query-metrics', async (_, { sessionId, cliSessionId, filePath, model, cwd } = {}) => {
-    if (filePath && String(filePath).toLowerCase().endsWith('.jsonl')) {
-      return await getCodexSessionMetricsByFile(filePath, model || '', cwd || '') || null
-    }
-    if (sessionId || cliSessionId) {
-      return await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '') || null
-    }
-    return null
+    return await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd })
   })
 
   ipcMain.handle('codex-list-slash-commands', async (_, { cwd, sessionId } = {}) => {
@@ -4630,6 +4967,8 @@ module.exports = {
     buildCodexAgentDonePayload,
     buildCodexMetricsFromTokenCountPayload,
     buildCodexPerTurnTokens,
+    buildCodexFinalTurnMetricsFromTerminalUsage,
+    extractLatestCodexLiveTurnMetricsFromJsonl,
     codexEventHasErrorType,
     getCodexSessionMetricsByFile,
     getCodexSessionMetrics,
@@ -4654,6 +4993,8 @@ module.exports = {
     extractCodexAgentMessageText,
     extractCodexAssistantHistoryMessageFromJsonlRow,
     normalizeTopLevelCodexStreamEvent,
+    mergeCodexTurnSnapshotWithSessionMetrics,
+    queryCodexStatusBarMetrics,
     selectCodexTomlProvider,
     setSessionsDirForTest: (dir) => { SESSIONS_DIR = dir },
   },

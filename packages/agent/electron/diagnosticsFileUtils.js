@@ -44,6 +44,7 @@ function setDiagnosticsEnabled(enabled, options = {}) {
   const settings = readMindCraftSettings(options)
   if (!settings.diagnostics || typeof settings.diagnostics !== 'object') settings.diagnostics = {}
   settings.diagnostics.enabled = Boolean(enabled)
+  settings.diagnostics.tokenMetricsDebug = Boolean(enabled)
   const settingsPath = writeMindCraftSettings(settings, options)
   return { ok: true, enabled: Boolean(enabled), path: settingsPath }
 }

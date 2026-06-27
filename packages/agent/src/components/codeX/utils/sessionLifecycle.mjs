@@ -1,3 +1,5 @@
+import { sanitizePersistedMetrics } from '../../agentCommon/utils/persistedMetrics.mjs'
+
 export const CODEX_RUNTIME_STATES = Object.freeze({
   IDLE: 'idle',
   STARTING: 'starting',
@@ -225,6 +227,8 @@ export function mergeScannedChatsPreservingRuntime(existingChats = [], scannedCh
 
 export const mergeScannedCodexChats = mergeScannedChatsPreservingRuntime
 
+export const sanitizeCodexPersistedMetrics = sanitizePersistedMetrics
+
 export function buildPersistableCodexChat(chat = {}) {
   const c = { ...chat }
   delete c[RUNTIME_FIELD]
@@ -234,6 +238,6 @@ export function buildPersistableCodexChat(chat = {}) {
   c.thinking = false
   c.currentAssistantId = null
   c.draftText = typeof c.draftText === 'string' ? c.draftText : ''
-  if (c.metrics) c.metrics = { ...c.metrics, thinking: false }
+  c.metrics = sanitizeCodexPersistedMetrics(c.metrics)
   return c
 }

@@ -1,6 +1,7 @@
 // Codex 前端 debug 输出开关（需要查看详细日志时改为 true）
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
+import { attachTurnTokensToLastRenderableMessage } from '../../agentCommon/utils/turnTokensAttachment.mjs'
 import { findChatBySessionId } from '../utils/sessionRouting.mjs'
 import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs'
 import {
@@ -49,20 +50,11 @@ function appendAssistantText(tab, nextMsgId, onNewMessage, text) {
   msg.text = (msg.text || '') + text
 }
 
-function attachPerTurnTokens(tab, perTurnTokens) {
-  if (!perTurnTokens || !Array.isArray(tab?.messages)) return
-  for (let i = tab.messages.length - 1; i >= 0; i -= 1) {
-    const msg = tab.messages[i]
-    if (msg?.role !== 'assistant') continue
-    msg._turnTokens = {
-      inputTokens: perTurnTokens.inputTokens || 0,
-      outputTokens: perTurnTokens.outputTokens || 0,
-      cacheReadTokens: perTurnTokens.cacheReadTokens || 0,
-      cacheCreationTokens: perTurnTokens.cacheCreationTokens || 0,
-      durationMs: perTurnTokens.durationMs || 0,
-    }
-    return
-  }
+function attachPerTurnTokens(tab, perTurnTokens, options = {}) {
+  if (!Array.isArray(tab?.messages)) return false
+  return attachTurnTokensToLastRenderableMessage(tab.messages, perTurnTokens, {
+    replace: Boolean(options.replace),
+  })
 }
 
 function normalizeToolStatus(itemStatus, isFinal) {
@@ -594,7 +586,7 @@ export function useCodexAgentStream({
         m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
       )
       if (lastThinking) lastThinking.status = 'done'
-      attachPerTurnTokens(tab, msg._perTurnTokens)
+      attachPerTurnTokens(tab, msg._perTurnTokens, { replace: false })
       markCodexTerminalSeen(tab)
       scrollBottom(tab.id)
       saveHistory({ immediate: true })

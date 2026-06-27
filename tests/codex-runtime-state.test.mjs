@@ -11,6 +11,7 @@ import {
   markCodexStreamActivity,
   markCodexTerminalSeen,
   markCodexTurnStarting,
+  sanitizeCodexPersistedMetrics,
 } from '../packages/agent/src/components/codeX/utils/codexRuntimeState.mjs'
 
 test('terminal_seen keeps send lock but late metrics thinking=true cannot revive UI thinking', () => {
@@ -109,6 +110,45 @@ test('queued state keeps runtime lock and persistable cleanup removes memory-onl
   assert.equal(persistable._thinkingStart, null)
   assert.equal(persistable.currentAssistantId, null)
   assert.equal(Object.hasOwn(persistable, '_codexRuntimeState'), false)
+})
+
+test('persisted metrics exclude per-turn token fields from panel state', () => {
+  const dirtyMetrics = {
+    model: 'gpt-5.5',
+    inputTokens: 25825894,
+    outputTokens: 570331,
+    cacheReadTokens: 128519552,
+    cacheCreationTokens: 0,
+    durationMs: 617112,
+    costUsd: 0,
+    contextUsage: 164130,
+    contextWindow: 258400,
+    gitBranch: 'develop',
+    gitChanges: 14,
+    thinking: true,
+  }
+
+  const sanitized = sanitizeCodexPersistedMetrics(dirtyMetrics)
+
+  assert.equal(sanitized.inputTokens, undefined)
+  assert.equal(sanitized.outputTokens, undefined)
+  assert.equal(sanitized.cacheReadTokens, undefined)
+  assert.equal(sanitized.cacheCreationTokens, undefined)
+  assert.equal(sanitized.durationMs, undefined)
+  assert.equal(sanitized.costUsd, undefined)
+  assert.equal(sanitized.contextUsage, 164130)
+  assert.equal(sanitized.contextWindow, 258400)
+  assert.equal(sanitized.gitBranch, 'develop')
+  assert.equal(sanitized.thinking, false)
+
+  const persistable = buildPersistableCodexChat({
+    sessionId: 'sid-1',
+    metrics: dirtyMetrics,
+  })
+
+  assert.equal(persistable.metrics.inputTokens, undefined)
+  assert.equal(persistable.metrics.cacheReadTokens, undefined)
+  assert.equal(persistable.metrics.contextUsage, 164130)
 })
 
 console.log('codex runtime state test passed')

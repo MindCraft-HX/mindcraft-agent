@@ -15,6 +15,7 @@ export {
   markCodexTurnStarting,
   mergeScannedCodexChats,
   mergeScannedChatsPreservingRuntime,
+  sanitizeCodexPersistedMetrics,
   shouldHydrateHistoryFromDisk,
   shouldSyncThinkingFromMetrics,
 } from './sessionLifecycle.mjs'

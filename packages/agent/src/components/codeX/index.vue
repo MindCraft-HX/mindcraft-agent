@@ -202,6 +202,8 @@
 </template>
 
 <script setup>
+const CODEX_METRICS_DEBUG = false
+
 import { ref, computed, onMounted, onUnmounted, onActivated, nextTick, watch, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -256,6 +258,7 @@ import {
   markCodexTurnStarting,
   isCodexTurnLocked,
   mergeScannedChatsPreservingRuntime,
+  sanitizeCodexPersistedMetrics,
   shouldHydrateHistoryFromDisk,
 } from './utils/codexRuntimeState.mjs'
 import {
@@ -273,7 +276,8 @@ import {
   shouldRenderPlanOverviewForTurn,
   shouldRenderPlanOverview,
 } from './components/messages/tools/currentPlanOverviewState.mjs'
-import { mergeCodexMetrics } from './utils/codexMetricsMerge.mjs'
+import { areCodexMetricsEquivalent, mergeCodexMetrics } from './utils/codexMetricsMerge.mjs'
+import { attachTurnTokensToLastRenderableMessage, hasMeaningfulTurnTokens } from '../agentCommon/utils/turnTokensAttachment.mjs'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useCodexConfigStore } from '../../stores/codexConfig.js'
 import { countVisibleCodexUserMessages, isVisibleCodexUserMessage } from './utils/visibleUserMessages.mjs'
@@ -1084,7 +1088,7 @@ function makeRestoredChat(c, messages) {
   return {
     id: c.id, name: c.name, sessionId: c.sessionId,
     thinking: false, messages: msgs, currentAssistantId: null,
-    metrics: c.metrics || null,
+    metrics: sanitizeCodexPersistedMetrics(c.metrics),
     model: c.model || c.metrics?.model || null,
     reasoningEffort: normalizeCodexReasoningEffort(c.reasoningEffort) || null,
     sandboxMode: resolveRestoredSandboxMode(c),
@@ -1546,7 +1550,7 @@ async function refreshProjectSessionsInBackground(project) {
       if (fallbackChatId) switchChat(fallbackChatId)
       else activeChatId.value = null
     }
-    void refreshMetricsForChat(project.chats?.find(c => c.id === activeChatId.value) || null)
+    void refreshMetricsForChat(project.chats?.find(c => c.id === activeChatId.value) || null, 'session-scan')
 
     const sessionMap = {}
     for (const chat of project.chats || []) {
@@ -1600,6 +1604,7 @@ const sidebarRefreshing = ref(false)
 let scrollThrottleTimer = null
 let wheelThrottleTimer = null
 let loadMoreCooldownTimer = null
+const codexDoneMetricsRetryTimers = new Map()
 
 // Tab management
 const { sidebarOpen } = useCodexTabs({
@@ -1838,7 +1843,7 @@ function switchChat(id) {
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   if (chat) trimMessages(chat)
   resetScrollPrev()
-  void refreshMetricsForChat(chat)
+  void refreshMetricsForChat(chat, 'switch-chat')
   // 每次切换都从文件重新加载
   if (chat?._historyLoadDeferred && !chat._historyLoadRequested) {
     requestAnimationFrame(() => {
@@ -2424,6 +2429,21 @@ function mergeCodexRuntimeMetrics(current = {}, data = {}, tab = null) {
   return mergeCodexMetrics(current, next, { sessionId: data.sessionId || current.sessionId || tab?.sessionId || '' })
 }
 
+function syncCodexFooterTurnTokens(tab, metrics, { replace = false } = {}) {
+  if (!tab || !hasMeaningfulTurnTokens(metrics)) return false
+  return attachTurnTokensToLastRenderableMessage(tab.messages || [], {
+    inputTokens: metrics.inputTokens,
+    outputTokens: metrics.outputTokens,
+    cacheReadTokens: metrics.cacheReadTokens,
+    cacheCreationTokens: metrics.cacheCreationTokens,
+    durationMs: metrics.durationMs,
+    costUsd: metrics.costUsd || 0,
+  }, {
+    nextMsgId,
+    replace,
+  })
+}
+
 const metricsData = computed(() => {
   const tab = activeTab.value
   if (!tab) return defaultMetrics()
@@ -2464,13 +2484,14 @@ function syncMetricsTimerForActiveTab() {
   startMetricsTimer(tab._thinkingStart)
 }
 
-async function refreshMetricsForChat(chat) {
+async function refreshMetricsForChat(chat, reason = 'unknown') {
   if (!chat) {
     stopMetricsTimer()
     return
   }
   if (chat.thinking && chat._thinkingStart) startMetricsTimer(chat._thinkingStart)
   else stopMetricsTimer()
+  if (!chat.thinking && reason === 'active-tab-state-watch') return
   if (!window.electronAPI?.codexAgentQueryMetrics) return
   try {
     const result = await window.electronAPI.codexAgentQueryMetrics({
@@ -2480,7 +2501,20 @@ async function refreshMetricsForChat(chat) {
       model: chat.model || chat.metrics?.model || metricsData.value.model || '',
       cwd: activeProject.value?.cwd || chat.cwd || '',
     })
+    if (CODEX_METRICS_DEBUG) {
+      console.log('[codex-metrics] refreshMetricsForChat result', {
+        reason,
+        sessionId: chat.sessionId,
+        cliSessionId: chat.cliSessionId,
+        filePath: chat.filePath,
+        thinking: chat.thinking,
+        result,
+      })
+    }
     if (!result) return
+    if (!chat.thinking) {
+      syncCodexFooterTurnTokens(chat, result, { replace: true })
+    }
     onMetricsUpdate({
       ...result,
       sessionId: chat.sessionId,
@@ -2489,13 +2523,56 @@ async function refreshMetricsForChat(chat) {
   } catch (_) {}
 }
 
+function clearCodexDoneMetricsRetry(sessionId = '') {
+  if (!sessionId) return
+  const timers = codexDoneMetricsRetryTimers.get(sessionId)
+  if (Array.isArray(timers)) {
+    for (const timer of timers) clearTimeout(timer)
+  }
+  codexDoneMetricsRetryTimers.delete(sessionId)
+}
+
+function scheduleCodexDoneMetricsRefresh(sessionId = '') {
+  if (!sessionId) return
+  clearCodexDoneMetricsRetry(sessionId)
+  const delays = [0, 250, 1000]
+  const timers = delays.map((delay, index) => setTimeout(() => {
+    const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === sessionId)
+    if (!tab) {
+      clearCodexDoneMetricsRetry(sessionId)
+      return
+    }
+    void refreshMetricsForChat(tab, `done-retry:${delay}`)
+    if (index === delays.length - 1) clearCodexDoneMetricsRetry(sessionId)
+  }, delay))
+  codexDoneMetricsRetryTimers.set(sessionId, timers)
+}
+
 function onMetricsUpdate(data) {
   if (!data) return
   if (!data.sessionId) return
   const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
   if (!tab) return
   const { thinking: metricsThinking, ...metricsPayload } = data
-  tab.metrics = mergeCodexRuntimeMetrics(tab.metrics || {}, metricsPayload, tab)
+  if (CODEX_METRICS_DEBUG) {
+    console.log('[codex-metrics] onMetricsUpdate before', {
+      sessionId: data.sessionId,
+      metricsThinking,
+      incoming: metricsPayload,
+      current: tab.metrics,
+      tabThinking: tab.thinking,
+    })
+  }
+  const mergedMetrics = mergeCodexRuntimeMetrics(tab.metrics || {}, metricsPayload, tab)
+  if (!areCodexMetricsEquivalent(tab.metrics || {}, mergedMetrics)) {
+    tab.metrics = mergedMetrics
+  }
+  if (CODEX_METRICS_DEBUG) {
+    console.log('[codex-metrics] onMetricsUpdate after', {
+      sessionId: data.sessionId,
+      merged: mergedMetrics,
+    })
+  }
   if (data.model) tab.model = data.model
   if (typeof metricsThinking === 'boolean') {
     applyCodexMetrics(tab, { ...data, thinking: metricsThinking })
@@ -2530,7 +2607,7 @@ watch(
     const tab = activeTab.value
     inputText.value = typeof tab?.draftText === 'string' ? tab.draftText : ''
     syncMetricsTimerForActiveTab()
-    void refreshMetricsForChat(tab)
+    void refreshMetricsForChat(tab, 'active-tab-state-watch')
   },
   { immediate: true }
 )
@@ -2746,7 +2823,7 @@ async function ensureChatMessagesLoaded(chat) {
     chat.currentPage = 0
     chat.pageSize = 60
     chat._messagesLoaded = true
-    if (chat.id === activeChatId.value) void refreshMetricsForChat(chat)
+    if (chat.id === activeChatId.value) void refreshMetricsForChat(chat, 'history-loaded')
   } catch (_) {}
 }
 
@@ -2806,6 +2883,7 @@ onMounted(async () => {
   window.electronAPI.onCodexAgentMessage(onAgentMessage)
   window.electronAPI.onCodexAgentDone((payload) => {
     onAgentDone(payload)
+    scheduleCodexDoneMetricsRefresh(payload?.sessionId || '')
     // 若有排队消息，在当前 turn 结束后自动 flush
     const target = resolveQueuedInputFlushTarget({
       payload,
@@ -2910,6 +2988,7 @@ onUnmounted(() => {
   }
   stopMetricsTimer()
   window.removeEventListener('beforeunload', flushOnUnload)
+  for (const sessionId of codexDoneMetricsRetryTimers.keys()) clearCodexDoneMetricsRetry(sessionId)
   for (const timer of queuedRetryTimers.values()) clearTimeout(timer)
   queuedRetryTimers.clear()
   flushOnUnload()
