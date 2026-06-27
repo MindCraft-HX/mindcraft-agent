@@ -2861,17 +2861,21 @@ function setupCodexSdkHandlers() {
           // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
           const pollInterval = setInterval(async () => {
+            const stopLocalPoller = () => {
+              clearInterval(pollInterval)
+              stopCodexMetricsPoller(sessionId, runId)
+            }
             const s = codexSessions.get(sessionId)
             if (!s) {
-              stopCodexMetricsPoller(sessionId, runId)
+              stopLocalPoller()
               return
             }
             if (s.runId !== runId) {
-              stopCodexMetricsPoller(sessionId, runId)
+              stopLocalPoller()
               return
             }
             if (s.streamClosed || s.doneSent || s.resultReceived) {
-              stopCodexMetricsPoller(sessionId, runId)
+              stopLocalPoller()
               return
             }
             const cliId = cliSessionIds.get(sessionId)
