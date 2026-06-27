@@ -560,7 +560,48 @@ function selectCodexTomlProvider(modelProviders, providerId) {
   return Object.values(modelProviders).find(v => v && typeof v === 'object' && ('base_url' in v || 'experimental_bearer_token' in v)) || null
 }
 
-function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
+function normalizeCodexApiFormatValue(format = '') {
+  const value = String(format || '').trim()
+  if (value === 'chat') return 'chat'
+  if (value === 'responses') return 'responses'
+  return ''
+}
+
+function readCodexProvidersConfig() {
+  const providersFile = path.join(CODEX_CONFIG_DIR, 'providers.json')
+  try {
+    if (!fs.existsSync(providersFile)) return null
+    return JSON.parse(fs.readFileSync(providersFile, 'utf8'))
+  } catch (_) {
+    return null
+  }
+}
+
+function buildRuntimeConfigFromProvider(provider = null) {
+  if (!provider || typeof provider !== 'object') return {}
+  const tomlRuntime = provider.tomlText
+    ? buildRuntimeConfigFromToml(parseSimpleTomlContent(provider.tomlText), {}, {})
+    : {}
+  return {
+    apiKey: String(provider.key || tomlRuntime.apiKey || '').trim(),
+    baseURL: String(provider.url || tomlRuntime.baseURL || '').trim(),
+    model: String(provider.model || tomlRuntime.model || '').trim(),
+    reasoningEffort: normalizeCodexReasoningEffort(provider.reasoningEffort || tomlRuntime.reasoningEffort || ''),
+    apiFormat: normalizeCodexApiFormatValue(provider.apiFormat || tomlRuntime.apiFormat || ''),
+  }
+}
+
+function getActiveCodexProviderRuntime() {
+  const stored = readCodexProvidersConfig()
+  const providers = Array.isArray(stored?.providers) ? stored.providers : []
+  if (!providers.length) return {}
+  const idx = Number.isInteger(stored?.activeIdx) && stored.activeIdx >= 0 && stored.activeIdx < providers.length
+    ? stored.activeIdx
+    : 0
+  return buildRuntimeConfigFromProvider(providers[idx])
+}
+
+function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}, activeProviderRuntime = {}) {
   // 从 config.toml 提取 CLI 级默认值
   let tomlApiKey = toml.auth_token || toml.experimental_bearer_token || ''
   let tomlBaseURL = toml.base_url || ''
@@ -589,13 +630,20 @@ function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}) {
   const userBaseURL = userRuntime.baseURL || ''
   const userModel = userRuntime.model || ''
   const userEffort = userRuntime.reasoningEffort || userRuntime.reasonEffort || ''
-  const userApiFormat = userRuntime.apiFormat || ''
+  const userApiFormat = normalizeCodexApiFormatValue(userRuntime.apiFormat)
 
-  const apiKey = userApiKey || tomlApiKey
-  const baseURL = userBaseURL || tomlBaseURL
-  const model = userModel || tomlModel
-  const reasoningEffort = normalizeCodexReasoningEffort(userEffort || tomlEffort)
-  const apiFormat = userApiFormat || tomlApiFormat || 'responses'
+  const providerApiKey = activeProviderRuntime.apiKey || ''
+  const providerBaseURL = activeProviderRuntime.baseURL || ''
+  const providerModel = activeProviderRuntime.model || ''
+  const providerEffort = activeProviderRuntime.reasoningEffort || ''
+  const providerApiFormat = normalizeCodexApiFormatValue(activeProviderRuntime.apiFormat)
+
+  const apiKey = providerApiKey || userApiKey || tomlApiKey
+  const baseURL = providerBaseURL || userBaseURL || tomlBaseURL
+  // model / effort allow session-level override, but transport fields stay provider-owned.
+  const model = userModel || providerModel || tomlModel
+  const reasoningEffort = normalizeCodexReasoningEffort(userEffort || providerEffort || tomlEffort)
+  const apiFormat = providerApiFormat || userApiFormat || normalizeCodexApiFormatValue(tomlApiFormat) || 'responses'
 
   return { apiKey, baseURL, model, reasoningEffort, apiFormat }
 }
@@ -614,7 +662,7 @@ function readRuntimeConfig() {
     userRuntime = conf.get('runtime') || {}
   } catch (_) {}
 
-  return buildRuntimeConfigFromToml(toml, userRuntime)
+  return buildRuntimeConfigFromToml(toml, userRuntime, getActiveCodexProviderRuntime())
 }
 
 /** CodeX SDK 原生 sandboxMode 值 */

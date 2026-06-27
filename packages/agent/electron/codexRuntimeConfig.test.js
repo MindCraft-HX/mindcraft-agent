@@ -99,6 +99,39 @@ api_format = "chat"
   })
 })
 
+test('runtime active provider apiFormat overrides stale electron-conf chat format', () => {
+  const toml = parseSimpleTomlContent(`
+model = "gpt-5.4"
+model_provider = "MindCraft"
+api_format = "chat"
+
+[model_providers.MindCraft]
+base_url = "https://api.mindcraft.com.cn/v1"
+experimental_bearer_token = "MC-real-token"
+api_format = "chat"
+`)
+
+  assert.deepEqual(buildRuntimeConfigFromToml(toml, {
+    apiKey: 'stale-key',
+    baseURL: 'https://stale.example.com/v1',
+    model: 'gpt-5.5',
+    reasoningEffort: 'high',
+    apiFormat: 'chat',
+  }, {
+    apiKey: 'MC-real-token',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    model: 'gpt-5.4',
+    reasoningEffort: 'medium',
+    apiFormat: 'responses',
+  }), {
+    apiKey: 'MC-real-token',
+    baseURL: 'https://api.mindcraft.com.cn/v1',
+    model: 'gpt-5.5',
+    reasoningEffort: 'high',
+    apiFormat: 'responses',
+  })
+})
+
 test('top-level agent_message stream events are normalized for renderer consumption', () => {
   const normalized = normalizeTopLevelCodexStreamEvent({
     type: 'agent_message',

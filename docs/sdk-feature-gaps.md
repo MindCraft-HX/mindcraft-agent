@@ -3,7 +3,7 @@
 > 创建：2026-06-16
 > SDK 版本：`@anthropic-ai/claude-agent-sdk` v0.2.117 / `@openai/codex-sdk` v0.135.0
 > 验证依据：SDK 源码类型定义（`sdk.d.ts`、`dist/index.d.ts`），非网络文档
-> 关联：`docs/agent-architecture.md` §11-14（已做部分 SDK 接口核对）
+> 关联：`docs/agent-architecture.md`（架构入口）。本文是 SDK 能力与取舍的专题入口；新增 SDK 用法仍需核对本地 `.d.ts`。
 
 ## 一、Claude Code SDK — 未集成功能
 
@@ -228,6 +228,6 @@ Codex SDK (v0.135.0) API 面较小，App 已用 `startThread()`/`resumeThread()`
 
 ## 四、补充说明
 
-1. **`agent-architecture.md` §11-14** 已有逐字段状态表（2026-06-15 生成），本文件为面向决策的提炼版。
+1. **本文是 SDK 能力专题入口**。`agent-architecture.md` 只保留高层架构和路由，不再承载逐字段 SDK 表。
 2. **所有信息基于 SDK 源码类型定义验证**（`sdk.d.ts` 和 `dist/index.d.ts`），未依赖第三方文档。
 3. **优先级标注**：H=消除手写代码或新增核心能力；M=显著改善体验或简化架构；L=锦上添花。
