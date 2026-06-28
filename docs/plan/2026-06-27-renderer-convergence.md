@@ -329,11 +329,13 @@ Completed:
 - Added `tests/agent-metrics-controller.test.mjs` for new-turn reset, context-only updates, and active-session view construction.
 - Replaced the duplicated ClaudeCode / CodeX `StatusBarMetrics.vue` files with `packages/agent/src/components/agentCommon/components/StatusBarMetrics.vue`.
 - Kept provider-specific differences as props: Claude model shortening and CodeX compact tooltip copy.
+- Added a renderer convergence contract test to prevent reintroducing duplicated `StatusBarMetrics.vue` implementations.
+- Narrowed CodeX active-tab metrics hydration skip logic: non-running tabs skip the active-tab query only when they already have visible status-bar snapshot data.
 
 Explicitly not completed yet:
 
 - ClaudeCode still owns its old local `metricsData` state machine and timer implementation.
-- First-hydrate / active-tab restore is not fully unified between ClaudeCode and CodeX.
+- First-hydrate / active-tab restore is improved for CodeX but not fully unified between ClaudeCode and CodeX.
 - Footer and status-bar renderer consumers are not yet covered by direct component-level tests.
 
 Reason for the boundary:

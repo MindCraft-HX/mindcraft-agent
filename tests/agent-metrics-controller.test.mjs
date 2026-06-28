@@ -5,6 +5,7 @@ import {
   buildAgentTurnMetrics,
   buildStatusBarMetricsView,
   createDefaultAgentMetrics,
+  hasAgentStatusBarSnapshot,
   hasAgentTurnTokenSample,
   mergeAgentRuntimeMetrics,
 } from '../packages/agent/src/components/agentCommon/composables/useAgentMetricsController.js'
@@ -33,6 +34,15 @@ test('hasAgentTurnTokenSample only returns true for real positive turn token sam
   assert.equal(hasAgentTurnTokenSample({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }), false)
   assert.equal(hasAgentTurnTokenSample({ contextUsage: 999 }), false)
   assert.equal(hasAgentTurnTokenSample({ outputTokens: 12 }), true)
+})
+
+test('hasAgentStatusBarSnapshot detects visible status data, not default window metadata', () => {
+  assert.equal(hasAgentStatusBarSnapshot({}), false)
+  assert.equal(hasAgentStatusBarSnapshot({ contextWindow: 200000 }), false)
+  assert.equal(hasAgentStatusBarSnapshot({ model: 'gpt-5-codex' }), false)
+  assert.equal(hasAgentStatusBarSnapshot({ contextUsage: 1000, contextWindow: 200000 }), true)
+  assert.equal(hasAgentStatusBarSnapshot({ outputTokens: 12 }), true)
+  assert.equal(hasAgentStatusBarSnapshot({ durationMs: 2500 }), true)
 })
 
 test('mergeAgentRuntimeMetrics strips turn tokens from context-only updates while thinking', () => {

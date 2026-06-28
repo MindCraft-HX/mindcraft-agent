@@ -255,6 +255,7 @@ import { useCodexHistory } from './composables/useCodexHistory.js'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import {
   buildStatusBarMetricsView,
+  hasAgentStatusBarSnapshot,
   useAgentMetricsController,
 } from '../agentCommon/composables/useAgentMetricsController.js'
 import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
@@ -2482,7 +2483,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   }
   if (chat.thinking && chat._thinkingStart) startMetricsTimer(chat._thinkingStart)
   else stopMetricsTimer()
-  if (!chat.thinking && reason === 'active-tab-state-watch') return
+  if (!chat.thinking && reason === 'active-tab-state-watch' && hasAgentStatusBarSnapshot(chat.metrics || {})) return
   if (!window.electronAPI?.codexAgentQueryMetrics) return
   try {
     const result = await window.electronAPI.codexAgentQueryMetrics({

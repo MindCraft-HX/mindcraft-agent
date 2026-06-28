@@ -40,6 +40,19 @@ export function hasAgentTurnTokenSample(data = {}) {
     .some((key) => Object.prototype.hasOwnProperty.call(data, key) && Number(data[key]) > 0)
 }
 
+export function hasAgentStatusBarSnapshot(data = {}) {
+  return [
+    'inputTokens',
+    'outputTokens',
+    'cacheReadTokens',
+    'cacheCreationTokens',
+    'contextUsage',
+    'durationMs',
+    'costUsd',
+    'usageApiSessionPct',
+  ].some((key) => Object.prototype.hasOwnProperty.call(data, key) && Number(data[key]) > 0)
+}
+
 export function mergeAgentRuntimeMetrics(current = {}, data = {}, {
   thinking = false,
   sessionId = '',
