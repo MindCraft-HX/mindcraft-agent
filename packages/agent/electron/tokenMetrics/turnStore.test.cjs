@@ -15,6 +15,7 @@ const {
   clearCurrentTurn,
   isTurnFinalized,
   removeStore,
+  clearAllStores,
   getTurnCount,
 } = require('./turnStore')
 
@@ -246,6 +247,17 @@ test('clearCurrentTurn preserves finalized turns in history', () => {
   clearCurrentTurn('test-chat')
   // finalized turn still in history
   assert.strictEqual(getTurnCount('test-chat'), 1)
+})
+
+test('clearAllStores removes all finalized turn history', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  applySample({ provider: 'claude', source: 'sdk-result', chatKey: 'test-chat', inputTokens: 500 })
+  assert.strictEqual(getTurnCount('test-chat'), 1)
+  clearAllStores()
+  assert.strictEqual(getCurrentSnapshot('test-chat'), null)
+  assert.strictEqual(getFinalSnapshot('test-chat'), null)
+  assert.strictEqual(getTurnCount('test-chat'), 0)
 })
 
 // ==================== no active turn ====================

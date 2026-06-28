@@ -337,6 +337,10 @@ function removeStore(chatKey) {
   stores.delete(chatKey)
 }
 
+function clearAllStores() {
+  stores.clear()
+}
+
 /**
  * 获取 store 中的 turn 数量（用于诊断）。
  */
@@ -365,6 +369,7 @@ module.exports = {
   clearCurrentTurn,
   isTurnFinalized,
   removeStore,
+  clearAllStores,
   getTurnCount,
   submitSample,
 }

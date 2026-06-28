@@ -8,7 +8,7 @@ const { promisify } = require('util')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
-const { beginTurn, submitSample, clearCurrentTurn, getCurrentSnapshot, getFinalSnapshot } = require('./tokenMetrics/turnStore')
+const { beginTurn, submitSample, clearCurrentTurn, getCurrentSnapshot, getFinalSnapshot, removeStore, clearAllStores } = require('./tokenMetrics/turnStore')
 const { shouldStopTurnTimeoutOnEvent } = require('./codexTurnState')
 const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
@@ -2622,6 +2622,7 @@ function resetCodexSdkRuntime() {
   cliSessionIds.clear()
   sessionFingerprints.clear()
   slowNoticeSent.clear()
+  clearAllStores()
   codexModulePromise = null
 }
 
@@ -2953,8 +2954,9 @@ function setupCodexSdkHandlers() {
               model: model || '',
               turnStartedAt: s.startTime || pollStart,
             })
+            let sawJsonlPollSample = false
             if (liveMetrics) {
-              liveSampleCounts.jsonlPollCount += 1
+              sawJsonlPollSample = true
               liveSampleCounts.sawLiveTurnTokens = true
               emitCodexMetricsViaStore(s.event?.sender, {
                 source: 'jsonl-poll',
@@ -2972,7 +2974,7 @@ function setupCodexSdkHandlers() {
             }
             const metrics = await getCodexSessionMetricsByFile(filePath, model || '', s.cwd || '')
             if (metrics) {
-              liveSampleCounts.jsonlPollCount += 1
+              sawJsonlPollSample = true
               metrics.sessionId = sessionId
               metrics.thinking = true
               emitCodexMetricsViaStore(s.event?.sender, {
@@ -2985,6 +2987,7 @@ function setupCodexSdkHandlers() {
                 rawUsage: metrics.rawUsage || null,
               }, sessionId, model || '')
             }
+            if (sawJsonlPollSample) liveSampleCounts.jsonlPollCount += 1
           }, CODEX_METRICS_POLL_INTERVAL_MS)
           startCodexMetricsPoller(sessionId, { interval: pollInterval, startTime: pollStart, runId })
 
@@ -3716,8 +3719,10 @@ function setupCodexSdkHandlers() {
   ipcMain.handle('codex-delete-session-file', (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return false
+      const record = findSessionRecordByProvider({ agent: 'codex', filePath })
       fs.unlinkSync(filePath)
       deleteSessionRecordsByProvider({ agent: 'codex', filePath })
+      if (record?.chatKey) removeStore(record.chatKey)
       return true
     } catch (e) {
       console.warn('[codex-delete-session-file] failed:', e?.message || e)
@@ -3743,6 +3748,7 @@ function setupCodexSdkHandlers() {
         cliSessionId,
         chatKey,
       })
+      if (chatKey) removeStore(chatKey)
 
       return {
         ok: deletedTranscript || deletedRecords > 0,

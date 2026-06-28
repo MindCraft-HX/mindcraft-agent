@@ -5,7 +5,7 @@ const fs = require('fs')
 const os = require('os')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
-const { beginTurn, submitSample, getCurrentSnapshot, clearCurrentTurn } = require('./tokenMetrics/turnStore')
+const { beginTurn, submitSample, getCurrentSnapshot, clearCurrentTurn, removeStore, clearAllStores } = require('./tokenMetrics/turnStore')
 const { readPluginsState } = require('./pluginState')
 const claudeMetrics = require('./claudeMetrics')
 const { normalizeClaudeUsage } = require('./tokenMetrics/normalizer')
@@ -789,8 +789,10 @@ function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePat
 function deleteClaudeSessionArtifacts(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return false
+    const record = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     fs.unlinkSync(filePath)
     deleteSessionRecordsByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
+    if (record?.chatKey) removeStore(record.chatKey)
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     try {
       if (metaPath !== filePath && fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
@@ -2602,6 +2604,7 @@ function setupClaudeHandlers() {
       try { session.query?.close?.() } catch (_) {}
       agentSessions.delete(sid)
     }
+    clearAllStores()
     // 注意：不清理 cliSessionIds。它们是 renderer chatKey -> SDK 会话 UUID 的映射，
     // 仅用于 resume 查询，不依赖当前 SDK 实例。Provider 切换后 renderer 会重新注册所有聊天。
     sessionModels.clear()
