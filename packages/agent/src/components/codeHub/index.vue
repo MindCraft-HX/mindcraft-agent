@@ -1,7 +1,7 @@
 <template>
   <div class="codehub-wrap" :class="themeClass">
     <!-- ===== 统一 Tab 栏 ===== -->
-    <div class="codehub-unified-tabs" v-if="unifiedTabs.length > 0">
+    <div class="codehub-unified-tabs" v-if="initDone && unifiedTabs.length > 0">
       <div
         v-for="(tab, idx) in unifiedTabs"
         :key="tab.id"
