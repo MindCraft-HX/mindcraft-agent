@@ -30,6 +30,12 @@ ClaudeCode 全量审计 + CodeX 复审完成，输出 `docs/architecture-health-
 - 不做 ClaudeCode/CodeX 大一统合并；共享生命周期，不吞 provider 差异
 - 每个阶段跑 `npm test` + `npm run test:contract` 验证
 
+当前节奏（2026-06-28 晚）：
+- R01/R02/R03/R05/R07/R08 先冻结，不继续强行推进 R04/R06。
+- 先完成当前代码验收；稳定后按 `docs/build-and-deploy.md` 打包。
+- R04/R06 拆成专项后再开：先补 characterization tests，再抽纯函数，再逐步接入 CodeX / ClaudeCode。
+- `setupClaudeHandlers()` / `setupCodexSdkHandlers()` 主进程巨型 handler 另立 R09，不再作为 R04 的阻塞原因混写。
+
 ## 2026-06-27 Docs Knowledge Base Cleanup ✅ 已完成 (2026-06-28)
 
 - ✅ 新增 `docs/index.md` 作为知识库索引
@@ -91,11 +97,12 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R01 | infra | **Phase 1: 测试与架构护栏前置**：新增 `test:contract`/`test:all` 脚本；contract test runner；IPC 对账/no-console/脏 panel state 测试。详见 `docs/architecture-health-review-2026-06-28.md#4`。 | P1 | ✅ 已完成 |
 | R02 | infra | **Phase 2: 共享基础设施**：抽取 `agentProtocolBridge.js`；收敛 MindCraft settings helper；创建 logger facade。详见 `docs/architecture-health-review-2026-06-28.md#5`。 | P1 | ✅ 已完成 |
 | R03 | refactor | **Phase 3: IPC channel registry**：创建 `ipcChannels.js`（CLAUDE/CODEX/CORE 三组）；`registerIpcHandler.js` helper；preload/main 对账测试。详见 `docs/architecture-health-review-2026-06-28.md#6`。 | P1 | ✅ 已完成 |
-| R04 | refactor | **Phase 4: Tab/History composable 收敛**：`useAgentTabs.js` + `useAgentHistory.js` adapter 化；消除 ClaudeCode/CodeX renderer 生命周期重复。详见 `docs/architecture-health-review-2026-06-28.md#7`。 | P1 | 📝 待执行（顺延） |
+| R04 | refactor | **Phase 4: Tab/History composable 收敛**：专项顺延；先补 characterization tests，再抽纯函数/helper，之后先接 CodeX、再接 ClaudeCode。详见 `docs/architecture-health-review-2026-06-28.md#7`。 | P1 | 🧊 冻结后续专项 |
 | R05 | refactor | **Phase 5: 巨型文件拆叶子模块**：`codexAgent.js`（5103→4834，-269行）拆 configManager + environment；`claudeAgent.js`（3935→3791，-144行）拆 environment。详见 `docs/architecture-health-review-2026-06-28.md#8`。 | P1 | ✅ 已完成 |
-| R06 | refactor | **Phase 6: Renderer Convergence 剩余收口**：first-hydrate/active-tab restore 统一；footer/statusbar consumer 测试。详见 `docs/architecture-health-review-2026-06-28.md#9`。 | P2 | 📝 待执行 |
+| R06 | refactor | **Phase 6: Renderer Convergence 剩余收口**：测试可先行，实际实现依赖 R04 shared helper/composable 稳定后推进。详见 `docs/architecture-health-review-2026-06-28.md#9`。 | P2 | 🧊 冻结后续专项 |
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
+| R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | 📝 待开 |
 
 ---
 
