@@ -192,7 +192,7 @@
 
         <div v-if="dragging" class="drop-mask">{{ $t('agent.dragFile') }}</div>
         <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
-        <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" @send-message="sendFromStatusBar" />
+        <StatusBarMetrics :metrics="statusBarMetrics" :liveDurationMs="metricsLiveDurationMs" :compacting="statusBarMetrics.compacting" @send-message="sendFromStatusBar" />
         <ConfirmDialog ref="confirmDialogRef" />
         <SelectModel ref="selectModelRef" />
         <SessionInstructionDialog ref="sessionInstructionRef" :theme-class="themeClass" @saved="refreshActiveSessionInstructionState" />
@@ -246,6 +246,10 @@ import { useCodexAgentStream } from './composables/useCodexAgentStream.js'
 import { useCodexTabs } from './composables/useCodexTabs.js'
 import { useCodexHistory } from './composables/useCodexHistory.js'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
+import {
+  buildStatusBarMetricsView,
+  useAgentMetricsController,
+} from '../agentCommon/composables/useAgentMetricsController.js'
 import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
 import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput, shouldRetryRejectedCodexInput } from './utils/queuedInputFlush.mjs'
 import {
@@ -1642,7 +1646,18 @@ const { onAgentMessage, onAgentDone } = useCodexAgentStream({
   onNewMessage: () => {},
   trimMessages,
   onCompactBoundary(postTokens) {
-    metricsData.value.contextUsage = postTokens
+    const tab = activeTab.value
+    if (!tab) return
+    tab.metrics = {
+      ...(tab.metrics || {}),
+      contextUsage: postTokens,
+    }
+    if (tab.id === activeChatId.value) {
+      syncActiveMetricsFromTab(tab, {
+        model: tab.model || tab.metrics?.model || '',
+        compacting: !!tab._compacting,
+      })
+    }
   },
 })
 const firstAwaitingAssistant = ref(false)
@@ -1979,7 +1994,14 @@ async function handleProviderActivated() {
   await loadCodexModelDefaults()
   const tab = activeTab.value
   if (!tab) return
-  metricsData.value.model = tab.model || tab.metrics?.model || codexDefaultModel.value || ''
+  tab.metrics = {
+    ...(tab.metrics || {}),
+    model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
+  }
+  syncActiveMetricsFromTab(tab, {
+    model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
+    compacting: !!tab._compacting,
+  })
   pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
   saveHistory()
 }
@@ -2208,10 +2230,16 @@ async function sendMessage(textOverride = null, targetTab = null) {
       tab.metrics = {
         ...buildNewTurnMetrics(tab),
         sessionId: tab.sessionId,
-        model: tab.model || tab.metrics?.model || metricsData.value.model || '',
+        model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
         thinking: true,
       }
-      if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
+      if (tab.id === activeChatId.value) {
+        syncActiveMetricsFromTab(tab, {
+          model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
+          compacting: !!tab._compacting,
+        })
+        startMetricsTimer(tab._thinkingStart)
+      }
       saveHistory()
       if (shouldRetryRejectedCodexInput(queryResult) && !queuedRetryTimers.has(tab.sessionId)) {
         const timer = setTimeout(async () => {
@@ -2241,15 +2269,21 @@ async function sendMessage(textOverride = null, targetTab = null) {
     markCodexTurnAccepted(tab, {
       ...buildNewTurnMetrics(tab),
       sessionId: tab.sessionId,
-      model: tab.metrics?.model || metricsData.value.model || '',
+      model: tab.metrics?.model || tab.model || codexDefaultModel.value || '',
       thinking: true,
     })
-    if (tab.id === activeChatId.value) startMetricsTimer(tab._thinkingStart)
+    if (tab.id === activeChatId.value) {
+      syncActiveMetricsFromTab(tab, {
+        model: tab.metrics?.model || tab.model || codexDefaultModel.value || '',
+        compacting: !!tab._compacting,
+      })
+      startMetricsTimer(tab._thinkingStart)
+    }
   }
 }
 
 function sendFromStatusBar(text) {
-  if (text === '/compact' && metricsData.value.compacting) return
+  if (text === '/compact' && statusBarMetrics.value.compacting) return
   inputText.value = String(text || '')
   if (activeTab.value) activeTab.value.draftText = inputText.value
   if (inputEl.value) inputEl.value.value = inputText.value
@@ -2291,7 +2325,16 @@ async function openModelPicker() {
     codexDefaultReasoningEffort.value = tab.reasoningEffort || ''
     slashModelName.value = result.label || result.model
     slashEffortLevel.value = normalizeCodexReasoningEffort(result.effort) || slashEffortLevel.value
-    metricsData.value.model = result.model
+    tab.metrics = {
+      ...(tab.metrics || {}),
+      model: result.model,
+    }
+    if (tab.id === activeChatId.value) {
+      syncActiveMetricsFromTab(tab, {
+        model: result.model,
+        compacting: !!tab._compacting,
+      })
+    }
     pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) })
     scrollBottom(tab.id)
     saveHistory()
@@ -2385,53 +2428,18 @@ function onKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
 }
 
-const defaultMetrics = () => ({
-  sessionId: '',
-  model: '',
-  costUsd: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheReadTokens: 0,
-  cacheCreationTokens: 0,
-  contextUsage: 0,
-  contextWindow: 0,
-  durationMs: 0,
-  thinking: false,
-  gitBranch: '',
-  gitChanges: 0,
-  usageApiSessionPct: null,
+const {
+  metricsLiveDurationMs,
+  buildNewTurnMetrics,
+  syncTimerForTab: syncMetricsTimerForActiveTabRecord,
+  syncActiveMetricsFromTab,
+  applyMetricsToTab,
+  stopMetricsTimer,
+  startMetricsTimer,
+} = useAgentMetricsController({
+  mergeMetrics: mergeCodexMetrics,
+  areMetricsEquivalent: areCodexMetricsEquivalent,
 })
-
-function buildNewTurnMetrics(tab) {
-  const previous = tab?.metrics || {}
-  return {
-    ...previous,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
-    contextUsage: previous.contextUsage || 0,
-    contextWindow: previous.contextWindow || 0,
-    durationMs: 0,
-    speedOutputPerSec: 0,
-  }
-}
-
-function hasCodexTurnTokenSample(data = {}) {
-  return ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheCreationTokens']
-    .some(key => Object.prototype.hasOwnProperty.call(data, key) && Number(data[key]) > 0)
-}
-
-function mergeCodexRuntimeMetrics(current = {}, data = {}, tab = null) {
-  const next = { ...data }
-  if (tab?.thinking && !hasCodexTurnTokenSample(data)) {
-    delete next.inputTokens
-    delete next.outputTokens
-    delete next.cacheReadTokens
-    delete next.cacheCreationTokens
-  }
-  return mergeCodexMetrics(current, next, { sessionId: data.sessionId || current.sessionId || tab?.sessionId || '' })
-}
 
 function syncCodexFooterTurnTokens(tab, metrics, { replace = false } = {}) {
   if (!tab || !hasMeaningfulTurnTokens(metrics)) return false
@@ -2448,44 +2456,16 @@ function syncCodexFooterTurnTokens(tab, metrics, { replace = false } = {}) {
   })
 }
 
-const metricsData = computed(() => {
+const statusBarMetrics = computed(() => {
   const tab = activeTab.value
-  if (!tab) return defaultMetrics()
-  return {
-    ...defaultMetrics(),
-    ...(tab.metrics || {}),
-    model: tab.model || tab.metrics?.model || '',
-    sessionId: tab.sessionId,
-    compacting: !!tab._compacting,
-  }
+  return buildStatusBarMetricsView(tab, {
+    model: tab?.model || tab?.metrics?.model || '',
+    compacting: !!tab?._compacting,
+  })
 })
-const metricsLiveDurationMs = ref(0)
-let metricsLiveTimer = null
-
-function stopMetricsTimer() {
-  if (metricsLiveTimer) {
-    clearInterval(metricsLiveTimer)
-    metricsLiveTimer = null
-  }
-  metricsLiveDurationMs.value = 0
-}
-
-function startMetricsTimer(start) {
-  stopMetricsTimer()
-  if (!start) return
-  metricsLiveDurationMs.value = Math.max(0, Date.now() - start)
-  metricsLiveTimer = setInterval(() => {
-    metricsLiveDurationMs.value = Math.max(0, Date.now() - start)
-  }, 1000)
-}
 
 function syncMetricsTimerForActiveTab() {
-  const tab = activeTab.value
-  if (!tab?.thinking || !tab._thinkingStart) {
-    stopMetricsTimer()
-    return
-  }
-  startMetricsTimer(tab._thinkingStart)
+  syncMetricsTimerForActiveTabRecord(activeTab.value)
 }
 
 async function refreshMetricsForChat(chat, reason = 'unknown') {
@@ -2502,7 +2482,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       sessionId: chat.sessionId,
       cliSessionId: chat.cliSessionId,
       filePath: chat.filePath,
-      model: chat.model || chat.metrics?.model || metricsData.value.model || '',
+      model: chat.model || chat.metrics?.model || codexDefaultModel.value || '',
       cwd: activeProject.value?.cwd || chat.cwd || '',
     })
     if (CODEX_METRICS_DEBUG) {
@@ -2567,10 +2547,7 @@ function onMetricsUpdate(data) {
       tabThinking: tab.thinking,
     })
   }
-  const mergedMetrics = mergeCodexRuntimeMetrics(tab.metrics || {}, metricsPayload, tab)
-  if (!areCodexMetricsEquivalent(tab.metrics || {}, mergedMetrics)) {
-    tab.metrics = mergedMetrics
-  }
+  const mergedMetrics = applyMetricsToTab(tab, metricsPayload)
   if (CODEX_METRICS_DEBUG) {
     console.log('[codex-metrics] onMetricsUpdate after', {
       sessionId: data.sessionId,
@@ -2582,8 +2559,11 @@ function onMetricsUpdate(data) {
     applyCodexMetrics(tab, { ...data, thinking: metricsThinking })
   }
   if (tab.id === activeChatId.value) {
-    if (tab.thinking && tab._thinkingStart) startMetricsTimer(tab._thinkingStart)
-    else stopMetricsTimer()
+    syncMetricsTimerForActiveTabRecord(tab)
+    syncActiveMetricsFromTab(tab, {
+      model: tab.model || tab.metrics?.model || '',
+      compacting: !!tab._compacting,
+    })
   }
 }
 
@@ -2611,6 +2591,10 @@ watch(
     const tab = activeTab.value
     inputText.value = typeof tab?.draftText === 'string' ? tab.draftText : ''
     syncMetricsTimerForActiveTab()
+    syncActiveMetricsFromTab(tab, {
+      model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',
+      compacting: !!tab?._compacting,
+    })
     void refreshMetricsForChat(tab, 'active-tab-state-watch')
   },
   { immediate: true }

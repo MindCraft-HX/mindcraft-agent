@@ -1,5 +1,16 @@
 # TODO
 
+## 2026-06-27 Renderer Convergence
+
+现状：Token metrics 主链路已经大幅收口到 `normalizer -> TurnStore -> snapshot`，但 ClaudeCode / CodeX renderer 侧仍存在明显分叉：状态栏数据源、首次 hydrate、active tab 切换、live duration timer、StatusBar 组件实现都没有完全统一。结果是 footer/history 可能已经正确，但底部 `StatusBarMetrics` 仍会出现“首次为空、第二次点击才出来、切换后短暂脏值、两边修一边坏一边”的重复回归。
+
+待办：
+- 按 `docs/plan/2026-06-27-renderer-convergence.md` 收敛 renderer 架构，不再把问题继续误判成单纯 token 公式 bug。
+- 抽 shared renderer metrics controller，统一 session-owned metrics / hydrate / timer / merge 规则。
+- 合并 ClaudeCode / CodeX 两份 `StatusBarMetrics.vue`，保留 provider-specific 文案/格式化差异为 props。
+- 补 renderer 契约测试：首次进入历史会话、active tab 切换、reload 后恢复、context-only 样本、final snapshot 覆盖 live。
+- 后续文档整理时，把这部分明确归档为“renderer consumer convergence”，与 token normalizer / TurnStore 主链路分开描述。
+
 ## 2026-06-27 Docs Knowledge Base Cleanup
 
 现状：`docs/` 已积累多轮计划、验收、专题和历史排障记录，部分文件存在重复主题、过期状态和编码异常。`AGENTS.md` / `CLAUDE.md` 已收敛为入口路由，但下游文档仍需要整理，否则会继续误导 token metrics、session、CodeX proxy 等高风险任务。
