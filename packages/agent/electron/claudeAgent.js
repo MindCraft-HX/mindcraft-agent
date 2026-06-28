@@ -739,6 +739,15 @@ function normalizeClaudeSessionMeta(data = {}) {
   }
 }
 
+function compactClaudeSessionMeta(meta = {}) {
+  const normalized = normalizeClaudeSessionMeta(meta)
+  const result = {}
+  if (normalized.model) result.model = normalized.model
+  if (normalized.effort) result.effort = normalized.effort
+  if (normalized.modelTier) result.modelTier = normalized.modelTier
+  return result
+}
+
 function getClaudeSessionMetaPath(cwd, cliSessionId) {
   const sessionId = String(cliSessionId || '').trim()
   if (!cwd || !sessionId) return ''
@@ -748,13 +757,13 @@ function getClaudeSessionMetaPath(cwd, cliSessionId) {
 function readClaudeSessionMetaByFilePath(filePath) {
   try {
     const registryRecord = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
-    const registryMeta = normalizeClaudeSessionMeta(registryRecord?.runtime || {})
+    const registryMeta = compactClaudeSessionMeta(registryRecord?.runtime || {})
     if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
 
     if (!filePath || !String(filePath).toLowerCase().endsWith('.jsonl')) return {}
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     if (!fs.existsSync(metaPath)) return {}
-    return normalizeClaudeSessionMeta(JSON.parse(fs.readFileSync(metaPath, 'utf8')))
+    return compactClaudeSessionMeta(JSON.parse(fs.readFileSync(metaPath, 'utf8')))
   } catch (_) {
     return {}
   }
@@ -762,7 +771,7 @@ function readClaudeSessionMetaByFilePath(filePath) {
 
 function readClaudeSessionMeta(cwd, cliSessionId) {
   const registryRecord = findSessionRecordByProvider({ agent: 'claude', cliSessionId }, sessionRegistryOptionsForTest || {})
-  const registryMeta = normalizeClaudeSessionMeta(registryRecord?.runtime || {})
+  const registryMeta = compactClaudeSessionMeta(registryRecord?.runtime || {})
   if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
 
   const metaPath = getClaudeSessionMetaPath(cwd, cliSessionId)
