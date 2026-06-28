@@ -332,6 +332,8 @@ Completed:
 - Kept provider-specific differences as props: Claude model shortening and CodeX compact tooltip copy.
 - Added a renderer convergence contract test to prevent reintroducing duplicated `StatusBarMetrics.vue` implementations.
 - Narrowed CodeX active-tab metrics hydration skip logic: non-running tabs skip the active-tab query only when they already have visible status-bar snapshot data.
+- Split CodeX running StatusBar query from idle history restore: while `thinking=true`, `codex-agent-query-metrics` no longer falls back to previous JSONL final/history turn tokens, and only accepts fresh current-turn TurnStore token snapshots.
+- Added regression coverage for the stale-history case where a running CodeX turn has only context updates and the session JSONL still contains the previous turn's token_count/task_complete records.
 
 Explicitly not completed yet:
 

@@ -195,20 +195,37 @@ function extractLatestCodexFinalTurnSnapshotFromJsonl(filePath, { model = '' } =
   return latestFinalTurnSnapshot
 }
 
-async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '' } = {}) {
+function isCodexSnapshotFreshForRunningTurn(snapshot = null, thinkingStart = 0) {
+  if (!snapshot || typeof snapshot !== 'object') return false
+  const startedAt = Number(thinkingStart) || 0
+  if (startedAt <= 0) return snapshot.phase === 'live'
+  const sampleAt = toNonNegativeNumber(snapshot.finalizedAt, snapshot.updatedAt || 0)
+  return sampleAt >= Math.max(0, startedAt - 1000)
+}
+
+async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '', thinking = false, thinkingStart = 0 } = {}) {
   const resolvedFilePath = resolveCodexSessionFilePath({
     sessionId,
     cliSessionId,
     fallbackFilePath: filePath,
   })
+  const running = Boolean(thinking)
   const currentTurnSnapshot = getCurrentSnapshot(sessionId) || null
   const finalTurnSnapshot = getFinalSnapshot(sessionId) || null
-  const turnSnapshot = hasMeaningfulTurnTokenSnapshot(currentTurnSnapshot)
+  const currentTurnTokenSnapshot = hasMeaningfulTurnTokenSnapshot(currentTurnSnapshot)
     ? currentTurnSnapshot
-    : (hasMeaningfulTurnTokenSnapshot(finalTurnSnapshot) ? finalTurnSnapshot : null)
-  const historyTurnSnapshot = turnSnapshot
-    || extractLatestCodexFinalTurnSnapshotFromJsonl(resolvedFilePath, { model })
-    || extractLatestCodexHistoryTurnSnapshot(resolvedFilePath)
+    : null
+  const finalTurnTokenSnapshot = hasMeaningfulTurnTokenSnapshot(finalTurnSnapshot)
+    ? finalTurnSnapshot
+    : null
+  const turnSnapshot = running
+    ? (isCodexSnapshotFreshForRunningTurn(currentTurnTokenSnapshot, thinkingStart) ? currentTurnTokenSnapshot : null)
+    : (currentTurnTokenSnapshot || finalTurnTokenSnapshot)
+  const historyTurnSnapshot = running
+    ? turnSnapshot
+    : (turnSnapshot
+      || extractLatestCodexFinalTurnSnapshotFromJsonl(resolvedFilePath, { model })
+      || extractLatestCodexHistoryTurnSnapshot(resolvedFilePath))
   let sessionMetrics = null
   if (resolvedFilePath && String(resolvedFilePath).toLowerCase().endsWith('.jsonl')) {
     sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '')
@@ -220,7 +237,7 @@ async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', f
     source: 'statusbar-query',
     chatKey: sessionId,
     providerSessionId: cliSessionId || '',
-    phase: turnSnapshot ? 'live-or-final' : (historyTurnSnapshot ? 'history-final' : 'session'),
+    phase: turnSnapshot ? 'live-or-final' : (historyTurnSnapshot ? 'history-final' : (running ? 'running-session' : 'session')),
     inputTokens: historyTurnSnapshot?.inputTokens,
     outputTokens: historyTurnSnapshot?.outputTokens,
     cacheReadTokens: historyTurnSnapshot?.cacheReadTokens,
@@ -233,6 +250,8 @@ async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', f
       hasFinalTurnSnapshot: Boolean(finalTurnSnapshot),
       usingTurnSnapshot: Boolean(turnSnapshot),
       hasHistoryTurnSnapshot: Boolean(historyTurnSnapshot),
+      running,
+      thinkingStart: Number(thinkingStart) || 0,
       hasSessionMetrics: Boolean(sessionMetrics),
       sessionMetricsInputTokens: sessionMetrics?.inputTokens,
       sessionMetricsOutputTokens: sessionMetrics?.outputTokens,
@@ -3765,8 +3784,8 @@ function setupCodexSdkHandlers() {
   // NOTE: Easy-to-misuse bridge. StatusBar current-turn token fields must come from
   // TurnStore snapshots. Session/file aggregate metrics may only supplement session-level
   // fields such as context usage, git info, and speed.
-  ipcMain.handle('codex-agent-query-metrics', async (_, { sessionId, cliSessionId, filePath, model, cwd } = {}) => {
-    return await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd })
+  ipcMain.handle('codex-agent-query-metrics', async (_, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
+    return await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart })
   })
 
   ipcMain.handle('codex-list-slash-commands', async (_, { cwd, sessionId } = {}) => {

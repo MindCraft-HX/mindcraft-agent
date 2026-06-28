@@ -84,6 +84,7 @@ Rules:
 - `last_token_usage.cached_input_tokens = 0` must not fallback to `total_token_usage.cached_input_tokens`.
 - `total_token_usage` can enter current turn only as `total - turnStartTotals`.
 - `turn.completed.usage` must not be treated as per-turn final when it looks session-cumulative and no current-turn live authority exists. In that case, degrade conservatively instead of fabricating precise turn tokens.
+- Running StatusBar queries must not fall back to historical JSONL final turns. During `thinking=true`, CodeX token fields may come only from a fresh current-turn TurnStore snapshot; JSONL/session aggregate may supplement context only.
 
 ## 4. Phase Plan
 
@@ -166,6 +167,7 @@ Interpretation:
 - Claude compact context never pollutes current-turn tokens.
 - StatusBar and TokenMetaRow share the same final snapshot contract for completed turns, but remain different consumers.
 - Refreshing a session does not convert historical aggregate into current turn metrics.
+- Starting a new CodeX turn does not briefly revive the previous turn's `in/out/cache` while waiting for the first live sample.
 - Dynamic token growth appears only when real live samples exist.
 
 ## 6.1 Dirty State Audit

@@ -201,10 +201,112 @@ function runStatusBarQueryIgnoresContextOnlyTurnSnapshotTest() {
   })
 }
 
+function runRunningStatusBarQueryDoesNotUseHistoricalTurnTokensTest() {
+  const turnStore = require('../packages/agent/electron/tokenMetrics/turnStore.js')
+  turnStore.removeStore('running-status-bar-chat')
+  turnStore.beginTurn({ provider: 'codex', chatKey: 'running-status-bar-chat', startedAt: 2000 })
+  turnStore.applySample({
+    provider: 'codex',
+    source: 'jsonl-poll',
+    scope: 'session-context',
+    chatKey: 'running-status-bar-chat',
+    contextUsage: 207288,
+    contextWindow: 258400,
+    durationMs: 5000,
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-running-status-'))
+  const filePath = path.join(dir, 'session.jsonl')
+  fs.writeFileSync(filePath, [
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:00.000Z',
+      type: 'event_msg',
+      payload: { type: 'user_message' },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:02.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: 900,
+            cached_input_tokens: 800,
+            output_tokens: 120,
+            total_tokens: 1020,
+          },
+          model_context_window: 258400,
+        },
+      },
+    }),
+    JSON.stringify({
+      timestamp: '2026-06-27T10:00:03.000Z',
+      type: 'event_msg',
+      payload: { type: 'task_complete', duration_ms: 3000 },
+    }),
+    '',
+  ].join('\n'), 'utf8')
+
+  return __test__.queryCodexStatusBarMetrics({
+    sessionId: 'running-status-bar-chat',
+    filePath,
+    model: 'gpt-5',
+    cwd: dir,
+    thinking: true,
+    thinkingStart: 10_000_000,
+  }).then((result) => {
+    assert.ok(result)
+    assert.equal(result.inputTokens, 0)
+    assert.equal(result.outputTokens, 0)
+    assert.equal(result.cacheReadTokens, 0)
+    assert.equal(result.cacheCreationTokens, 0)
+    assert.equal(result.contextUsage, 1020)
+    assert.equal(result.contextWindow, 258400)
+  }).finally(() => {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+    turnStore.removeStore('running-status-bar-chat')
+  })
+}
+
+function runRunningStatusBarQueryWithoutStartRejectsFinalSnapshotTest() {
+  const turnStore = require('../packages/agent/electron/tokenMetrics/turnStore.js')
+  turnStore.removeStore('running-final-status-bar-chat')
+  turnStore.beginTurn({ provider: 'codex', chatKey: 'running-final-status-bar-chat' })
+  turnStore.applySample({
+    provider: 'codex',
+    source: 'sdk-result',
+    scope: 'turn-final',
+    chatKey: 'running-final-status-bar-chat',
+    inputTokens: 10,
+    outputTokens: 20,
+    cacheReadTokens: 30,
+    cacheCreationTokens: 0,
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-running-final-'))
+  const filePath = path.join(dir, 'session.jsonl')
+  fs.writeFileSync(filePath, '', 'utf8')
+
+  return __test__.queryCodexStatusBarMetrics({
+    sessionId: 'running-final-status-bar-chat',
+    filePath,
+    model: 'gpt-5',
+    cwd: dir,
+    thinking: true,
+  }).then((result) => {
+    assert.equal(result, null)
+  }).finally(() => {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+    turnStore.removeStore('running-final-status-bar-chat')
+  })
+}
+
 async function run() {
   runStatusBarQueryUsesTurnSnapshotTokensTest()
   await runStatusBarQueryFallsBackToHistoryTurnTokensTest()
   await runStatusBarQueryIgnoresContextOnlyTurnSnapshotTest()
+  await runRunningStatusBarQueryDoesNotUseHistoricalTurnTokensTest()
+  await runRunningStatusBarQueryWithoutStartRejectsFinalSnapshotTest()
   await withTempDir(async (dir) => {
     const nonRepo = await getGitInfo(dir)
     assert.equal(nonRepo, null)

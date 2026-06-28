@@ -2492,6 +2492,8 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       filePath: chat.filePath,
       model: chat.model || chat.metrics?.model || codexDefaultModel.value || '',
       cwd: activeProject.value?.cwd || chat.cwd || '',
+      thinking: Boolean(chat.thinking),
+      thinkingStart: chat._thinkingStart || 0,
     })
     if (CODEX_METRICS_DEBUG) {
       console.log('[codex-metrics] refreshMetricsForChat result', {
