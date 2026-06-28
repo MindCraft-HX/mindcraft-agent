@@ -192,7 +192,14 @@
 
         <div v-if="dragging" class="drop-mask">{{ $t('agent.dragFile') }}</div>
         <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
-        <StatusBarMetrics :metrics="statusBarMetrics" :liveDurationMs="metricsLiveDurationMs" :compacting="statusBarMetrics.compacting" @send-message="sendFromStatusBar" />
+        <StatusBarMetrics
+          :metrics="statusBarMetrics"
+          :liveDurationMs="metricsLiveDurationMs"
+          :compacting="statusBarMetrics.compacting"
+          compact-hint-key="agent.codexAutoCompactDesc"
+          compacting-key="agent.codexAutoCompacting"
+          @send-message="sendFromStatusBar"
+        />
         <ConfirmDialog ref="confirmDialogRef" />
         <SelectModel ref="selectModelRef" />
         <SessionInstructionDialog ref="sessionInstructionRef" :theme-class="themeClass" @saved="refreshActiveSessionInstructionState" />
@@ -237,7 +244,7 @@ import SessionInstructionDialog from '../agentCommon/components/SessionInstructi
 import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
 import ImageLightbox from '../agentCommon/components/ImageLightbox.vue'
 import MessageList from './components/messages/MessageList.vue'
-import StatusBarMetrics from './components/StatusBarMetrics.vue'
+import StatusBarMetrics from '../agentCommon/components/StatusBarMetrics.vue'
 import ScrollToBottom from '../agentCommon/components/ScrollToBottom.vue'
 import ScrollToPrevMsg from '../agentCommon/components/ScrollToPrevMsg.vue'
 

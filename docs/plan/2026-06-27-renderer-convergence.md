@@ -317,3 +317,25 @@ Recommended order:
 4. add renderer contract tests
 
 This is worth doing as a planned architecture task, not as an opportunistic patch.
+
+## 11. Implementation Log
+
+### 2026-06-28
+
+Completed:
+
+- Added `packages/agent/src/components/agentCommon/composables/useAgentMetricsController.js`.
+- Wired CodeX status-bar metrics through the shared controller without changing provider-side sample semantics.
+- Added `tests/agent-metrics-controller.test.mjs` for new-turn reset, context-only updates, and active-session view construction.
+- Replaced the duplicated ClaudeCode / CodeX `StatusBarMetrics.vue` files with `packages/agent/src/components/agentCommon/components/StatusBarMetrics.vue`.
+- Kept provider-specific differences as props: Claude model shortening and CodeX compact tooltip copy.
+
+Explicitly not completed yet:
+
+- ClaudeCode still owns its old local `metricsData` state machine and timer implementation.
+- First-hydrate / active-tab restore is not fully unified between ClaudeCode and CodeX.
+- Footer and status-bar renderer consumers are not yet covered by direct component-level tests.
+
+Reason for the boundary:
+
+- `packages/agent/src/components/claudeCode/index.vue` is large and contains historical encoding-damaged comments. Broad rewrites there have a high regression risk. Continue with small, build-verified patches only.

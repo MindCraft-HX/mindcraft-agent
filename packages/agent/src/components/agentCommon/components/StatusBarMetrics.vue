@@ -1,20 +1,11 @@
 <template>
   <div class="status-bar-metrics">
-    <!-- 左侧区域 -->
     <div class="sb-left">
-      <!-- 模型 -->
       <span v-if="shortModel" class="sb-group">
         <span class="sb-icon">🤖</span>
         <span class="sb-val">{{ shortModel }}</span>
       </span>
 
-      <!-- 费用 -->
-      <!-- <span v-if="m.costUsd > 0" class="sb-group">
-        <span class="sb-icon">💲</span>
-        <span class="sb-val">{{ m.costUsd.toFixed(3) }}</span>
-      </span> -->
-
-      <!-- Token 用量 -->
       <span v-if="hasTokenData" class="sb-group">
         <span class="sb-icon">📊</span>
         <span class="sb-val">in {{ fmtK(inputDisplay) }}</span>
@@ -24,59 +15,71 @@
         <span v-if="hasCache" class="sb-val sb-cache">cache {{ fmtK(cacheDisplay) }}</span>
       </span>
 
-      <!-- 上下文 -->
-      <span v-if="m.contextWindow > 0 || compacting" class="sb-group sb-context-wrap" :class="{ 'sb-warn': contextPct > 80, 'sb-compacting': compacting }" @click="compactContext">
+      <span
+        v-if="m.contextWindow > 0 || compacting"
+        class="sb-group sb-context-wrap"
+        :class="{ 'sb-warn': contextPct > 80, 'sb-compacting': compacting }"
+        @click="compactContext"
+      >
         <svg class="sb-ring" :class="{ 'sb-ring-spin': compacting }" viewBox="0 0 24 24" width="16" height="16">
           <circle class="sb-ring-bg" cx="12" cy="12" r="9" fill="none" stroke-width="2.5"/>
-          <circle v-if="!compacting" class="sb-ring-fg" cx="12" cy="12" r="9" fill="none" stroke-width="2.5"
+          <circle
+            v-if="!compacting"
+            class="sb-ring-fg"
+            cx="12"
+            cy="12"
+            r="9"
+            fill="none"
+            stroke-width="2.5"
             :stroke-dasharray="`${contextPct * 0.5655} 56.55`"
             stroke-linecap="round"
             transform="rotate(-90 12 12)"
           />
-          <circle v-else class="sb-ring-fg sb-ring-compacting" cx="12" cy="12" r="9" fill="none" stroke-width="2.5"
+          <circle
+            v-else
+            class="sb-ring-fg sb-ring-compacting"
+            cx="12"
+            cy="12"
+            r="9"
+            fill="none"
+            stroke-width="2.5"
             stroke-dasharray="28 56.55"
             stroke-linecap="round"
             transform="rotate(-90 12 12)"
           />
         </svg>
         <span v-if="!compacting" class="sb-val">{{ contextPct }}%</span>
-        <span v-else class="sb-val sb-compacting-text">{{ $t('agent.compactTitle') }}</span>
+        <span v-else class="sb-val sb-compacting-text">{{ t(compactTitleKey) }}</span>
         <span class="sb-tooltip">
           <template v-if="!compacting">
-            <span class="sb-tooltip-title">{{ $t('agent.contextUsed', { percent: contextPct, used: fmtK(m.contextUsage), total: fmtK(m.contextWindow) }) }}</span>
-            <span class="sb-tooltip-sub">{{ $t('agent.codexAutoCompactDesc') }}</span>
+            <span class="sb-tooltip-title">{{ contextTooltipText }}</span>
+            <span class="sb-tooltip-sub">{{ t(compactHintKey) }}</span>
           </template>
-          <span v-else class="sb-tooltip-title">{{ $t('agent.codexAutoCompacting') }}</span>
+          <span v-else class="sb-tooltip-title">{{ t(compactingKey) }}</span>
         </span>
       </span>
     </div>
 
-    <!-- 右侧区域 -->
     <div class="sb-right">
-      <!-- 运行中指示 -->
       <span v-if="m.thinking" class="sb-group sb-thinking">
         <span class="sb-dot"></span>
-        <span class="sb-val">{{ $t('agent.runningDuration', { time: formatDuration(displayDurationMs) }) }}</span>
+        <span class="sb-val">{{ t('agent.runningDuration', { time: formatDuration(displayDurationMs) }) }}</span>
       </span>
-      <!-- 已完成显示总时长 -->
       <span v-else-if="displayDurationMs > 0" class="sb-group">
-        <span class="sb-val">{{ $t('agent.duration', { time: formatDuration(displayDurationMs) }) }}</span>
+        <span class="sb-val">{{ t('agent.duration', { time: formatDuration(displayDurationMs) }) }}</span>
       </span>
 
-      <!-- 速度 -->
       <span v-if="hasSpeed" class="sb-group">
         <span class="sb-icon">⚡</span>
         <span class="sb-val">out {{ m.speedOutputPerSec }}/s</span>
       </span>
 
-      <!-- Git -->
       <span v-if="m.gitBranch" class="sb-group">
         <span class="sb-icon">🔀</span>
         <span class="sb-val sb-branch">{{ m.gitBranch }}</span>
         <span v-if="m.gitChanges > 0" class="sb-val sb-changes">({{ m.gitChanges }})</span>
       </span>
 
-      <!-- API 限额 -->
       <span v-if="m.usageApiSessionPct != null" class="sb-group" :class="{ 'sb-warn': m.usageApiSessionPct > 80 }">
         <span class="sb-icon">⏱</span>
         <span class="sb-val">{{ m.usageApiSessionPct.toFixed(0) }}%</span>
@@ -87,14 +90,20 @@
 
 <script setup>
 import { computed, watch } from 'vue'
-import { useAnimatedNumber } from '../../agentCommon/composables/useAnimatedNumber.js'
+import { useI18n } from 'vue-i18n'
+import { useAnimatedNumber } from '../composables/useAnimatedNumber.js'
 
 const props = defineProps({
   metrics: { type: Object, required: true },
   liveDurationMs: { type: Number, default: 0 },
   compacting: { type: Boolean, default: false },
+  modelDisplay: { type: String, default: 'full' },
+  compactTitleKey: { type: String, default: 'agent.compactTitle' },
+  compactHintKey: { type: String, default: 'agent.compactHint' },
+  compactingKey: { type: String, default: 'agent.compacting' },
 })
 const emit = defineEmits(['send-message'])
+const { t } = useI18n()
 
 const { display: inputDisplay, update: updateInput } = useAnimatedNumber()
 const { display: outputDisplay, update: updateOutput } = useAnimatedNumber()
@@ -107,7 +116,11 @@ watch(() => props.metrics.cacheReadTokens || 0, (nv) => { updateCache(nv, { snap
 const m = computed(() => props.metrics)
 
 const shortModel = computed(() => {
-  return m.value.model || ''
+  const model = String(m.value.model || '')
+  if (props.modelDisplay !== 'claude-short') return model
+  const name = model.replace(/^claude[-_]?/, '')
+  const dateIndex = name.indexOf('-20')
+  return dateIndex > 0 ? name.slice(0, dateIndex) : name.slice(0, 20)
 })
 
 const hasTokenData = computed(() => m.value.inputTokens > 0 || m.value.outputTokens > 0 || m.value.cacheReadTokens > 0)
@@ -115,8 +128,16 @@ const hasCache = computed(() => m.value.cacheReadTokens > 0)
 
 const contextPct = computed(() => {
   if (!m.value.contextUsage || !m.value.contextWindow) return 0
-  const pct = Math.min(100, Math.round((m.value.contextUsage / m.value.contextWindow) * 100))
-  return pct
+  return Math.min(100, Math.round((m.value.contextUsage / m.value.contextWindow) * 100))
+})
+
+const contextTooltipText = computed(() => {
+  if (!m.value.contextWindow) return ''
+  return t('agent.contextUsed', {
+    percent: contextPct.value,
+    used: fmtK(m.value.contextUsage),
+    total: fmtK(m.value.contextWindow),
+  })
 })
 
 const displayDurationMs = computed(() => {
@@ -232,9 +253,9 @@ function formatDuration(ms) {
   50% { opacity: 0.3; }
 }
 
-/* 上下文圆形进度条 */
 .sb-context-wrap {
   position: relative;
+  cursor: pointer;
 }
 
 .sb-context-wrap:hover .sb-tooltip {
@@ -259,7 +280,6 @@ function formatDuration(ms) {
   stroke: var(--cc-warning);
 }
 
-/* 压缩中：圆环旋转动画 */
 .sb-compacting {
   cursor: default;
 }
@@ -313,5 +333,4 @@ function formatDuration(ms) {
   font-size: 11px;
   color: var(--cc-text-muted);
 }
-
 </style>

@@ -213,7 +213,13 @@
       <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
 
       <!-- 底部状态栏 -->
-      <StatusBarMetrics :metrics="metricsData" :liveDurationMs="metricsLiveDurationMs" :compacting="metricsData.compacting" @send-message="sendFromStatusBar" />
+      <StatusBarMetrics
+        :metrics="metricsData"
+        :liveDurationMs="metricsLiveDurationMs"
+        :compacting="metricsData.compacting"
+        model-display="claude-short"
+        @send-message="sendFromStatusBar"
+      />
 
       <ConfirmDialog ref="confirmDialogRef" />
       <ManagePlugins ref="managePluginsRef" api-prefix="plugins" @plugin-toggled="refreshSlashCommands(true)" />
@@ -317,7 +323,7 @@ import ImageLightbox from './components/ImageLightbox.vue'
 import MessageList from './components/messages/MessageList.vue'
 import AskQuestionDialog from './components/messages/AskQuestionDialog.vue'
 import PlanReviewDialog from './components/messages/PlanReviewDialog.vue'
-import StatusBarMetrics from './components/StatusBarMetrics.vue'
+import StatusBarMetrics from '../agentCommon/components/StatusBarMetrics.vue'
 import ManagePlugins from './components/ManagePlugins.vue'
 import ManageSkills from './components/ManageSkills.vue'
 import ScrollToBottom from '../agentCommon/components/ScrollToBottom.vue'
