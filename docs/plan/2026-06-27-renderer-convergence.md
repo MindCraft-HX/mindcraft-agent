@@ -326,6 +326,7 @@ Completed:
 
 - Added `packages/agent/src/components/agentCommon/composables/useAgentMetricsController.js`.
 - Wired CodeX status-bar metrics through the shared controller without changing provider-side sample semantics.
+- Wired ClaudeCode status-bar merge/timer/new-turn/reset rules through the shared controller without changing Claude query timing or stream interpretation.
 - Added `tests/agent-metrics-controller.test.mjs` for new-turn reset, context-only updates, and active-session view construction.
 - Replaced the duplicated ClaudeCode / CodeX `StatusBarMetrics.vue` files with `packages/agent/src/components/agentCommon/components/StatusBarMetrics.vue`.
 - Kept provider-specific differences as props: Claude model shortening and CodeX compact tooltip copy.
@@ -334,7 +335,6 @@ Completed:
 
 Explicitly not completed yet:
 
-- ClaudeCode still owns its old local `metricsData` state machine and timer implementation.
 - First-hydrate / active-tab restore is improved for CodeX but not fully unified between ClaudeCode and CodeX.
 - Footer and status-bar renderer consumers are not yet covered by direct component-level tests.
 

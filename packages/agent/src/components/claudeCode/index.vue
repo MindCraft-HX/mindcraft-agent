@@ -342,6 +342,7 @@ import {
   toggleTaskBarCollapsed as toggleClaudeTaskBarCollapsed,
 } from './composables/useClaudeTaskState.mjs'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
+import { useAgentMetricsController } from '../agentCommon/composables/useAgentMetricsController.js'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
 import { buildDiffLines, applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
@@ -538,78 +539,24 @@ async function loadClaudeModelDefaults() {
 }
 
 // ---- StatusBar Metrics ----
-const metricsData = ref({
-  model: '', costUsd: 0, inputTokens: 0, outputTokens: 0,
-  cacheReadTokens: 0, cacheCreationTokens: 0,
-  contextUsage: 0, contextWindow: 0, durationMs: 0,
-  thinking: false, compacting: false, gitBranch: '', gitChanges: 0, usageApiSessionPct: null,
-})
-const metricsLiveDurationMs = ref(0)
-let metricsLiveTimer = null
-let _unregAgentEvent = null
-
-function buildNewClaudeTurnMetrics(tab) {
-  const previous = tab?.metrics || {}
-  return {
-    ...previous,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
-    contextUsage: previous.contextUsage || 0,
-    contextWindow: previous.contextWindow || 0,
-    durationMs: 0,
-    speedOutputPerSec: 0,
-  }
-}
-
-function stopMetricsLiveTimer() {
-  if (metricsLiveTimer) {
-    clearInterval(metricsLiveTimer)
-    metricsLiveTimer = null
-  }
-  metricsLiveDurationMs.value = 0
-}
-
-function syncMetricsTimerForClaudeTab(tab, durationMs = 0) {
-  if (!tab?.thinking) {
-    stopMetricsLiveTimer()
-    return
-  }
-  if (!tab._thinkingStart) {
+const {
+  metricsData,
+  metricsLiveDurationMs,
+  buildNewTurnMetrics: buildNewClaudeTurnMetrics,
+  mergeRuntimeMetrics: mergeClaudeRuntimeMetrics,
+  syncTimerForTab: syncMetricsTimerForClaudeTab,
+  resetActiveMetrics,
+  applyMetricsToTab,
+  stopMetricsTimer: stopMetricsLiveTimer,
+} = useAgentMetricsController({
+  ensureThinkingStart(tab, durationMs = 0) {
     markClaudeStreamActivity(tab, { type: 'metrics_timer' }, Date.now() - (durationMs || 0))
-  }
-  const start = tab._thinkingStart || Date.now()
-  if (metricsLiveTimer) clearInterval(metricsLiveTimer)
-  metricsLiveDurationMs.value = Date.now() - start
-  metricsLiveTimer = setInterval(() => {
-    metricsLiveDurationMs.value = Date.now() - start
-  }, 1000)
-}
+  },
+})
+let _unregAgentEvent = null
 
 // refreshMetricsForChat 期间的轮询锁，防止 polling 数据覆盖刚查出的完整结果
 let _refreshingMetrics = false
-
-function hasClaudeTurnTokenSample(data = {}) {
-  return ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheCreationTokens']
-    .some(key => Object.prototype.hasOwnProperty.call(data, key) && Number(data[key]) > 0)
-}
-
-function mergeClaudeRuntimeMetrics(current = {}, data = {}, tab = null) {
-  const next = { ...data }
-  // Running 状态栏展示当前回合 token。没有本轮 token 样本的轮询只补 session 级字段，
-  // 避免上一轮 transcript 的 output/cache 回灌到新回合。
-  if (tab?.thinking && !hasClaudeTurnTokenSample(data)) {
-    delete next.inputTokens
-    delete next.outputTokens
-    delete next.cacheReadTokens
-    delete next.cacheCreationTokens
-  }
-  return {
-    ...current,
-    ...next,
-  }
-}
 
 function findClaudeTabBySessionId(sessionId = '') {
   if (!sessionId) return null
@@ -621,9 +568,12 @@ function onMetricsUpdate(data) {
   const targetTab = data.sessionId ? findClaudeTabBySessionId(data.sessionId) : activeTab.value
   if (!targetTab) return
 
-  targetTab.metrics = {
-    ...mergeClaudeRuntimeMetrics(targetTab.metrics || {}, data, targetTab),
-    sessionId: targetTab.sessionId,
+  const mergedMetrics = applyMetricsToTab(targetTab, data)
+  if (mergedMetrics && !mergedMetrics.sessionId) {
+    targetTab.metrics = {
+      ...mergedMetrics,
+      sessionId: targetTab.sessionId,
+    }
   }
 
   if (typeof data.thinking === 'boolean') applyClaudeMetrics(targetTab, data)
@@ -637,13 +587,9 @@ function onMetricsUpdate(data) {
 
 
 function resetMetrics() {
-  stopMetricsLiveTimer()
-  const keepModel = metricsData.value.model
-  Object.assign(metricsData.value, {
-    model: keepModel, costUsd: 0, inputTokens: 0, outputTokens: 0,
-    cacheReadTokens: 0, cacheCreationTokens: 0,
-    contextUsage: 0, contextWindow: 0, durationMs: 0,
-    thinking: false, compacting: false, gitBranch: '', gitChanges: 0, usageApiSessionPct: null,
+  resetActiveMetrics({
+    keepModel: metricsData.value.model,
+    compacting: false,
   })
 }
 
@@ -3700,7 +3646,6 @@ onUnmounted(() => {
     historyTopObserver.disconnect()
     historyTopObserver = null
   }
-  if (metricsLiveTimer) { clearInterval(metricsLiveTimer); metricsLiveTimer = null }
   if (loadMoreCooldownTimer) { clearTimeout(loadMoreCooldownTimer); loadMoreCooldownTimer = null }
   _clearAskTimeout()
   _clearPlanReviewTimeout()
