@@ -25,6 +25,7 @@ docs/            -> 项目知识库，默认纳入 git
 
 | 场景 | 先读 |
 |------|------|
+| 知识库总索引 | `docs/index.md` |
 | 当前任务 / Bug 跟踪 | `docs/TODO.md` |
 | 总体架构、目录边界、数据边界 | `docs/agent-architecture.md` |
 | 会话重复 / 中断 / 丢失 / 恢复卡死 | `docs/session-pitfalls.md` |
@@ -33,7 +34,10 @@ docs/            -> 项目知识库，默认纳入 git
 | `~/.claude/settings.json` 污染 | `docs/settings-json-pollution.md` |
 | dev 白屏 / 僵尸进程 | `docs/bugs/dev-white-screen-zombie-process.md` |
 | 打包 / 部署 / 版本发布 | `docs/build-and-deploy.md` |
+| 首页功能 | `docs/home-page.md` |
+| 界面性能 | `docs/perf-audit-report.md` |
 | 每日代码审查 | `docs/review.md` |
+| 架构健康审查（优化优先级） | `docs/architecture-health-review-2026-06-28.md` |
 
 ## 数据边界
 

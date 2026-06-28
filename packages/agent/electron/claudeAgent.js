@@ -3,7 +3,7 @@ const { Conf } = require('electron-conf')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
-const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
+const { DEFAULT_MAX_BYTES, appendLogLineWithRotation, getMindCraftSettingsPath, readMindCraftSettings, writeMindCraftSettings } = require('./diagnosticsFileUtils')
 const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
 const { beginTurn, submitSample, getCurrentSnapshot, clearCurrentTurn, removeStore, clearAllStores } = require('./tokenMetrics/turnStore')
 const { readPluginsState } = require('./pluginState')
@@ -42,42 +42,22 @@ const CLAUDE_FREEZE_DIAG_MAX_BYTES = DEFAULT_MAX_BYTES
 const CLAUDE_METRICS_POLL_INTERVAL_MS = 1000
 let sessionRegistryOptionsForTest = null
 
-// PR 2：懒加载 ESM 协议模块（CJS → ESM 桥接）
-let _agentProtocolMod = null
-async function _getAgentProtocol() {
-  _agentProtocolMod = _agentProtocolMod || await import('../src/components/agentCommon/runtime/agentProtocol.mjs')
-  return _agentProtocolMod
-}
+const { getAgentProtocol } = require('./agentProtocolBridge')
+// Note: getMindCraftSettingsPath / readMindCraftSettings / writeMindCraftSettings
+// are imported from diagnosticsFileUtils above (canonical location).
 
-function getMindCraftSettingsPath() {
-  return path.join(app.getPath('userData'), 'settings.json')
-}
-
-function readMindCraftSettings() {
-  try {
-    const settingsPath = getMindCraftSettingsPath()
-    if (!fs.existsSync(settingsPath)) return {}
-    return JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  } catch (_) {
-    return {}
-  }
-}
-
-function writeMindCraftSettings(settings) {
-  const settingsPath = getMindCraftSettingsPath()
-  const dir = path.dirname(settingsPath)
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-  const body = JSON.stringify(settings || {}, null, 2)
-  const tmp = `${settingsPath}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, body, 'utf8')
-  try {
-    fs.renameSync(tmp, settingsPath)
-  } catch (_) {
-    fs.copyFileSync(tmp, settingsPath)
-    try { fs.unlinkSync(tmp) } catch (_) {}
-  }
-  return settingsPath
-}
+// ---- ClaudeCode Environment (extracted leaf module, Phase 5) ----
+const {
+  getEnvWithNodePath,
+  findSystemClaude,
+  loadClaudeAgentSdk,
+  resetSystemClaudeCache,
+  resetClaudeSdkPromise,
+  buildSystemClaudeEnv,
+  setClaudeConfRef,
+  isInstallingClaudeCode,
+  setInstallingClaudeCode,
+} = require('./claude/environment')
 
 function buildClaudeHistoryTurnTokensFromEntry(entry) {
   const usage = entry?.message?.usage
@@ -388,165 +368,8 @@ function additionalDirsFromUserText(resolvedCwd, text) {
   return [...out]
 }
 
-let sdkModulePromise = null
-function loadClaudeAgentSdk() {
-  if (!sdkModulePromise) {
-    sdkModulePromise = import('@anthropic-ai/claude-agent-sdk')
-  }
-  return sdkModulePromise
-}
-
 const { execSync, execFileSync, exec, execFile } = require('child_process')
 const { promisify } = require('util')
-
-/** 构建包含系统 Node.js 路径的 env 对象（打包后 PATH 可能缺失 node/npm） */
-function getEnvWithNodePath() {
-  const env = { ...process.env }
-  const nodeDirs = [
-    path.dirname(process.execPath),               // 同 Electron 内置 node 的目录
-    'C:\\Program Files\\nodejs',                  // 系统级 node 默认安装路径
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm'), // 用户级 npm prefix
-  ]
-  const existingPaths = (env.PATH || env.Path || '').split(path.delimiter).filter(Boolean)
-  const merged = [...nodeDirs, ...existingPaths]
-  // 去重
-  const uniquePaths = [...new Set(merged)]
-  env.PATH = uniquePaths.join(path.delimiter)
-  env.Path = env.PATH
-  return env
-}
-
-// 缓存系统 claude 路径，避免每次 query 都重新检测
-let _systemClaudePath = undefined
-let installingClaudeCode = false
-let _claudeConfRef = null // 由 setupClaudeHandlers 注入，供 findSystemClaude 复用
-
-async function findSystemClaude() {
-  if (_systemClaudePath !== undefined) return _systemClaudePath
-
-  /** 通过 cmd/bat 包装器解析出真实的 .exe 路径 */
-  const resolveExeFromShim = (shimPath) => {
-    try {
-      const content = fs.readFileSync(shimPath, 'utf8')
-      // 匹配如 "%dp0%\node_modules\@anthropic-ai\claude-code\bin\claude.exe"
-      const m = content.match(/"([^"]+claude\.exe)"/)
-      if (m) {
-        let exePath = m[1]
-        // 展开 %dp0% 为 shim 所在目录
-        if (exePath.includes('%dp0%')) {
-          exePath = path.normalize(exePath.replace('%dp0%', path.dirname(shimPath)))
-        }
-        if (fs.existsSync(exePath)) return exePath
-      }
-    } catch (_) {}
-    return null
-  }
-
-  const isExecutableHealthy = (exePath) => {
-    if (!exePath || !fs.existsSync(exePath)) return false
-    try {
-      // Windows 上 execFileSync 无法直接执行 .cmd/.bat，需要通过 cmd.exe /c
-      const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(exePath)
-      const cmd = isCmdShim ? 'cmd.exe' : exePath
-      const args = isCmdShim ? ['/c', exePath, '--version'] : ['--version']
-      // 仅做"可启动"校验，避免存在文件但已损坏/依赖缺失导致误判已安装
-      execFileSync(cmd, args, {
-        encoding: 'utf8',
-        timeout: 5000,
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      return true
-    } catch (_) {
-      // 有些版本可能不支持 --version，退化到 --help 再试一次
-      try {
-        const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(exePath)
-        const cmd = isCmdShim ? 'cmd.exe' : exePath
-        const args = isCmdShim ? ['/c', exePath, '--help'] : ['--help']
-        execFileSync(cmd, args, {
-          encoding: 'utf8',
-          timeout: 5000,
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
-        return true
-      } catch (_) {
-        return false
-      }
-    }
-  }
-
-  // 0. 用户手动指定的路径优先（仅使用外层注入的 conf，避免重复实例化）
-  if (_claudeConfRef) {
-    try {
-      const custom = String(_claudeConfRef.get('claudeExecutablePath', '') || '').trim()
-      if (custom && fs.existsSync(custom) && isExecutableHealthy(custom)) {
-        _systemClaudePath = custom
-        return custom
-      }
-    } catch (_) {}
-  }
-
-  /** 校验路径健康，若为 .cmd shim 则解析真实 .exe 并校验 */
-  const tryPath = (p) => {
-    if (!p || !fs.existsSync(p)) return null
-    // 如果是 .exe，直接校验
-    if (/\.exe$/i.test(p)) {
-      if (isExecutableHealthy(p)) { _systemClaudePath = p; return p }
-      return null
-    }
-    // .cmd/.bat：先验证 shim 本身健康，再尝试解析出真实 .exe
-    // 注意：SDK 的 pathToClaudeCodeExecutable 需要 .exe 路径，
-    // 不能传 .cmd（Windows spawn 无法直接执行 .cmd，会抛 EINVAL）
-    if (/\.(cmd|bat)$/i.test(p)) {
-      if (isExecutableHealthy(p)) {
-        const realExe = resolveExeFromShim(p)
-        if (realExe && fs.existsSync(realExe)) { _systemClaudePath = realExe; return realExe }
-      }
-      return null
-    }
-    return null
-  }
-
-  if (process.platform === 'win32') {
-    const env = getEnvWithNodePath()
-    // 1. npm 全局 prefix 下的 claude 可执行文件
-    try {
-      const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000, env }).trim()
-      if (prefix) {
-        // 优先找 claude.exe，其次 claude.cmd（npm 全局安装通常生成 .cmd shim）
-        for (const name of ['claude.exe', 'claude.cmd']) {
-          if (tryPath(path.join(prefix, name))) return _systemClaudePath
-        }
-      }
-    } catch (_) {}
-
-    // 2. PATH 上的 claude（cmd/bat 需要追到实际 exe）
-    try {
-      const lines = execSync('where claude', { encoding: 'utf8', timeout: 5000, env, windowsHide: true })
-        .trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-      for (const p of lines) {
-        if (tryPath(p)) return _systemClaudePath
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const result = execSync('which claude', { encoding: 'utf8', timeout: 5000 }).trim()
-      if (tryPath(result)) return _systemClaudePath
-    } catch (_) {}
-  }
-
-  _systemClaudePath = null
-  return null
-}
-
-function resetSystemClaudeCache() {
-  _systemClaudePath = undefined
-}
-
-function buildSystemClaudeEnv(extraEnv = {}) {
-  return augmentEnvWithBundledRg({ ...process.env, ...extraEnv })
-}
 
 function resolveClaudeDoneReasonFromError(err) {
   const errMsg = err?.message || String(err || '')
@@ -1006,7 +829,7 @@ function setupClaudeHandlers() {
     if (!fs.existsSync(settingsDir)) fs.mkdirSync(settingsDir, { recursive: true })
     fs.writeFileSync(getSettingsPath(), JSON.stringify(obj, null, 2), 'utf8')
   }
-  _claudeConfRef = { readGlobalSettings, writeGlobalSettings }
+  setClaudeConfRef({ readGlobalSettings, writeGlobalSettings })
 
   // 确保 settings.json 中有 skipWebFetchPreflight: true，否则 WebFetch 在国内网络会失败
   // （SDK 的 preflight 验证请求到 claude.ai 被 Cloudflare/GFW 阻断）
@@ -1725,8 +1548,8 @@ function setupClaudeHandlers() {
 
   // 安装 Claude Code（需要 Node >= 18 且 npm 可用）
   ipcMain.handle('claude-install-claude-code', async () => {
-    if (installingClaudeCode) return { success: false, message: lt('install.inProgress') }
-    installingClaudeCode = true
+    if (isInstallingClaudeCode()) return { success: false, message: lt('install.inProgress') }
+    setInstallingClaudeCode(true)
     try {
       // 先终止可能占用 claude.exe 的进程，避免 EBUSY
       try { execSync('taskkill /IM claude.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
@@ -1767,7 +1590,7 @@ function setupClaudeHandlers() {
       }
       return { success: false, message: hint }
     } finally {
-      installingClaudeCode = false
+      setInstallingClaudeCode(false)
     }
   })
 
@@ -2621,7 +2444,7 @@ function setupClaudeHandlers() {
     slashCommandsCache.clear()
     compactSummaries.clear()
     pendingSessionMetaByChatKey.clear()
-    sdkModulePromise = null
+    resetClaudeSdkPromise()
     resetSystemClaudeCache()
   }
 
@@ -3102,7 +2925,7 @@ function setupClaudeHandlers() {
               _agentRunDoneFilePath = donePayload.filePath || ''  // PR 2：捕获 filePath 供 finally 使用
               // PR 2：双发 agent.turn.terminal（旧通道仍是权威路径）
               try {
-                const { buildAgentTurnTerminalEvent, TerminalKind } = await _getAgentProtocol()
+                const { buildAgentTurnTerminalEvent, TerminalKind } = await getAgentProtocol()
                 safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
                   agent: 'claudeCode',
                   chatKey: sessionId,
@@ -3234,7 +3057,7 @@ function setupClaudeHandlers() {
           // agent.turn.terminal 在 result 到达时已发，此处是 run 收尾事件。
           // filePath 从 result/fallback 的 donePayload 捕获，abort 交给 finally 统一发。
           try {
-            const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+            const { buildAgentRunDoneEvent } = await getAgentProtocol()
             safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
               agent: 'claudeCode',
               chatKey: sessionId,

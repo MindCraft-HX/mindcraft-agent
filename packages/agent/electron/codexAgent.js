@@ -41,12 +41,29 @@ const {
   writeSkillsCatalogCache,
 } = require('./skillsCatalogCache')
 
-// PR 2：懒加载 ESM 协议模块（CJS → ESM 桥接）
-let _agentProtocolMod = null
-async function _getAgentProtocol() {
-  _agentProtocolMod = _agentProtocolMod || await import('../src/components/agentCommon/runtime/agentProtocol.mjs')
-  return _agentProtocolMod
-}
+const { getAgentProtocol } = require('./agentProtocolBridge')
+
+// ---- CodeX Config (extracted leaf module, Phase 5) ----
+// Stateless TOML utils — no deps on module constants, safe to load early.
+const {
+  parseTomlStringValue,
+  stripTomlInlineComment,
+  splitTomlDottedKey,
+  parseSimpleTomlContent,
+  parseSimpleToml,
+  selectCodexTomlProvider,
+  normalizeCodexApiFormatValue,
+  createCodexConfigManager,
+} = require('./codex/configManager')
+
+// ---- CodeX Environment (extracted leaf module, Phase 5) ----
+const {
+  findGlobalCodexPath,
+  loadCodexSdk,
+  resetCodexSdkPromise,
+  isInstallingCodex,
+  setInstallingCodex,
+} = require('./codex/environment')
 
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
@@ -325,6 +342,25 @@ let SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
 const CODEX_METRICS_POLL_INTERVAL_MS = 1000
 const CODEX_SESSION_LOAD_LOG_MAX_BYTES = DEFAULT_MAX_BYTES
 
+// ---- CodeX Config Manager (factory — needs constants above) ----
+const _codexCfg = createCodexConfigManager({
+  codexConfigDir: CODEX_CONFIG_DIR,
+  configTomlFile: CONFIG_TOML_FILE,
+  Conf,
+  normalizeReasoningEffort: normalizeCodexReasoningEffort,
+})
+
+const {
+  readCodexProvidersConfig,
+  buildRuntimeConfigFromProvider,
+  getActiveCodexProviderRuntime,
+  buildRuntimeConfigFromToml,
+  readRuntimeConfig,
+  readSandboxMode,
+  CODEX_SANDBOX_MODES,
+  CODEX_SANDBOX_MIGRATE,
+} = _codexCfg
+
 function getCodexUploadsDir() {
   return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')
 }
@@ -458,316 +494,6 @@ function resolveImageInputPath(img = {}) {
   return dataUrlToTempImagePath(img)
 }
 
-/** 简易 TOML 解析器（仅解析 Codex config.toml 所需的字段） */
-function parseTomlStringValue(rawValue) {
-  let value = String(rawValue ?? '').trim()
-  if (value.startsWith('"')) {
-    let out = ''
-    let escaped = false
-    for (let i = 1; i < value.length; i += 1) {
-      const ch = value[i]
-      if (escaped) {
-        out += ch
-        escaped = false
-        continue
-      }
-      if (ch === '\\') {
-        escaped = true
-        continue
-      }
-      if (ch === '"') return out
-      out += ch
-    }
-    return out
-  }
-  if (value === 'true') return true
-  if (value === 'false') return false
-  if (!isNaN(value) && value !== '') return Number(value)
-  return value
-}
-
-function stripTomlInlineComment(value) {
-  const raw = String(value || '').trim()
-  if (raw.startsWith('"')) {
-    let escaped = false
-    for (let i = 1; i < raw.length; i += 1) {
-      const ch = raw[i]
-      if (escaped) {
-        escaped = false
-        continue
-      }
-      if (ch === '\\') {
-        escaped = true
-        continue
-      }
-      if (ch === '"') return raw.slice(0, i + 1)
-    }
-    return raw
-  }
-  const hashIdx = raw.indexOf('#')
-  return hashIdx >= 0 ? raw.slice(0, hashIdx).trim() : raw
-}
-
-function splitTomlDottedKey(pathText) {
-  const parts = []
-  let current = ''
-  let quoted = false
-  let escaped = false
-  for (const ch of String(pathText || '').trim()) {
-    if (escaped) {
-      current += ch
-      escaped = false
-      continue
-    }
-    if (quoted && ch === '\\') {
-      escaped = true
-      continue
-    }
-    if (ch === '"') {
-      quoted = !quoted
-      continue
-    }
-    if (!quoted && ch === '.') {
-      parts.push(current.trim())
-      current = ''
-      continue
-    }
-    current += ch
-  }
-  if (current || pathText) parts.push(current.trim())
-  return parts
-}
-
-function parseSimpleTomlContent(content) {
-  const result = {}
-  try {
-    let currentSection = result
-    for (let rawLine of content.split('\n')) {
-      const line = rawLine.replace(/\r$/, '').trim()
-      if (!line || line.startsWith('#')) continue
-      // 段头 [section] / [section.sub]
-      const sectionMatch = line.match(/^\[([^\]]+)\]$/)
-      if (sectionMatch) {
-        const keys = splitTomlDottedKey(sectionMatch[1])
-        currentSection = keys.reduce((obj, k) => { obj[k] = obj[k] || {}; return obj[k] }, result)
-        continue
-      }
-      // key = value
-      const kvMatch = line.match(/^([^=]+?)\s*=\s*(.+)$/s)
-      if (kvMatch) {
-        const key = kvMatch[1].trim()
-        currentSection[key] = parseTomlStringValue(stripTomlInlineComment(kvMatch[2]))
-      }
-    }
-  } catch (_) {}
-  return result
-}
-
-function parseSimpleToml(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return {}
-    return parseSimpleTomlContent(fs.readFileSync(filePath, 'utf8'))
-  } catch (_) {
-    return {}
-  }
-}
-
-function selectCodexTomlProvider(modelProviders, providerId) {
-  if (!modelProviders || typeof modelProviders !== 'object') return null
-  const id = String(providerId || '').trim()
-  if (id && modelProviders[id] && typeof modelProviders[id] === 'object') return modelProviders[id]
-  return Object.values(modelProviders).find(v => v && typeof v === 'object' && ('base_url' in v || 'experimental_bearer_token' in v)) || null
-}
-
-function normalizeCodexApiFormatValue(format = '') {
-  const value = String(format || '').trim()
-  if (value === 'chat') return 'chat'
-  if (value === 'responses') return 'responses'
-  return ''
-}
-
-function readCodexProvidersConfig() {
-  const providersFile = path.join(CODEX_CONFIG_DIR, 'providers.json')
-  try {
-    if (!fs.existsSync(providersFile)) return null
-    return JSON.parse(fs.readFileSync(providersFile, 'utf8'))
-  } catch (_) {
-    return null
-  }
-}
-
-function buildRuntimeConfigFromProvider(provider = null) {
-  if (!provider || typeof provider !== 'object') return {}
-  const tomlRuntime = provider.tomlText
-    ? buildRuntimeConfigFromToml(parseSimpleTomlContent(provider.tomlText), {}, {})
-    : {}
-  return {
-    apiKey: String(provider.key || tomlRuntime.apiKey || '').trim(),
-    baseURL: String(provider.url || tomlRuntime.baseURL || '').trim(),
-    model: String(provider.model || tomlRuntime.model || '').trim(),
-    reasoningEffort: normalizeCodexReasoningEffort(provider.reasoningEffort || tomlRuntime.reasoningEffort || ''),
-    apiFormat: normalizeCodexApiFormatValue(provider.apiFormat || tomlRuntime.apiFormat || ''),
-  }
-}
-
-function getActiveCodexProviderRuntime() {
-  const stored = readCodexProvidersConfig()
-  const providers = Array.isArray(stored?.providers) ? stored.providers : []
-  if (!providers.length) return {}
-  const idx = Number.isInteger(stored?.activeIdx) && stored.activeIdx >= 0 && stored.activeIdx < providers.length
-    ? stored.activeIdx
-    : 0
-  return buildRuntimeConfigFromProvider(providers[idx])
-}
-
-function buildRuntimeConfigFromToml(toml = {}, userRuntime = {}, activeProviderRuntime = {}) {
-  // 从 config.toml 提取 CLI 级默认值
-  let tomlApiKey = toml.auth_token || toml.experimental_bearer_token || ''
-  let tomlBaseURL = toml.base_url || ''
-  let tomlModel = toml.model || ''
-  let tomlEffort = toml.model_reasoning_effort || toml.reasoning_effort || toml.reason_effort || ''
-  let tomlApiFormat = toml.api_format || ''
-
-  // [model_providers.<id>] 段（第三方 provider 格式，参照 cc-switch）
-  // 当存在选中的 model_provider 时，provider 段应优先于顶层 base_url/token。
-  // 这样可以避开历史版本遗留在顶层的临时代理地址（如 127.0.0.1）。
-  const provider = selectCodexTomlProvider(toml.model_providers, toml.model_provider)
-  if (provider) {
-    if (provider.experimental_bearer_token) tomlApiKey = provider.experimental_bearer_token || tomlApiKey
-    if (provider.base_url) tomlBaseURL = provider.base_url || tomlBaseURL
-    if (provider.api_format) tomlApiFormat = provider.api_format || tomlApiFormat
-  }
-
-  if (!tomlApiKey && toml.auth && toml.auth.token) tomlApiKey = toml.auth.token
-  if (!tomlBaseURL && toml.api && toml.api.base_url) tomlBaseURL = toml.api.base_url
-  if (!tomlModel && toml.api && toml.api.model) tomlModel = toml.api.model
-  if (!tomlEffort && toml.api && (toml.api.model_reasoning_effort || toml.api.reasoning_effort || toml.api.reason_effort)) {
-    tomlEffort = toml.api.model_reasoning_effort || toml.api.reasoning_effort || toml.api.reason_effort
-  }
-
-  const userApiKey = userRuntime.apiKey || ''
-  const userBaseURL = userRuntime.baseURL || ''
-  const userModel = userRuntime.model || ''
-  const userEffort = userRuntime.reasoningEffort || userRuntime.reasonEffort || ''
-  const userApiFormat = normalizeCodexApiFormatValue(userRuntime.apiFormat)
-
-  const providerApiKey = activeProviderRuntime.apiKey || ''
-  const providerBaseURL = activeProviderRuntime.baseURL || ''
-  const providerModel = activeProviderRuntime.model || ''
-  const providerEffort = activeProviderRuntime.reasoningEffort || ''
-  const providerApiFormat = normalizeCodexApiFormatValue(activeProviderRuntime.apiFormat)
-
-  const apiKey = providerApiKey || userApiKey || tomlApiKey
-  const baseURL = providerBaseURL || userBaseURL || tomlBaseURL
-  // model / effort allow session-level override, but transport fields stay provider-owned.
-  const model = userModel || providerModel || tomlModel
-  const reasoningEffort = normalizeCodexReasoningEffort(userEffort || providerEffort || tomlEffort)
-  const apiFormat = providerApiFormat || userApiFormat || normalizeCodexApiFormatValue(tomlApiFormat) || 'responses'
-
-  return { apiKey, baseURL, model, reasoningEffort, apiFormat }
-}
-
-/** 读取 Codex 运行时配置
- *  优先级：electron-conf（用户偏好） > config.toml（CLI 默认配置）
- *  config.toml 属于 Codex CLI，不可被应用修改；electron-conf 是应用的持久化层
- */
-function readRuntimeConfig() {
-  const toml = parseSimpleToml(CONFIG_TOML_FILE)
-
-  // electron-conf：用户偏好，优先级高于 config.toml
-  let userRuntime = {}
-  try {
-    const conf = new Conf({ name: 'mindcraft-codex' })
-    userRuntime = conf.get('runtime') || {}
-  } catch (_) {}
-
-  return buildRuntimeConfigFromToml(toml, userRuntime, getActiveCodexProviderRuntime())
-}
-
-/** CodeX SDK 原生 sandboxMode 值 */
-const CODEX_SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access']
-
-/** 旧 permissionPolicy 值 → 新 sandboxMode 值迁移映射 */
-const CODEX_SANDBOX_MIGRATE = {
-  read_only: 'read-only',
-  ask: 'workspace-write',
-  allow_all: 'danger-full-access',
-}
-
-function readSandboxMode() {
-  try {
-    const conf = new Conf({ name: 'mindcraft-codex' })
-    // 先读新 key
-    const mode = conf.get('sandboxMode')
-    if (mode && CODEX_SANDBOX_MODES.includes(mode)) return mode
-    // 尝试旧 key 迁移
-    const old = conf.get('permissionPolicy')
-    if (old && CODEX_SANDBOX_MIGRATE[old]) {
-      conf.set('sandboxMode', CODEX_SANDBOX_MIGRATE[old])
-      conf.delete('permissionPolicy')
-      return CODEX_SANDBOX_MIGRATE[old]
-    }
-  } catch (_) {}
-  return 'workspace-write'
-}
-
-let codexModulePromise = null
-let installingCodex = false
-
-/** 缓存已找到的 codex 路径，避免每次调用重复探测 */
-let _globalCodexPath = undefined
-
-/** 打包后 SDK 的 createRequire 从 asar 内出发，搜不到全局安装的 codex。
- *  手动查找全局 codex 二进制路径，通过 codexPathOverride 传给 SDK。
- *  开发模式或未找到时返回 null，SDK 走自身 findCodexPath()。 */
-function findGlobalCodexPath() {
-  if (_globalCodexPath !== undefined) return _globalCodexPath
-
-  try {
-    const tripleMap = { win32: 'pc-windows-msvc', darwin: 'apple-darwin', linux: 'unknown-linux-musl' }
-    const arch = process.arch === 'x64' ? 'x86_64' : process.arch
-    const triple = `${arch}-${tripleMap[process.platform] || 'unknown-linux-musl'}`
-    const suffixByTriple = {
-      'x86_64-pc-windows-msvc': 'win32-x64', 'aarch64-pc-windows-msvc': 'win32-arm64',
-      'x86_64-apple-darwin': 'darwin-x64', 'aarch64-apple-darwin': 'darwin-arm64',
-      'x86_64-unknown-linux-musl': 'linux-x64', 'aarch64-unknown-linux-musl': 'linux-arm64',
-    }
-    const suffix = suffixByTriple[triple]
-    if (suffix) {
-      const binName = process.platform === 'win32' ? 'codex.exe' : 'codex'
-      const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim()
-      if (globalRoot) {
-        // @openai/codex 是全局包，@openai/codex-{suffix} 是其 optional dep
-        const candidates = [
-          path.join(globalRoot, '@openai', 'codex', 'node_modules', `@openai/codex-${suffix}`, 'vendor', triple, 'bin', binName),
-          path.join(globalRoot, `@openai/codex-${suffix}`, 'vendor', triple, 'bin', binName),
-        ]
-        for (const p of candidates) {
-          if (fs.existsSync(p)) { _globalCodexPath = p; return p }
-        }
-      }
-    }
-  } catch (_) { /* npm 不可用，尝试下一级 fallback */ }
-
-  // Fallback: 通过 where/which 在 PATH 中查找 codex（Windows 可能返回 .cmd shim）
-  try {
-    const whichCmd = process.platform === 'win32' ? 'where' : 'which'
-    const result = execSync(`${whichCmd} codex`, { encoding: 'utf8', timeout: 5000 }).trim()
-    const lines = result.split('\n').map(l => l.trim()).filter(Boolean)
-    if (lines.length > 0) { _globalCodexPath = lines[0]; return _globalCodexPath }
-  } catch (_) {}
-
-  _globalCodexPath = null
-  return null
-}
-
-/** 懒加载 @openai/codex-sdk 模块，避免应用启动时阻塞 */
-function loadCodexSdk() {
-  if (!codexModulePromise) {
-    codexModulePromise = import('@openai/codex-sdk')
-  }
-  return codexModulePromise
-}
 const codexSlashCommandsCache = new Map() // key -> { ts, commands }
 
 function extractSlashCommandsFromText(text) {
@@ -2623,7 +2349,7 @@ function resetCodexSdkRuntime() {
   sessionFingerprints.clear()
   slowNoticeSent.clear()
   clearAllStores()
-  codexModulePromise = null
+  resetCodexSdkPromise()
 }
 
 /** 注册所有 Codex SDK 相关的 IPC 处理器（query/abort/history/settings） */
@@ -3085,7 +2811,7 @@ function setupCodexSdkHandlers() {
               detachResume: detachResumeOnDone,
             }))
             // PR 2：双发 agent.run.done（triggerDone 是同步函数，用 .then）
-            _getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
+            getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
               safeSend(sender, 'agent:event', buildAgentRunDoneEvent({
                 agent: 'codex',
                 chatKey: sessionId,
@@ -3367,7 +3093,7 @@ function setupCodexSdkHandlers() {
               maybeSendDone()
               if (!wasAlreadyTerminal) {
                 const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-                _getAgentProtocol().then(({ buildAgentTurnTerminalEvent, TerminalKind }) => {
+                getAgentProtocol().then(({ buildAgentTurnTerminalEvent, TerminalKind }) => {
                   safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
                     agent: 'codex',
                     chatKey: sessionId,
@@ -3634,7 +3360,7 @@ function setupCodexSdkHandlers() {
             }))
             // PR 2：双发 agent.run.done
             try {
-              const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+              const { buildAgentRunDoneEvent } = await getAgentProtocol()
               safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
                 agent: 'codex',
                 chatKey: sessionId,
@@ -3676,7 +3402,7 @@ function setupCodexSdkHandlers() {
       }))
       // PR 2：双发 agent.run.done（abort 路径）
       try {
-        const { buildAgentRunDoneEvent } = await _getAgentProtocol()
+        const { buildAgentRunDoneEvent } = await getAgentProtocol()
         safeSend(s.event?.sender, 'agent:event', buildAgentRunDoneEvent({
           agent: 'codex',
           chatKey: sessionId,
@@ -4290,8 +4016,8 @@ function setupCodexSdkHandlers() {
   })
 
   ipcMain.handle('codex-install-codex', async () => {
-    if (installingCodex) return { success: false, message: lt('install.inProgress') }
-    installingCodex = true
+    if (isInstallingCodex()) return { success: false, message: lt('install.inProgress') }
+    setInstallingCodex(true)
     try {
       try { execSync('taskkill /IM codex.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
       await new Promise((resolve, reject) => {
@@ -4304,12 +4030,12 @@ function setupCodexSdkHandlers() {
       Object.keys(require.cache).forEach((k) => {
         if (k.includes('codex-sdk')) delete require.cache[k]
       })
-      codexModulePromise = null
+      resetCodexSdkPromise()
       return { success: true }
     } catch (e) {
       return { success: false, message: e?.stderr || e?.message || String(e) }
     } finally {
-      installingCodex = false
+      setInstallingCodex(false)
     }
   })
 

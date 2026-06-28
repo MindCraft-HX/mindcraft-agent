@@ -60,6 +60,10 @@ const { openCodexWin } = require("./codexWindow/index.js");
 const { initCodeWin } = require("./searchView/index.js");
 const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
 
+// ---- Extracted Phase 7 modules ----
+const { loadThemeFromFile, saveThemeToFile, VALID_THEMES } = require('./themeStore');
+const { createTray } = require('./tray');
+
 let initUrl = path.join(__dirname, "../dist/index.html")
 // 开发模式：优先使用 Vite dev server（HMR 支持）
 if (process.env.VITE_DEV_SERVER_URL) {
@@ -364,32 +368,6 @@ function createWindow() {
 }
 
 let tray = null;
-function createTray(platform) {
-  const iconPath = path.join(__dirname, '../dist/logo-white.png');
-  if(process.platform == "darwin") {
-    // 加载图标并调整尺寸
-    const image = nativeImage.createFromPath(iconPath);
-    const resizedImage = image.resize({ width: 18, height: 18 });
-    tray = new Tray(resizedImage);
-  } else {
-    tray = new Tray(iconPath); 
-  }
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '打开', click: () => win.show() },
-    { label: '设置', click: () => {
-      win.show()
-      setTimeout(() => {
-        win.webContents.send("open-tab-by-name", {type: 'settings'});
-      }, 0);
-    }},
-    { label: '退出', click: () => app.exit() }
-  ])
-  tray.setContextMenu(contextMenu)
-  tray.setToolTip("MindCraft-Agent");
-  tray.on("click", () => {
-    win.show();
-  });
-}
 
 function prepareForUpdateInstall() {
   isQuittingForUpdate = true
@@ -457,7 +435,7 @@ registerMdViewerHandlers()
 app.whenReady().then(async () => {
   createWindow();
   setMainWindow(win);
-  createTray(NODE_PLATFORM)
+  tray = createTray(win, __dirname)
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件
   setupAutoUpdater(NODE_ENV, win, { beforeInstall: prepareForUpdateInstall }); //更新文件
@@ -558,28 +536,11 @@ ipcMain.handle('set-login-item-settings', (event, openAtLogin) => {
 });
 ipcMain.handle('get-app-version', () => app.getVersion());
 
-// 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）
-const themeFilePath = path.join(app.getPath('userData'), 'theme.json')
-const VALID_THEMES = ['dark', 'light', 'blue', 'brown']
-function loadThemeFromFile() {
-  try {
-    if (fs.existsSync(themeFilePath)) {
-      const data = JSON.parse(fs.readFileSync(themeFilePath, 'utf-8'))
-      if (data?.theme && VALID_THEMES.includes(data.theme)) return data.theme
-    }
-  } catch (_) {}
-  return null
-}
-function saveThemeToFile(name) {
-  try {
-    const dir = path.dirname(themeFilePath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(themeFilePath, JSON.stringify({ theme: name }), 'utf-8')
-  } catch (_) {}
-}
-ipcMain.on('load-theme', (event) => { event.returnValue = loadThemeFromFile() })
+// 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）— extracted to themeStore.js
+const userDataPath = app.getPath('userData')
+ipcMain.on('load-theme', (event) => { event.returnValue = loadThemeFromFile(userDataPath) })
 ipcMain.on('save-theme', (_, name) => {
-  if (VALID_THEMES.includes(name)) saveThemeToFile(name)
+  saveThemeToFile(userDataPath, name)
 })
 
 // 监听从渲染进程发来的打开新窗口的请求
