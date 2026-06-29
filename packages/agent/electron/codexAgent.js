@@ -65,6 +65,12 @@ const {
   setInstallingCodex,
 } = require('./codex/environment')
 
+// ---- CodeX Done Payload builders (extracted, Batch 2) ----
+const {
+  resolveCodexDoneReasonFromError,
+  buildCodexAgentDonePayload,
+} = require('./codex/donePayload')
+
 // ---- CodeX Config IPC (extracted, R09) ----
 const { registerCodexLeafIpcs } = require('./codex/index');
 
@@ -613,30 +619,6 @@ function readJsonlHeadLines(filePath, maxLines = 80) {
     fs.closeSync(fd)
     return lines
   } catch (_) { return [] }
-}
-
-function resolveCodexDoneReasonFromError(err) {
-  const errMsg = err?.message || String(err || '')
-  if (err?.name === 'AbortError' || errMsg.includes('AbortError') || errMsg.includes('The operation was aborted')) {
-    return 'aborted'
-  }
-  return 'failed'
-}
-
-function buildCodexAgentDonePayload({
-  sessionId,
-  cliSessionId = '',
-  filePath = '',
-  reason = 'completed',
-  detachResume = false,
-} = {}) {
-  return {
-    sessionId,
-    cliSessionId,
-    filePath,
-    reason,
-    detachResume: Boolean(detachResume),
-  }
 }
 
 function readJsonlTailLines(filePath, maxLines = 80) {

@@ -4,6 +4,10 @@ const os = require('os')
 const path = require('path')
 
 const {
+  resolveCodexDoneReasonFromError,
+  buildCodexAgentDonePayload,
+} = require('../packages/agent/electron/codex/donePayload.js')
+const {
   __test__,
 } = require('../packages/agent/electron/codexAgent.js')
 
@@ -17,7 +21,7 @@ function withTempDir(run) {
 }
 
 function runDonePayloadDefaultReasonTest() {
-  const payload = __test__.buildCodexAgentDonePayload({
+  const payload = buildCodexAgentDonePayload({
     sessionId: 'sess-1',
     cliSessionId: 'cli-1',
     filePath: 'D:/sessions/cli-1.jsonl',
@@ -33,7 +37,7 @@ function runDonePayloadDefaultReasonTest() {
 }
 
 function runDonePayloadExplicitReasonTest() {
-  const payload = __test__.buildCodexAgentDonePayload({
+  const payload = buildCodexAgentDonePayload({
     sessionId: 'sess-2',
     reason: 'aborted',
   })
@@ -48,7 +52,7 @@ function runDonePayloadExplicitReasonTest() {
 }
 
 function runDonePayloadDetachResumeTest() {
-  const payload = __test__.buildCodexAgentDonePayload({
+  const payload = buildCodexAgentDonePayload({
     sessionId: 'sess-3',
     cliSessionId: 'cli-bad',
     filePath: 'D:/sessions/cli-bad.jsonl',
@@ -66,14 +70,14 @@ function runDonePayloadDetachResumeTest() {
 }
 
 function runDoneReasonResolutionTest() {
-  assert.equal(__test__.resolveCodexDoneReasonFromError(new Error('Unable to locate Codex CLI')), 'failed')
-  assert.equal(__test__.resolveCodexDoneReasonFromError(new Error('Missing optional dependency: codex')), 'failed')
+  assert.equal(resolveCodexDoneReasonFromError(new Error('Unable to locate Codex CLI')), 'failed')
+  assert.equal(resolveCodexDoneReasonFromError(new Error('Missing optional dependency: codex')), 'failed')
 
   const abortErr = new Error('The operation was aborted')
   abortErr.name = 'AbortError'
-  assert.equal(__test__.resolveCodexDoneReasonFromError(abortErr), 'aborted')
+  assert.equal(resolveCodexDoneReasonFromError(abortErr), 'aborted')
 
-  assert.equal(__test__.resolveCodexDoneReasonFromError(new Error('unexpected failure')), 'failed')
+  assert.equal(resolveCodexDoneReasonFromError(new Error('unexpected failure')), 'failed')
 }
 
 function runResolveSessionFilePathTest() {
