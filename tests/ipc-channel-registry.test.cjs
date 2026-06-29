@@ -3,13 +3,16 @@
 /**
  * IPC channel parity scanner — verifies preload/main channel registration.
  *
- * Phase 1: scans preload/main for all channels and reports gaps.
- * Does NOT require all historical channels in registry yet — that's Phase 3.
+ * Phase 3: hard constraint for new channels.
+ *   - All channels with a registered value → OK.
+ *   - Channels in the historical baseline → WARNING (pre-existing debt).
+ *   - Channels NOT in registry AND NOT in baseline → HARD ERROR.
  *
- * Current soft enforcement:
- *   - Reports channels found in preload but not in registry (potential drift).
- *   - Reports channels in registry that have no main handler.
- *   - Fails if newly-added channels (since registry creation) are missing.
+ * How to add a new IPC channel:
+ *   1. Add the channel string to packages/agent/shared/ipcChannels.js
+ *   2. Use the registry constant in preload AND main handler code
+ *   3. Run this test — if it passes, the channel is properly registered
+ *   4. If you retired an old channel, remove it from the baseline
  */
 
 const fs = require('fs');
@@ -18,6 +21,7 @@ const { describe, it, before } = require('node:test');
 const assert = require('node:assert');
 
 const ROOT = path.resolve(__dirname, '..');
+const BASELINE_PATH = path.join(__dirname, 'ipc-channel-baseline.json');
 
 // ---- Channel scanner ----
 
@@ -77,6 +81,7 @@ describe('IPC Channel Parity', () => {
   let preloadChannels;
   let mainChannels;
   let registryChannels;
+  let baselineChannels;  // Phase 3: historical channels exempt from registry requirement
 
   before(() => {
     // Scan agent preload
@@ -123,6 +128,13 @@ describe('IPC Channel Parity', () => {
       registryChannels = allRegistry;
     } catch {
       registryChannels = [];
+    }
+
+    // Load historical channel baseline (Batch 3)
+    try {
+      baselineChannels = JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8'));
+    } catch {
+      baselineChannels = [];
     }
   });
 
@@ -177,5 +189,65 @@ describe('IPC Channel Parity', () => {
     console.log(`  Registered channels: ${registryChannels.length}`);
     assert.ok(uniquePreload.size > 0, 'Should have preload channels');
     assert.ok(uniqueMain.size > 0, 'Should have main handlers');
+  });
+
+  // ---- Phase 3: Hard constraint — new channels MUST be registered ----
+
+  it('new channels (not in registry, not in baseline) are rejected', () => {
+    if (registryChannels.length === 0) {
+      console.log('  No registry loaded — skipping hard-constraint check.');
+      assert.ok(true);
+      return;
+    }
+
+    const registrySet = new Set(registryChannels);
+    const baselineSet = new Set(baselineChannels);
+
+    // Collect all unique channels across preload + main
+    const allUnique = new Set([
+      ...preloadChannels.map(c => c.channel),
+      ...mainChannels.map(c => c.channel),
+    ]);
+
+    const unregisteredHistorical = [];
+    const unregisteredNew = [];
+
+    for (const ch of allUnique) {
+      if (registrySet.has(ch)) continue;          // correctly registered
+      if (baselineSet.has(ch)) {
+        unregisteredHistorical.push(ch);           // pre-existing debt
+      } else {
+        unregisteredNew.push(ch);                  // NEW channel, MUST register
+      }
+    }
+
+    // Historical debt: warn but don't fail
+    if (unregisteredHistorical.length > 0) {
+      console.warn(
+        `⚠ ${unregisteredHistorical.length} historical channels not yet in registry (grandfathered):`
+      );
+      for (const ch of unregisteredHistorical.sort()) {
+        console.warn(`    ${ch}`);
+      }
+    }
+
+    // New channels: hard error
+    if (unregisteredNew.length > 0) {
+      console.error(
+        `❌ ${unregisteredNew.length} NEW channel(s) NOT registered in ipcChannels.js:`
+      );
+      for (const ch of unregisteredNew.sort()) {
+        console.error(`    ${ch}`);
+      }
+      console.error(
+        '\n  Fix: add each channel to packages/agent/shared/ipcChannels.js'
+        + '\n  If retiring an old channel, also remove it from tests/ipc-channel-baseline.json'
+      );
+    }
+
+    assert.strictEqual(
+      unregisteredNew.length, 0,
+      `${unregisteredNew.length} new unregistered channel(s): ${unregisteredNew.join(', ')}`
+    );
   });
 });
