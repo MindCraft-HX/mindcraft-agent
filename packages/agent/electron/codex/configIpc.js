@@ -5,14 +5,18 @@
  * API format, sandbox mode, project settings, default network/web-search.
  *
  * Extracted from codexAgent.js (R09 main handler setup split).
+ * TOML file read/write/repair added in Batch 5c.
  */
 
 const { Conf } = require('electron-conf');
 const fs = require('fs');
 const path = require('path');
+const { appendPreservedCodexConfigSections } = require('./configTomlPreserve');
 
 function registerConfigIpc(ipcMain, {
   readRuntimeConfig,
+  codexConfigDir,
+  configTomlFile,
   readSandboxMode,
   CODEX_SANDBOX_MODES,
   findLegacyUserData,
@@ -165,6 +169,50 @@ function registerConfigIpc(ipcMain, {
   ipcMain.handle('codex-set-default-web-search', (_, val) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultWebSearch', val || 'cached'); } catch (_) {}
     return true;
+  });
+
+  // ---- Raw config.toml file operations (Batch 5c) ----
+
+  ipcMain.handle('codex-read-config-toml', () => {
+    try {
+      if (fs.existsSync(configTomlFile)) return fs.readFileSync(configTomlFile, 'utf8');
+      return '';
+    } catch (_) { return ''; }
+  });
+
+  ipcMain.handle('codex-write-config-toml', (_, content) => {
+    try {
+      if (!fs.existsSync(codexConfigDir)) fs.mkdirSync(codexConfigDir, { recursive: true });
+      // 保留现有文件中的 plugin/marketplace 段，防止模型配置保存时覆盖插件信息
+      let finalContent = content || '';
+      if (fs.existsSync(configTomlFile)) {
+        const existing = fs.readFileSync(configTomlFile, 'utf8');
+        finalContent = appendPreservedCodexConfigSections(finalContent, existing);
+      }
+      fs.writeFileSync(configTomlFile, finalContent, 'utf8');
+      return { ok: true };
+    } catch (e) { return { ok: false, message: e.message }; }
+  });
+
+  ipcMain.handle('codex-repair-config-toml', (_, content) => {
+    try {
+      if (!fs.existsSync(codexConfigDir)) fs.mkdirSync(codexConfigDir, { recursive: true });
+      const previous = fs.existsSync(configTomlFile) ? fs.readFileSync(configTomlFile, 'utf8') : '';
+      let finalContent = content || '';
+      if (fs.existsSync(configTomlFile)) {
+        const existing = fs.readFileSync(configTomlFile, 'utf8');
+        finalContent = appendPreservedCodexConfigSections(finalContent, existing);
+      }
+      if (previous === finalContent) return { ok: true, changed: false, backupPath: '' };
+      let backupPath = '';
+      if (previous) {
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+        backupPath = path.join(codexConfigDir, `config.toml.mindcraft-bak-${stamp}`);
+        fs.copyFileSync(configTomlFile, backupPath);
+      }
+      fs.writeFileSync(configTomlFile, finalContent, 'utf8');
+      return { ok: true, changed: true, backupPath };
+    } catch (e) { return { ok: false, message: e.message }; }
   });
 }
 

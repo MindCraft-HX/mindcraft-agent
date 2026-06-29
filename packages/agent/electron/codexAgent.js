@@ -3662,6 +3662,8 @@ function setupCodexSdkHandlers() {
     CODEX_SANDBOX_MODES,
     findLegacyUserData,
     normalizeCodexReasoningEffort,
+    codexConfigDir: CODEX_CONFIG_DIR,
+    configTomlFile: CONFIG_TOML_FILE,
     loadCodexSdk,
     findGlobalCodexPath,
     isInstallingCodex,
@@ -3763,71 +3765,7 @@ function setupCodexSdkHandlers() {
     } catch (e) { return { ok: false, message: e.message } }
   })
 
-  ipcMain.handle('codex-read-config-toml', () => {
-    try {
-      if (fs.existsSync(CONFIG_TOML_FILE)) return fs.readFileSync(CONFIG_TOML_FILE, 'utf8')
-      return ''
-    } catch (_) { return '' }
-  })
-
-  function appendPreservedCodexConfigSections(content, existing) {
-    let finalContent = content || ''
-    const preserved = []
-    let inPreserve = false
-    for (const line of String(existing || '').split('\n')) {
-      const trimmed = line.trim()
-      if (/^\[plugins\./.test(trimmed) || /^\[marketplaces\./.test(trimmed)) {
-        inPreserve = true
-      } else if (inPreserve && /^\[/.test(trimmed) && !/^\[plugins\./.test(trimmed) && !/^\[marketplaces\./.test(trimmed)) {
-        inPreserve = false
-      }
-      if (inPreserve) preserved.push(line)
-    }
-    const preserveBlock = preserved.join('\n').trim()
-    if (!preserveBlock) return finalContent
-
-    const normalizeNewlines = (value) => String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    if (!normalizeNewlines(finalContent).includes(normalizeNewlines(preserveBlock))) {
-      finalContent = finalContent.trimEnd() + '\n\n' + preserveBlock + '\n'
-    }
-    return finalContent
-  }
-
-  ipcMain.handle('codex-write-config-toml', (_, content) => {
-    try {
-      if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
-      // 保留现有文件中的 plugin/marketplace 段，防止模型配置保存时覆盖插件信息
-      let finalContent = content || ''
-      if (fs.existsSync(CONFIG_TOML_FILE)) {
-        const existing = fs.readFileSync(CONFIG_TOML_FILE, 'utf8')
-        finalContent = appendPreservedCodexConfigSections(finalContent, existing)
-      }
-      fs.writeFileSync(CONFIG_TOML_FILE, finalContent, 'utf8')
-      return { ok: true }
-    } catch (e) { return { ok: false, message: e.message } }
-  })
-
-  ipcMain.handle('codex-repair-config-toml', (_, content) => {
-    try {
-      if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
-      const previous = fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : ''
-      let finalContent = content || ''
-      if (fs.existsSync(CONFIG_TOML_FILE)) {
-        const existing = fs.readFileSync(CONFIG_TOML_FILE, 'utf8')
-        finalContent = appendPreservedCodexConfigSections(finalContent, existing)
-      }
-      if (previous === finalContent) return { ok: true, changed: false, backupPath: '' }
-      let backupPath = ''
-      if (previous) {
-        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
-        backupPath = path.join(CODEX_CONFIG_DIR, `config.toml.mindcraft-bak-${stamp}`)
-        fs.copyFileSync(CONFIG_TOML_FILE, backupPath)
-      }
-      fs.writeFileSync(CONFIG_TOML_FILE, finalContent, 'utf8')
-      return { ok: true, changed: true, backupPath }
-    } catch (e) { return { ok: false, message: e.message } }
-  })
-
+  // TOML file operations moved to codex/configIpc.js (Batch 5c)
   // ─── CodeX 插件管理 ──────────────────────────────────────────
   const CODEX_PLUGINS_MARKET_DIR = path.join(CODEX_CONFIG_DIR, '.tmp', 'plugins')
   const CODEX_PLUGIN_CACHE_DIR = path.join(CODEX_CONFIG_DIR, 'plugins', 'cache')

@@ -43,6 +43,8 @@ function registerCodexLeafIpcs(ipcMain, deps) {
     CODEX_SANDBOX_MODES: deps.CODEX_SANDBOX_MODES,
     findLegacyUserData: deps.findLegacyUserData,
     normalizeCodexReasoningEffort: deps.normalizeCodexReasoningEffort,
+    codexConfigDir: deps.codexConfigDir,
+    configTomlFile: deps.configTomlFile,
   });
 
   registerEnvironmentIpc(ipcMain, {
