@@ -65,6 +65,12 @@ const {
   setInstallingCodex,
 } = require('./codex/environment')
 
+// ---- CodeX Config IPC (extracted, R09) ----
+const { registerConfigIpc } = require('./codex/configIpc');
+const { registerEnvironmentIpc } = require('./codex/environmentIpc');
+const { registerApiIpc } = require('./codex/apiIpc');
+const { registerGitDiffIpc } = require('./codex/gitDiffIpc');
+
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
   try {
@@ -474,19 +480,6 @@ function dataUrlToTempImagePath(img = {}) {
   }
 }
 
-function execFileAsync(cmd, args, opts = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(cmd, args, opts, (error, stdout, stderr) => {
-      if (error) {
-        error.stdout = stdout
-        error.stderr = stderr
-        reject(error)
-        return
-      }
-      resolve({ stdout, stderr })
-    })
-  })
-}
 
 /** 解析图片输入：系统路径直传，data URL 写入临时文件 */
 function resolveImageInputPath(img = {}) {
@@ -3793,256 +3786,22 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-get-key', () => {
-    const rt = readRuntimeConfig()
-    return rt.apiKey || ''
-  })
-  ipcMain.handle('codex-set-key', (_, key) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.apiKey = key; c.set('runtime', r) } catch (_) {}
-    return true
-  })
-  ipcMain.handle('codex-get-base-url', () => {
-    const rt = readRuntimeConfig()
-    return rt.baseURL || ''
-  })
-  ipcMain.handle('codex-set-base-url', (_, url) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.baseURL = url; c.set('runtime', r) } catch (_) {}
-    return true
-  })
-  ipcMain.handle('codex-get-model', () => {
-    const rt = readRuntimeConfig()
-    return rt.model || ''
-  })
-  ipcMain.handle('codex-set-model', (_, model) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.model = model; c.set('runtime', r) } catch (_) {}
-    return true
-  })
-  ipcMain.handle('codex-get-reasoning-effort', () => {
-    const rt = readRuntimeConfig()
-    return rt.reasoningEffort || ''
-  })
-  ipcMain.handle('codex-set-reasoning-effort', (_, effort) => {
-    try {
-      const c = new Conf({ name: 'mindcraft-codex' })
-      const r = c.get('runtime') || {}
-      r.reasoningEffort = normalizeCodexReasoningEffort(effort)
-      c.set('runtime', r)
-    } catch (_) {}
-    return true
-  })
-  ipcMain.handle('codex-get-api-format', () => {
-    const rt = readRuntimeConfig()
-    return rt.apiFormat || 'responses'
-  })
-  ipcMain.handle('codex-set-api-format', (_, format) => {
-    try {
-      const c = new Conf({ name: 'mindcraft-codex' })
-      const r = c.get('runtime') || {}
-      r.apiFormat = format === 'chat' ? 'chat' : 'responses'
-      c.set('runtime', r)
-    } catch (_) {}
-    return true
+  // ---- Config/Settings IPC (extracted to codex/configIpc.js) ----
+  registerConfigIpc(ipcMain, {
+    readRuntimeConfig,
+    readSandboxMode,
+    CODEX_SANDBOX_MODES,
+    findLegacyUserData,
+    normalizeCodexReasoningEffort,
   })
 
-  // 从 mindcraft-electron 导入 Codex 配置（手动触发）
-  // 注意：~/.codex/config.toml 是共享文件，两个 App 天然互通；仅 electron-conf 覆盖需要导入
-  ipcMain.handle('codex-import-legacy-config', (_, customPath) => {
-    const imported = { key: false, url: false, model: false, reasoningEffort: false }
-    try {
-      const legacyDir = customPath || findLegacyUserData()
-      if (!legacyDir) return { notFound: true }
-
-      const codexPath = path.join(legacyDir, 'mindcraft-codex.json')
-      if (!fs.existsSync(codexPath)) {
-        return { success: true, imported }
-      }
-
-      let legacy = {}
-      try { legacy = JSON.parse(fs.readFileSync(codexPath, 'utf8')) } catch {
-        return { success: true, imported }
-      }
-
-      const rt = legacy.runtime || {}
-      const mergeRuntime = (key, val, flag) => {
-        if (!val) return
-        try {
-          const c = new Conf({ name: 'mindcraft-codex' })
-          const r = c.get('runtime') || {}
-          r[key] = val
-          c.set('runtime', r)
-          imported[flag] = true
-        } catch (_) {}
-      }
-      mergeRuntime('apiKey', rt.apiKey, 'key')
-      mergeRuntime('baseURL', rt.baseURL, 'url')
-      mergeRuntime('model', rt.model, 'model')
-      mergeRuntime('reasoningEffort', rt.reasoningEffort, 'reasoningEffort')
-
-      return { success: true, imported }
-    } catch (e) {
-      return { success: false, error: e?.message || String(e) }
-    }
-  })
-
-  ipcMain.handle('codex-get-sandbox-mode', () => readSandboxMode())
-  ipcMain.handle('codex-set-sandbox-mode', (_, mode) => {
-    try {
-      const c = new Conf({ name: 'mindcraft-codex' })
-      if (mode && CODEX_SANDBOX_MODES.includes(mode)) {
-        c.set('sandboxMode', mode)
-      }
-    } catch (_) {}
-    return true
-  })
-
-  /** 读取 per-cwd 项目设置 */
-  ipcMain.handle('codex-get-project-settings', (_, { cwd }) => {
-    try {
-      const conf = new Conf({ name: 'mindcraft-codex' })
-      const all = conf.get('projectSettings') || {}
-      return all[cwd] || null
-    } catch (_) { return null }
-  })
-  /** 写入 per-cwd 项目设置 */
-  ipcMain.handle('codex-set-project-settings', (_, { cwd, settings }) => {
-    try {
-      const conf = new Conf({ name: 'mindcraft-codex' })
-      const all = conf.get('projectSettings') || {}
-      if (settings) {
-        all[cwd] = { ...(all[cwd] || {}), ...settings }
-      } else {
-        delete all[cwd]
-      }
-      conf.set('projectSettings', all)
-      return true
-    } catch (_) { return false }
-  })
-
-  /** 读写全局默认值：networkAccess / webSearch */
-  ipcMain.handle('codex-get-default-network-access', () => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); return c.get('defaultNetworkAccess', true) } catch (_) { return true }
-  })
-  ipcMain.handle('codex-set-default-network-access', (_, val) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultNetworkAccess', !!val) } catch (_) {}
-    return true
-  })
-  ipcMain.handle('codex-get-default-web-search', () => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); return c.get('defaultWebSearch', 'cached') } catch (_) { return 'cached' }
-  })
-  ipcMain.handle('codex-set-default-web-search', (_, val) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultWebSearch', val || 'cached') } catch (_) {}
-    return true
-  })
-
-  ipcMain.handle('codex-check-environment', async () => {
-    const result = { node: null, npm: null, codex: null }
-    try {
-      const ver = (await new Promise((resolve, reject) => {
-        exec('node --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
-          if (err) reject(err); else resolve(stdout)
-        })
-      })).trim()
-      const match = ver.match(/^v(\d+)\./)
-      const major = match ? parseInt(match[1], 10) : 0
-      result.node = { installed: true, version: ver, compatible: major >= 18 }
-    } catch (_) { result.node = { installed: false, version: null, compatible: false } }
-    try {
-      const ver = (await new Promise((resolve, reject) => {
-        exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
-          if (err) reject(err); else resolve(stdout)
-        })
-      })).trim()
-      result.npm = { installed: true, version: ver }
-    } catch (_) { result.npm = { installed: false, version: null } }
-    try {
-      const { Codex } = await loadCodexSdk()
-      // 尝试创建一个不传路径的 Codex 实例来检测 SDK 能否找到二进制
-      const c = new Codex({ codexPathOverride: findGlobalCodexPath() })
-      const codexPath = c.exec?.executablePath || null
-      // 获取已安装版本号：优先 npm list，失败再试 --version
-      let codexVersion = null
-      try {
-        const output = await new Promise((resolve, reject) => {
-          exec('npm list -g @openai/codex --depth=0', { encoding: 'utf8', timeout: 10000, windowsHide: true }, (err, stdout) => {
-            if (err) reject(err)
-            else resolve(stdout)
-          })
-        })
-        const match = output.match(/@openai\/codex@(\S+)/)
-        if (match) codexVersion = match[1]
-      } catch (_) {}
-      if (!codexVersion && codexPath) {
-        try {
-          const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath)
-          const cmd = isCmdShim ? 'cmd.exe' : codexPath
-          const args = isCmdShim ? ['/c', codexPath, '--version'] : ['--version']
-          codexVersion = (await new Promise((resolve, reject) => {
-            execFile(cmd, args, {
-              encoding: 'utf8', timeout: 5000, windowsHide: true,
-              stdio: ['ignore', 'pipe', 'pipe'],
-            }, (err, stdout) => {
-              if (err) reject(err); else resolve(stdout)
-            })
-          })).trim()
-        } catch (_) {}
-      }
-      result.codex = { installed: !!codexPath, path: codexPath, version: codexVersion }
-    } catch (_) { result.codex = { installed: false, path: null, version: null } }
-    return result
-  })
-
-  ipcMain.handle('codex-check-latest-version', async () => {
-    try {
-      const https = require('https')
-      return new Promise((resolve) => {
-        https.get('https://registry.npmmirror.com/@openai/codex/latest', (res) => {
-          let data = ''
-          res.on('data', (chunk) => { data += chunk })
-          res.on('end', () => {
-            try {
-              const json = JSON.parse(data)
-              resolve({ ok: true, version: json.version || null })
-            } catch {
-              resolve({ ok: false, error: lt('claude.parseFailed') })
-            }
-          })
-        }).on('error', (e) => {
-          resolve({ ok: false, error: e?.message || String(e) })
-        })
-      })
-    } catch (e) {
-      return { ok: false, error: e?.message || String(e) }
-    }
-  })
-
-  ipcMain.handle('codex-install-codex', async () => {
-    if (isInstallingCodex()) return { success: false, message: lt('install.inProgress') }
-    setInstallingCodex(true)
-    try {
-      try { execSync('taskkill /IM codex.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
-      await new Promise((resolve, reject) => {
-        exec('npm install -g @openai/codex', { encoding: 'utf8', timeout: 180000, stdio: 'pipe', windowsHide: true }, (err, stdout, stderr) => {
-          if (err) reject(Object.assign(err, { stdout, stderr }))
-          else resolve(stdout)
-        })
-      })
-      // 清除 SDK 的 require 缓存，让下次检测重新解析
-      Object.keys(require.cache).forEach((k) => {
-        if (k.includes('codex-sdk')) delete require.cache[k]
-      })
-      resetCodexSdkPromise()
-      return { success: true }
-    } catch (e) {
-      return { success: false, message: e?.stderr || e?.message || String(e) }
-    } finally {
-      setInstallingCodex(false)
-    }
-  })
-
-  ipcMain.handle('codex-select-directory', async () => {
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-    if (result.canceled || !result.filePaths.length) return null
-    return result.filePaths[0]
+  registerEnvironmentIpc(ipcMain, {
+    loadCodexSdk,
+    findGlobalCodexPath,
+    isInstallingCodex,
+    setInstallingCodex,
+    resetCodexSdkPromise,
+    lt,
   })
 
   // 面板状态持久化：MindCraft 自有 UI 状态写入 userData；旧 ~/.codex 文件只作为迁移 fallback。
@@ -4202,134 +3961,13 @@ function setupCodexSdkHandlers() {
     } catch (e) { return { ok: false, message: e.message } }
   })
 
-  ipcMain.handle('codex-get-last-cwd', () => readPanelState()?.lastCwd || '')
-
-  // 验证 API Key
-  ipcMain.handle('codex-validate-key', async (_, { key, baseURL, model: _model }) => {
-    const start = Date.now()
-    try {
-      const fetchUrl = `${baseURL.replace(/\/$/, '')}/models`
-      const res = await fetch(fetchUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-      })
-      const elapsed = Date.now() - start
-      if (res.ok) {
-        return { valid: true, elapsed }
-      }
-      const body = await res.text().catch(() => '')
-      return { valid: false, elapsed, error: `HTTP ${res.status}: ${body.slice(0, 200)}` }
-    } catch (e) {
-      return { valid: false, elapsed: Date.now() - start, error: e.message }
-    }
+  registerApiIpc(ipcMain, {
+    readRuntimeConfig,
+    readPanelState,
+    lt,
   })
 
-  // 获取 API 端点支持的模型列表
-  ipcMain.handle('codex-list-available-models', async () => {
-    try {
-      const rt = readRuntimeConfig()
-      if (!rt.apiKey || !rt.baseURL) return { models: [], error: lt('noApiKey') }
-      const fetchUrl = `${rt.baseURL.replace(/\/$/, '')}/models`
-      const res = await fetch(fetchUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${rt.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-      })
-      if (!res.ok) return { models: [], error: `HTTP ${res.status}` }
-      const body = await res.json()
-      const models = (body.data || []).map(m => ({ id: m.id, owned_by: m.owned_by || '' }))
-      return { models, error: null }
-    } catch (e) {
-      return { models: [], error: e.message }
-    }
-  })
-
-  // ── git diff 命令（供前端 /diff 和 /review 使用）──
-  ipcMain.handle('codex-run-git-diff', async (_, { cwd } = {}) => {
-    const resolvedCwd = path.resolve(cwd || process.cwd())
-    try {
-      // 检查是否在 git 仓库内
-      try {
-        await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], {
-          cwd: resolvedCwd,
-          timeout: 5000,
-          encoding: 'utf8',
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
-      } catch (_) {
-        return { isGitRepo: false, diff: '' }
-      }
-      // 已跟踪文件的 diff（无颜色，HTML 无法渲染 ANSI escape codes）
-      let tracked = ''
-      try {
-        const result = await execFileAsync('git', ['diff', '--no-color'], {
-          cwd: resolvedCwd,
-          timeout: 15000,
-          encoding: 'utf8',
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          maxBuffer: 20 * 1024 * 1024,
-        })
-        tracked = result.stdout || ''
-      } catch (e) {
-        // git diff 返回 1 表示有差异（正常情况）
-        if (e.stdout) tracked = typeof e.stdout === 'string' ? e.stdout : e.stdout.toString('utf8')
-      }
-      // 未跟踪文件列表
-      let untrackedFiles = ''
-      try {
-        const result = await execFileAsync('git', ['ls-files', '--others', '--exclude-standard'], {
-          cwd: resolvedCwd,
-          timeout: 5000,
-          encoding: 'utf8',
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          maxBuffer: 5 * 1024 * 1024,
-        })
-        untrackedFiles = result.stdout || ''
-      } catch (_) {}
-      let untrackedDiff = ''
-      if (untrackedFiles.trim()) {
-        const nullDevice = process.platform === 'win32' ? 'NUL' : '/dev/null'
-        const files = untrackedFiles.split('\n').map(s => s.trim()).filter(Boolean)
-        const concurrency = 4
-        let nextIndex = 0
-        const worker = async () => {
-          let chunk = ''
-          while (nextIndex < files.length) {
-            const file = files[nextIndex++]
-            try {
-              const result = await execFileAsync('git', ['diff', '--no-index', '--no-color', '--', nullDevice, file], {
-                cwd: resolvedCwd,
-                timeout: 10000,
-                encoding: 'utf8',
-                windowsHide: true,
-                stdio: ['ignore', 'pipe', 'pipe'],
-                maxBuffer: 10 * 1024 * 1024,
-              })
-              chunk += result.stdout || ''
-            } catch (e) {
-              if (e.stdout) chunk += typeof e.stdout === 'string' ? e.stdout : e.stdout.toString('utf8')
-            }
-          }
-          return chunk
-        }
-        const chunks = await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, worker))
-        untrackedDiff = chunks.join('')
-      }
-      return { isGitRepo: true, diff: (tracked + untrackedDiff).trim() }
-    } catch (e) {
-      return { isGitRepo: false, diff: '', error: e.message }
-    }
-  })
+  registerGitDiffIpc(ipcMain)
 
   // ─── CodeX 插件管理 ──────────────────────────────────────────
   const CODEX_PLUGINS_MARKET_DIR = path.join(CODEX_CONFIG_DIR, '.tmp', 'plugins')

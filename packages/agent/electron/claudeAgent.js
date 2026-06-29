@@ -46,6 +46,13 @@ const { getAgentProtocol } = require('./agentProtocolBridge')
 // Note: getMindCraftSettingsPath / readMindCraftSettings / writeMindCraftSettings
 // are imported from diagnosticsFileUtils above (canonical location).
 
+// ---- ClaudeCode IPC leaf modules (R09 main handler setup split) ----
+const { registerApiIpc } = require('./claude/apiIpc');
+const { registerFreezeDiagIpc } = require('./claude/freezeDiagIpc');
+const { registerWebSearchIpc } = require('./claude/webSearchIpc');
+const { registerUiUtilsIpc } = require('./claude/uiUtilsIpc');
+const { registerChatPersistenceIpc } = require('./claude/chatPersistenceIpc');
+
 // ---- ClaudeCode Environment (extracted leaf module, Phase 5) ----
 const {
   getEnvWithNodePath,
@@ -1209,32 +1216,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-validate-key', async (_, { key, baseURL, model }) => {
-    try {
-      const Anthropic = require('@anthropic-ai/sdk')
-      const opts = { apiKey: key }
-      if (baseURL) opts.baseURL = baseURL
-      const client = new Anthropic.default(opts)
-      await client.messages.create({
-        model: model || '',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'hi' }],
-      })
-      return { valid: true }
-    } catch (e) {
-      const status = e.status || e.statusCode
-      const msg = (e?.message || '').toLowerCase()
-      if (status === 401) return { valid: false, error: lt('api.invalidKey') }
-      if (status === 429 || msg.includes('quota') || msg.includes('rate')) {
-        return { valid: false, error: lt('api.quotaExceeded') }
-      }
-      if (status === 404 || status === 400 || msg.includes('model') || msg.includes('not found')) {
-        return { valid: false, error: lt('api.unsupportedModel') }
-      }
-      if (status >= 500) return { valid: false, error: lt('api.serverUnavailable') }
-      return { valid: false, error: e?.message || lt('api.verifyFailed') }
-    }
-  })
+  registerApiIpc(ipcMain, { lt })
 
   const defaultModels = []
 
@@ -1258,13 +1240,10 @@ function setupClaudeHandlers() {
     }
   }
 
-  ipcMain.handle('claude-freeze-diag-get-enabled', () => {
-    return { enabled: getClaudeFreezeDiagEnabled(), path: getClaudeFreezeDiagLogPath() }
-  })
-
-  ipcMain.handle('claude-freeze-diag-set-enabled', (_, { enabled }) => {
-    const result = setClaudeFreezeDiagEnabled(enabled)
-    return { ...result, logPath: getClaudeFreezeDiagLogPath() }
+  registerFreezeDiagIpc(ipcMain, {
+    getClaudeFreezeDiagEnabled,
+    getClaudeFreezeDiagLogPath,
+    setClaudeFreezeDiagEnabled,
   })
 
   /** 从全局 settings.json 读取配置（兼容旧键名） */
@@ -2325,96 +2304,15 @@ function setupClaudeHandlers() {
     return _indexWriteQueue
   }
 
-  ipcMain.handle('chat-list-sessions', () => readChatIndex())
-
-  ipcMain.handle('chat-get-session', (_, id) => {
-    const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
-    try {
-      if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'))
-    } catch (_) {}
-    return null
+  registerChatPersistenceIpc(ipcMain, {
+    CHAT_SESSIONS_DIR,
+    ensureChatSessionsDir,
+    readChatIndex,
+    writeChatIndexAsync,
+    lt,
   })
 
-  ipcMain.handle('chat-save-session', async (_, { id, data }) => {
-    ensureChatSessionsDir()
-    const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
-    const tmp = file + '.tmp'
-    // P1-1：去掉缩进格式化，节省 CPU；异步写入不在主线程阻塞
-    await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf8')
-    await fs.promises.rename(tmp, file)
-
-    // 更新 index（串行队列防竞态）
-    const idx = readChatIndex()
-    const existing = idx.sessions.findIndex(s => s.id === id)
-    const entry = {
-      id,
-      title: data.title || '',
-      createdAt: data.createdAt || Date.now(),
-      updatedAt: data.updatedAt || Date.now(),
-      provider: data.provider || '',
-      model: data.model || '',
-    }
-    if (existing >= 0) idx.sessions[existing] = entry
-    else idx.sessions.unshift(entry)
-    idx.sessions.sort((a, b) => b.updatedAt - a.updatedAt)
-    await writeChatIndexAsync(idx)
-    return true
-  })
-
-  ipcMain.handle('chat-delete-session', async (_, id) => {
-    const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`)
-    try { if (fs.existsSync(file)) fs.unlinkSync(file) } catch (_) {}
-    const idx = readChatIndex()
-    idx.sessions = idx.sessions.filter(s => s.id !== id)
-    await writeChatIndexAsync(idx)
-    return true
-  })
-
-  ipcMain.handle('chat-generate-title', async (_, { messages, provider, model }) => {
-    // 用首条用户消息的前 30 字符作为标题（fallback）
-    const firstUser = messages?.find(m => m.role === 'user')
-    const fallback = firstUser?.content
-      ? (typeof firstUser.content === 'string' ? firstUser.content : firstUser.content[0]?.text || lt('claude.sessionTitle')).slice(0, 30)
-      : lt('claude.sessionTitle')
-    return fallback
-  })
-
-  // ── 简易对话：网页搜索 ──
-  ipcMain.handle('chat-web-search', async (_event, { query }) => {
-    if (!query || typeof query !== 'string' || !query.trim()) {
-      return { results: [] }
-    }
-    try {
-      const axios = require('axios')
-      const q = encodeURIComponent(query.trim())
-      // 使用 DuckDuckGo HTML 搜索（无需 API key）
-      const resp = await axios.get(`https://html.duckduckgo.com/html/?q=${q}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        timeout: 10000,
-      })
-      const html = typeof resp.data === 'string' ? resp.data : ''
-      // 简易解析：提取 result__snippet 和 result__url
-      const results = []
-      const snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
-      const urlRe = /class="result__url"[^>]*>([\s\S]*?)<\/a>/g
-      const titleRe = /class="result__a"[^>]*>([\s\S]*?)<\/a>/g
-
-      let m
-      const snippets = []; while ((m = snippetRe.exec(html)) !== null) snippets.push(m[1].replace(/<[^>]+>/g, '').trim())
-      const urls = []; while ((m = urlRe.exec(html)) !== null) urls.push(m[1].replace(/<[^>]+>/g, '').trim())
-      const titles = []; while ((m = titleRe.exec(html)) !== null) titles.push(m[1].replace(/<[^>]+>/g, '').trim())
-
-      const max = Math.min(5, snippets.length, urls.length)
-      for (let i = 0; i < max; i++) {
-        results.push({ title: titles[i] || '', url: urls[i] || '', snippet: snippets[i] || '' })
-      }
-
-      return { results }
-    } catch (e) {
-      console.warn('[chat-web-search] failed:', e?.message || e)
-      return { results: [], error: e?.message || lt('search.failed') }
-    }
-  })
+  registerWebSearchIpc(ipcMain, { lt })
 
   // Claude Agent SDK 会话管理
   //
@@ -3217,50 +3115,7 @@ function setupClaudeHandlers() {
     return compactSummaries.get(sessionId) || null
   })
 
-  ipcMain.handle('claude-select-directory', async (event) => {
-    const win = require('electron').BrowserWindow.fromWebContents(event.sender)
-    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-    return result.canceled ? null : result.filePaths[0]
-  })
-
-  ipcMain.handle('claude-write-clipboard', (_, text) => {
-    require('electron').clipboard.writeText(text || '')
-  })
-
-  ipcMain.handle('claude-list-files', async (_, { cwd, query }) => {
-    const fs = require('fs')
-    const p = require('path')
-    try {
-      let base, prefix
-      if (query.endsWith('/') || query.endsWith('\\')) {
-        base = p.join(cwd, query)
-        prefix = ''
-      } else if (query.includes('/') || query.includes('\\')) {
-        base = p.join(cwd, p.dirname(query))
-        prefix = p.basename(query).toLowerCase()
-      } else {
-        base = cwd
-        prefix = query.toLowerCase()
-      }
-      const entries = fs.readdirSync(base, { withFileTypes: true })
-      const matched = entries.filter(e => e.name.toLowerCase().startsWith(prefix))
-      matched.sort((a, b) => {
-        const aHidden = a.name.startsWith('.')
-        const bHidden = b.name.startsWith('.')
-        if (aHidden !== bHidden) return aHidden ? 1 : -1
-        const aDir = a.isDirectory()
-        const bDir = b.isDirectory()
-        if (aDir !== bDir) return aDir ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
-      return matched
-        .slice(0, 10)
-        .map(e => {
-          const rel = p.relative(cwd, p.join(base, e.name)).replace(/\\/g, '/')
-          return e.isDirectory() ? rel + '/' : rel
-        })
-    } catch { return [] }
-  })
+  registerUiUtilsIpc(ipcMain)
 
   /** 仅 claude-list-slash-commands：与官方 CLI 一致只读 ~/.claude/settings.json，不读 provider、不回写 conf。 */
   function readSlashCommandsEnvFromUserSettingsFile() {
