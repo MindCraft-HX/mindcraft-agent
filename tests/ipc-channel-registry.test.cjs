@@ -71,8 +71,10 @@ const MAIN_SCAN = [
   { regex: `ipcMain\\.on\\s*\\(\\s*['"]([^'"]+)['"]`, kind: 'on' },
 ];
 
-const CORE_SCAN = [
+// Host main uses the same scanner as agent main (handle + on)
+const HOST_MAIN_SCAN = [
   { regex: `ipcMain\\.handle\\s*\\(\\s*['"]([^'"]+)['"]`, kind: 'handle' },
+  { regex: `ipcMain\\.on\\s*\\(\\s*['"]([^'"]+)['"]`, kind: 'on' },
 ];
 
 // ---- Tests ----
@@ -107,10 +109,10 @@ describe('IPC Channel Parity', () => {
       ['.js', '.mjs']
     );
 
-    // Scan host main handlers
+    // Scan host main handlers (use same patterns as agent — handle + on)
     const hostMainResults = findInvocations(
       path.join(ROOT, 'electron'),
-      CORE_SCAN,
+      HOST_MAIN_SCAN,
       ['.js']
     );
 
