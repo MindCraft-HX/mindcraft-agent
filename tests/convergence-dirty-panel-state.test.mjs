@@ -136,7 +136,9 @@ describe('statusbar dirty panel state (integration)', () => {
       assert.equal(turn.inputTokens, 0)
       assert.equal(turn.outputTokens, 0)
       assert.equal(turn.durationMs, 0)
-      // costUsd is session-owned (accumulated across turns), NOT reset
+      // costUsd passes through buildAgentTurnMetrics (…previous, not overridden).
+      // Note: CURRENT_TURN_METRIC_FIELDS includes costUsd (stripped by sanitizer),
+      // but buildAgentTurnMetrics does NOT reset it — pre-existing inconsistency.
       assert.equal(turn.costUsd, 0.10)
       // Preserved
       assert.equal(turn.contextUsage, 60000)
@@ -151,4 +153,4 @@ describe('statusbar dirty panel state (integration)', () => {
   })
 })
 
-console.log('statusbar-dirty-panel-state test passed')
+console.log('convergence-dirty-panel-state test passed')

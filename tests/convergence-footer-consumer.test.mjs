@@ -106,4 +106,4 @@ describe('statusbar-footer-consumer-contract', () => {
   })
 })
 
-console.log('statusbar-footer-consumer-contract test passed')
+console.log('convergence-footer-consumer test passed')

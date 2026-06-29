@@ -31,7 +31,11 @@ function makeTab(overrides = {}) {
 }
 
 // ── tests ──────────────────────────────────────────────────────────
-describe('renderer first-hydrate', () => {
+// These tests characterize useAgentMetricsController behavior.
+// The actual R06a watcher fix ({ immediate: true }) lives in
+// packages/agent/src/components/claudeCode/index.vue line 747;
+// these tests verify the controller functions the watcher delegates to.
+describe('convergence first-hydrate (metrics controller layer)', () => {
   describe('buildStatusBarMetricsView', () => {
     it('null tab returns zeroed defaults with model', () => {
       const view = buildStatusBarMetricsView(null, { model: 'claude-sonnet' })
@@ -79,6 +83,31 @@ describe('renderer first-hydrate', () => {
       syncActiveMetricsFromTab(null)
       // Should not throw; metricsData should be zeroed
       assert.equal(metricsData.value.inputTokens, 0)
+    })
+
+    it('watcher { immediate: true } hydrates restored chat on mount', () => {
+      // Characterization: the R06a watcher fix adds { immediate: true } so
+      // the watcher fires on mount. When getActiveChat() returns a restored
+      // chat (sanitized metrics: zeros for turn-owned, populated session fields),
+      // syncActiveMetricsFromTab must reflect it immediately.
+      const { metricsData, syncActiveMetricsFromTab } = useAgentMetricsController()
+      const restoredTab = makeTab({
+        model: 'claude-sonnet',
+        metrics: {
+          model: 'claude-sonnet',
+          inputTokens: 0,       // stripped by sanitizePersistedMetrics
+          outputTokens: 0,      // stripped
+          cacheReadTokens: 0,   // stripped
+          contextUsage: 60000,  // preserved session field
+          contextWindow: 200000,
+        },
+      })
+      syncActiveMetricsFromTab(restoredTab)
+      assert.equal(metricsData.value.inputTokens, 0, 'turn-owned fields zero from sanitized restore')
+      assert.equal(metricsData.value.outputTokens, 0)
+      assert.equal(metricsData.value.contextUsage, 60000, 'session-owned fields preserved')
+      assert.equal(metricsData.value.contextWindow, 200000)
+      assert.equal(metricsData.value.model, 'claude-sonnet')
     })
   })
 
@@ -146,4 +175,4 @@ describe('renderer first-hydrate', () => {
   })
 })
 
-console.log('renderer-first-hydrate test passed')
+console.log('convergence-first-hydrate test passed')
