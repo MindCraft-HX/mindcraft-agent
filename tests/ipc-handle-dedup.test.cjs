@@ -2,7 +2,7 @@
 
 /**
  * Static contract: no duplicate ipcMain.handle or ipcMain.on channels
- * across electron/.
+ * across electron/ and packages/agent/electron/.
  *
  * - ipcMain.handle duplicates: Electron throws at startup — hard error.
  * - ipcMain.on duplicates: won't crash, but silently stacks listeners and
@@ -19,25 +19,31 @@ const { describe, it } = require('node:test');
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..', 'electron');
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+const ROOTS = [
+  path.join(PROJECT_ROOT, 'electron'),
+  path.join(PROJECT_ROOT, 'packages', 'agent', 'electron'),
+];
 
 const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.git']);
 
-function walkJsFiles(dir) {
+function walkJsFiles(roots) {
   const results = [];
-  const stack = [dir];
-  while (stack.length) {
-    const current = stack.pop();
-    let entries;
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); }
-    catch (_) { continue; }
-    for (const entry of entries) {
-      if (EXCLUDE_DIRS.has(entry.name)) continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(full);
-      } else if (entry.isFile() && /\.(js|cjs|mjs)$/.test(entry.name)) {
-        results.push(full);
+  for (const dir of roots) {
+    const stack = [dir];
+    while (stack.length) {
+      const current = stack.pop();
+      let entries;
+      try { entries = fs.readdirSync(current, { withFileTypes: true }); }
+      catch (_) { continue; }
+      for (const entry of entries) {
+        if (EXCLUDE_DIRS.has(entry.name)) continue;
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(full);
+        } else if (entry.isFile() && /\.(js|cjs|mjs)$/.test(entry.name)) {
+          results.push(full);
+        }
       }
     }
   }
@@ -61,7 +67,7 @@ function extractChannels(filePath, method) {
 function collectChannelRegistrations(files, method) {
   const all = [];
   for (const file of files) {
-    const relative = path.relative(ROOT, file);
+    const relative = path.relative(PROJECT_ROOT, file);
     for (const c of extractChannels(file, method)) {
       all.push({ channel: c.channel, file: relative, line: c.line });
     }
@@ -86,7 +92,7 @@ function findDupes(registrations) {
 }
 
 describe('ipcMain channel duplicate contract', () => {
-  const files = walkJsFiles(ROOT);
+  const files = walkJsFiles(ROOTS);
 
   const handleRegs = collectChannelRegistrations(files, 'handle');
   const onRegs = collectChannelRegistrations(files, 'on');

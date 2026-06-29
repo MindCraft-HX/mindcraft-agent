@@ -458,20 +458,6 @@ function listFiles(options = {}) {
   }
 }
 
-function registerLocalSearchIpc(ipcMain) {
-  if (!ipcMain || typeof ipcMain.handle !== 'function') return
-  ipcMain.handle('local-search-capability', () => getLocalSearchCapability(true))
-  ipcMain.handle('local-search-text', (_, payload = {}) => searchText(payload))
-  ipcMain.handle('local-search-files', (_, payload = {}) => listFiles(payload))
-  ipcMain.handle('local-search-diagnose', () => ({
-    platform: process.platform,
-    capability: getLocalSearchCapability(true),
-    bundledPath: getBundledRgPath(),
-    systemPath: getSystemRgPath(),
-    powershell: probePowerShell(),
-  }))
-}
-
 module.exports = {
   getBundledRgPath,
   getSystemRgPath,
@@ -480,7 +466,6 @@ module.exports = {
   augmentEnvWithBundledRg,
   searchText,
   listFiles,
-  registerLocalSearchIpc,
   __test__: {
     pickSearchBackend,
     prependToolDirToEnvPath,
