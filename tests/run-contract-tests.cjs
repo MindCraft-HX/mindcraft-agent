@@ -30,6 +30,8 @@ const CONTRACT_PATTERNS = [
   { dir: 'tests', match: f => f === 'history-hydration-authority.test.mjs' },
   // Renderer convergence contract
   { dir: 'tests', match: f => f === 'renderer-convergence-contract.test.mjs' },
+  // IPC handle dedup (catches double-registration that crashes Electron at startup)
+  { dir: 'tests', match: f => f === 'ipc-handle-dedup.test.cjs' },
   // Token metrics unit tests
   { dir: 'packages/agent/electron/tokenMetrics', match: f => /\.test\.(cjs|mjs)$/.test(f) },
 ];

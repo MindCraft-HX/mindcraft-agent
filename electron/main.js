@@ -361,8 +361,6 @@ app.on("web-contents-created", (event, contents) => {
   });
 });
 
-ipcMain.handle('get-app-version', () => app.getVersion());
-
 // 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）— extracted to themeStore.js
 const userDataPath = app.getPath('userData')
 ipcMain.on('load-theme', (event) => { event.returnValue = loadThemeFromFile(userDataPath) })
