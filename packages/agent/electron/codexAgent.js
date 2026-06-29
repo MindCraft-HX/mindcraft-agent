@@ -80,6 +80,9 @@ const {
   estimateCodexCostUsd,
 } = require('./codex/contextWindow')
 
+// ---- CodeX Page Reader helpers (extracted, Batch 2) ----
+const { readFirstLine, safeJsonParse } = require('./codex/pageReader')
+
 // ---- CodeX Config IPC (extracted, R09) ----
 const { registerCodexLeafIpcs } = require('./codex/index');
 
@@ -569,19 +572,6 @@ function resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath
   }
 
   return findCodexSessionFileByThreadId(threadId || cliSessionIds.get(sessionId) || sessionId)
-}
-
-function readFirstLine(filePath) {
-  try {
-    const text = fs.readFileSync(filePath, 'utf8')
-    const line = String(text || '').split(/\r?\n/).find(l => String(l || '').trim())
-    return String(line || '').trim().replace(/^#+\s*/, '')
-  } catch (_) { return '' }
-}
-
-/** 安全 JSON 解析：失败返回 null，不抛异常 */
-function safeJsonParse(line) {
-  try { return JSON.parse(line) } catch (_) { return null }
 }
 
 const jsonlLineCache = new Map() // filePath -> { lines: [], mtimeMs: 0 }
