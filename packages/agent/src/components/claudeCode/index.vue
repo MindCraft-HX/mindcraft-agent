@@ -2796,12 +2796,12 @@ async function sendMessage() {
       tab.name = text ? text.slice(0, 24) + (text.length > 24 ? '…' : '') : files.map(f => f.name).join(', ')
     }
     scrollBottom(tab.id, true)
-    saveHistory({ immediate: true })
     pendingImages.value = []
     if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
     pushToHistory(text, tab.inputHistory)
     tab.draftText = ''
     inputText.value = ''
+    saveHistory({ immediate: true })
     nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
     // fire-and-forget：消息通过 claude-agent-message 事件通道回来
     // 主进程 existing 分支命中 → streamInput → SDK 中断并处理

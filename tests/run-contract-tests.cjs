@@ -28,6 +28,8 @@ const CONTRACT_PATTERNS = [
   { dir: 'tests', match: f => /session.*\.test\.(mjs|cjs)$/.test(f) },
   // History hydration
   { dir: 'tests', match: f => f === 'history-hydration-authority.test.mjs' },
+  // Input history
+  { dir: 'tests', match: f => f === 'use-input-history.test.mjs' },
   // Renderer convergence contract
   { dir: 'tests', match: f => f === 'renderer-convergence-contract.test.mjs' },
   // IPC handle dedup (catches double-registration that crashes Electron at startup)
