@@ -793,7 +793,7 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
       role: 'system',
       text: '/clear 已停用。请使用新建会话或删除会话。',
     })
-    scrollBottom(tab.id)
+    smartScrollToBottom(tab.id)
     return { action: 'done' }
   }
 
@@ -820,14 +820,14 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
           : t('agent.planModeDeactivated'),
       })
       saveHistory()
-      scrollBottom(tab.id)
+      smartScrollToBottom(tab.id)
     }
 
     // /diff — 跑 git diff 并展示结果（与 CodeX CLI 源码 get_git_diff.rs 一致）
     if (firstToken === '/diff') {
       ;(async () => {
         pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.fetchingGitDiff') })
-        scrollBottom(tab.id)
+        smartScrollToBottom(tab.id)
         try {
           const cwd = activeProject.value?.cwd || undefined
           const result = await window.electronAPI.codexRunGitDiff?.(cwd)
@@ -842,7 +842,7 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
           pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('slashCmd.diffFailed') + ': ' + (e?.message || e) })
         }
         saveHistory()
-        scrollBottom(tab.id)
+        smartScrollToBottom(tab.id)
       })()
     }
     return { action: 'done' }
@@ -2126,7 +2126,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     if (dispatched.action === 'inject_async') {
       // /review 等异步注入：展示 loading，获取 diff 后拼 prompt 再发送
       pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.fetchingCodeChanges') })
-      scrollBottom(tab.id)
+      smartScrollToBottom(tab.id)
       saveHistory()
       text = await dispatched.handler()
     }
@@ -2344,7 +2344,7 @@ async function openModelPicker() {
       })
     }
     pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedModel', { label: result.label, model: result.model }) })
-    scrollBottom(tab.id)
+    smartScrollToBottom(tab.id)
     saveHistory()
   }
 }

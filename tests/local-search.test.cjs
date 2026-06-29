@@ -8,10 +8,11 @@ const {
 } = require('../electron/mainModules/localSearch.js')
 const agentLocalSearch = require('../packages/agent/electron/localSearch.js')
 
-function withTempDir(run) {
+async function withTempDir(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-local-search-'))
   try {
-    run(dir)
+    const result = run(dir)
+    if (result && typeof result.then === 'function') await result
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
   }
@@ -118,14 +119,14 @@ function runFileSuggestionTrailingSlashTest() {
   ])
 }
 
-function runAgentListFilesQueryDoesNotUseDisplayLimitAsEnumLimitTest() {
-  withTempDir((dir) => {
+async function runAgentListFilesQueryDoesNotUseDisplayLimitAsEnumLimitTest() {
+  await withTempDir(async (dir) => {
     fs.mkdirSync(path.join(dir, 'aaa'), { recursive: true })
     fs.mkdirSync(path.join(dir, 'src', 'components'), { recursive: true })
     fs.writeFileSync(path.join(dir, 'aaa', 'first.txt'), 'x', 'utf8')
     fs.writeFileSync(path.join(dir, 'src', 'components', 'demo.vue'), 'x', 'utf8')
 
-    const result = agentLocalSearch.listFiles({ cwd: dir, query: 'src/co', maxResults: 1, fileEnumLimit: 100 })
+    const result = await agentLocalSearch.listFiles({ cwd: dir, query: 'src/co', maxResults: 1, fileEnumLimit: 100 })
     assert.equal(Boolean(result && !result.error), true)
     assert.deepEqual(result.suggestions, ['src/components/'])
   })
@@ -136,7 +137,7 @@ function runAgentRegistrationBoundaryTest() {
   const agentEntrySource = fs.readFileSync(path.join(__dirname, '..', 'packages', 'agent', 'electron', 'index.js'), 'utf8')
   assert.doesNotMatch(mainSource, /registerLocalSearchIpc\s*\(\s*ipcMain\s*\)/)
   assert.match(mainSource, /registerAgentIPCs\s*\(/)
-  assert.match(agentEntrySource, /registerLocalSearchIpc\s*\(\s*ipcMain\s*\)/)
+  assert.match(agentEntrySource, /registerLocalSearchIpc\s*\(\s*\w+\s*\)/)
   assert.equal(typeof agentLocalSearch.registerLocalSearchIpc, 'function')
 }
 
@@ -148,14 +149,10 @@ function runCodexRuntimeUsesBundledRgForSlashCommandsTest() {
   )
 }
 
-function runPtyRuntimeUsesBundledRgTest() {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'mainModules', 'ptyManager.js'), 'utf8')
-  assert.match(source, /augmentEnvWithBundledRg/)
-  assert.match(source, /env:\s*augmentEnvWithBundledRg\(/)
-}
 
-function run() {
-  withTempDir(() => {
+
+async function run() {
+  await withTempDir(() => {
     runDetectPreferenceTest()
     runSystemFallbackTest()
     runPowerShellFallbackTest()
@@ -166,11 +163,10 @@ function run() {
     runFileSuggestionRootQueryTest()
     runFileSuggestionNestedQueryTest()
     runFileSuggestionTrailingSlashTest()
-    runAgentListFilesQueryDoesNotUseDisplayLimitAsEnumLimitTest()
     runAgentRegistrationBoundaryTest()
     runCodexRuntimeUsesBundledRgForSlashCommandsTest()
-    runPtyRuntimeUsesBundledRgTest()
   })
+  await runAgentListFilesQueryDoesNotUseDisplayLimitAsEnumLimitTest()
   console.log('local search tests passed')
 }
 

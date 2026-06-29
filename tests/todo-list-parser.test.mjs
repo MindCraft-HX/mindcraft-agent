@@ -4,7 +4,7 @@ import { parseTodoListPayload } from '../packages/agent/src/components/codeX/com
 const parsed = parseTodoListPayload(JSON.stringify({
   todos: [
     { id: 'a', content: '补充失败测试', status: 'pending' },
-    { id: 'b', content: '统一消息内卡片视�?, status: 'in_progress' },
+    { id: 'b', content: '统一消息内卡片视图', status: 'in_progress' },
     { id: 'c', content: '验证构建结果', status: 'completed' },
   ],
 }))
@@ -15,7 +15,7 @@ assert.equal(parsed.summary.total, 3)
 assert.equal(parsed.summary.pending, 1)
 assert.equal(parsed.summary.inProgress, 1)
 assert.equal(parsed.summary.completed, 1)
-assert.equal(parsed.currentItem?.content, '统一消息内卡片视�?)
+assert.equal(parsed.currentItem?.content, '统一消息内卡片视图')
 
 const fallbackFields = parseTodoListPayload(JSON.stringify({
   todos: [

@@ -128,9 +128,9 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
 | R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | 📝 待开 |
-| T155 | test | **修复 `test:all` 7 个历史失败**：3 个测试方案损坏（语法错误/路径过时），4 个需人工诊断（localSearch/permission/token/detachResume）。全部重构前即存在，`test:contract` 不受影响。详见上方「历史测试修复专项」。 | P3 | 📝 待排期 |
-| T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 两处解构重命名 `scrollBottom` 为 `smartScrollBottom`/`smartScrollToBottom`，但后面仍直接调 `scrollBottom(tab.id)`（6 处），特定路径触发 `ReferenceError`。重构未动渲染进程，系旧有 bug。 | P3 | 📝 待排期 |
-| T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：每轮 metrics 刷新后时间字段消失。疑似旧有渲染层问题，重构未动 metrics 显示组件。 | P3 | 📝 待排期 |
+| T155 | test | **修复 `test:all` 7 个历史失败**：4 个已修复（todo-list/update-plan 编码损坏重写、electron-window-icon-paths 过时删除、local-search async/await+过时文件删除）；3 个 defer（permission-sound 需 Vue 测试环境、task-stream-sync ×2 需 domain 排查）。`test:all` 7→3 fail。 | P3 | 🔧 部分完成，3 个延后 |
+| T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 6 处裸 `scrollBottom(tab.id)` 改为 `smartScrollToBottom(tab.id)`，解构重命名冲突已修复。 | P3 | ✅ 已完成 |
+| T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：在 `agentCommon/StatusBarMetrics.vue`，需跑应用排查渲染逻辑。疑似旧有问题，延后。 | P3 | 🔧 延后排查 |
 
 ---
 
