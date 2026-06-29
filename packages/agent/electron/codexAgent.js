@@ -83,6 +83,16 @@ const {
 // ---- CodeX Page Reader helpers (extracted, Batch 2) ----
 const { readFirstLine, safeJsonParse } = require('./codex/pageReader')
 
+// ---- CodeX Message/Tool helpers (extracted, Batch 2) ----
+const {
+  pickFirstStringValue,
+  buildMessageDedupKey,
+  normalizeCodexToolName,
+  isCodeXWriteToolName,
+  isCodeXEditToolName,
+  isCodeXReadToolName,
+} = require('./codex/messageTools')
+
 // ---- CodeX Config IPC (extracted, R09) ----
 const { registerCodexLeafIpcs } = require('./codex/index');
 
@@ -1307,17 +1317,6 @@ function getCodexActivityLabel(toolName) {
   return 'Tool'
 }
 
-function buildMessageDedupKey(role, text, content) {
-  const safeRole = role || ''
-  const safeText = text || ''
-  if (Array.isArray(content) && content.length) {
-    try {
-      return `${safeRole}:${safeText}:${JSON.stringify(content)}`
-    } catch (_) {}
-  }
-  return `${safeRole}:${safeText}`
-}
-
 function pushHistoryMessage(messages, seenMessages, message) {
   if (!message) return false
   const key = buildMessageDedupKey(message.role, message.text, message.content)
@@ -1349,49 +1348,6 @@ function attachTurnTokensToLastAssistantMessage(messages, turnTokens) {
     }
     return
   }
-}
-
-function pickFirstStringValue(...values) {
-  for (const value of values) {
-    if (typeof value === 'string' && value) return value
-  }
-  return ''
-}
-
-const CODEX_WRITE_TOOL_NAMES = new Set([
-  'write',
-  'write_file',
-  'create_file',
-  'writefile',
-])
-
-const CODEX_EDIT_TOOL_NAMES = new Set([
-  'edit',
-  'edit_file',
-  'str_replace',
-  'str_replace_editor',
-  'str_replace_based_edit',
-])
-
-const CODEX_READ_TOOL_NAMES = new Set([
-  'read',
-  'read_file',
-])
-
-function normalizeCodexToolName(name) {
-  return String(name || '').toLowerCase()
-}
-
-function isCodeXWriteToolName(name) {
-  return CODEX_WRITE_TOOL_NAMES.has(normalizeCodexToolName(name))
-}
-
-function isCodeXEditToolName(name) {
-  return CODEX_EDIT_TOOL_NAMES.has(normalizeCodexToolName(name))
-}
-
-function isCodeXReadToolName(name) {
-  return CODEX_READ_TOOL_NAMES.has(normalizeCodexToolName(name))
 }
 
 function isCodeXFileMutationToolName(name) {
