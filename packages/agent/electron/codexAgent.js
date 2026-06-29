@@ -91,6 +91,7 @@ const {
   createSkillsMarketplaceClient,
 } = require('./shared/skills/marketplace')
 const { scanSkillsDirs } = require('./shared/skills/scanner')
+const { createCliExecutor } = require('./shared/cliExecutor')
 
 // ---- CodeX Config IPC (extracted, R09) ----
 const { registerCodexLeafIpcs } = require('./codex/index');
