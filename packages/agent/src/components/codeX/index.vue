@@ -2182,8 +2182,6 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }))
   if (!isQueuedFlush) {
     pendingImages.value = []
-    if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
-    pushToHistory(text, tab.inputHistory)
     tab.draftText = ''
     inputText.value = ''
     // 重置 textarea 高度，避免多行内容发送后输入框被撑大
@@ -2193,6 +2191,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
       }
     })
   }
+  if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
+  pushToHistory(text, tab.inputHistory)
   saveHistory({ immediate: true })
   smartScrollBottom()
 

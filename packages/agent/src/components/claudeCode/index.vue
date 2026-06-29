@@ -3060,6 +3060,8 @@ async function sendMessage() {
     promptToSend = [filesText, '', text].join('\n')
   }
   pendingImages.value = []
+  if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
+  pushToHistory(text, tab.inputHistory)
   inputText.value = ''
   nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
 
