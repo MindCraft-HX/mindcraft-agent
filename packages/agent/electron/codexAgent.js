@@ -35,11 +35,6 @@ const {
   resolveSkillTargetDir,
   safeTempDir,
 } = require('./skillsSecurity')
-const {
-  filterSkillsCatalog,
-  readSkillsCatalogCache,
-  writeSkillsCatalogCache,
-} = require('./skillsCatalogCache')
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
 
@@ -92,6 +87,12 @@ const {
   isCodeXEditToolName,
   isCodeXReadToolName,
 } = require('./codex/messageTools')
+
+// ---- Shared Skills Marketplace (Batch 4) ----
+const {
+  createSkillsMarketplaceClient,
+} = require('./shared/skills/marketplace')
+const { scanSkillsDirs } = require('./shared/skills/scanner')
 
 // ---- CodeX Config IPC (extracted, R09) ----
 const { registerCodexLeafIpcs } = require('./codex/index');
@@ -3480,17 +3481,17 @@ function setupCodexSdkHandlers() {
 
   // ─── Skills 市场与管理 ──────────────────────────────────────────
   ipcMain.handle('codex-skills-get-catalog', async () => {
-    const catalog = await codexFetchSkillsFromAPI()
+    const catalog = await fetchSkillsMarketplace()
     return { skills: catalog.skills || [], version: catalog.version }
   })
 
   ipcMain.handle('codex-skills-get-state', async (_, { cwd }) => {
     try {
-      const catalog = await codexFetchSkillsFromAPI()
+      const catalog = await fetchSkillsMarketplace()
 
       const systemDir = path.join(os.homedir(), '.codex', 'skills')
       const projectDir = String(cwd || '').trim() ? path.join(path.resolve(cwd), '.codex', 'skills') : ''
-      const installed = codexScanSkillsDirs(systemDir, projectDir)
+      const installed = scanSkillsDirs(systemDir, projectDir)
 
       const skills = (catalog.skills || []).map(s => {
         const inst = installed.get(s.name)
@@ -3551,10 +3552,10 @@ function setupCodexSdkHandlers() {
   }
 
   async function resolveCodexCatalogSkillSource(skillName) {
-    const catalog = await codexFetchSkillsFromAPI()
+    const catalog = await fetchSkillsMarketplace()
     let item = (catalog.skills || []).find(s => s.name === skillName)
     if (!item) {
-      const searchCatalog = await codexFetchSkillsFromAPI({ search: skillName, limit: 30 })
+      const searchCatalog = await fetchSkillsMarketplace({ search: skillName, limit: 30 })
       item = (searchCatalog.skills || []).find(s => s.name === skillName)
     }
     if (!item?.gitUrl) throw new Error(lt('skill.noSource'))
@@ -3578,7 +3579,7 @@ function setupCodexSdkHandlers() {
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _codexSkillsStateCache = null
-        _codexSkillsFetchCache = null
+        resetCodexSkillsMarketplaceCache()
         return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
@@ -3878,85 +3879,15 @@ function setupCodexSdkHandlers() {
   // 模块级缓存：CLI 偶发超时/失败时兜底，避免已安装插件全部显示为"未安装"
   let _codexInstalledPluginsCache = null
 
-  // ─── Skills 管理 ───────────────────────────────────────────────
+  // ─── Skills 管理 (marketplace — shared via Batch 4) ────────────
   let _codexSkillsStateCache = null
-  let _codexSkillsFetchCache = null
 
-  const CODX_SKILLS_API = 'https://www.agentskills.in/api/skills'
+  const {
+    fetchSkillsMarketplace,
+    mapMarketplaceSkill,
+    resetCache: resetCodexSkillsMarketplaceCache,
+  } = createSkillsMarketplaceClient('codex')
 
-  function codexMapAPISkill(s) {
-    return {
-      name: s.name, displayName: s.name, description: s.description || '',
-      author: s.author || '', category: '', tags: [],
-      sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-      gitUrl: s.githubUrl || '',
-      subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-      installs: s.stars || 0,
-    }
-  }
-
-  async function codexFetchSkillsFromAPI(opts = {}) {
-    const isDefaultCatalog = !opts.page && !opts.search
-    if (isDefaultCatalog && _codexSkillsFetchCache) return _codexSkillsFetchCache
-    try {
-      const params = new URLSearchParams({ limit: String(opts.limit || 100), sortBy: 'stars' })
-      if (opts.page) params.set('page', String(opts.page))
-      if (opts.search) params.set('search', String(opts.search))
-      const resp = await fetch(`${CODX_SKILLS_API}?${params}`)
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-      const data = await resp.json()
-      const catalog = { version: '1', skills: (data.skills || []).map(codexMapAPISkill) }
-      if (isDefaultCatalog) {
-        _codexSkillsFetchCache = catalog
-        writeSkillsCatalogCache('codex', catalog)
-      }
-      return catalog
-    } catch (_) {
-      const cachedCatalog = readSkillsCatalogCache('codex')
-      const fallback = filterSkillsCatalog(cachedCatalog, opts)
-      if (fallback.skills.length) {
-        return fallback
-      }
-      return { version: '0', skills: [] }
-    }
-  }
-
-  function codexScanSkillsDirs(systemDir, projectDir) {
-    const installed = new Map()
-    const readFirstMdLine = (dirPath) => {
-      try {
-        const files = fs.readdirSync(dirPath)
-        const md = files.find(n => n.toLowerCase() === 'skill.md')
-        if (!md) return ''
-        const content = fs.readFileSync(path.join(dirPath, md), 'utf8')
-        const lines = content.split(/\r?\n/)
-        for (const ln of lines) {
-          const t = ln.trim()
-          if (!t || t.startsWith('#')) continue
-          return t.slice(0, 80)
-        }
-      } catch (_) {}
-      return ''
-    }
-    const scan = (baseDir, scope) => {
-      try {
-        if (!fs.existsSync(baseDir)) return
-        const entries = fs.readdirSync(baseDir, { withFileTypes: true })
-        for (const e of entries) {
-          if (e.isDirectory()) {
-            installed.set(e.name, {
-              scope,
-              path: path.join(baseDir, e.name),
-              description: readFirstMdLine(path.join(baseDir, e.name)),
-            })
-          }
-        }
-      } catch (_) {}
-    }
-    scan(systemDir, 'system')
-    scan(projectDir, 'project')
-    return installed
-  }
 
   async function codexReadInstalledPlugins() {
     const installed = []

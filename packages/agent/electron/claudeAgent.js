@@ -31,11 +31,6 @@ const {
   resolveSkillTargetDir,
   safeTempDir,
 } = require('./skillsSecurity')
-const {
-  filterSkillsCatalog,
-  readSkillsCatalogCache,
-  writeSkillsCatalogCache,
-} = require('./skillsCatalogCache')
 
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = DEFAULT_MAX_BYTES
 const CLAUDE_METRICS_POLL_INTERVAL_MS = 1000
@@ -51,6 +46,12 @@ const {
   annotateClaudeHistoryEntryWithTurnTokens,
   readJsonlPageLinesFromTail,
 } = require('./claude/historyReader')
+
+// ---- Shared Skills Marketplace (Batch 4) ----
+const {
+  createSkillsMarketplaceClient,
+} = require('./shared/skills/marketplace')
+const { scanSkillsDirs } = require('./shared/skills/scanner')
 
 // ---- ClaudeCode IPC leaf modules (R09 main handler setup split) ----
 const { registerClaudeLeafIpcs } = require('./claude/index');
@@ -614,86 +615,14 @@ const CLAUDE_PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins')
 let _installedPluginsCache = null
 
 // ─── Skills 管理 ───────────────────────────────────────────────
+const {
+  fetchSkillsMarketplace,
+  mapMarketplaceSkill,
+  resetCache: resetSkillsMarketplaceCache,
+} = createSkillsMarketplaceClient('claude')
+
 let _skillsStateCache = null
-let _skillsFetchCache = null
 
-const SKILLS_API = 'https://www.agentskills.in/api/skills'
-
-function mapAPISkill(s) {
-  return {
-    name: s.name, displayName: s.name, description: s.description || '',
-    author: s.author || '', category: '', tags: [],
-    sourceUrl: `https://skills.sh?q=${encodeURIComponent(s.name)}`,
-    gitUrl: s.githubUrl || '',
-    subPath: s.path ? s.path.replace(/\/SKILL\.md$/i, '') : '',
-    installs: s.stars || 0,
-  }
-}
-
-async function fetchSkillsFromAPI(opts = {}) {
-  const isDefaultCatalog = !opts.page && !opts.search
-  if (isDefaultCatalog && _skillsFetchCache) return _skillsFetchCache
-  try {
-    const params = new URLSearchParams({ limit: String(opts.limit || 100), sortBy: 'stars' })
-    if (opts.page) params.set('page', String(opts.page))
-    if (opts.search) params.set('search', String(opts.search))
-    const resp = await fetch(`${SKILLS_API}?${params}`)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const data = await resp.json()
-    const catalog = { version: '1', skills: (data.skills || []).map(mapAPISkill) }
-    if (isDefaultCatalog) {
-      _skillsFetchCache = catalog
-      writeSkillsCatalogCache('claude', catalog)
-    }
-    return catalog
-  } catch (_) {
-    const cachedCatalog = readSkillsCatalogCache('claude')
-    const fallback = filterSkillsCatalog(cachedCatalog, opts)
-    if (fallback.skills.length) {
-      return fallback
-    }
-    return { version: '0', skills: [] }
-  }
-}
-
-function scanSkillsDirs(systemDir, projectDir) {
-  const installed = new Map() // name → { scope, path }
-  const readFirstMdLine = (dirPath) => {
-    try {
-      const files = fs.readdirSync(dirPath)
-      const md = files.find(n => n.toLowerCase() === 'skill.md')
-        || files.find(n => n.toLowerCase() === 'readme.md')
-        || files.find(n => n.toLowerCase().endsWith('.md'))
-      if (!md) return ''
-      const content = fs.readFileSync(path.join(dirPath, md), 'utf8')
-      const lines = content.split(/\r?\n/)
-      for (const ln of lines) {
-        const t = ln.trim()
-        if (!t || t.startsWith('#')) continue
-        return t.slice(0, 80)
-      }
-    } catch (_) {}
-    return ''
-  }
-  const scan = (baseDir, scope) => {
-    try {
-      if (!fs.existsSync(baseDir)) return
-      const entries = fs.readdirSync(baseDir, { withFileTypes: true })
-      for (const e of entries) {
-        if (e.isDirectory()) {
-          installed.set(e.name, {
-            scope,
-            path: path.join(baseDir, e.name),
-            description: readFirstMdLine(path.join(baseDir, e.name)),
-          })
-        }
-      }
-    } catch (_) {}
-  }
-  scan(systemDir, 'system')
-  scan(projectDir, 'project')
-  return installed
-}
 
 async function readInstalledPlugins() {
   try {
@@ -3264,13 +3193,13 @@ function setupClaudeHandlers() {
 
   // ─── Skills 市场与管理 ──────────────────────────────────────────
   ipcMain.handle('skills-get-catalog', async () => {
-    const catalog = await fetchSkillsFromAPI()
+    const catalog = await fetchSkillsMarketplace()
     return { skills: catalog.skills || [], version: catalog.version }
   })
 
   ipcMain.handle('skills-get-state', async (_, { cwd }) => {
     try {
-      const catalog = await fetchSkillsFromAPI()
+      const catalog = await fetchSkillsMarketplace()
 
       const systemDir = path.join(os.homedir(), '.claude', 'skills')
       const projectDir = String(cwd || '').trim() ? path.join(path.resolve(cwd), '.claude', 'skills') : ''
@@ -3327,10 +3256,10 @@ function setupClaudeHandlers() {
   }
 
   async function resolveCatalogSkillSource(skillName) {
-    const catalog = await fetchSkillsFromAPI()
+    const catalog = await fetchSkillsMarketplace()
     let item = (catalog.skills || []).find(s => s.name === skillName)
     if (!item) {
-      const searchCatalog = await fetchSkillsFromAPI({ search: skillName, limit: 30 })
+      const searchCatalog = await fetchSkillsMarketplace({ search: skillName, limit: 30 })
       item = (searchCatalog.skills || []).find(s => s.name === skillName)
     }
     if (!item?.gitUrl) throw new Error('该 skill 无可信安装源（GitHub URL）')
@@ -3354,7 +3283,7 @@ function setupClaudeHandlers() {
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null
-        _skillsFetchCache = null
+        resetSkillsMarketplaceCache()
         return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
