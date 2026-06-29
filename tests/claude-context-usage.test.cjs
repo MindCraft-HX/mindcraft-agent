@@ -6,6 +6,9 @@ const {
 const {
   __test__: claudeAgentTest,
 } = require('../packages/agent/electron/claudeAgent.js')
+const {
+  buildClaudeHistoryTurnTokensFromEntry,
+} = require('../packages/agent/electron/claude/historyReader.js')
 
 function runNativeClaudeModelTest() {
   const total = __test__.getClaudeContextUsageFromUsageLike({
@@ -157,7 +160,7 @@ function runLatestSessionCwdFromLinesTest() {
 }
 
 function runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest() {
-  const tokens = claudeAgentTest.buildClaudeHistoryTurnTokensFromEntry({
+  const tokens = buildClaudeHistoryTurnTokensFromEntry({
     duration_ms: 4321,
     message: {
       model: 'deepseek-v4-pro',
