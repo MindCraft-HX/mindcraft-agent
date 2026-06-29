@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { describe, it } = require('node:test');
+const { describe, it, before } = require('node:test');
 const assert = require('node:assert');
 
 const ROOT = path.resolve(__dirname, '..');

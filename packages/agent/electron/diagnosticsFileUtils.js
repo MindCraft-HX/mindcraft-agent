@@ -132,9 +132,11 @@ module.exports = {
   ensureDirSync,
   getDiagnosticsEnabled,
   getMindCraftSettingsPath,
+  readMindCraftSettings,
   rotateLogFileIfTooLarge,
   setDiagnosticsEnabled,
   shouldWriteDiagnostics,
   trimTextToMaxBytes,
   writeFileWithMaxBytes,
+  writeMindCraftSettings,
 }

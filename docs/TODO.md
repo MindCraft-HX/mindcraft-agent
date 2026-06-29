@@ -78,6 +78,31 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 ---
 
+## 2026-06-29 历史测试修复专项
+
+在 R01-R08 重构验收时发现 `npm run test:all` 有 7 个失败，经排查全部重构前就存在（原始代码同样 7 fail），非本次引入。
+
+### 测试方案问题（3 个）
+
+| 测试文件 | 现象 | 根因 | 修复方向 |
+|----------|------|------|----------|
+| `tests/todo-list-parser.test.mjs` | `SyntaxError: Unexpected identifier 'in_progress'` | 文件内字符串编码损坏 | 重新编码/重写测试文件 |
+| `tests/update-plan-parser.test.mjs` | `SyntaxError: Invalid or unexpected token` | 同上，文件内字符串损坏 | 重新编码/重写测试文件 |
+| `tests/electron-window-icon-paths.test.cjs` | `ENOENT: electron/codeWindow/index.js` | 硬编码路径 `codeWindow` 在项目中不存在 | 更新路径或删除过时测试 |
+
+### 可能真实 bug（4 个，需人工诊断）
+
+| 测试文件 | 现象 | 可疑方向 |
+|----------|------|----------|
+| `tests/local-search.test.cjs` | `runAgentListFilesQuery` 返回 `undefined` 而非 `['src/components/']` | `localSearch` 模块查询逻辑变更或测试预期过时 |
+| `tests/claude-permission-sound.test.mjs` | `assert.strictEqual(false, true)` — permission hook 未触发 | 计时/异步竞态；或 `useClaudeAgentStream` 环境依赖不满足 |
+| `tests/claude-task-stream-sync.test.mjs` | result turn tokens deep-equal 不匹配 | token 归属计算逻辑与测试预期不一致 |
+| `tests/claude-task-stream-sync.test.mjs` | detachResume 状态 deep-equal 不匹配 | cli mapping 注册/清理逻辑变更 |
+
+> 全部 7 个在重构前 `18579ce` 提交即已失败。`test:contract`（154 合同测试）不受影响全部通过。
+
+---
+
 ## 活跃任务
 
 | 编号 | 分类 | 说明 | 优先级 | 状态 |
@@ -103,6 +128,9 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
 | R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | 📝 待开 |
+| T155 | test | **修复 `test:all` 7 个历史失败**：3 个测试方案损坏（语法错误/路径过时），4 个需人工诊断（localSearch/permission/token/detachResume）。全部重构前即存在，`test:contract` 不受影响。详见上方「历史测试修复专项」。 | P3 | 📝 待排期 |
+| T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 两处解构重命名 `scrollBottom` 为 `smartScrollBottom`/`smartScrollToBottom`，但后面仍直接调 `scrollBottom(tab.id)`（6 处），特定路径触发 `ReferenceError`。重构未动渲染进程，系旧有 bug。 | P3 | 📝 待排期 |
+| T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：每轮 metrics 刷新后时间字段消失。疑似旧有渲染层问题，重构未动 metrics 显示组件。 | P3 | 📝 待排期 |
 
 ---
 
