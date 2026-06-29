@@ -121,7 +121,9 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R06 | refactor | **Phase 6: Renderer Convergence 剩余收口**：R06a ✅ ClaudeCode `{ immediate: true }` first-hydrate 修复；R06b ✅ first-hydrate tests（10 tests）；R06c ✅ statusbar/footer contract tests（10 tests）；R06d ✅ dirty panel state tests（8 tests）。详见 `docs/architecture-health-review-2026-06-28.md#9`。 | P2 | ✅ 已完成 |
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
-| R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | 📝 待开 |
+| R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | ✅ 已完成 (Batch 0-5) |
+| B0-5 | refactor | **架构重构 Batch 0-5 全线交付**：R01-R09 护栏 + 叶子模块拆分 + Skills/Marketplace 共享化 + CLI executor 去重 + TOML IPC 合并。新增 ESLint `no-undef` 护栏 + 导入完整性测试。291 合约断言 + 120 单元测试通过。详见 `docs/plans/remaining-refactoring-roadmap.md`。 | P1 | ✅ 已完成，阶段冻结 |
+| R10 | refactor | **长期 IPC 通道统一**：需 E2E 前置覆盖后再评估。当前 ClaudeCode/CodeX 通道名不统一，但重命名有静默失效风险。 | P3 | ⏸️ 后续阶段，需 E2E 前置 |
 | T155 | test | **修复 `test:all` 7 个历史失败**：4 个已修复（todo-list/update-plan 编码损坏重写、electron-window-icon-paths 过时删除、local-search async/await+过时文件删除）；3 个 defer（permission-sound 需 Vue 测试环境、task-stream-sync ×2 需 domain 排查）。`test:all` 7→3 fail。 | P3 | 🔧 部分完成，3 个延后 |
 | T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 6 处裸 `scrollBottom(tab.id)` 改为 `smartScrollToBottom(tab.id)`，解构重命名冲突已修复。 | P3 | ✅ 已完成 |
 | T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：在 `agentCommon/StatusBarMetrics.vue`，需跑应用排查渲染逻辑。疑似旧有问题，延后。 | P3 | 🔧 延后排查 |
