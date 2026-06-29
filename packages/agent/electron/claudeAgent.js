@@ -284,7 +284,6 @@ function additionalDirsFromUserText(resolvedCwd, text) {
 }
 
 const { execSync, execFileSync, exec, execFile } = require('child_process')
-const { promisify } = require('util')
 
 function resolveClaudeDoneReasonFromError(err) {
   const errMsg = err?.message || String(err || '')
