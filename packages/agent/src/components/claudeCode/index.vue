@@ -2798,6 +2798,7 @@ async function sendMessage() {
     scrollBottom(tab.id, true)
     saveHistory({ immediate: true })
     pendingImages.value = []
+    if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
     pushToHistory(text, tab.inputHistory)
     tab.draftText = ''
     inputText.value = ''
@@ -3456,6 +3457,7 @@ function onKeydown(e) {
     }
   }
   const tab = activeTab.value
+  if (tab && !Array.isArray(tab.inputHistory)) tab.inputHistory = []
   if (tab && handleHistoryKeydown(e, inputEl.value, tab.inputHistory, (val) => { inputText.value = val })) return
   onSlashKeydown(e, { onSend: sendMessage })
 }

@@ -2182,6 +2182,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }))
   if (!isQueuedFlush) {
     pendingImages.value = []
+    if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
     pushToHistory(text, tab.inputHistory)
     tab.draftText = ''
     inputText.value = ''
@@ -2438,6 +2439,7 @@ function onKeydown(e) {
     }
   }
   const tab = activeTab.value
+  if (tab && !Array.isArray(tab.inputHistory)) tab.inputHistory = []
   if (tab && handleHistoryKeydown(e, inputEl.value, tab.inputHistory, (val) => { inputText.value = val })) return
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
 }
