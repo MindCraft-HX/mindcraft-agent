@@ -109,7 +109,7 @@ export function createClaudeHistoryAdapter({
     },
 
     // Normalize messages for restore — filters context + sets defaults
-    normalizeMessages(messages, setMsgId) {
+    normalizeMessages(messages, getMsgId, setMsgId) {
       const restored = (Array.isArray(messages) ? messages : [])
         .filter(m => {
           if (m?.role === 'system' && typeof m?.text === 'string' && stripSystemContextTags(m.text).length === 0) return false
@@ -119,7 +119,7 @@ export function createClaudeHistoryAdapter({
         })
 
       restored.forEach(m => {
-        if (m?.id > setMsgId()) setMsgId(m.id)
+        if (m?.id > getMsgId()) setMsgId(m.id)
         if (m?.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking') m.expanded = false
         if (m?.role === 'tool' && (String(m.toolName || '').toLowerCase() === 'read' || String(m.toolName || '').toLowerCase() === 'readfile')) m.expanded = false
         if (m?.role === 'system' && (m.compactTitle || m.compactSummary) && !m._isCompact) {
@@ -153,7 +153,7 @@ export function createClaudeHistoryAdapter({
         const restoredChats = chats.map(c => {
           const cNum = parseInt(String(c.id).replace('chat-', '')) || 0
           if (cNum > getChatCounter()) setChatCounter(cNum)
-          const restoredMessages = this.normalizeMessages(c.messages, setMsgId)
+          const restoredMessages = this.normalizeMessages(c.messages, getMsgId, setMsgId)
           return makeRestoredChat(c, restoredMessages)
         })
 
@@ -165,10 +165,8 @@ export function createClaudeHistoryAdapter({
       })
 
       setProjects(restored)
-      return true
+      return { loaded: true, activeProjectId: sanitized.activeProjectId || null, activeChatId: sanitized.activeChatId || null }
     },
-
-    // IPC save (async, debounced)
     async saveAsync(payload) {
       if (cooldownGuard()) return
       try {
@@ -285,10 +283,10 @@ export function createCodexHistoryAdapter({
       }
     },
 
-    normalizeMessages(messages, setMsgId) {
+    normalizeMessages(messages, getMsgId, setMsgId) {
       const arr = Array.isArray(messages) ? messages : []
       const filtered = typeof filterMessage === 'function' ? filterMessage(arr) : arr
-      filtered.forEach(m => { if (m?.id > setMsgId()) setMsgId(m.id) })
+      filtered.forEach(m => { if (m?.id > getMsgId()) setMsgId(m.id) })
       filtered.forEach(m => {
         if (m?.role === 'system' && m?.compactTitle && !m?._isCompact) {
           m._isCompact = true
@@ -309,7 +307,7 @@ export function createCodexHistoryAdapter({
           .map(c => {
             const cNum = parseInt(String(c.id).replace('chat-', '')) || 0
             if (cNum > getChatCounter()) setChatCounter(cNum)
-            const messages = shouldRestoreInlineMessages(c) ? this.normalizeMessages(c.messages, setMsgId) : []
+            const messages = shouldRestoreInlineMessages(c) ? this.normalizeMessages(c.messages, getMsgId, setMsgId) : []
             if (isSuspiciousSlashChat(c, messages)) return null
             if (!isMeaningfulCodexLocalDraft(c, messages)) return null
             const restoredChat = makeRestoredChat(c, messages)
@@ -329,7 +327,7 @@ export function createCodexHistoryAdapter({
       })
 
       setProjects(restored)
-      return true
+      return { loaded: true }
     },
 
     async saveAsync(payload) {

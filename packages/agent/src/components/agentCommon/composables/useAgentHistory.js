@@ -135,18 +135,18 @@ export function useAgentHistory({
         makeRestoredChat,
       }
 
-      const loaded = adapter.applyProjects(remote, ctx)
+      const result = adapter.applyProjects(remote, ctx)
 
-      if (loaded) {
+      if (result && result.loaded) {
         if (typeof setActiveProjectId === 'function') {
-          setActiveProjectId(remote.activeProjectId || null)
+          setActiveProjectId((result.activeProjectId ?? remote.activeProjectId) || null)
         }
         if (typeof setActiveChatId === 'function') {
-          setActiveChatId(remote.activeChatId || null)
+          setActiveChatId((result.activeChatId ?? remote.activeChatId) || null)
         }
       }
 
-      return loaded
+      return result && result.loaded
     } catch (_) {
       return false
     }

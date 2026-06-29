@@ -574,6 +574,44 @@ describe('useCodexHistory — characterization', () => {
       // but the flag is passed through
       assert.equal(projects.value[0].chats.length, 2)
     })
+
+    // ── P1 regression: msgId must be advanced correctly after restore ──
+    it('P1: advances msgId to max historical id (not NaN)', async () => {
+      globalThis.window.electronAPI.codexLoadCodePanelState = async () => ({
+        lastCwd: '/p',
+        projects: [{
+          id: 'proj-1', name: 'P', cwd: '/p', cwdLocked: false, hasDoneNotification: false,
+          additionalDirectories: [],
+          chats: [{
+            id: 'chat-1', name: 'Chat', sessionId: 's-1', cwd: '/p',
+            messages: [
+              { id: 15, role: 'user', text: 'first' },
+              { id: 99, role: 'user', text: 'largest' },
+              { id: 3, role: 'user', text: 'smaller' },
+            ],
+          }],
+        }],
+      })
+
+      let mi = 0
+      const projects = ref([])
+      const h = useCodexHistory({
+        projects, setProjects: v => projects.value = v,
+        getProjectCounter: () => 0, setProjectCounter: () => {},
+        getChatCounter: () => 0, setChatCounter: () => {},
+        getMsgId: () => mi, setMsgId: v => { mi = v },
+        makeRestoredChat: (c, m) => ({ ...c, messages: m }),
+        filterMessage: identityFilter,
+      })
+
+      await h.loadHistory()
+      // msgId should be advanced to the largest message id (99)
+      assert.equal(mi, 99, 'msgId should be 99 after restore, not undefined/NaN')
+      // Simulate creating next message: ++msgId should give 100, not NaN
+      const nextId = ++mi
+      assert.equal(nextId, 100, 'next message id should be 100')
+      assert.ok(!Number.isNaN(nextId), 'next message id should not be NaN')
+    })
   })
 })
 

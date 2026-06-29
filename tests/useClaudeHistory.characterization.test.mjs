@@ -440,6 +440,99 @@ describe('useClaudeHistory — characterization', () => {
       if (readMsg) assert.equal(readMsg.expanded, false)
       if (editMsg) assert.equal(editMsg.expanded, undefined)
     })
+
+    // ── P1 regression: msgId must be advanced correctly after restore ──
+    it('P1: advances msgId to max historical id (not NaN)', async () => {
+      globalThis.window.electronAPI.claudeLoadCodePanelState = async () => ({
+        lastCwd: '/p',
+        activeProjectId: 'proj-1',
+        activeChatId: null,
+        projects: [{
+          id: 'proj-1', name: 'P', cwd: '/p', cwdLocked: false, hasDoneNotification: false,
+          chats: [{
+            id: 'chat-1', name: 'Chat', sessionId: 's-1', cwd: '/p',
+            runMode: 'edit_automatically',
+            messages: [
+              { id: 15, role: 'user', text: 'first' },
+              { id: 42, role: 'user', text: 'largest' },
+              { id: 7, role: 'user', text: 'smaller' },
+            ],
+          }],
+        }],
+      })
+
+      let mi = 0
+      const projects = ref([])
+      const h = useClaudeHistory({
+        projects, setProjects: v => projects.value = v,
+        getProjectCounter: () => 0, setProjectCounter: () => {},
+        getChatCounter: () => 0, setChatCounter: () => {},
+        getMsgId: () => mi, setMsgId: v => { mi = v },
+        makeRestoredChat: (c, m) => ({ ...c, messages: m }),
+        getActiveProjectId: () => null,
+        setActiveProjectId: () => {},
+        getActiveChatId: () => null,
+        setActiveChatId: () => {},
+      })
+
+      await h.loadHistory()
+      // msgId should be advanced to the largest message id (42)
+      assert.equal(mi, 42, 'msgId should be 42 after restore, not undefined/NaN')
+      // Simulate creating next message: ++msgId should give 43, not NaN
+      const nextId = ++mi
+      assert.equal(nextId, 43, 'next message id should be 43')
+      assert.ok(!Number.isNaN(nextId), 'next message id should not be NaN')
+    })
+
+    // ── P2 regression: sanitizer corrects invalid activeProjectId ──
+    it('P2: uses sanitized active selection, not raw remote value', async () => {
+      // remote.activeProjectId 'proj-ghost' does not exist in projects.
+      // pickActiveSelection falls back to the first project with chats (proj-real).
+      // BEFORE the fix, shared loadHistory() ignored the sanitized result
+      // and used raw remote.activeProjectId ('proj-ghost') directly.
+      globalThis.window.electronAPI.claudeLoadCodePanelState = async () => ({
+        lastCwd: '/p',
+        activeProjectId: 'proj-ghost',  // invalid — no project with this id
+        activeChatId: 'chat-ghost',
+        projects: [{
+          id: 'proj-real', name: 'Real Project', cwd: '/p',
+          cwdLocked: false, hasDoneNotification: false,
+          chats: [{
+            id: 'chat-real', name: 'Real Chat', sessionId: 's-real', cwd: '/p',
+            runMode: 'edit_automatically',
+            messages: [makeMsg(1, 'user', 'hello')],
+            updatedAt: '2026-06-28T00:00:00Z',
+          }],
+        }],
+      })
+
+      let mi = 0
+      const projects = ref([])
+      let activeProjectSet = null
+      let activeChatSet = null
+      const h = useClaudeHistory({
+        projects, setProjects: v => projects.value = v,
+        getProjectCounter: () => 0, setProjectCounter: () => {},
+        getChatCounter: () => 0, setChatCounter: () => {},
+        getMsgId: () => mi, setMsgId: v => { mi = v },
+        makeRestoredChat: (c, m) => ({ ...c, messages: m }),
+        getActiveProjectId: () => null,
+        setActiveProjectId: (v) => { activeProjectSet = v },
+        getActiveChatId: () => null,
+        setActiveChatId: (v) => { activeChatSet = v },
+      })
+
+      await h.loadHistory()
+      // Sanitizer corrects invalid activeProjectId → valid project id
+      assert.equal(activeProjectSet, 'proj-real',
+        'activeProjectId should be corrected by sanitizer to valid project')
+      // activeChatId 'chat-ghost' doesn't exist → sanitizer picks latest chat
+      assert.equal(activeChatSet, 'chat-real',
+        'activeChatId should be corrected by sanitizer to existing chat')
+      // The raw remote values (proj-ghost/chat-ghost) should NOT be used
+      assert.notEqual(activeProjectSet, 'proj-ghost',
+        'raw invalid activeProjectId must not leak through')
+    })
   })
 })
 
