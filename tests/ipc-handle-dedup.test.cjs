@@ -1,12 +1,17 @@
 'use strict';
 
 /**
- * Static contract: no duplicate ipcMain.handle channels across electron/.
+ * Static contract: no duplicate ipcMain.handle or ipcMain.on channels
+ * across electron/.
  *
- * Electron throws on `ipcMain.handle(channel, handler)` if the same
- * channel is already registered. This test scans the source tree and
- * fails on any duplicate — catching issues that unit/integration tests
- * may miss because they don't load the actual main process.
+ * - ipcMain.handle duplicates: Electron throws at startup — hard error.
+ * - ipcMain.on duplicates: won't crash, but silently stacks listeners and
+ *   fires callbacks multiple times — soft constraint, still treated as
+ *   a test failure here since the project should not rely on that behavior.
+ *
+ * This test scans the source tree and fails on any duplicate — catching
+ * issues that unit/integration tests may miss because they don't load the
+ * actual main process.
  */
 
 const assert = require('node:assert/strict');
@@ -39,9 +44,12 @@ function walkJsFiles(dir) {
   return results.sort();
 }
 
-function extractHandleChannels(filePath) {
+function extractChannels(filePath, method) {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const re = /ipcMain\.handle\s*\(\s*(['"`])([^'"`]+)\1/g;
+  // Match ipcMain.handle('channel', ...) or ipcMain.on('channel', ...)
+  const re = new RegExp(
+    `ipcMain\\.${method}\\s*\\(\\s*(['"\`])([^'"\`]+)\\1`, 'g'
+  );
   const channels = [];
   let m;
   while ((m = re.exec(content)) !== null) {
@@ -50,37 +58,58 @@ function extractHandleChannels(filePath) {
   return channels;
 }
 
-describe('ipcMain.handle duplicate channel contract', () => {
-  const files = walkJsFiles(ROOT);
-  const allChannels = []; // { channel, file, line }
-
+function collectChannelRegistrations(files, method) {
+  const all = [];
   for (const file of files) {
     const relative = path.relative(ROOT, file);
-    const channels = extractHandleChannels(file);
-    for (const c of channels) {
-      allChannels.push({ channel: c.channel, file: relative, line: c.line });
+    for (const c of extractChannels(file, method)) {
+      all.push({ channel: c.channel, file: relative, line: c.line });
     }
   }
+  return all;
+}
 
-  it('no ipcMain.handle channel is registered more than once', () => {
-    const seen = new Map(); // channel → { file, line }
-    const dupes = [];
-
-    for (const { channel, file, line } of allChannels) {
-      if (seen.has(channel)) {
-        const prev = seen.get(channel);
-        dupes.push(
-          `"${channel}" registered in ${prev.file}:${prev.line} AND ${file}:${line}`
-        );
-      } else {
-        seen.set(channel, { file, line });
-      }
+function findDupes(registrations) {
+  const seen = new Map();
+  const dupes = [];
+  for (const { channel, file, line } of registrations) {
+    if (seen.has(channel)) {
+      const prev = seen.get(channel);
+      dupes.push(
+        `"${channel}" registered in ${prev.file}:${prev.line} AND ${file}:${line}`
+      );
+    } else {
+      seen.set(channel, { file, line });
     }
+  }
+  return dupes;
+}
 
-    assert.deepStrictEqual(dupes, [], 'Duplicate ipcMain.handle channels found');
+describe('ipcMain channel duplicate contract', () => {
+  const files = walkJsFiles(ROOT);
+
+  const handleRegs = collectChannelRegistrations(files, 'handle');
+  const onRegs = collectChannelRegistrations(files, 'on');
+
+  describe('ipcMain.handle', () => {
+    it('no channel is registered more than once (crashes Electron)', () => {
+      const dupes = findDupes(handleRegs);
+      assert.deepStrictEqual(dupes, [], 'Duplicate ipcMain.handle channels found');
+    });
+
+    it('has at least some handlers (sanity)', () => {
+      assert.ok(handleRegs.length > 0, 'Expected ipcMain.handle channels to exist');
+    });
   });
 
-  it('has at least some handlers (sanity)', () => {
-    assert.ok(allChannels.length > 0, 'Expected ipcMain.handle channels to exist');
+  describe('ipcMain.on', () => {
+    it('no channel is listened more than once (silent listener stacking)', () => {
+      const dupes = findDupes(onRegs);
+      assert.deepStrictEqual(dupes, [], 'Duplicate ipcMain.on channels found');
+    });
+
+    it('has at least some listeners (sanity)', () => {
+      assert.ok(onRegs.length > 0, 'Expected ipcMain.on channels to exist');
+    });
   });
 });
