@@ -167,4 +167,47 @@ function setupIpcHandlers(env, platform) {
   })
 }
 
-module.exports = { setupIpcHandlers };
+/**
+ * Host-level IPC handlers — app version, login-item settings, system settings,
+ * external URL opening. Extracted from electron/main.js (Phase 7 main.js split).
+ */
+function setupHostIpcHandlers() {
+  // App version
+  ipcMain.handle('get-app-version', () => app.getVersion());
+
+  // Login item settings (auto-start on boot)
+  ipcMain.handle('get-login-item-settings', () => {
+    return app.getLoginItemSettings().openAtLogin;
+  });
+  ipcMain.handle('set-login-item-settings', (_event, openAtLogin) => {
+    app.setLoginItemSettings({ openAtLogin });
+  });
+
+  // Open OS system settings (privacy-microphone)
+  ipcMain.on('open-system-settings', () => {
+    if (process.platform === 'win32') {
+      exec('start ms-settings:privacy-microphone');
+    } else if (process.platform === 'darwin') {
+      exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"');
+    } else if (process.platform === 'linux') {
+      exec('gnome-control-center privacy');
+    }
+  });
+
+  // Open external HTTP/HTTPS URLs in default browser
+  function isHttpExternalUrl(value) {
+    try {
+      const parsed = new URL(String(value || '').trim());
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch (_) {
+      return false;
+    }
+  }
+  ipcMain.on('open-external-window', (event, arg) => {
+    event.preventDefault();
+    if (!isHttpExternalUrl(arg)) return;
+    shell.openExternal(String(arg).trim());
+  });
+}
+
+module.exports = { setupIpcHandlers, setupHostIpcHandlers };

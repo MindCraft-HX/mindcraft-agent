@@ -49,7 +49,7 @@ function configureUserDataPath() {
 
 configureUserDataPath()
 
-const { setupIpcHandlers } = require("./mainModules/ipcHandlers");
+const { setupIpcHandlers, setupHostIpcHandlers } = require("./mainModules/ipcHandlers");
 const { setupAutoUpdater } = require("./mainModules/autoUpdate");
 const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers, getInstalledPlugins } = require("./mainModules/pluginManager");
 
@@ -63,6 +63,9 @@ const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdR
 // ---- Extracted Phase 7 modules ----
 const { loadThemeFromFile, saveThemeToFile, VALID_THEMES } = require('./themeStore');
 const { createTray } = require('./tray');
+const { fetchImage } = require('./fetchImage');
+const { setupDragOptimization } = require('./dragPerformance');
+const { registerContextMenu } = require('./contextMenu');
 
 let initUrl = path.join(__dirname, "../dist/index.html")
 // 开发模式：优先使用 Vite dev server（HMR 支持）
@@ -145,69 +148,8 @@ function createWindow() {
   ipcMain.on('window-close', () => win?.close());
   ipcMain.handle('window-is-maximized', () => win?.isMaximized() ?? false);
 
-  // ── 窗口拖拽性能优化 ──
-  // 拖拽期间通知渲染端暂停 CSS 动画/重渲染，减少与 OS 合成器的 GPU 争抢
-  let dragTimer = null
-  let dragSafetyTimer = null
-  let isDragging = false
-  const DRAG_END_DELAY = 150   // 停止移动 150ms 后认为拖拽结束
-  const DRAG_MAX_DURATION = 3000 // 安全网：超过 3s 强制恢复
-
-  function buildWindowPerformanceState(active) {
-    return active
-      ? {
-          active: true,
-          reason: 'drag',
-          frameRate: 30,
-          effectsReduced: true,
-          since: Date.now(),
-        }
-      : {
-          active: false,
-          reason: '',
-          frameRate: 60,
-          effectsReduced: false,
-          since: 0,
-        }
-  }
-
-  function setDragState(state) {
-    if (isDragging === state) return
-    isDragging = state
-    clearTimeout(dragSafetyTimer)
-    if (win && !win.isDestroyed()) {
-      // 拖拽期间适度降帧，降低 GPU 争抢，但避免 15fps 带来的明显顿挫感
-      win.webContents.setFrameRate(state ? 30 : 60)
-      win.webContents.send('window-performance-state', buildWindowPerformanceState(state))
-    }
-    if (state) {
-      dragSafetyTimer = setTimeout(() => setDragState(false), DRAG_MAX_DURATION)
-    }
-  }
-
-  function clearDragState() {
-    clearTimeout(dragTimer)
-    clearTimeout(dragSafetyTimer)
-    dragTimer = null
-    dragSafetyTimer = null
-    setDragState(false)
-  }
-
-  win.on('move', () => {
-    if (!isDragging) setDragState(true)
-    clearTimeout(dragTimer)
-    dragTimer = setTimeout(() => setDragState(false), DRAG_END_DELAY)
-  })
-
-  // resize 也当拖拽处理（窗口边缘拖拽改变大小时同样卡顿）
-  win.on('resize', () => {
-    if (!isDragging) setDragState(true)
-    clearTimeout(dragTimer)
-    dragTimer = setTimeout(() => setDragState(false), DRAG_END_DELAY)
-  })
-
-  win.on('blur', clearDragState)
-  win.on('unresponsive', clearDragState)
+  // ── 窗口拖拽性能优化（extracted to dragPerformance.js）──
+  const { clearDragState } = setupDragOptimization(win)
 
   // 开发模式从 dev server 加载（支持 HMR），生产模式从 dist 文件加载
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -287,84 +229,8 @@ function createWindow() {
     }
   })
 
-  // 复制粘贴
-  win.webContents.on("context-menu", async (e, params) => {
-    const contextMenu = new Menu();
-
-    // 添加标准的复制、剪切、粘贴等选项（图片上跳过"复制"，用下面的"复制图片"替代）
-    if (params.mediaType !== "image") {
-      contextMenu.append(
-        new MenuItem({ label: "复制", role: "copy", accelerator: "CmdOrCtrl+C" })
-      );
-    }
-    if (params.isEditable) {
-      contextMenu.append(
-        new MenuItem({ label: "剪切", role: "cut", accelerator: "CmdOrCtrl+X" })
-      );
-      contextMenu.append(
-        new MenuItem({
-          label: "粘贴",
-          role: "paste",
-          accelerator: "CmdOrCtrl+V",
-        })
-      );
-      contextMenu.append(
-        new MenuItem({
-          label: "撤销",
-          role: "undo",
-          accelerator: "CmdOrCtrl+Z",
-        })
-      );
-      contextMenu.append(
-        new MenuItem({
-          label: "重做",
-          role: "redo",
-          accelerator: "CmdOrCtrl+Y",
-        })
-      );
-      contextMenu.append(new MenuItem({ type: "separator" }));
-    }
-    // 如果点击的是图片，则添加保存图片和复制图片选项
-    if (params.mediaType === "image") {
-      contextMenu.append(
-        new MenuItem({
-          label: "保存图片",
-          click: async () => {
-            const imageUrl = params.srcURL;
-            const image = await fetchImage(imageUrl);
-            if (image) {
-              const { filePath } = await dialog.showSaveDialog(win, {
-                title: "保存图片",
-                defaultPath: "image.png",
-                filters: [
-                  { name: "Images", extensions: ["png", "jpg", "jpeg", "gif"] },
-                ],
-              });
-              if (filePath) {
-                fs.writeFileSync(filePath, image.toPNG());
-              }
-            }
-          },
-        })
-      );
-
-      contextMenu.append(
-        new MenuItem({
-          label: "复制图片",
-          click: async () => {
-            const imageUrl = params.srcURL;
-            const image = await fetchImage(imageUrl);
-            if (image) {
-              clipboard.writeImage(image);
-            }
-          },
-        })
-      );
-    }
-
-    // 显示菜单
-    contextMenu.popup(win, params.x, params.y);
-  });
+  // 复制粘贴（extracted to contextMenu.js）
+  registerContextMenu(win, fetchImage)
 }
 
 let tray = null;
@@ -406,28 +272,6 @@ ipcMain.on("openEmail", (event, emailAddress) => {
 //   });
 // }
 
-// 获取图片，支持 base64 data URL、远程和本地文件路径
-async function fetchImage(imageUrl) {
-  try {
-    if (imageUrl.startsWith("data:")) {
-      // 粘贴/拖拽的 base64 data URL
-      return nativeImage.createFromDataURL(imageUrl)
-    }
-    if (imageUrl.startsWith("http")) {
-      // 远程图片
-      const response = await axios.get(imageUrl, {
-        responseType: "arraybuffer",
-      });
-      return nativeImage.createFromBuffer(Buffer.from(response.data));
-    }
-    // 本地文件路径
-    return nativeImage.createFromPath(imageUrl);
-  } catch (error) {
-    console.error("Failed to fetch image:", error);
-    return null;
-  }
-}
-
 ipcMain.handle('open-md-win', (_event, payload) => openMdInMain(payload))
 registerMdViewerHandlers()
 
@@ -437,7 +281,8 @@ app.whenReady().then(async () => {
   setMainWindow(win);
   tray = createTray(win, __dirname)
   createStore()
-  setupIpcHandlers(NODE_ENV, NODE_PLATFORM); //ipcMain文件
+  setupIpcHandlers(NODE_ENV, NODE_PLATFORM);
+  setupHostIpcHandlers();
   setupAutoUpdater(NODE_ENV, win, { beforeInstall: prepareForUpdateInstall }); //更新文件
 
   // 插件系统：IPC handlers + 注册表立即加载（轻量），目录扫描延迟执行
@@ -516,24 +361,6 @@ app.on("web-contents-created", (event, contents) => {
   });
 });
 
-ipcMain.on('open-system-settings', () => {
-  // 根据操作系统执行不同的命令
-  if (process.platform === 'win32') {
-    exec('start ms-settings:privacy-microphone');
-  } else if (process.platform === 'darwin') {
-    exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"');
-  } else if (process.platform === 'linux') {
-    // Linux 用户需要根据具体的发行版和桌面环境来调整命令
-    exec('gnome-control-center privacy');
-  }
-});
-
-ipcMain.handle('get-login-item-settings', () => {
-  return app.getLoginItemSettings().openAtLogin;
-});
-ipcMain.handle('set-login-item-settings', (event, openAtLogin) => {
-  app.setLoginItemSettings({ openAtLogin })
-});
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 // 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）— extracted to themeStore.js
@@ -560,21 +387,6 @@ ipcMain.on('open-new-window', (event, arg) => {
   initCodeWin({win: baseWin, NODE_ENV})
   baseWin.setMenu(null);
   baseWin.loadURL(arg); // 加载传入的 URL
-});
-//  打开外部弹窗
-function isHttpExternalUrl(value) {
-  try {
-    const parsed = new URL(String(value || '').trim());
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch (_) {
-    return false;
-  }
-}
-
-ipcMain.on('open-external-window', (event, arg) => {
-  event.preventDefault();
-  if (!isHttpExternalUrl(arg)) return;
-  shell.openExternal(String(arg).trim());
 });
 
 // 打开一个单例窗口
