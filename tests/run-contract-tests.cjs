@@ -32,6 +32,9 @@ const CONTRACT_PATTERNS = [
   { dir: 'tests', match: f => f === 'renderer-convergence-contract.test.mjs' },
   // IPC handle dedup (catches double-registration that crashes Electron at startup)
   { dir: 'tests', match: f => f === 'ipc-handle-dedup.test.cjs' },
+  // Extracted pure-helper / IO-without-state module tests (Batch 2+)
+  { dir: 'tests', match: f => /^codex-.*\.test\.cjs$/.test(f) },
+  { dir: 'tests', match: f => /^claude-.*\.test\.cjs$/.test(f) },
   // Token metrics unit tests
   { dir: 'packages/agent/electron/tokenMetrics', match: f => /\.test\.(cjs|mjs)$/.test(f) },
 ];
