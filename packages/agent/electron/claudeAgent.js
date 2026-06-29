@@ -47,11 +47,7 @@ const { getAgentProtocol } = require('./agentProtocolBridge')
 // are imported from diagnosticsFileUtils above (canonical location).
 
 // ---- ClaudeCode IPC leaf modules (R09 main handler setup split) ----
-const { registerApiIpc } = require('./claude/apiIpc');
-const { registerFreezeDiagIpc } = require('./claude/freezeDiagIpc');
-const { registerWebSearchIpc } = require('./claude/webSearchIpc');
-const { registerUiUtilsIpc } = require('./claude/uiUtilsIpc');
-const { registerChatPersistenceIpc } = require('./claude/chatPersistenceIpc');
+const { registerClaudeLeafIpcs } = require('./claude/index');
 
 // ---- ClaudeCode Environment (extracted leaf module, Phase 5) ----
 const {
@@ -1216,8 +1212,6 @@ function setupClaudeHandlers() {
     }
   })
 
-  registerApiIpc(ipcMain, { lt })
-
   const defaultModels = []
 
   // 内部配置存储（providers/tierModels 等不属于 settings.json 的数据）
@@ -1239,12 +1233,6 @@ function setupClaudeHandlers() {
       set: (k, v) => { const d = loadFallback(); d[k] = v; saveFallback(d) },
     }
   }
-
-  registerFreezeDiagIpc(ipcMain, {
-    getClaudeFreezeDiagEnabled,
-    getClaudeFreezeDiagLogPath,
-    setClaudeFreezeDiagEnabled,
-  })
 
   /** 从全局 settings.json 读取配置（兼容旧键名） */
   function confGet(key, def) {
@@ -2304,15 +2292,17 @@ function setupClaudeHandlers() {
     return _indexWriteQueue
   }
 
-  registerChatPersistenceIpc(ipcMain, {
+  // ---- Leaf IPC modules (aggregated via claude/index.js, R09 Phase A) ----
+  registerClaudeLeafIpcs(ipcMain, {
+    lt,
+    getClaudeFreezeDiagEnabled,
+    getClaudeFreezeDiagLogPath,
+    setClaudeFreezeDiagEnabled,
     CHAT_SESSIONS_DIR,
     ensureChatSessionsDir,
     readChatIndex,
     writeChatIndexAsync,
-    lt,
   })
-
-  registerWebSearchIpc(ipcMain, { lt })
 
   // Claude Agent SDK 会话管理
   //
@@ -3114,8 +3104,6 @@ function setupClaudeHandlers() {
     if (!sessionId) return null
     return compactSummaries.get(sessionId) || null
   })
-
-  registerUiUtilsIpc(ipcMain)
 
   /** 仅 claude-list-slash-commands：与官方 CLI 一致只读 ~/.claude/settings.json，不读 provider、不回写 conf。 */
   function readSlashCommandsEnvFromUserSettingsFile() {

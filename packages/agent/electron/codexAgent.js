@@ -66,10 +66,7 @@ const {
 } = require('./codex/environment')
 
 // ---- CodeX Config IPC (extracted, R09) ----
-const { registerConfigIpc } = require('./codex/configIpc');
-const { registerEnvironmentIpc } = require('./codex/environmentIpc');
-const { registerApiIpc } = require('./codex/apiIpc');
-const { registerGitDiffIpc } = require('./codex/gitDiffIpc');
+const { registerCodexLeafIpcs } = require('./codex/index');
 
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
@@ -3786,21 +3783,19 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  // ---- Config/Settings IPC (extracted to codex/configIpc.js) ----
-  registerConfigIpc(ipcMain, {
+  // ---- Leaf IPC modules (aggregated via codex/index.js, R09 Phase A) ----
+  registerCodexLeafIpcs(ipcMain, {
     readRuntimeConfig,
     readSandboxMode,
     CODEX_SANDBOX_MODES,
     findLegacyUserData,
     normalizeCodexReasoningEffort,
-  })
-
-  registerEnvironmentIpc(ipcMain, {
     loadCodexSdk,
     findGlobalCodexPath,
     isInstallingCodex,
     setInstallingCodex,
     resetCodexSdkPromise,
+    readPanelState,
     lt,
   })
 
@@ -3960,14 +3955,6 @@ function setupCodexSdkHandlers() {
       return { ok: true, changed: true, backupPath }
     } catch (e) { return { ok: false, message: e.message } }
   })
-
-  registerApiIpc(ipcMain, {
-    readRuntimeConfig,
-    readPanelState,
-    lt,
-  })
-
-  registerGitDiffIpc(ipcMain)
 
   // ─── CodeX 插件管理 ──────────────────────────────────────────
   const CODEX_PLUGINS_MARKET_DIR = path.join(CODEX_CONFIG_DIR, '.tmp', 'plugins')
