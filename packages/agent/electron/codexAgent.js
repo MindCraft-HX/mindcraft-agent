@@ -3863,18 +3863,8 @@ function setupCodexSdkHandlers() {
     return plugins
   }
 
-  /** 执行 codex CLI 命令，自动处理 Windows .cmd/.bat shim */
-  // P2-3：execFileSync → 异步 execFile，插件安装/卸载不再冻结主进程
-  async function execCodexCli(args, opts = {}) {
-    const codexPath = findGlobalCodexPath()
-    if (!codexPath) throw new Error('codex not found')
-    const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath)
-    const cmd = isCmdShim ? 'cmd.exe' : codexPath
-    const cmdArgs = isCmdShim ? ['/c', codexPath, ...args] : args
-    const { stdout: out } = await promisify(execFile)(cmd, cmdArgs, { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
-    console.log('[codex] CLI:', args.join(' '), '→', (out || '').trim().slice(0, 200) || '(empty)')
-    return out
-  }
+  // ---- CodeX CLI executor (shared, Batch 5a) ----
+  const execCodexCli = createCliExecutor({ findBinary: findGlobalCodexPath, agentName: "codex" })
 
   // 模块级缓存：CLI 偶发超时/失败时兜底，避免已安装插件全部显示为"未安装"
   let _codexInstalledPluginsCache = null

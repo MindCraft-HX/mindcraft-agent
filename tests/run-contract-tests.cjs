@@ -37,6 +37,8 @@ const CONTRACT_PATTERNS = [
   // Extracted pure-helper / IO-without-state module tests (Batch 2+)
   { dir: 'tests', match: f => /^codex-.*\.test\.cjs$/.test(f) },
   { dir: 'tests', match: f => /^claude-.*\.test\.cjs$/.test(f) },
+  // Shared module tests (Batch 5+)
+  { dir: 'tests', match: f => /^cli-executor\.test\.cjs$/.test(f) },
   // Token metrics unit tests
   { dir: 'packages/agent/electron/tokenMetrics', match: f => /\.test\.(cjs|mjs)$/.test(f) },
 ];

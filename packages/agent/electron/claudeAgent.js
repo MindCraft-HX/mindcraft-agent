@@ -52,6 +52,7 @@ const {
   createSkillsMarketplaceClient,
 } = require('./shared/skills/marketplace')
 const { scanSkillsDirs } = require('./shared/skills/scanner')
+const { createCliExecutor } = require('./shared/cliExecutor')
 
 // ---- ClaudeCode IPC leaf modules (R09 main handler setup split) ----
 const { registerClaudeLeafIpcs } = require('./claude/index');
@@ -986,18 +987,8 @@ function setupClaudeHandlers() {
     }
     return state
   })
-  /** 执行 claude CLI 命令，自动处理 Windows .cmd/.bat shim */
-  async function execClaudeCli(args, opts = {}) {
-    const claudePath = await findSystemClaude()
-    if (!claudePath) throw new Error('claude not found')
-    const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)
-    const cmd = isCmdShim ? 'cmd.exe' : claudePath
-    const cmdArgs = isCmdShim ? ['/c', claudePath, ...args] : args
-    // P2-3：execFileSync → 异步 execFile，插件安装/卸载不再冻结主进程
-    const { stdout: out } = await promisify(execFile)(cmd, cmdArgs, { encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
-    console.log('[claude] CLI:', args.join(' '), '→', (out || '').trim().slice(0, 200) || '(empty)')
-    return out
-  }
+  // ---- ClaudeCode CLI executor (shared, Batch 5a) ----
+  const execClaudeCli = createCliExecutor({ findBinary: findSystemClaude, agentName: "claude" })
 
   ipcMain.handle('plugins-save-state', () => true)
 
