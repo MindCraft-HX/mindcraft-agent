@@ -122,7 +122,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R01 | infra | **Phase 1: 测试与架构护栏前置**：新增 `test:contract`/`test:all` 脚本；contract test runner；IPC 对账/no-console/脏 panel state 测试。详见 `docs/architecture-health-review-2026-06-28.md#4`。 | P1 | ✅ 已完成 |
 | R02 | infra | **Phase 2: 共享基础设施**：抽取 `agentProtocolBridge.js`；收敛 MindCraft settings helper；创建 logger facade。详见 `docs/architecture-health-review-2026-06-28.md#5`。 | P1 | ✅ 已完成 |
 | R03 | refactor | **Phase 3: IPC channel registry**：创建 `ipcChannels.js`（CLAUDE/CODEX/CORE 三组）；`registerIpcHandler.js` helper；preload/main 对账测试。详见 `docs/architecture-health-review-2026-06-28.md#6`。 | P1 | ✅ 已完成 |
-| R04 | refactor | **Phase 4: Tab/History composable 收敛**：专项顺延；先补 characterization tests，再抽纯函数/helper，之后先接 CodeX、再接 ClaudeCode。详见 `docs/architecture-health-review-2026-06-28.md#7`。 | P1 | 🧊 冻结后续专项 |
+| R04 | refactor | **Phase 4: Tab/History composable 收敛**：R04a ✅ characterization tests（97 tests）；R04b ✅ 纯函数提取 + adapter 契约；R04c ✅ CodeX useAgentTabs；R04d ✅ ClaudeCode useAgentTabs；R04e ✅ History 收敛 — useAgentHistory + historyProviderAdapter + 双端 thin wrapper。全量 251 tests 0 fail。详见 `docs/architecture-health-review-2026-06-28.md#7`。 | P1 | ✅ 已完成 |
 | R05 | refactor | **Phase 5: 巨型文件拆叶子模块**：`codexAgent.js`（5103→4834，-269行）拆 configManager + environment；`claudeAgent.js`（3935→3791，-144行）拆 environment。详见 `docs/architecture-health-review-2026-06-28.md#8`。 | P1 | ✅ 已完成 |
 | R06 | refactor | **Phase 6: Renderer Convergence 剩余收口**：测试可先行，实际实现依赖 R04 shared helper/composable 稳定后推进。详见 `docs/architecture-health-review-2026-06-28.md#9`。 | P2 | 🧊 冻结后续专项 |
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
@@ -138,6 +138,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 | 日期 | 分类 | 说明 |
 |------|------|------|
+| 2026-06-29 | refactor | **R04 Tab/History composable 收敛完成**：R04a-e 全部完成。新增 `useAgentTabs.js`（107行）、`useAgentHistory.js`（162行）、`tabProviderAdapter.mjs`、`historyProviderAdapter.mjs`、4 个 pure helpers。双端 composable 收口为 thin wrapper（各 ~50行）。全量 251 tests（97 表征 + 154 契约）0 fail。 |
 | 2026-06-28 | docs | **知识库整理**：新增 `docs/index.md`；精简 `docs/TODO.md` 从 1042→~100 行；CodeX Chat Proxy 文档合并归档；更新 AGENTS.md/CLAUDE.md 路由表。 |
 | 2026-06-25 | refactor | **Token Metrics 重构 Phase 0-4 完成**：diagnostics.js / normalizer.js / turnStore.js / ClaudeCode + CodeX 全部 6 个发射点接入 TurnStore；footer/StatusBar/历史恢复消费同一 snapshot。 |
 | 2026-06-24 | bug | **更新/安装流程修复**：下载进度条优化 + `quitAndInstall()` 分离进程启动安装器。 |
