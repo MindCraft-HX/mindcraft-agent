@@ -127,6 +127,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
 import { useImageAttachments } from '../agentCommon/composables/useImageAttachments.js'
+import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
 
 const { t } = useI18n()
 
@@ -145,6 +146,8 @@ const emit = defineEmits([
 
 const textareaRef = ref(null)
 const inputText = ref('')
+const inputHistory = ref([])  // local history for ChatView (not persisted)
+const { handleHistoryKeydown, pushToHistory } = useInputHistory()
 const modelPickerRef = ref(null)
 
 // ── 模型自定义下拉 ──
@@ -332,6 +335,8 @@ function autoResize() {
 }
 
 function onKeydown(e) {
+  if (e?.isComposing) return
+  if (handleHistoryKeydown(e, textareaRef.value, inputHistory.value, (val) => { inputText.value = val })) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (canSend.value) doSend()
@@ -357,6 +362,7 @@ function doSend() {
     .filter(img => img.isImage && img.dataUrl)
     .map(img => ({ dataUrl: img.dataUrl, mediaType: img.mediaType || 'image/png' }))
   if (!text && !images.length) return
+  pushToHistory(text, inputHistory.value)
   emit('send', text, images)
   inputText.value = ''
   pendingImages.value = []

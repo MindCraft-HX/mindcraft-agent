@@ -331,6 +331,7 @@ import ScrollToPrevMsg from '../agentCommon/components/ScrollToPrevMsg.vue'
 import { useImageAttachments } from './composables/useImageAttachments'
 import { useSlashCommands } from './composables/useSlashCommands'
 import { useClaudeHistory } from './composables/useClaudeHistory'
+import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
 import { useClaudeAgentStream } from './composables/useClaudeAgentStream'
 import {
   beginTaskBatch,
@@ -406,6 +407,7 @@ const activeProjectId = ref(null)
 const activeChatId = ref(null)
 const inputText = ref('')
 const inputEl = ref(null)
+const { handleHistoryKeydown, pushToHistory, resetHistory } = useInputHistory()
 const isComposing = ref(false)
 const msgRefs = {}
 const historyTopSentinelRef = ref(null)
@@ -748,6 +750,7 @@ watch(activeChatId, (id) => {
   activeMsgContainer.value = id ? msgRefs[id] : null
   const chat = id ? (activeProject.value?.chats || []).find(c => c.id === id) || null : null
   inputText.value = typeof chat?.draftText === 'string' ? chat.draftText : ''
+  resetHistory()
   refreshMetricsForChat(chat)
   void refreshActiveSessionInstructionState()
 }, { immediate: true })
@@ -1821,6 +1824,7 @@ function createChat() {
     modelTier: null,
     runMode: 'edit_automatically',
     draftText: '',
+    inputHistory: [],
     thinking: false,
     messages: [],
     currentAssistantId: null,
@@ -2794,6 +2798,7 @@ async function sendMessage() {
     scrollBottom(tab.id, true)
     saveHistory({ immediate: true })
     pendingImages.value = []
+    pushToHistory(text, tab.inputHistory)
     tab.draftText = ''
     inputText.value = ''
     nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
@@ -3450,6 +3455,8 @@ function onKeydown(e) {
       return
     }
   }
+  const tab = activeTab.value
+  if (tab && handleHistoryKeydown(e, inputEl.value, tab.inputHistory, (val) => { inputText.value = val })) return
   onSlashKeydown(e, { onSend: sendMessage })
 }
 

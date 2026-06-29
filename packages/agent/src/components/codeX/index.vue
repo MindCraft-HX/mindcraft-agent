@@ -252,6 +252,7 @@ import ScrollToPrevMsg from '../agentCommon/components/ScrollToPrevMsg.vue'
 import { useCodexAgentStream } from './composables/useCodexAgentStream.js'
 import { useCodexTabs } from './composables/useCodexTabs.js'
 import { useCodexHistory } from './composables/useCodexHistory.js'
+import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
 import {
   buildStatusBarMetricsView,
@@ -545,6 +546,7 @@ const activeProjectId = ref(null)
 const activeChatId = ref(null)
 const inputText = ref('')
 const inputEl = ref(null)
+const { handleHistoryKeydown, pushToHistory, resetHistory } = useInputHistory()
 const isComposing = ref(false)
 const mentionSuggestions = ref([])
 const mentionIdx = ref(0)
@@ -1330,6 +1332,7 @@ function createNewChat() {
     cwd: activeProject.value?.cwd || '',
     createdAt: Date.now(),
     draftText: '',
+    inputHistory: [],
     thinking: false, messages: [], currentAssistantId: null,
     metrics: null,
     model: codexDefaultModel.value || null,
@@ -2179,6 +2182,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }))
   if (!isQueuedFlush) {
     pendingImages.value = []
+    pushToHistory(text, tab.inputHistory)
     tab.draftText = ''
     inputText.value = ''
     // 重置 textarea 高度，避免多行内容发送后输入框被撑大
@@ -2433,6 +2437,8 @@ function onKeydown(e) {
       return
     }
   }
+  const tab = activeTab.value
+  if (tab && handleHistoryKeydown(e, inputEl.value, tab.inputHistory, (val) => { inputText.value = val })) return
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
 }
 
@@ -2600,6 +2606,7 @@ watch(
   () => {
     const tab = activeTab.value
     inputText.value = typeof tab?.draftText === 'string' ? tab.draftText : ''
+    resetHistory()
     syncMetricsTimerForActiveTab()
     syncActiveMetricsFromTab(tab, {
       model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',

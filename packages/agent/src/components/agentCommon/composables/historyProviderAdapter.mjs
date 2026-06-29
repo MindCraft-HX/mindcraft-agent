@@ -103,6 +103,7 @@ export function createClaudeHistoryAdapter({
             _pendingSessionBinding: Boolean(persistable._pendingSessionBinding),
             _userRenamed: Boolean(persistable._userRenamed),
             taskState: persistable.taskState || null,
+            inputHistory: persistable.inputHistory || [],
           }
         },
       })
@@ -277,6 +278,7 @@ export function createCodexHistoryAdapter({
               titleSource: persistable.titleSource || '',
               _userRenamed: Boolean(persistable._userRenamed),
               _resumeAllowed: persistable._resumeAllowed !== false,
+              inputHistory: persistable.inputHistory || [],
             }
           }),
         })),

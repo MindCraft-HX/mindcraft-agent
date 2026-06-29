@@ -137,6 +137,7 @@ export function buildPersistableClaudeChat(chat = {}) {
   c._thinkingStart = null
   c.currentAssistantId = null
   c.draftText = typeof c.draftText === 'string' ? c.draftText : ''
+  c.inputHistory = Array.isArray(c.inputHistory) ? c.inputHistory.slice(0, 5) : []
   c.metrics = sanitizePersistedMetrics(c.metrics)
   return c
 }
