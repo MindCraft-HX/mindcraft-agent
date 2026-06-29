@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-06-28
+> 最后更新：2026-06-29
 > 历史归档：`docs/archive/todo-history.md`
 > 知识库入口：`docs/index.md`
 
@@ -10,15 +10,9 @@
 
 ---
 
-## 2026-06-27 Renderer Convergence
+## 2026-06-27 Renderer Convergence ✅ 已完成 (2026-06-29)
 
-现状：Token metrics 主链路已经大幅收口到 `normalizer -> TurnStore -> snapshot`，但 ClaudeCode / CodeX renderer 侧仍存在明显分叉：状态栏数据源、首次 hydrate、active tab 切换、live duration timer、StatusBar 组件实现都没有完全统一。
-
-待办：
-- 按 `docs/plan/2026-06-27-renderer-convergence.md` 收敛 renderer 架构。
-- 抽 shared renderer metrics controller，统一 session-owned metrics / hydrate / timer / merge 规则。
-- 合并 ClaudeCode / CodeX 两份 `StatusBarMetrics.vue`，保留 provider-specific 文案/格式化差异为 props。
-- 补 renderer 契约测试：首次进入历史会话、active tab 切换、reload 后恢复、context-only 样本、final snapshot 覆盖 live。
+核心架构收敛（`useAgentMetricsController`、共享 `StatusBarMetrics.vue`、contract tests）已在 2026-06-28 完成。R06 剩余收口（first-hydrate `{ immediate: true }` + 28 个新测试）于 2026-06-29 完成。全量 282 tests 0 fail。
 
 ## 2026-06-28 Architecture Health Review → 重构执行方案 ✅ 已对齐
 
@@ -124,7 +118,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R03 | refactor | **Phase 3: IPC channel registry**：创建 `ipcChannels.js`（CLAUDE/CODEX/CORE 三组）；`registerIpcHandler.js` helper；preload/main 对账测试。详见 `docs/architecture-health-review-2026-06-28.md#6`。 | P1 | ✅ 已完成 |
 | R04 | refactor | **Phase 4: Tab/History composable 收敛**：R04a ✅ characterization tests（97 tests）；R04b ✅ 纯函数提取 + adapter 契约；R04c ✅ CodeX useAgentTabs；R04d ✅ ClaudeCode useAgentTabs；R04e ✅ History 收敛 — useAgentHistory + historyProviderAdapter + 双端 thin wrapper。全量 251 tests 0 fail。详见 `docs/architecture-health-review-2026-06-28.md#7`。 | P1 | ✅ 已完成 |
 | R05 | refactor | **Phase 5: 巨型文件拆叶子模块**：`codexAgent.js`（5103→4834，-269行）拆 configManager + environment；`claudeAgent.js`（3935→3791，-144行）拆 environment。详见 `docs/architecture-health-review-2026-06-28.md#8`。 | P1 | ✅ 已完成 |
-| R06 | refactor | **Phase 6: Renderer Convergence 剩余收口**：测试可先行，实际实现依赖 R04 shared helper/composable 稳定后推进。详见 `docs/architecture-health-review-2026-06-28.md#9`。 | P2 | 🧊 冻结后续专项 |
+| R06 | refactor | **Phase 6: Renderer Convergence 剩余收口**：R06a ✅ ClaudeCode `{ immediate: true }` first-hydrate 修复；R06b ✅ first-hydrate tests（10 tests）；R06c ✅ statusbar/footer contract tests（10 tests）；R06d ✅ dirty panel state tests（8 tests）。详见 `docs/architecture-health-review-2026-06-28.md#9`。 | P2 | ✅ 已完成 |
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
 | R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | 📝 待开 |

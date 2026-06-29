@@ -750,7 +750,7 @@ watch(activeChatId, (id) => {
   inputText.value = typeof chat?.draftText === 'string' ? chat.draftText : ''
   refreshMetricsForChat(chat)
   void refreshActiveSessionInstructionState()
-})
+}, { immediate: true })
 
 watch(inputText, (value) => {
   const chat = activeTab.value
