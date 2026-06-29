@@ -30,6 +30,21 @@ ClaudeCode 全量审计 + CodeX 复审完成，输出 `docs/architecture-health-
 - R04/R06 拆成专项后再开：先补 characterization tests，再抽纯函数，再逐步接入 CodeX / ClaudeCode。
 - `setupClaudeHandlers()` / `setupCodexSdkHandlers()` 主进程巨型 handler 另立 R09，不再作为 R04 的阻塞原因混写。
 
+## 2026-06-29 Architecture Refactor Freeze ✅ 已完成
+
+Batch 0-5 已全线交付并冻结，当前新版已切换到实际测试使用。自动验收和人工 smoke 均已通过，详见 `docs/plans/remaining-refactoring-roadmap.md`。
+
+已确认：
+- `npm run test:contract`：ESLint `no-undef` clean，291 assertions pass。
+- `npm test`：120 pass / 0 fail。
+- `npm run build`：Vite 构建成功。
+- `npm run dev` 人工 smoke：ClaudeCode / CodeX 发消息、中断、历史恢复、插件/skills 列表、配置保存均正常。
+
+当前策略：
+- R01-R09 / Batch 0-5 不再继续拆分，进入稳定观察期。
+- `claudeAgent.js` / `codexAgent.js` 当前已到自然边界，不再为了行数继续拆 stream loop、abort/done、session map、token flush 主状态机。
+- R10 IPC 通道统一暂缓；先补 Electron E2E 覆盖，再单独开新路线图评估。
+
 ## 2026-06-27 Docs Knowledge Base Cleanup ✅ 已完成 (2026-06-28)
 
 - ✅ 新增 `docs/index.md` 作为知识库索引
@@ -122,7 +137,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
 | R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | ✅ 已完成 (Batch 0-5) |
-| B0-5 | refactor | **架构重构 Batch 0-5 全线交付**：R01-R09 护栏 + 叶子模块拆分 + Skills/Marketplace 共享化 + CLI executor 去重 + TOML IPC 合并。新增 ESLint `no-undef` 护栏 + 导入完整性测试。291 合约断言 + 120 单元测试通过。详见 `docs/plans/remaining-refactoring-roadmap.md`。 | P1 | ✅ 已完成，阶段冻结 |
+| B0-5 | refactor | **架构重构 Batch 0-5 全线交付**：R01-R09 护栏 + 叶子模块拆分 + Skills/Marketplace 共享化 + CLI executor 去重 + TOML IPC 合并。新增 ESLint `no-undef` 护栏 + 导入完整性测试。291 合约断言 + 120 单元测试通过，人工 smoke 已通过。详见 `docs/plans/remaining-refactoring-roadmap.md`。 | P1 | ✅ 已完成，阶段冻结 + 观察期 |
 | R10 | refactor | **长期 IPC 通道统一**：需 E2E 前置覆盖后再评估。当前 ClaudeCode/CodeX 通道名不统一，但重命名有静默失效风险。 | P3 | ⏸️ 后续阶段，需 E2E 前置 |
 | T155 | test | **修复 `test:all` 7 个历史失败**：4 个已修复（todo-list/update-plan 编码损坏重写、electron-window-icon-paths 过时删除、local-search async/await+过时文件删除）；3 个 defer（permission-sound 需 Vue 测试环境、task-stream-sync ×2 需 domain 排查）。`test:all` 7→3 fail。 | P3 | 🔧 部分完成，3 个延后 |
 | T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 6 处裸 `scrollBottom(tab.id)` 改为 `smartScrollToBottom(tab.id)`，解构重命名冲突已修复。 | P3 | ✅ 已完成 |
@@ -134,6 +149,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 | 日期 | 分类 | 说明 |
 |------|------|------|
+| 2026-06-29 | refactor/docs | **架构重构 Batch 0-5 冻结验收完成**：`test:contract`、`npm test`、`npm run build` 通过；人工 smoke 覆盖 ClaudeCode/CodeX 发消息、中断、历史恢复、插件/skills 列表、配置保存，当前进入稳定观察期。 |
 | 2026-06-29 | refactor | **R04 Tab/History composable 收敛完成**：R04a-e 全部完成。新增 `useAgentTabs.js`（107行）、`useAgentHistory.js`（162行）、`tabProviderAdapter.mjs`、`historyProviderAdapter.mjs`、4 个 pure helpers。双端 composable 收口为 thin wrapper（各 ~50行）。全量 251 tests（97 表征 + 154 契约）0 fail。 |
 | 2026-06-28 | docs | **知识库整理**：新增 `docs/index.md`；精简 `docs/TODO.md` 从 1042→~100 行；CodeX Chat Proxy 文档合并归档；更新 AGENTS.md/CLAUDE.md 路由表。 |
 | 2026-06-25 | refactor | **Token Metrics 重构 Phase 0-4 完成**：diagnostics.js / normalizer.js / turnStore.js / ClaudeCode + CodeX 全部 6 个发射点接入 TurnStore；footer/StatusBar/历史恢复消费同一 snapshot。 |

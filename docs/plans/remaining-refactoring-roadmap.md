@@ -259,8 +259,10 @@ codex/pluginIpc.js
 
 | 度量 | 值 |
 |---|---|
-| 合约测试 | 49 文件 pass / 0 fail |
-| 全量测试 | 120 pass / 0 fail / 1 skip |
+| 合约测试 | `npm run test:contract`：ESLint `no-undef` clean + 291 assertions pass |
+| 全量测试 | `npm test`：120 pass / 0 fail |
+| 构建 | `npm run build`：Vite 构建成功 |
+| 人工 smoke | `npm run dev`：ClaudeCode / CodeX 发消息、中断、历史恢复、插件/skills 列表、配置保存均正常 |
 | IPC dedup | ✅ |
 | IPC registry 硬约束 | ✅ |
 | 导入完整性验证 | ✅ (+62 assertions, agent-import-integrity.test.cjs) |
@@ -275,8 +277,19 @@ codex/pluginIpc.js
 
 ### 后续建议
 
-1. ✅ ~~新版实际使用 smoke test~~ — 已完成，发现并修复 1 个 P0 导入缺失
-2. 长期 IPC 统一：先补 E2E（至少 preload/main 端到端启动验证），再单独开新阶段评估
+1. ✅ ~~新版实际使用 smoke test~~ — 已完成，发现并修复 1 个 P0 导入缺失；修复后再次 smoke 正常。
+2. 进入稳定观察期：近期只记录真实使用中的 P0/P1 回归，不主动继续拆 agent 主循环。
+3. 长期 IPC 统一：先补 E2E（至少 preload/main 端到端启动验证），再单独开新阶段评估。
+
+### 下一阶段入口
+
+当前没有需要继续执行的重构 batch。下一步优先级如下：
+
+| 优先级 | 任务 | 进入条件 | 不做什么 |
+|---|---|---|---|
+| P1 | 使用观察 | 新版日常使用 1-2 天，记录会话卡死、done 丢失、配置保存、skills/plugin 异常 | 不为行数继续拆 `claudeAgent.js` / `codexAgent.js` |
+| P2 | Electron E2E 调研 | 需要重启 R10 IPC 统一前 | 不先改 IPC channel 命名 |
+| P3 | R10 独立路线图 | E2E 能覆盖 preload/main/renderer 至少一条完整链路后 | 不并入当前 Batch 0-5 文档继续追加执行项 |
 
 ## 6. 验证基线
 
@@ -337,7 +350,7 @@ packages/agent/electron/claude/
 
 当前新版已经切换并进入测试，且目前反馈正常。因此：
 
-1. 当前 R01-R09 阶段可以收口。
-2. 近期只做文档同步和轻量边界整理，不做新一轮大拆分。
-3. 后续如继续重构，从 Batch 1 / Batch 2 开始，小步提交、小步验证。
+1. 当前 R01-R09 / Batch 0-5 阶段已经收口并冻结。
+2. 近期只做使用观察、缺陷修复和文档同步，不做新一轮大拆分。
+3. 后续如继续重构，应重新开独立路线图；优先补 E2E，再讨论 R10 IPC 通道统一。
 4. 不以“再减少多少行”为目标，以“降低未来改动风险”为目标。
