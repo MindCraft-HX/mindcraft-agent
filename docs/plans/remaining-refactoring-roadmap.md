@@ -259,15 +259,23 @@ codex/pluginIpc.js
 
 | 度量 | 值 |
 |---|---|
-| 合约测试 | 229 pass / 0 fail |
+| 合约测试 | 49 文件 pass / 0 fail |
 | 全量测试 | 120 pass / 0 fail / 1 skip |
 | IPC dedup | ✅ |
 | IPC registry 硬约束 | ✅ |
+| 导入完整性验证 | ✅ (+62 assertions, agent-import-integrity.test.cjs) |
 | 新增 characterization tests | +25 (Batch 5) |
+
+### Smoke test 发现问题
+
+| 问题 | 严重度 | 修复 |
+|---|---|---|
+| `codexAgent.js` 缺少 `createCliExecutor` import | P0（启动崩溃） | `8e17150` |
+| `node --check` 无法检测此类 bug | 工具链缺口 | 新增 `agent-import-integrity.test.cjs` |
 
 ### 后续建议
 
-1. 新版实际使用 smoke test
+1. ✅ ~~新版实际使用 smoke test~~ — 已完成，发现并修复 1 个 P0 导入缺失
 2. 长期 IPC 统一：先补 E2E（至少 preload/main 端到端启动验证），再单独开新阶段评估
 
 ## 6. 验证基线
