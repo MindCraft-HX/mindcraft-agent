@@ -71,6 +71,15 @@ const {
   buildCodexAgentDonePayload,
 } = require('./codex/donePayload')
 
+// ---- CodeX Context Window helpers (extracted, Batch 2) ----
+const {
+  getCodexContextWindowForModel,
+  toPositiveNumber,
+  pickCodexContextUsage,
+  pickCodexContextWindow,
+  estimateCodexCostUsd,
+} = require('./codex/contextWindow')
+
 // ---- CodeX Config IPC (extracted, R09) ----
 const { registerCodexLeafIpcs } = require('./codex/index');
 
@@ -771,28 +780,6 @@ function summarizeCodexPromptInput(prompt = '', images = []) {
   }
 }
 
-/** 根据模型名返回对应上下文窗口大小（token 数） */
-function getCodexContextWindowForModel(model) {
-  const lower = String(model || '').toLowerCase()
-  if (!lower) return 258400
-  // gpt-5 系列 SDK 内部上下文窗口 1M，但 CodeX 二进制限制为 ~258K
-  if (lower.includes('gpt-5')) return 258400
-  // GPT-4 系列: 128K
-  if (lower.includes('gpt-4')) return 128000
-  if (lower.includes('gpt-4o')) return 200000
-  if (lower.startsWith('o')) return 200000
-  if (lower.includes('claude')) return 200000
-  return 258400
-}
-
-function toPositiveNumber(...values) {
-  for (const value of values) {
-    const n = Number(value)
-    if (Number.isFinite(n) && n > 0) return n
-  }
-  return 0
-}
-
 function toNonNegativeNumber(value, fallback = 0) {
   const n = Number(value)
   return Number.isFinite(n) && n >= 0 ? n : fallback
@@ -804,50 +791,6 @@ function pickCodexTurnTokenValue(lastValue, deltaValue, fallback = 0) {
   const delta = Number(deltaValue)
   if (Number.isFinite(delta) && delta >= 0) return delta
   return fallback
-}
-
-/** 从 token_count payload 中提取 context usage 值（兼容多种字段名） */
-function pickCodexContextUsage(info = {}, payload = {}) {
-  // Prefer explicit context usage from Codex events; fallback to token estimate.
-  const explicit = toPositiveNumber(
-    info.context_usage,
-    info.context_token_usage,
-    info.context_tokens,
-    info.current_context_tokens,
-    info.context_used_tokens,
-    payload.context_usage,
-    payload.context_token_usage,
-    payload.context_tokens,
-    payload.current_context_tokens
-  )
-  if (explicit > 0) return explicit
-
-  // Fallback: 使用 last_token_usage.total_tokens（二进制自身对当前上下文大小的测量），
-  // 这也是二进制 auto-compact 触发时使用的判断依据。
-  // 不能用 total_token_usage.input_tokens —— 那是全量累计值，会无限增长。
-  const last = info.last_token_usage || {}
-  return toPositiveNumber(last.total_tokens, 0)
-}
-
-/** 从 token_count payload 中提取 context window 值（兼容多种字段名） */
-function pickCodexContextWindow(info = {}, payload = {}, fallback = 0) {
-  return toPositiveNumber(
-    info.model_context_window,
-    info.context_window,
-    info.context_window_size,
-    payload.model_context_window,
-    payload.context_window,
-    payload.context_window_size,
-    fallback
-  )
-}
-
-/** 估算 Codex API 费用（美元），基于 GPT 模型定价 */
-function estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens) {
-  const perMillion = { input: 1.25, output: 10.0, cacheRead: 0.125 }
-  return (inputTokens / 1e6 * perMillion.input)
-    + (outputTokens / 1e6 * perMillion.output)
-    + (cacheReadTokens / 1e6 * perMillion.cacheRead)
 }
 
 function normalizeCodexUsage(usage = {}) {
