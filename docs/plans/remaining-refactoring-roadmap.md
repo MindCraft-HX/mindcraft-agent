@@ -232,40 +232,43 @@ codex/pluginIpc.js
 | Resume / abort / done 主路径 | 处于 try/catch/finally 和 provider event 顺序边界内，回归代价高。 |
 | token flush 主状态机 | 牵涉 turn 归属、history hydration、live metrics，不作为普通 helper 搬迁。 |
 
-## 5. 推荐执行节奏
+## 5. 执行状态（2026-06-29 更新）
 
-建议不要连续大批量执行。每批控制在 1-3 个模块。
+所有可控批次已完成。当前版本为 Batch 0-5 全量交付后的稳定基线。
 
 ```text
-Batch 0：当前版本稳定观察
-  - 人工回归 Claude / CodeX 核心路径
-  - 同步 TODO 和架构文档状态
-  - 不做新拆分
-
-Batch 1：R09 产物整理
-  - claude/index.js、codex/index.js 聚合入口
-  - 不改 channel，不改行为
-
-Batch 2：纯 helper 小步搬迁
-  - donePayload
-  - contextWindow / cost estimate
-  - pageReader / safe parse
-  - 每个模块配现有测试迁移或新增单测
-
-Batch 3：IPC registry 硬约束
-  - 新增通道必须登记
-  - preload/main 新代码引用 registry
-
-Batch 4：配置 adapter 与 Skills primitives
-  - 先接口化，不统一存储
-  - 先共享底层函数，不共享 IPC handler
-
-Batch 5：Plugin / TOML / 中风险整理
-  - 仅在 characterization tests 完整后执行
-
-长期保留：IPC channel 命名统一
-  - 只有在 E2E 测试覆盖后才重新评估
+✅ Batch 0：稳定观察 + 文档同步
+✅ Batch 1：R09 产物整理 (claude/index.js, codex/index.js) — commit cae7940
+✅ Batch 2：纯 helper 搬迁 (donePayload, contextWindow, pageReader, messageTools, historyReader) — 199 tests
+✅ Batch 3：IPC registry 硬约束 (227 channel baseline) — 204 tests
+✅ Batch 4：Skills primitives (marketplace.js, scanner.js) — 204 tests
+✅ Batch 5：Plugin/TOML 提取 (cliExecutor.js, configTomlPreserve.js, TOML handlers→configIpc.js) — 229 tests
+⏸  长期保留：IPC channel 命名统一（需要 E2E 覆盖后再评估）
 ```
+
+### Batch 5 执行记录
+
+| 子批次 | 内容 | 新文件 | 测试 | Commit |
+|---|---|---|---|---|
+| 5a | CLI executor 去重 | `shared/cliExecutor.js` | +13 | `c1610db` |
+| 5c | TOML IPC 合并 | `codex/configTomlPreserve.js` | +12 | `3d166d9` |
+| 5b | Plugin lifecycle IPC | 跳过 | — | ROI 过低 |
+| P3 | 死导入清理 | — | — | `bbbb509` |
+
+### 当前验证基线 (2026-06-29)
+
+| 度量 | 值 |
+|---|---|
+| 合约测试 | 229 pass / 0 fail |
+| 全量测试 | 120 pass / 0 fail / 1 skip |
+| IPC dedup | ✅ |
+| IPC registry 硬约束 | ✅ |
+| 新增 characterization tests | +25 (Batch 5) |
+
+### 后续建议
+
+1. 新版实际使用 smoke test
+2. 长期 IPC 统一：先补 E2E（至少 preload/main 端到端启动验证），再单独开新阶段评估
 
 ## 6. 验证基线
 
@@ -295,23 +298,32 @@ node --test tests/claude-pending-session-binding.test.mjs tests/history-hydratio
 node --test packages/agent/electron/codexRuntimeConfig.test.js tests/codex-provider-toml.test.mjs
 ```
 
-## 7. 预期终态
-
-合理终态不是所有文件都很小，而是：
+## 7. 当前状态
 
 ```text
-codexAgent.js   约 2200-2800 行
-claudeAgent.js  约 2200-3000 行
+codexAgent.js   约 4400 行（原始 ~4472 → Batch 2-5 移除 ~70）
+claudeAgent.js  约 3600 行（原始 ~3646 → Batch 2-5 移除 ~45）
+electron/main.js  401 行（R07 已拆）
 ```
 
-如果继续压到更低，通常意味着开始拆 stream/lifecycle 状态机，风险会超过收益。
+新增共享/叶子模块：
 
-最终结构目标：
+```text
+packages/agent/electron/shared/
+  skills/marketplace.js     — 统一 marketplace API 客户端
+  skills/scanner.js         — 统一技能目录扫描
+  cliExecutor.js            — CLI 执行器工厂 (Windows shim)
+packages/agent/electron/codex/
+  configIpc.js              — 配置 + TOML 文件 IPC (R09 + Batch 5c)
+  configTomlPreserve.js     — TOML section 保留 (Batch 5c)
+  donePayload.js / contextWindow.js / pageReader.js / messageTools.js  — Batch 2
+  environmentIpc.js / apiIpc.js / gitDiffIpc.js  — R09
+packages/agent/electron/claude/
+  historyReader.js          — JSONL page reader + turn annotation (Batch 2)
+  apiIpc.js / freezeDiagIpc.js / webSearchIpc.js / uiUtilsIpc.js / chatPersistenceIpc.js  — R09
+```
 
-- `codexAgent.js` / `claudeAgent.js` 保留 provider runtime orchestration。
-- 纯 helper 和无状态 IO 在 provider 子模块内。
-- 跨 provider 共享的是底层 primitives，不是过早抽象的 provider mega-framework。
-- 新 IPC channel 由 registry 约束，历史 channel 保持兼容。
+合理终态判断：当前已到达自然边界。继续拆会碰到 stream loop / lifecycle 状态机，风险超过收益。
 
 ## 8. 决策建议
 
