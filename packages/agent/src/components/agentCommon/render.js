@@ -8,6 +8,15 @@ import {
 } from './markdown/localPathTokenizer.js'
 export { markdownItLocalPathPlugin } from './markdown/localPathPlugin.js'
 
+const EXT_LANG_MAP = {
+  py: 'python', js: 'javascript', ts: 'typescript', tsx: 'typescript',
+  jsx: 'javascript', vue: 'xml', html: 'html', css: 'css', json: 'json',
+  sh: 'bash', bash: 'bash', md: 'markdown', yaml: 'yaml', yml: 'yaml',
+  rs: 'rust', go: 'go', java: 'java', cpp: 'cpp', c: 'c', cs: 'csharp',
+  rb: 'ruby', sql: 'sql', xml: 'xml', svg: 'xml', toml: 'ini', ini: 'ini',
+  php: 'php', swift: 'swift', kt: 'kotlin', scala: 'scala',
+}
+
 function getPathContext(target) {
   const container = target?.closest?.('[data-path-context-cwd]')
   return {
@@ -187,6 +196,59 @@ function highlightCode(code, lang) {
     }
   } catch (_) {}
   return quickHighlight(trimmed)
+}
+
+function highlightDiffCode(code) {
+  const lines = code.split('\n')
+  // Detect target language from file path headers
+  let detectedLang = null
+  for (const line of lines) {
+    const m = line.match(/^(\+\+\+|---)\s+[ab]\/(.+)$/)
+    if (m) {
+      const ext = (m[2] || '').split('.').pop().toLowerCase()
+      if (EXT_LANG_MAP[ext]) { detectedLang = EXT_LANG_MAP[ext]; break }
+    }
+  }
+
+  const out = []
+  for (const line of lines) {
+    if (line === '') { out.push(''); continue }
+    const prefix = line[0]
+    const content = line.slice(1)
+
+    // Meta lines: @@ hunk headers
+    if (/^@@\s/.test(line)) {
+      out.push(`<span class="hljs-meta">${escapeHtml(line)}</span>`)
+      continue
+    }
+    // Header lines: diff, index, ---, +++
+    if (/^(diff\s|index\s|---\s|\+\+\+\s)/.test(line)) {
+      out.push(`<span class="hljs-comment">${escapeHtml(line)}</span>`)
+      continue
+    }
+
+    // Content lines with + / - / space prefix
+    if (prefix === '+' || prefix === '-' || prefix === ' ') {
+      let highlighted
+      if (detectedLang && hljs.getLanguage(detectedLang)) {
+        try {
+          highlighted = hljs.highlight(content, { language: detectedLang }).value
+        } catch (_) { highlighted = escapeHtml(content) }
+      } else {
+        highlighted = escapeHtml(content)
+      }
+      const cls = prefix === '+' ? 'addition' : prefix === '-' ? 'deletion' : ''
+      const escapedPrefix = prefix === ' ' ? ' ' : escapeHtml(prefix)
+      if (cls) {
+        out.push(`<span class="hljs-${cls}">${escapedPrefix}${highlighted}</span>`)
+      } else {
+        out.push(`${escapedPrefix}${highlighted}`)
+      }
+    } else {
+      out.push(escapeHtml(line))
+    }
+  }
+  return out.join('\n')
 }
 
 function highlightCodePreservePathCandidates(code, lang) {
@@ -521,7 +583,9 @@ export function renderContent(text) {
         i += 1
       }
       const code = codeLines.join('\n')
-      const highlighted = highlightCodePreservePathCandidates(code, lang)
+      const highlighted = lang === 'diff'
+        ? highlightDiffCode(code)
+        : highlightCodePreservePathCandidates(code, lang)
       const langLabel = lang || 'text'
       out.push(
         `<div class="code-block"><div class="code-header"><span class="code-lang">${escapeHtml(langLabel)}</span></div><pre><code class="hljs">${highlighted}</code></pre></div>`
@@ -655,11 +719,5 @@ function cachedHighlight(code, lang) {
 export function highlight(code, filePath) {
   if (!code) return ''
   const ext = (filePath || '').split('.').pop().toLowerCase()
-  const langMap = {
-    py: 'python', js: 'javascript', ts: 'typescript', vue: 'xml',
-    html: 'html', css: 'css', json: 'json', sh: 'bash', bash: 'bash',
-    md: 'markdown', yaml: 'yaml', yml: 'yaml', rs: 'rust', go: 'go',
-    java: 'java', cpp: 'cpp', c: 'c', cs: 'csharp', rb: 'ruby',
-  }
-  return cachedHighlight(code, langMap[ext])
+  return cachedHighlight(code, EXT_LANG_MAP[ext])
 }
