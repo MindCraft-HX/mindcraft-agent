@@ -16,7 +16,7 @@
 import { watch, onMounted } from 'vue'
 import { highlight } from '../../../../agentCommon/render.js'
 import DiffSplitView from '../../../../agentCommon/components/DiffSplitView.vue'
-import { buildDiffLines } from '../../../../agentCommon/utils/helpers.js'
+import { buildDiffLinesEnhanced } from '../../../../agentCommon/utils/helpers.js'
 
 const props = defineProps({
   msg: { type: Object, required: true },
@@ -31,11 +31,11 @@ function computeDiff() {
   if (!inp.oldStr && !inp.newStr) return
   if (typeof requestIdleCallback !== 'undefined') {
     requestIdleCallback(() => {
-      if (!m.diffLines?.length) m.diffLines = buildDiffLines(inp.oldStr, inp.newStr)
+      if (!m.diffLines?.length) m.diffLines = buildDiffLinesEnhanced(inp.oldStr, inp.newStr)
     })
   } else {
     setTimeout(() => {
-      if (!m.diffLines?.length) m.diffLines = buildDiffLines(inp.oldStr, inp.newStr)
+      if (!m.diffLines?.length) m.diffLines = buildDiffLinesEnhanced(inp.oldStr, inp.newStr)
     }, 0)
   }
 }

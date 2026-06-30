@@ -1,3 +1,5 @@
+import { diffArrays, diffWords } from 'diff'
+
 export function buildDiffLines(oldStr, newStr) {
   if (!oldStr && !newStr) return []
   const oldLines = (oldStr || '').split('\n')
@@ -40,6 +42,99 @@ export function buildDiffLines(oldStr, newStr) {
     }
     hunks.push(hunk)
   }
+  return hunks
+}
+
+/**
+ * Enhanced diff with intra-line word-level diffing.
+ * Uses `diffArrays` for accurate line diffing and `diffWords`
+ * for word-level detail within changed lines.
+ *
+ * Returns same structure as buildDiffLines() plus optional
+ * `delSegments` / `addSegments` arrays on each hunk.
+ * When segments are absent, consumers fall back to plain text rendering.
+ */
+export function buildDiffLinesEnhanced(oldStr, newStr) {
+  if (!oldStr && !newStr) return []
+  const oldLines = (oldStr || '').split('\n')
+  const newLines = (newStr || '').split('\n')
+
+  const changes = diffArrays(oldLines, newLines)
+
+  // Collapse consecutive ctx lines and group del/add into hunks
+  const hunks = []
+  let ctxBuffer = []
+  let delBuffer = []
+  let addBuffer = []
+  let totalChangedLines = 0
+
+  function flushCtx() {
+    if (ctxBuffer.length) {
+      hunks.push({ type: 'ctx', text: ctxBuffer.join('\n') })
+      ctxBuffer = []
+    }
+  }
+
+  function flushHunk() {
+    if (delBuffer.length || addBuffer.length) {
+      totalChangedLines += Math.max(delBuffer.length, addBuffer.length)
+      const hunk = { type: 'hunk', del: delBuffer.slice(), add: addBuffer.slice() }
+      // Compute intra-line word diff for paired del/add lines
+      if (totalChangedLines <= 500) {
+        const delSegs = []
+        const addSegs = []
+        const maxLen = Math.max(delBuffer.length, addBuffer.length)
+        for (let i = 0; i < maxLen; i++) {
+          const d = delBuffer[i] || ''
+          const a = addBuffer[i] || ''
+          // Only compute word diff when both sides have content and length ratio < 3
+          if (d && a && d !== a && Math.max(d.length, a.length) / Math.min(d.length, a.length) < 3) {
+            const wordChanges = diffWords(d, a)
+            const dSeg = []
+            const aSeg = []
+            for (const ch of wordChanges) {
+              if (ch.removed) {
+                dSeg.push({ value: ch.value, type: 'changed' })
+              } else if (ch.added) {
+                aSeg.push({ value: ch.value, type: 'changed' })
+              } else {
+                dSeg.push({ value: ch.value, type: 'normal' })
+                aSeg.push({ value: ch.value, type: 'normal' })
+              }
+            }
+            delSegs.push(dSeg)
+            addSegs.push(aSeg)
+          } else {
+            delSegs.push(null)
+            addSegs.push(null)
+          }
+        }
+        hunk.delSegments = delSegs
+        hunk.addSegments = addSegs
+      }
+      hunks.push(hunk)
+      delBuffer = []
+      addBuffer = []
+    }
+  }
+
+  for (const ch of changes) {
+    if (ch.added) {
+      flushCtx()
+      addBuffer.push(ch.value)
+    } else if (ch.removed) {
+      flushCtx()
+      delBuffer.push(ch.value)
+    } else {
+      if (delBuffer.length || addBuffer.length) flushHunk()
+      ctxBuffer.push(ch.value)
+    }
+  }
+  flushHunk()
+  if (ctxBuffer.length) {
+    hunks.push({ type: 'ctx', text: ctxBuffer.join('\n') })
+  }
+
   return hunks
 }
 

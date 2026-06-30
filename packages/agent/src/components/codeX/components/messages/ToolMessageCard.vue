@@ -63,7 +63,7 @@ import ToolUpdatePlan from './tools/ToolUpdatePlan.vue'
 import ToolWebSearch from './tools/ToolWebSearch.vue'
 import ToolGeneric from './tools/ToolGeneric.vue'
 import ToolAgent from '../../../claudeCode/components/messages/tools/ToolAgent.vue'
-import { buildDiffLines } from '../../../agentCommon/utils/helpers.js'
+import { buildDiffLinesEnhanced } from '../../../agentCommon/utils/helpers.js'
 
 /** Synchronous parse of unified diff (fallback for modalDiffLines) */
 function parseUnifiedDiffForCard(diffText) {
@@ -181,7 +181,7 @@ const modalDiffLines = computed(() => {
       if (fc.diffLines?.length) return fc.diffLines
       if (fc._diffHunks?.length) return fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
       if (fc.unified_diff) return parseUnifiedDiffForCard(fc.unified_diff)
-      if (fc._oldStr || fc._newStr) return buildDiffLines(fc._oldStr, fc._newStr)
+      if (fc._oldStr || fc._newStr) return buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
       return []
     }).flat()
     return lines

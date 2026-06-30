@@ -198,6 +198,8 @@
   --cc-diff-del-bg: #fdd0d0;
   --cc-diff-ctx: #444;
   --cc-diff-empty-bg: #f6f5f3;
+  --cc-diff-word-add-bg: #a6e0b3;
+  --cc-diff-word-del-bg: #f0b0b0;
   --cc-diff-modal-overlay: rgba(0, 0, 0, 0.35);
   --cc-diff-modal-bg: #fff;
   --cc-diff-modal-header-bg: #f6f5f3;

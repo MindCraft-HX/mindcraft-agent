@@ -50,7 +50,7 @@ import { highlight } from '../../../../agentCommon/render.js'
 const { t } = useI18n()
 import DiffSplitView from '../../../../agentCommon/components/DiffSplitView.vue'
 import DiffModal from '../../../../agentCommon/components/DiffModal.vue'
-import { buildDiffLines } from '../../../../agentCommon/utils/helpers.js'
+import { buildDiffLinesEnhanced } from '../../../../agentCommon/utils/helpers.js'
 import { isCodeXEditToolName, isCodeXWriteToolName } from '../../../utils/toolNameMatchers.mjs'
 
 const props = defineProps({
@@ -123,7 +123,7 @@ const effectiveDiffLines = computed(() => {
     if (fc._diffHunks?.length) return fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
     if (fc.diffLines?.length) return fc.diffLines
     if (fc.unified_diff) return parseUnifiedDiff(fc.unified_diff)
-    if (fc._oldStr || fc._newStr) return buildDiffLines(fc._oldStr, fc._newStr)
+    if (fc._oldStr || fc._newStr) return buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
     return []
   }
   // apply_patch: _diffHunks 有数据直接用
@@ -207,7 +207,7 @@ function computeFileChangeDiffsSync(fc) {
   if (fc.diffLines?.length) return fc.diffLines
   if (fc.unified_diff) return parseUnifiedDiff(fc.unified_diff)
   if (fc._diffHunks?.length) return fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
-  if (fc._oldStr || fc._newStr) return buildDiffLines(fc._oldStr, fc._newStr)
+  if (fc._oldStr || fc._newStr) return buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
   return []
 }
 
@@ -271,11 +271,11 @@ function computeDiff() {
   if (!inp.oldStr && !inp.newStr) return
   if (typeof requestIdleCallback !== 'undefined') {
     requestIdleCallback(() => {
-      if (!m.diffLines?.length) m.diffLines = buildDiffLines(inp.oldStr, inp.newStr)
+      if (!m.diffLines?.length) m.diffLines = buildDiffLinesEnhanced(inp.oldStr, inp.newStr)
     })
   } else {
     setTimeout(() => {
-      if (!m.diffLines?.length) m.diffLines = buildDiffLines(inp.oldStr, inp.newStr)
+      if (!m.diffLines?.length) m.diffLines = buildDiffLinesEnhanced(inp.oldStr, inp.newStr)
     }, 0)
   }
 }
@@ -309,11 +309,11 @@ function computeFileChangeDiffs() {
     } else if (fc._oldStr || fc._newStr) {
       if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(() => {
-          if (!fc.diffLines?.length) fc.diffLines = buildDiffLines(fc._oldStr, fc._newStr)
+          if (!fc.diffLines?.length) fc.diffLines = buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
         })
       } else {
         setTimeout(() => {
-          if (!fc.diffLines?.length) fc.diffLines = buildDiffLines(fc._oldStr, fc._newStr)
+          if (!fc.diffLines?.length) fc.diffLines = buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
         }, 0)
       }
     }
