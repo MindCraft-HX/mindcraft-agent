@@ -32,3 +32,20 @@ test('ClaudeTaskBar uses a non-interactive header and keeps action buttons isola
     /class="claude-task-bar__action is-close"[\s\S]*@click\.stop="\$emit\('close'\)"/,
   )
 })
+
+test('ClaudeTaskBar can show plan items and execution items together', () => {
+  const source = fs.readFileSync(componentPath, 'utf8')
+
+  assert.match(
+    source,
+    /<section\s+v-if="planItems\.length"[\s\S]*class="claude-task-bar__section"/,
+  )
+  assert.match(
+    source,
+    /<section\s+v-if="fallbackExecutionItems\.length"[\s\S]*class="claude-task-bar__section is-subtle"/,
+  )
+  assert.doesNotMatch(
+    source,
+    /v-else-if="fallbackExecutionItems\.length"/,
+  )
+})

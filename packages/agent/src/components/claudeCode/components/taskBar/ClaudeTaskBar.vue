@@ -44,7 +44,7 @@
         </div>
       </section>
 
-      <section v-else-if="fallbackExecutionItems.length" class="claude-task-bar__section is-subtle">
+      <section v-if="fallbackExecutionItems.length" class="claude-task-bar__section is-subtle">
         <div class="claude-task-bar__section-head">
           <span class="claude-task-bar__section-title">{{ $t('agent.executingSection') }}</span>
           <span class="claude-task-bar__section-count">{{ executionItems.length }}</span>
@@ -221,6 +221,9 @@ const phaseLabel = computed(() => {
 }
 
 .claude-task-bar__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   border-top: 1px solid var(--cc-border-light);
   padding: 10px 14px 12px;
 }
@@ -233,6 +236,13 @@ const phaseLabel = computed(() => {
 
 .claude-task-bar__section.is-subtle {
   opacity: 0.86;
+  padding-top: 10px;
+  border-top: 1px solid var(--cc-border-light);
+}
+
+.claude-task-bar__section:first-child {
+  padding-top: 0;
+  border-top: none;
 }
 
 .claude-task-bar__section-head {
