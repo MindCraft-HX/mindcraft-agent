@@ -42,6 +42,9 @@ function createAgentBridge(ipcRenderer) {
   claudeGetAutoCompactWindow: () => ipcRenderer.invoke('claude-get-auto-compact-window'),
   claudeSetAutoCompactWindow: (v) => ipcRenderer.invoke('claude-set-auto-compact-window', v),
   claudeImportLegacyConfig: (customPath) => ipcRenderer.invoke('claude-import-legacy-config', customPath),
+  claudeConfigImportPickFile: () => ipcRenderer.invoke('claude-config-import-pick-file'),
+  claudeConfigImportPreview: (payload) => ipcRenderer.invoke('claude-config-import-preview', payload),
+  claudeConfigImportCommit: (payload) => ipcRenderer.invoke('claude-config-import-commit', payload),
   // Claude Agent SDK
   claudeAgentQuery: (payload) => ipcRenderer.invoke('claude-agent-query', payload),
   claudeAgentAbort: (sessionId) => ipcRenderer.invoke('claude-agent-abort', sessionId),
@@ -196,6 +199,13 @@ function createAgentBridge(ipcRenderer) {
   codexGetApiFormat: () => ipcRenderer.invoke('codex-get-api-format'),
   codexSetApiFormat: (format) => ipcRenderer.invoke('codex-set-api-format', format),
   codexImportLegacyConfig: (customPath) => ipcRenderer.invoke('codex-import-legacy-config', customPath),
+  codexConfigImportPickFile: () => ipcRenderer.invoke('codex-config-import-pick-file'),
+  codexConfigImportPreview: (payload) => ipcRenderer.invoke('codex-config-import-preview', payload),
+  codexConfigImportCommit: (payload) => ipcRenderer.invoke('codex-config-import-commit', payload),
+  // System-level config import (T163: CC Switch global import)
+  configImportPickFile: () => ipcRenderer.invoke('config-import-pick-file'),
+  configImportPreview: (payload) => ipcRenderer.invoke('config-import-preview', payload),
+  configImportCommit: (payload) => ipcRenderer.invoke('config-import-commit', payload),
   codexGetSandboxMode: () => ipcRenderer.invoke('codex-get-sandbox-mode'),
   codexSetSandboxMode: (mode) => ipcRenderer.invoke('codex-set-sandbox-mode', mode),
   codexGetProjectSettings: (cwd) => ipcRenderer.invoke('codex-get-project-settings', { cwd }),

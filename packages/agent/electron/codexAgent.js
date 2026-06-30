@@ -3670,6 +3670,10 @@ function setupCodexSdkHandlers() {
     resetCodexSdkPromise,
     readPanelState,
     lt,
+    userDataDir: getMindCraftUserDataDir(),
+    readProviders,
+    writeProviders,
+    readCodexConfigTomlRaw: () => fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : '',
   })
 
   // 面板状态持久化：MindCraft 自有 UI 状态写入 userData；旧 ~/.codex 文件只作为迁移 fallback。
@@ -4145,10 +4149,18 @@ function setupCodexSdkHandlers() {
     if (ab) { ab.abort(); activeChatAborts.delete(chatId); return true }
     return false
   })
+
+  // Capture provider storage for system-level import IPC (T163)
+  _codexProviderStorage = { readProviders, writeProviders, readCodexConfigTomlRaw: () => fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : '', userDataDir: getMindCraftUserDataDir() };
 }
+
+// Module-level storage accessor for system-level import IPC (T163)
+let _codexProviderStorage = null;
+function getCodexProviderStorage() { return _codexProviderStorage; }
 
 module.exports = {
   setupCodexSdkHandlers,
+  getCodexProviderStorage,
   resetCodexSdkRuntime,
   __test__: {
     buildCodexAgentDonePayload,

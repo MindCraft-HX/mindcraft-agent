@@ -54,6 +54,9 @@ const CLAUDE_CHANNELS = Object.freeze({
   GIT_MIRROR_SET: 'claude-git-mirror-set',
   SANDBOX_GET_MODE: 'claude-sandbox-get-mode',
   SANDBOX_SET_MODE: 'claude-sandbox-set-mode',
+  CONFIG_IMPORT_PICK_FILE: 'claude-config-import-pick-file',
+  CONFIG_IMPORT_PREVIEW: 'claude-config-import-preview',
+  CONFIG_IMPORT_COMMIT: 'claude-config-import-commit',
 });
 
 const CODEX_CHANNELS = Object.freeze({
@@ -95,6 +98,9 @@ const CODEX_CHANNELS = Object.freeze({
   SET_REASONING_EFFORT: 'codex-set-reasoning-effort',
   GET_FILE_CHANGE_PREVIEW: 'codex-get-file-change-preview',
   GET_CURRENT_PLAN: 'codex-get-current-plan',
+  CONFIG_IMPORT_PICK_FILE: 'codex-config-import-pick-file',
+  CONFIG_IMPORT_PREVIEW: 'codex-config-import-preview',
+  CONFIG_IMPORT_COMMIT: 'codex-config-import-commit',
 });
 
 const CORE_CHANNELS = Object.freeze({
@@ -134,6 +140,11 @@ const CORE_CHANNELS = Object.freeze({
   // Home / codeHub
   GET_HOME_METRICS: 'get-home-metrics',
   GET_RECENT_PROJECTS: 'get-recent-projects',
+
+  // Config import (system-level, cross-agent)
+  CONFIG_IMPORT_PICK_FILE: 'config-import-pick-file',
+  CONFIG_IMPORT_PREVIEW: 'config-import-preview',
+  CONFIG_IMPORT_COMMIT: 'config-import-commit',
 
   // Cross-agent
   SKILLS_INSTALL_PROGRESS: 'skills-install-progress',

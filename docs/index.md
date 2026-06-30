@@ -28,6 +28,7 @@
 | CodeX 排障 | [codex-turn-failed-diagnostics.md](./codex-turn-failed-diagnostics.md) | CodeX turn.failed 诊断指南 |
 | 命令决策 | [clear-command-decision.md](./clear-command-decision.md) | clear 命令设计决策记录 |
 | 架构健康 | [architecture-health-review-2026-06-28.md](./architecture-health-review-2026-06-28.md) | 全量架构审计：巨型文件、重复代码、IPC、依赖、测试，含优先级排序 |
+| 存储架构 | [STORAGE_ARCHITECTURE_ANALYSIS.md](./STORAGE_ARCHITECTURE_ANALYSIS.md) | SQLite 基础设施、CC Switch 导入、本地存储迁移与最终边界 |
 
 ## 设计决策
 
@@ -44,6 +45,7 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-06-30-storage-sqlite-cc-switch-import.md](./plan/2026-06-30-storage-sqlite-cc-switch-import.md) | SQLite 基础设施与 CC Switch 导入首批实现计划 |
 | [plan/2026-06-27-renderer-convergence.md](./plan/2026-06-27-renderer-convergence.md) | Renderer 消费层收敛 |
 | [plan/2026-06-26-markdown-renderer-consolidation.md](./plan/2026-06-26-markdown-renderer-consolidation.md) | Markdown 渲染收口 |
 | [plan/2026-06-26-codehub-session-index-refactor.md](./plan/2026-06-26-codehub-session-index-refactor.md) | CodeHub 会话索引重构 |

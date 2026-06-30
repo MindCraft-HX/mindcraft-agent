@@ -7,6 +7,7 @@ const { registerLocalSearchIpc } = require('./localSearch')
 const { setupHomeMetricsHandlers } = require('./homeMetrics')
 const { registerSessionInstructionIpc } = require('./sessionInstructionIpc')
 const { setLocale } = require('./localeHelper')
+const { registerSystemImportIpc } = require('./db/import/systemImportIpc')
 
 let localeConf = null
 
@@ -21,6 +22,25 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
   registerLocalSearchIpc(targetIpcMain)
   setupHomeMetricsHandlers(targetIpcMain)
   registerSessionInstructionIpc(targetIpcMain)
+
+  // System-level import IPC (T163): CC Switch SQL may contain both CodeX and Claude providers
+  {
+    const { getClaudeProviderStorage } = require('./claudeAgent')
+    const { getCodexProviderStorage } = require('./codexAgent')
+    const claudeStorage = getClaudeProviderStorage()
+    const codexStorage = getCodexProviderStorage()
+    if (claudeStorage && codexStorage) {
+      registerSystemImportIpc(targetIpcMain, {
+        readCodexProviders: codexStorage.readProviders,
+        writeCodexProviders: codexStorage.writeProviders,
+        claudeGetConfig: claudeStorage.confGet,
+        claudeSetConfig: claudeStorage.confSet,
+        userDataDir: claudeStorage.getMindCraftUserDataDir(),
+        readCodexConfigTomlRaw: codexStorage.readCodexConfigTomlRaw,
+        readClaudeRuntimeConfig: claudeStorage.readRuntimeConfigFromUserSettingsFile,
+      })
+    }
+  }
 
   // Locale persistence
   targetIpcMain.handle('load-locale', () => {

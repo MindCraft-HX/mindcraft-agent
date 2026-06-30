@@ -35,6 +35,10 @@ const { registerGitDiffIpc } = require('./gitDiffIpc');
  * @param {Function} deps.resetCodexSdkPromise
  * @param {Function} deps.readPanelState
  * @param {Function} deps.lt — locale translator
+ * @param {string} deps.userDataDir — app.getPath('userData')
+ * @param {Function} deps.readProviders — read providers.json
+ * @param {Function} deps.writeProviders — write providers.json
+ * @param {Function} deps.readCodexConfigTomlRaw — read raw config.toml content
  */
 function registerCodexLeafIpcs(ipcMain, deps) {
   registerConfigIpc(ipcMain, {
@@ -45,6 +49,10 @@ function registerCodexLeafIpcs(ipcMain, deps) {
     normalizeCodexReasoningEffort: deps.normalizeCodexReasoningEffort,
     codexConfigDir: deps.codexConfigDir,
     configTomlFile: deps.configTomlFile,
+    userDataDir: deps.userDataDir,
+    readProviders: deps.readProviders,
+    writeProviders: deps.writeProviders,
+    readCodexConfigTomlRaw: deps.readCodexConfigTomlRaw,
   });
 
   registerEnvironmentIpc(ipcMain, {

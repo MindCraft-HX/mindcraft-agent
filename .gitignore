@@ -40,6 +40,12 @@ dev-plugins/
 *.sln
 *.sw?
 
+# Runtime databases (created in userData at runtime, not project assets)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # 忽略 package-lock.json
 package-lock.json
 

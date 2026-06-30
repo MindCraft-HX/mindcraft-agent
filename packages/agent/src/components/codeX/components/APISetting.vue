@@ -8,6 +8,38 @@
       @save="handleProviderFormSave"
       @close="handleProviderFormClose"
     />
+    <!-- Import preview dialog (local CLI) -->
+    <div v-if="showImportPreview" class="settings-overlay" @click.self="cancelImportPreview">
+      <div class="import-dialog import-preview-dialog">
+        <div class="import-dialog-header">
+          <span>{{ $t('settings.importPreviewTitle', { source: $t('settings.importLocalCodexConfig') }) }}</span>
+          <button class="settings-close" @click="cancelImportPreview">×</button>
+        </div>
+        <div v-if="importPreviewWarnings.length" class="import-warnings">
+          <div v-for="(w, i) in importPreviewWarnings" :key="i" class="import-warning-item">⚠ {{ w }}</div>
+        </div>
+        <div class="import-preview-list">
+          <div v-for="(p, i) in importPreviewProviders" :key="p.tempId" class="import-preview-item" :class="{ conflict: p.conflict }">
+            <div class="import-preview-avatar">{{ (p.name || '?')[0].toUpperCase() }}</div>
+            <div class="import-preview-info">
+              <div class="import-preview-name">{{ p.name || '?' }}</div>
+              <div class="import-preview-detail">{{ p.model || p.config?.model || '' }} <span v-if="p.config?.url" class="import-preview-url">— {{ p.config.url }}</span></div>
+              <div v-if="p.conflict" class="import-conflict-badge">{{ $t('settings.importConflictName') }}</div>
+            </div>
+            <select v-model="p._action" class="import-action-select">
+              <option value="add">{{ $t('settings.importActionAdd') }}</option>
+              <option v-if="p.conflict" value="overwrite">{{ $t('settings.importActionOverwrite') }}</option>
+              <option value="skip">{{ $t('settings.importActionSkip') }}</option>
+            </select>
+          </div>
+        </div>
+        <div v-if="!importPreviewProviders.length" class="import-empty">{{ $t('settings.importNoProvidersFound') }}</div>
+        <div class="import-dialog-footer">
+          <button class="import-footer-cancel" @click="cancelImportPreview">{{ $t('common.cancel') }}</button>
+          <button class="import-footer-commit" :disabled="!hasImportActions" @click="commitImport">{{ $t('settings.importCommit') }}</button>
+        </div>
+      </div>
+    </div>
     <div v-if="embedded || showSettings" class="settings-overlay" :class="{ 'settings-overlay--embedded': embedded }">
       <div class="settings-panel">
         <div v-if="!embedded" class="settings-header">
@@ -120,8 +152,8 @@
         <!-- 配置列表 -->
         <div class="settings-main">
           <div class="sp-left">
-            <div class="sp-list-header">{{ $t('settings.configList') }}<button class="import-legacy-btn" @click="importFromLegacy" :title="$t('settings.importFromMindCraftHint')">
-                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.importFromMindCraft') }}</button>
+            <div class="sp-list-header">{{ $t('settings.configList') }}<button class="import-legacy-btn" @click="showImportConfigDialog" :title="$t('settings.importConfigHint')">
+                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.importConfig') }}</button>
                   <button class="import-legacy-btn repair" @click="repairCodexCliConfig" :title="$t('settings.codexRepairConfigHint')">
                     <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 7 A4 4 0 1 0 4 2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M4 2 H1 V5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 7 L5.5 8.5 L8.5 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ $t('settings.codexRepairConfig') }}</button>
               </div>
@@ -142,8 +174,8 @@
                     <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 10 L2 8 L8 2 L10 4 L4 10 Z" stroke="currentColor" stroke-width="1" fill="none"/></svg>{{ $t('settings.edit') }}</button>
                   <button class="sp-item-btn copy" @click.stop="copyProvider(i)" :title="$t('settings.copy')">
                     <svg width="10" height="10" viewBox="0 0 12 12"><rect x="4" y="4" width="6" height="6" stroke="currentColor" stroke-width="1" fill="none" rx="1"/><path d="M2 8 L2 2 L8 2" stroke="currentColor" stroke-width="1" fill="none"/></svg>{{ $t('settings.copy') }}</button>
-                  <button class="sp-item-btn import" @click.stop="importFromFile(i)" :title="$t('settings.overwriteWithFile')">
-                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.import') }}</button>
+                  <button class="sp-item-btn import" @click.stop="importFromFile(i)" :title="$t('settings.overwriteFromLocalConfigHint')">
+                    <svg width="10" height="10" viewBox="0 0 12 12"><path d="M6 1 L6 9 M3 6 L6 9 L9 6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9 L1 11 L11 11 L11 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>{{ $t('settings.overwriteFromLocalConfig') }}</button>
                   <button class="sp-item-btn validate" @click.stop="validateProviderByIdx(i)" :disabled="validatingIdx === i" :title="$t('settings.validateKey')">
                     <svg v-if="validatingIdx !== i" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     <span v-else class="sp-validating-dot"></span>
@@ -163,7 +195,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useCodexConfigStore } from '../../../stores/codexConfig.js'
@@ -194,6 +226,12 @@ const validatingIdx = ref(-1)
 const settingsForm = ref({ providers: [], selectedIdx: -1, activeIdx: -1 })
 const currentProvider = ref(null)
 const envInitialized = ref(false)
+
+// Import dialog state (local CLI only — CC Switch moved to SystemSettings)
+const showImportPreview = ref(false)
+const importPreviewProviders = ref([])
+const importPreviewWarnings = ref([])
+const hasImportActions = computed(() => importPreviewProviders.value.some((p) => p._action !== 'skip'))
 
 defineProps({ embedded: { type: Boolean, default: false } })
 const emit = defineEmits(['providerActivated'])
@@ -668,6 +706,70 @@ function closeSettings() {
   showProviderForm.value = false
   showSettings.value = false
 }
+
+// ---- Import Config (local CLI only — CC Switch moved to SystemSettings T163) ----
+
+async function showImportConfigDialog() {
+  // Direct confirmation → local CLI import
+  const ok = await confirmDialogRef.value?.open({
+    message: t('settings.importLocalConfigConfirm'),
+    okText: t('settings.importLocalCodexConfig'),
+    cancelText: t('common.cancel'),
+  })
+  if (!ok) return
+
+  try {
+    const preview = await window.electronAPI?.codexConfigImportPreview?.({ source: 'local-cli' })
+    if (!preview?.ok) {
+      ElMessage.warning(preview?.warnings?.[0] || t('settings.importNoProvidersFound'))
+      return
+    }
+    importPreviewProviders.value = (preview.providers || []).map((p) => ({
+      ...p,
+      _action: p.conflict ? 'skip' : 'add',
+    }))
+    importPreviewWarnings.value = preview.warnings || []
+    showImportPreview.value = true
+  } catch (e) {
+    ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))
+  }
+}
+
+function cancelImportPreview() {
+  showImportPreview.value = false
+  importPreviewProviders.value = []
+  importPreviewWarnings.value = []
+}
+
+async function commitImport() {
+  const decisions = importPreviewProviders.value
+    .filter((p) => p._action !== 'skip')
+    .map((p) => ({ tempId: p.tempId, action: p._action }))
+  const skipped = importPreviewProviders.value.filter((p) => p._action === 'skip').length
+
+  try {
+    const result = await window.electronAPI?.codexConfigImportCommit?.({
+      source: 'local-cli',
+      providers: decisions,
+      agentType: 'codex',
+    })
+
+    if (!result?.ok) {
+      ElMessage.error(result?.warnings?.[0] || t('settings.importFailedGeneric'))
+      return
+    }
+
+    ElMessage.success(t('settings.importDone', {
+      added: result.imported || 0,
+      overwritten: 0,
+      skipped: result.skipped || skipped,
+    }))
+    cancelImportPreview()
+    await loadProviders()
+  } catch (e) {
+    ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -906,4 +1008,74 @@ function closeSettings() {
   border: 1px solid var(--cc-border-light); border-radius: 4px; cursor: pointer; font-size: 11px;
 }
 .compact-reset-btn:hover { border-color: var(--cc-border-focus); color: var(--cc-text); }
+
+/* Import Dialog */
+.import-dialog {
+  width: 440px; background: var(--cc-bg-secondary);
+  border: 1px solid var(--cc-border);
+  border-radius: 12px; box-shadow: 0 20px 60px var(--cc-shadow);
+  overflow: hidden; max-height: 80vh; display: flex; flex-direction: column;
+}
+.import-dialog-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 16px 11px; border-bottom: 1px solid var(--cc-border);
+  font-size: 13px; font-weight: 600; color: var(--cc-text); flex-shrink: 0;
+}
+
+/* Import Preview */
+.import-preview-dialog { width: 500px; }
+.import-warnings {
+  padding: 8px 16px; background: var(--cc-warning-bg);
+  border-bottom: 1px solid var(--cc-border);
+}
+.import-warning-item { font-size: 11px; color: var(--cc-warning); }
+.import-preview-list {
+  flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; min-height: 100px;
+}
+.import-preview-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px;
+  border-radius: 6px; border: 1px solid var(--cc-border-light);
+  background: var(--cc-bg-tertiary);
+  &.conflict { border-color: var(--cc-warning); }
+}
+.import-preview-avatar {
+  width: 28px; height: 28px; border-radius: 6px; background: var(--cc-bg-hover);
+  color: var(--cc-text-muted); font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.import-preview-info { flex: 1; min-width: 0; }
+.import-preview-name { font-size: 12px; color: var(--cc-text-secondary); font-weight: 500; }
+.import-preview-detail { font-size: 10px; color: var(--cc-text-dim); margin-top: 1px; }
+.import-preview-url { color: var(--cc-text-dim); }
+.import-conflict-badge {
+  display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 3px;
+  background: var(--cc-warning-bg); color: var(--cc-warning);
+  margin-top: 3px; font-weight: 600;
+}
+.import-action-select {
+  height: 26px; min-width: 80px; border-radius: 4px;
+  border: 1px solid var(--cc-border-strong); background: var(--cc-bg-secondary);
+  color: var(--cc-text-secondary); font-size: 11px;
+  padding: 0 6px; outline: none; cursor: pointer; flex-shrink: 0;
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+}
+.import-action-select:focus { border-color: var(--cc-primary); }
+.import-empty {
+  padding: 24px; text-align: center; font-size: 12px; color: var(--cc-text-dim);
+}
+.import-dialog-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 10px 16px; border-top: 1px solid var(--cc-border); flex-shrink: 0;
+}
+.import-footer-cancel {
+  padding: 5px 14px; border-radius: 5px; border: 1px solid var(--cc-border-strong);
+  background: var(--cc-bg-elevated); color: var(--cc-text-muted); font-size: 12px; cursor: pointer;
+  &:hover { border-color: var(--cc-border-focus); color: var(--cc-text); }
+}
+.import-footer-commit {
+  padding: 5px 14px; border-radius: 5px; border: none;
+  background: var(--cc-primary); color: #fff; font-size: 12px; cursor: pointer;
+  &:hover { background: var(--cc-primary-hover); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
 </style>

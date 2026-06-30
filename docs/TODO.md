@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-06-29
+> 最后更新：2026-06-30
 > 历史归档：`docs/archive/todo-history.md`
 > 知识库入口：`docs/index.md`
 
@@ -142,6 +142,12 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T155 | test | **修复 `test:all` 7 个历史失败**：4 个已修复（todo-list/update-plan 编码损坏重写、electron-window-icon-paths 过时删除、local-search async/await+过时文件删除）；3 个 defer（permission-sound 需 Vue 测试环境、task-stream-sync ×2 需 domain 排查）。`test:all` 7→3 fail。 | P3 | 🔧 部分完成，3 个延后 |
 | T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 6 处裸 `scrollBottom(tab.id)` 改为 `smartScrollToBottom(tab.id)`，解构重命名冲突已修复。 | P3 | ✅ 已完成 |
 | T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：在 `agentCommon/StatusBarMetrics.vue`，需跑应用排查渲染逻辑。疑似旧有问题，延后。 | P3 | 🔧 延后排查 |
+| T158 | bug | **快捷键在某些环境下无法识别**：排查 `useShortcutStore` 全局 keydown 监听在特定环境（Linux 窗口管理器拦截、输入法冲突、键盘布局差异）下的兼容性问题。 | P2 | 📝 待排查 |
+| T159 | architecture | **存储架构 SQLite 路线图**：SQLite 基础设施与 CC Switch 解析器可保留，但评审发现 CC Switch 导入入口绑定单 Agent 面板是错误边界；需按 T163 改为系统设置全局导入后再关闭。详见 `docs/plan/2026-06-30-storage-sqlite-cc-switch-import.md`。 | P2 | 🔧 评审返工 |
+| T160 | ux | **CodeHub 项目路径可点击打开**：每个项目开头的文件夹路径做成超链接样式（hover 下划线），点击调用 `shell.openPath()` 在系统文件管理器中打开。 | P2 | 📝 待实现 |
+| T161 | feature | **开机自动启动设置**：设置页新增 Switch 开关，利用 `app.setLoginItemSettings()` 实现开机自启，跨平台兼容 macOS / Windows / Linux。 | P2 | 📝 待实现 |
+| T162 | feature | **配置导入弹窗 + CC Switch 导入**：由 T163 全量覆盖，入口已从单 Agent 配置页上移到系统设置全局导入。 | P2 | ✅ T163 已覆盖 |
+| T163 | feature/ux | **系统设置全局 CC Switch 导入 + provider 排序**：在系统设置增加 `导入配置`，解析一个 CC Switch `.sql` 后按 CodeX/ClaudeCode 自动分流；预览里处理新增/覆盖/重命名/跳过、unsupported rows、防止未知字段污染 runtime config；active 按 agent 分组且默认不切换；保留各 Agent 配置页 `导入` 仅导本地 CLI 配置。 | P1 | ✅ 已完成 |
 
 ---
 
@@ -149,6 +155,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 | 日期 | 分类 | 说明 |
 |------|------|------|
+| 2026-06-30 | feature | **T163 系统设置全局 CC Switch 导入**：创建 `systemImportIpc.js`（3 个 IPC handler：pick-file / preview / commit）；SystemSettings.vue 增加导入配置分区预览对话框（CodeX/ClaudeCode 分流 + 冲突标注 + 动作选择 + 重命名输入 + active 切换开关）；CodeX/ClaudeCode APISetting.vue 简化为确认弹窗后直导本地 CLI；新增 6 个 T163 单元测试（mixed SQL / overwrite / active 分组 / 防污染）；6 个 IPC 通道全部注册到 `ipcChannels.js`；构建通过、全量 38 DB 测试 + 5 合同测试 0 fail。 |
 | 2026-06-29 | refactor/docs | **架构重构 Batch 0-5 冻结验收完成**：`test:contract`、`npm test`、`npm run build` 通过；人工 smoke 覆盖 ClaudeCode/CodeX 发消息、中断、历史恢复、插件/skills 列表、配置保存，当前进入稳定观察期。 |
 | 2026-06-29 | refactor | **R04 Tab/History composable 收敛完成**：R04a-e 全部完成。新增 `useAgentTabs.js`（107行）、`useAgentHistory.js`（162行）、`tabProviderAdapter.mjs`、`historyProviderAdapter.mjs`、4 个 pure helpers。双端 composable 收口为 thin wrapper（各 ~50行）。全量 251 tests（97 表征 + 154 契约）0 fail。 |
 | 2026-06-28 | docs | **知识库整理**：新增 `docs/index.md`；精简 `docs/TODO.md` 从 1042→~100 行；CodeX Chat Proxy 文档合并归档；更新 AGENTS.md/CLAUDE.md 路由表。 |
