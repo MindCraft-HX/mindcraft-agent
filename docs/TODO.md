@@ -144,8 +144,8 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：在 `agentCommon/StatusBarMetrics.vue`，需跑应用排查渲染逻辑。疑似旧有问题，延后。 | P3 | 🔧 延后排查 |
 | T158 | bug | **快捷键在某些环境下无法识别**：排查 `useShortcutStore` 全局 keydown 监听在特定环境（Linux 窗口管理器拦截、输入法冲突、键盘布局差异）下的兼容性问题。 | P2 | 📝 待排查 |
 | T159 | architecture | **存储架构 SQLite 路线图**：SQLite 基础设施与 CC Switch 解析器可保留，但评审发现 CC Switch 导入入口绑定单 Agent 面板是错误边界；需按 T163 改为系统设置全局导入后再关闭。详见 `docs/plan/2026-06-30-storage-sqlite-cc-switch-import.md`。 | P2 | 🔧 评审返工 |
-| T160 | ux | **CodeHub 项目路径可点击打开**：每个项目开头的文件夹路径做成超链接样式（hover 下划线），点击调用 `shell.openPath()` 在系统文件管理器中打开。 | P2 | 📝 待实现 |
-| T161 | feature | **开机自动启动设置**：设置页新增 Switch 开关，利用 `app.setLoginItemSettings()` 实现开机自启，跨平台兼容 macOS / Windows / Linux。 | P2 | 📝 待实现 |
+| T160 | ux | **工具栏路径可点击打开**：`ClaudeToolbar.vue` + `CodexToolbar.vue` `.cwd-text` 已显示完整路径，点击 → `openFolder()` 在文件管理器打开，hover 下划线变色。 | P2 | ✅ 已完成 |
+| T161 | feature | **开机自动启动设置**：`ipcChannels.js` 注册 `GET_LOGIN_ITEM` / `SET_LOGIN_ITEM`；`SystemSettings.vue` 新增 Switch 开关，复用已有 `ss-switch` 模式。 | P2 | ✅ 已完成 |
 | T162 | feature | **配置导入弹窗 + CC Switch 导入**：由 T163 全量覆盖，入口已从单 Agent 配置页上移到系统设置全局导入。 | P2 | ✅ T163 已覆盖 |
 | T163 | feature/ux | **系统设置全局 CC Switch 导入 + provider 排序**：在系统设置增加 `导入配置`，解析一个 CC Switch `.sql` 后按 CodeX/ClaudeCode 自动分流；预览里处理新增/覆盖/重命名/跳过、unsupported rows、防止未知字段污染 runtime config；active 按 agent 分组且默认不切换；保留各 Agent 配置页 `导入` 仅导本地 CLI 配置。 | P1 | ✅ 已完成 |
 

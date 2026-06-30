@@ -150,6 +150,10 @@ const CORE_CHANNELS = Object.freeze({
   SKILLS_INSTALL_PROGRESS: 'skills-install-progress',
   LOG: 'log',
   NOTIFICATION_AUDIO_UNLOCK: 'notification-audio-unlock',
+
+  // Auto-start on boot
+  GET_LOGIN_ITEM: 'get-login-item-settings',
+  SET_LOGIN_ITEM: 'set-login-item-settings',
 });
 
 /**

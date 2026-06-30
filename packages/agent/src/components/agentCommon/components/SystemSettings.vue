@@ -105,6 +105,26 @@
     </div>
 
     <div class="ss-section">
+      <div class="ss-section-title">{{ L('开机启动', 'Auto Start') }}</div>
+      <div class="ss-section-body">
+        <div class="ss-item ss-item-update">
+          <span class="ss-item-label">{{ L('开机自启动', 'Auto-start on boot') }}</span>
+          <label class="ss-switch">
+            <input
+              type="checkbox"
+              :checked="autoStartEnabled"
+              @change="handleAutoStartToggle"
+            />
+            <span class="ss-switch-slider"></span>
+          </label>
+          <span class="ss-status" :class="autoStartEnabled ? 'ss-status--ok' : 'ss-status--dim'">
+            {{ autoStartEnabled ? L('已开启', 'Enabled') : L('已关闭', 'Disabled') }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-section">
       <div class="ss-section-title">{{ L('诊断日志', 'Diagnostics') }}</div>
       <div class="ss-section-body">
         <div class="ss-item ss-item-update">
@@ -220,6 +240,7 @@ const releaseNotes = ref('')
 const forceUpdate = ref(false)
 const initialized = ref(false)
 const diagnosticsEnabled = ref(false)
+const autoStartEnabled = ref(false)
 const pendingManualCheckId = ref(0)
 
 let cleanupListener = null
@@ -272,6 +293,16 @@ async function handleDiagnosticsToggle(event) {
   }
 }
 
+async function handleAutoStartToggle(event) {
+  const enabled = Boolean(event?.target?.checked)
+  autoStartEnabled.value = enabled
+  try {
+    await window.electronAPI?.setLoginItemSettings?.(enabled)
+  } catch (_) {
+    autoStartEnabled.value = !enabled
+  }
+}
+
 async function openSettings() {
   if (initialized.value) return
   initialized.value = true
@@ -286,6 +317,11 @@ async function openSettings() {
   try {
     const result = await window.electronAPI?.getDiagnosticsEnabled?.()
     diagnosticsEnabled.value = Boolean(result?.enabled)
+  } catch (_) {}
+
+  try {
+    const v = await window.electronAPI?.getLoginItemSettings?.()
+    autoStartEnabled.value = Boolean(v)
   } catch (_) {}
 
   try {
@@ -536,6 +572,9 @@ defineExpose({ openSettings })
 }
 .ss-status--err {
   color: var(--cc-error);
+}
+.ss-status--dim {
+  color: var(--cc-text-muted);
 }
 
 .ss-progress {

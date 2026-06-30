@@ -3,7 +3,7 @@
     <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style="color:var(--cc-text-muted);flex-shrink:0">
       <path d="M1 3.5A1.5 1.5 0 012.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0115 5.5v7a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z"/>
     </svg>
-    <span class="cwd-text" :class="{ placeholder: !cwd }" :title="cwd" @click="cwd ? null : emit('selectDir')">
+    <span class="cwd-text" :class="{ placeholder: !cwd, clickable: !!cwd }" :title="cwd" @click="handleCwdClick">
       {{ cwd || '点击选择工作目录' }}
     </span>
     <button v-if="!embedded" class="tb-btn switch-agent-btn" type="button" @click="emit('switchAgent')" title="切换到 Claude Code">
@@ -23,6 +23,13 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['selectDir', 'switchAgent'])
+function handleCwdClick() {
+  if (props.cwd) {
+    window.electronAPI?.openFolder?.(props.cwd)
+  } else {
+    emit('selectDir')
+  }
+}
 function openPlugins() {
   window.dispatchEvent(new CustomEvent('codex-open-plugins'))
 }
@@ -53,6 +60,10 @@ const embedded = inject('codehubEmbedded', false)
   color: var(--cc-text-dim);
 }
 .cwd-text.placeholder:hover {
+  color: var(--cc-primary);
+}
+.cwd-text.clickable:hover {
+  text-decoration: underline;
   color: var(--cc-primary);
 }
 .tb-btn {

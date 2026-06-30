@@ -1889,45 +1889,14 @@ function setupClaudeHandlers() {
     }
   })
 
-  // ---- Import: file picker ----
-  ipcMain.handle('claude-config-import-pick-file', async () => {
-    try {
-      const result = await dialog.showOpenDialog({
-        title: 'Import CC Switch Config',
-        filters: [
-          { name: 'SQL Files', extensions: ['sql'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-        properties: ['openFile'],
-      });
-      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-        return { ok: false, canceled: true };
-      }
-      return { ok: true, filePath: result.filePaths[0] };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
-  });
-
   // ---- Import: preview ----
   ipcMain.handle('claude-config-import-preview', async (_, payload) => {
     const { source, filePath } = payload || {};
 
     try {
-      if (source === 'cc-switch' && filePath) {
-        const preview = previewCcSwitchFile(filePath);
-        if (!preview.ok) return preview;
-
-        // Only Claude providers
-        preview.providers = preview.providers.filter((p) => p.agentType === 'claude');
-
-        // Check against existing
-        const stored = confGet('claudeProviders', { providers: [], activeIdx: -1 });
-        preview.providers = annotateConflicts(preview.providers, stored.providers || []);
-
-        return preview;
+      if (source === 'cc-switch') {
+        return { ok: false, providers: [], warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
       }
-
       if (source === 'local-cli') {
         const fromFile = readRuntimeConfigFromUserSettingsFile();
         const cliConfig = { ANTHROPIC_AUTH_TOKEN: fromFile.apiKey || '', ANTHROPIC_BASE_URL: fromFile.baseURL || '' };
@@ -1953,10 +1922,41 @@ function setupClaudeHandlers() {
     try {
       let previewProviders = [];
 
-      if (source === 'cc-switch' && filePath) {
-        const preview = previewCcSwitchFile(filePath);
-        if (!preview.ok) return preview;
-        previewProviders = preview.providers.filter((p) => p.agentType === 'claude');
+ 
+ 
+ 
+ 
+ 
+ 
+i
+f
+ 
+(
+s
+o
+u
+r
+c
+e
+ 
+=
+=
+=
+ 
+'
+c
+c
+-
+s
+w
+i
+t
+c
+h
+'
+)
+ 
+{
       } else if (source === 'local-cli') {
         const fromFile = readRuntimeConfigFromUserSettingsFile();
         const cliConfig = { ANTHROPIC_AUTH_TOKEN: fromFile.apiKey || '', ANTHROPIC_BASE_URL: fromFile.baseURL || '' };

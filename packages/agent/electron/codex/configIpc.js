@@ -13,7 +13,7 @@ const { dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { appendPreservedCodexConfigSections } = require('./configTomlPreserve');
-const { previewCcSwitchFile, previewLocalCliConfig, annotateConflicts, commitImport } = require('../db/import/index');
+const { previewLocalCliConfig, annotateConflicts, commitImport } = require('../db/import/index');
 const { getDb, persistDb } = require('../db/index');
 const { parseSimpleTomlContent } = require('./configManager');
 
@@ -223,41 +223,77 @@ function registerConfigIpc(ipcMain, {
     } catch (e) { return { ok: false, message: e.message }; }
   });
 
-  // ---- Import: file picker ----
-  ipcMain.handle('codex-config-import-pick-file', async () => {
-    try {
-      const result = await dialog.showOpenDialog({
-        title: 'Import CC Switch Config',
-        filters: [
-          { name: 'SQL Files', extensions: ['sql'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-        properties: ['openFile'],
-      });
-      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-        return { ok: false, canceled: true };
-      }
-      return { ok: true, filePath: result.filePaths[0] };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
-  });
-
   // ---- Import: preview ----
   ipcMain.handle('codex-config-import-preview', async (_, payload) => {
     const { source, filePath } = payload || {};
 
     try {
-      if (source === 'cc-switch' && filePath) {
-        const preview = previewCcSwitchFile(filePath);
-        if (!preview.ok) return preview;
-
-        // Check against existing providers
-        const existing = readProviders ? (readProviders()?.providers || []) : [];
-        preview.providers = annotateConflicts(preview.providers, existing);
-
-        return preview;
-      }
+ 
+ 
+ 
+ 
+ 
+ 
+i
+f
+ 
+(
+s
+o
+u
+r
+c
+e
+ 
+=
+=
+=
+ 
+'
+c
+c
+-
+s
+w
+i
+t
+c
+ 
+ 
+ 
+ 
+ 
+ 
+i
+f
+ 
+(
+s
+o
+u
+r
+c
+e
+ 
+=
+=
+=
+ 
+'
+c
+c
+-
+s
+w
+i
+t
+c
+h
+'
+)
+ 
+{
+{
 
       if (source === 'local-cli') {
         const tomlRaw = readCodexConfigTomlRaw ? readCodexConfigTomlRaw() : '';
@@ -285,10 +321,8 @@ function registerConfigIpc(ipcMain, {
       // Get preview data (re-parse for commit)
       let previewProviders = [];
 
-      if (source === 'cc-switch' && filePath) {
-        const preview = previewCcSwitchFile(filePath);
-        if (!preview.ok) return preview;
-        previewProviders = preview.providers;
+      if (source === 'cc-switch') {
+        return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
       } else if (source === 'local-cli') {
         const tomlRaw = readCodexConfigTomlRaw ? readCodexConfigTomlRaw() : '';
         const tomlConfig = tomlRaw ? parseSimpleTomlContent(tomlRaw) : {};
