@@ -174,7 +174,7 @@ function quickHighlight(code) {
     '<span class="hljs-keyword">$1</span>'
   )
   result = result.replace(/\b(\d+\.?\d*)\b/g, '<span class="hljs-number">$1</span>')
-  result = result.replace(/\b([a-zA-Z_$][\w$]*)\s*\(/g, '<span class="hljs-title">$1</span>(')
+  result = result.replace(/\b([a-zA-Z_$][\w$]*)(\s*)\(/g, '<span class="hljs-title">$1</span>$2(')
   result = result.replace(/\x00HLJS_(\d+)\x00/g, (_, idx) => tokens[Number(idx)] || '')
   return result
 }
