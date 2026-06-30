@@ -142,7 +142,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T155 | test | **修复 `test:all` 7 个历史失败**：4 个已修复（todo-list/update-plan 编码损坏重写、electron-window-icon-paths 过时删除、local-search async/await+过时文件删除）；3 个 defer（permission-sound 需 Vue 测试环境、task-stream-sync ×2 需 domain 排查）。`test:all` 7→3 fail。 | P3 | 🔧 部分完成，3 个延后 |
 | T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 6 处裸 `scrollBottom(tab.id)` 改为 `smartScrollToBottom(tab.id)`，解构重命名冲突已修复。 | P3 | ✅ 已完成 |
 | T157 | ux | **ClaudeCode turn metric 刷新后时间不显示**：在 `agentCommon/StatusBarMetrics.vue`，需跑应用排查渲染逻辑。疑似旧有问题，延后。 | P3 | 🔧 延后排查 |
-| T158 | bug | **快捷键在某些环境下无法识别**：排查 `useShortcutStore` 全局 keydown 监听在特定环境（Linux 窗口管理器拦截、输入法冲突、键盘布局差异）下的兼容性问题。 | P2 | 📝 待排查 |
+| T158 | bug | **快捷键在某些环境下无法识别**：修复 `register()` 覆盖 Bug（同名 actionId 后注册者覆盖先注册者 → 两个 HistorySidebar 只能一个生效）。改为数组存储多 handler，按 enabled/priority 动态匹配。新增 `window.__mc_shortcut_debug` 诊断日志开关辅助排查环境问题。 | P2 | 🔧 部分完成 |
 | T159 | architecture | **存储架构 SQLite 路线图**：SQLite 基础设施与 CC Switch 解析器可保留，但评审发现 CC Switch 导入入口绑定单 Agent 面板是错误边界；需按 T163 改为系统设置全局导入后再关闭。详见 `docs/plan/2026-06-30-storage-sqlite-cc-switch-import.md`。 | P2 | 🔧 评审返工 |
 | T160 | ux | **工具栏路径可点击打开**：`ClaudeToolbar.vue` + `CodexToolbar.vue` `.cwd-text` 已显示完整路径，点击 → `openFolder()` 在文件管理器打开，hover 下划线变色。 | P2 | ✅ 已完成 |
 | T161 | feature | **开机自动启动设置**：`ipcChannels.js` 注册 `GET_LOGIN_ITEM` / `SET_LOGIN_ITEM`；`SystemSettings.vue` 新增 Switch 开关，复用已有 `ss-switch` 模式。 | P2 | ✅ 已完成 |

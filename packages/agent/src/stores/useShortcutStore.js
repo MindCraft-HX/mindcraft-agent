@@ -14,6 +14,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { DEFAULT_SHORTCUTS } from '../settings/defaultShortcuts.js'
 
+// ─── 调试开关 ───
+// 在浏览器 console 执行 window.__mc_shortcut_debug = true 即可开启诊断日志
+// 输出格式：[Shortcut] combo="Ctrl+Tab" skip=reason 或 [Shortcut] combo="Ctrl+Tab" FIRE actionId=codehub.nextTab
+
 // ─── 辅助函数 ───
 
 /**
@@ -108,6 +112,16 @@ function isModalOpen() {
   )
 }
 
+// ─── 调试工具 ───
+
+function _debugLog(actionId, combo, reason) {
+  if (window.__mc_shortcut_debug) {
+    const a = actionId ? ` actionId=${actionId}` : ''
+    const r = reason ? ` skip=${reason}` : ''
+    console.log(`[Shortcut] combo="${combo}"${a}${r}`)
+  }
+}
+
 // ─── Store ───
 
 export const useShortcutStore = defineStore('shortcut', () => {
@@ -118,7 +132,10 @@ export const useShortcutStore = defineStore('shortcut', () => {
 
   /**
    * 已注册的 handler
-   * Map<actionId, { handler, enabled, priority }>
+   * Map<actionId, Array<{ handler, enabled, priority }>>
+   *
+   * 同一 actionId 可被多个组件注册（如 ClaudeCode/CodeX 的 HistorySidebar），
+   * 匹配时按 enabled/priority 动态选择，未被启用的自动跳过。
    */
   const registrations = ref(new Map())
 
@@ -181,10 +198,19 @@ export const useShortcutStore = defineStore('shortcut', () => {
    */
   function register(actionId, handler, opts = {}) {
     const { enabled, priority = 0 } = opts
-    registrations.value.set(actionId, { handler, enabled: enabled || null, priority })
+    const entry = { handler, enabled: enabled || null, priority }
+
+    if (!registrations.value.has(actionId)) {
+      registrations.value.set(actionId, [])
+    }
+    const list = registrations.value.get(actionId)
+    list.push(entry)
+
     _ensureListener()
     return () => {
-      registrations.value.delete(actionId)
+      const idx = list.indexOf(entry)
+      if (idx >= 0) list.splice(idx, 1)
+      if (list.length === 0) registrations.value.delete(actionId)
     }
   }
 
@@ -203,41 +229,61 @@ export const useShortcutStore = defineStore('shortcut', () => {
     const candidates = comboIndex.value[normalized]
     if (!candidates || !candidates.length) return
 
+    _debugLog(null, normalized, 'comboMatch candidates=' + candidates.join(','))
+
     // Guard 1: 可编辑元素焦点
     // 带 Ctrl/Alt/Meta 修饰键的组合是命令，不会插入文本 → 放行
     // 无修饰键或纯 Shift 修饰会插入字符 → 拦截
-    if (isEditableFocused() && !event.ctrlKey && !event.altKey && !event.metaKey) return
+    if (isEditableFocused() && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      _debugLog(null, normalized, 'editableFocused')
+      return
+    }
 
     // Guard 2: 弹窗/抽屉打开
-    if (isModalOpen()) return
+    if (isModalOpen()) {
+      _debugLog(null, normalized, 'modalOpen')
+      return
+    }
 
     // Guard 3: 快捷键录制模式
-    if (window.__mc_recording_shortcut) return
+    if (window.__mc_recording_shortcut) {
+      _debugLog(null, normalized, 'recording')
+      return
+    }
 
     // 找到已注册 + enabled + 最高 priority
+    // 同一 actionId 可能有多个注册（如两个 HistorySidebar），遍历所有
+    let bestEntry = null
     let bestActionId = null
     let bestPriority = -Infinity
     for (const actionId of candidates) {
-      const reg = registrations.value.get(actionId)
-      if (!reg) continue
-      if (reg.enabled && !reg.enabled()) continue
-      if (reg.priority > bestPriority) {
-        bestPriority = reg.priority
-        bestActionId = actionId
+      const list = registrations.value.get(actionId)
+      if (!list || !list.length) continue
+      for (const entry of list) {
+        if (entry.enabled && !entry.enabled()) {
+          _debugLog(actionId, normalized, 'disabled')
+          continue
+        }
+        if (entry.priority > bestPriority) {
+          bestPriority = entry.priority
+          bestEntry = entry
+          bestActionId = actionId
+        }
       }
     }
 
-    if (!bestActionId) return
+    if (!bestEntry) {
+      _debugLog(null, normalized, 'noEnabledHandler')
+      return
+    }
 
-    const reg = registrations.value.get(bestActionId)
-    if (!reg) return
-
+    _debugLog(bestActionId, normalized, 'FIRE')
     event.preventDefault()
     event.stopPropagation()
 
     // fire-and-forget: 不 await handler 返回值，避免阻塞事件处理
     try {
-      const result = reg.handler()
+      const result = bestEntry.handler()
       if (result && typeof result.catch === 'function') {
         result.catch(() => {})
       }
