@@ -268,13 +268,13 @@ function registerSystemImportIpc(ipcMain, deps) {
           // Handle active: keep existing activeIdx unless applyActiveFromCcSwitch is on
           let newActiveIdx = codexActiveIdx;
           if (applyActiveFromCcSwitch) {
-            const activeName = previewProviders
-              .filter((p) => p.agentType === 'codex' && p.isActive)
-              .map((p) => p.name)
-              .pop();
-            if (activeName) {
+            // Resolve active via tempId->finalName so renames are tracked
+            const activePreview = previewProviders.find((p) => p.agentType === 'codex' && p.isActive);
+            if (activePreview) {
+              const renameDecision = codexDecisions.find((d) => d.tempId === activePreview.tempId && d.action === 'rename');
+              const lookupName = renameDecision?.finalName?.trim() || activePreview.name;
               const foundIdx = newProviderList.findIndex(
-                (p) => (p.name || '').toLowerCase() === activeName.toLowerCase(),
+                (p) => (p.name || '').toLowerCase() === lookupName.toLowerCase(),
               );
               if (foundIdx >= 0) newActiveIdx = foundIdx;
             }
@@ -327,13 +327,13 @@ function registerSystemImportIpc(ipcMain, deps) {
 
           let newActiveIdx = claudeOrigActiveIdx;
           if (applyActiveFromCcSwitch) {
-            const activeName = previewProviders
-              .filter((p) => p.agentType === 'claude' && p.isActive)
-              .map((p) => p.name)
-              .pop();
-            if (activeName) {
+            // Resolve active via tempId->finalName so renames are tracked
+            const activePreview = previewProviders.find((p) => p.agentType === 'claude' && p.isActive);
+            if (activePreview) {
+              const renameDecision = claudeDecisions.find((d) => d.tempId === activePreview.tempId && d.action === 'rename');
+              const lookupName = renameDecision?.finalName?.trim() || activePreview.name;
               const foundIdx = newProviderList.findIndex(
-                (p) => (p.name || '').toLowerCase() === activeName.toLowerCase(),
+                (p) => (p.name || '').toLowerCase() === lookupName.toLowerCase(),
               );
               if (foundIdx >= 0) newActiveIdx = foundIdx;
             }

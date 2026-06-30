@@ -215,10 +215,36 @@ function commitImport(db, {
       d._resolvedProviderId = providerId;
     }
 
+    // Validate rename: must be non-empty and unique (no collision with existing or batch peers)
+    let resolvedName = preview.name;
+    if (d.action === 'rename') {
+      const raw = (d.finalName || '').trim();
+      if (!raw) {
+        warnings.push("Rename: empty name for \"" + preview.name + "\", skipped.");
+        skipped += 1;
+        continue;
+      }
+      const nameLower = raw.toLowerCase();
+      // Check against existing providers
+      if (existingNameMap.has(nameLower)) {
+        warnings.push("Rename: \"" + raw + "\" already exists, \"" + preview.name + "\" skipped.");
+        skipped += 1;
+        continue;
+      }
+      // Check against already-accumulated names in this batch (avoid intra-batch duplicates)
+      const batchNames = new Set(toUpsert.map((p) => (p.name || '').toLowerCase()));
+      if (batchNames.has(nameLower)) {
+        warnings.push("Rename: \"" + raw + "\" conflicts with another imported provider, \"" + preview.name + "\" skipped.");
+        skipped += 1;
+        continue;
+      }
+      resolvedName = raw;
+    }
+
     toUpsert.push({
       id: providerId,
       agentType: preview.agentType || agentType,
-      name: d.action === 'rename' ? (d.finalName || preview.name) : preview.name,
+      name: resolvedName,
       config: preview.config || {},
       metadata: preview.metadata || {},
       isActive: preview.isActive === true,
