@@ -48,7 +48,10 @@ function normalizeKey(key) {
  */
 function eventToKeyCombo(event) {
   // 输入法组合中不触发
-  if (event.isComposing) return null
+  if (event.isComposing) {
+    _debugLog(null, event.key || event.code || '', 'isComposing')
+    return null
+  }
 
   const mods = []
   if (event.ctrlKey) mods.push('Ctrl')
