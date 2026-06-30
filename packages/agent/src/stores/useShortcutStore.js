@@ -14,6 +14,29 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { DEFAULT_SHORTCUTS } from '../settings/defaultShortcuts.js'
 
+// ─── IME 自愈机制 ───
+// 某些 Linux IME (fcitx/ibus) 可能在 compositionend 后不复位 isComposing，
+// 导致所有快捷键永久失效。这里自己维护 composition 状态，不依赖浏览器标志位。
+
+let _isComposing = false
+let _compositionTimer = null
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('compositionstart', () => {
+    _isComposing = true
+    clearTimeout(_compositionTimer)
+    _compositionTimer = null
+  })
+  document.addEventListener('compositionend', () => {
+    // 延迟 300ms 复位：compositionend 后可能紧跟着 keydown（Enter 提交），
+    // 此时快捷键不应触发（用户还在输入流程中）
+    _compositionTimer = setTimeout(() => {
+      _isComposing = false
+      _compositionTimer = null
+    }, 300)
+  })
+}
+
 // ─── 调试开关 ───
 // 在浏览器 console 执行 window.__mc_shortcut_debug = true 即可开启诊断日志
 // 输出格式：[Shortcut] combo="Ctrl+Tab" skip=reason 或 [Shortcut] combo="Ctrl+Tab" FIRE actionId=codehub.nextTab
@@ -47,8 +70,8 @@ function normalizeKey(key) {
  * 返回 null 表示不应触发（纯修饰键、输入法组合中等）
  */
 function eventToKeyCombo(event) {
-  // 输入法组合中不触发
-  if (event.isComposing) {
+  // 输入法组合中不触发（使用自己维护的标志位，避免浏览器 isComposing 卡住）
+  if (_isComposing || event.isComposing) {
     _debugLog(null, event.key || event.code || '', 'isComposing')
     return null
   }
