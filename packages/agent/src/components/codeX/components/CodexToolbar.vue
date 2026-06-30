@@ -26,7 +26,7 @@ const emit = defineEmits(['selectDir', 'switchAgent'])
 function handleCwdClick() {
   if (props.cwd) {
     window.electronAPI?.openFolder?.(props.cwd)
-  } else {
+  } else if (!props.locked) {
     emit('selectDir')
   }
 }

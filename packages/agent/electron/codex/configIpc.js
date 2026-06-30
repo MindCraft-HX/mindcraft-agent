@@ -9,7 +9,6 @@
  */
 
 const { Conf } = require('electron-conf');
-const { dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { appendPreservedCodexConfigSections } = require('./configTomlPreserve');
@@ -223,138 +222,72 @@ function registerConfigIpc(ipcMain, {
     } catch (e) { return { ok: false, message: e.message }; }
   });
 
-  // ---- Import: preview ----
+  // ---- Import Preview (local-cli only) ----
   ipcMain.handle('codex-config-import-preview', async (_, payload) => {
-    const { source, filePath } = payload || {};
-
+    const { source } = payload || {};
+    if (source === 'cc-switch') {
+      return { ok: false, providers: [], warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
+    }
+    if (source !== 'local-cli') {
+      return { ok: false, providers: [], warnings: [`Unsupported source: ${source}`] };
+    }
     try {
- 
- 
- 
- 
- 
- 
-i
-f
- 
-(
-s
-o
-u
-r
-c
-e
- 
-=
-=
-=
- 
-'
-c
-c
--
-s
-w
-i
-t
-c
- 
- 
- 
- 
- 
- 
-i
-f
- 
-(
-s
-o
-u
-r
-c
-e
- 
-=
-=
-=
- 
-'
-c
-c
--
-s
-w
-i
-t
-c
-h
-'
-)
- 
-{
-{
-
-      if (source === 'local-cli') {
-        const tomlRaw = readCodexConfigTomlRaw ? readCodexConfigTomlRaw() : '';
-        const tomlConfig = tomlRaw ? parseSimpleTomlContent(tomlRaw) : {};
-        const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
-        if (!preview.ok) return preview;
-
-        const existing = readProviders ? (readProviders()?.providers || []) : [];
-        preview.providers = annotateConflicts(preview.providers, existing);
-
-        return preview;
+      const tomlRaw = readCodexConfigTomlRaw ? readCodexConfigTomlRaw() : '';
+      let tomlConfig = {};
+      if (tomlRaw) {
+        try { tomlConfig = parseSimpleTomlContent(tomlRaw); } catch (_) { /* keep empty */ }
       }
-
-      return { ok: false, providers: [], warnings: [`Unknown source: ${source}`] };
+      const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
+      if (!preview.ok) return preview;
+      const existing = readProviders ? (readProviders()?.providers || []) : [];
+      preview.providers = annotateConflicts(preview.providers, existing);
+      return preview;
     } catch (e) {
       return { ok: false, providers: [], warnings: [e.message] };
     }
   });
 
-  // ---- Import: commit ----
+  // ---- Import Commit (local-cli only) ----
   ipcMain.handle('codex-config-import-commit', async (_, payload) => {
-    const { source, providers: decisions, filePath, agentType } = payload || {};
-
+    const { source, providers: decisions } = payload || {};
+    if (source === 'cc-switch') {
+      return { ok: false, providers: [], warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
+    }
+    if (source !== 'local-cli') {
+      return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: [`Unsupported source: ${source}`] };
+    }
     try {
-      // Get preview data (re-parse for commit)
-      let previewProviders = [];
-
-      if (source === 'cc-switch') {
-        return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
-      } else if (source === 'local-cli') {
-        const tomlRaw = readCodexConfigTomlRaw ? readCodexConfigTomlRaw() : '';
-        const tomlConfig = tomlRaw ? parseSimpleTomlContent(tomlRaw) : {};
-        const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
-        if (!preview.ok) return preview;
-        previewProviders = preview.providers;
+      // Re-parse for preview
+      const tomlRaw = readCodexConfigTomlRaw ? readCodexConfigTomlRaw() : '';
+      let tomlConfig = {};
+      if (tomlRaw) {
+        try { tomlConfig = parseSimpleTomlContent(tomlRaw); } catch (_) {}
       }
+      const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
+      if (!preview.ok) return { ...preview, imported: 0, skipped: 0, backupPath: '' };
 
-      // Get existing providers for legacy write-back
-      const existing = readProviders ? (readProviders()?.providers || []) : [];
+      const codexStored = readProviders ? readProviders() : null;
+      const existing = codexStored?.providers || [];
+      const activeIdx = codexStored?.activeIdx ?? -1;
 
-      // Open DB
       const db = await getDb({ userDataDir });
 
       const result = commitImport(db, {
-        providers: decisions,
-        previewProviders,
-        existingProviders: existing,
-        agentType: agentType || 'codex',
-        source,
-        sourcePath: filePath || null,
+        providers: decisions || [],
+        previewProviders: preview.providers,
+        existingProviders: existing.map((p, i) => ({
+          id: `codex-${i}`,
+          name: p.name,
+          config: { key: p.key || '', url: p.url || '', model: p.model || '', reasoningEffort: p.reasoningEffort || '', apiFormat: p.apiFormat || '' },
+          isActive: i === activeIdx,
+        })),
+        agentType: 'codex',
+        source: 'local-cli',
+        sourcePath: null,
         userDataDir,
       });
 
-      if (!result.ok) return result;
-
-      // Persist to disk (sql.js is in-memory, must write explicitly)
-      await persistDb();
-
-      // Project to legacy providers.json
-      if (writeProviders) {
-        const existingStored = readProviders ? readProviders() : null;
+      if (result.ok && writeProviders) {
         const newProviderList = result.providers.map((p) => ({
           name: p.name,
           key: p.key || p.config?.key || '',
@@ -362,20 +295,23 @@ h
           model: p.model || p.config?.model || '',
           reasoningEffort: p.reasoningEffort || p.config?.reasoningEffort || '',
           apiFormat: p.apiFormat || p.config?.apiFormat || '',
-          tomlText: existingStored?.providers?.find((ep) => ep.name === p.name)?.tomlText || '',
+          tomlText: existing.find((ep) => ep.name === p.name)?.tomlText || '',
         }));
+
         writeProviders({
           providers: newProviderList,
-          activeIdx: existingStored?.activeIdx ?? 0,
+          activeIdx: Math.max(-1, activeIdx),
         });
       }
 
+      await persistDb();
+
       return {
-        ok: true,
-        imported: result.imported,
-        skipped: result.skipped,
-        backupPath: result.backupPath,
-        warnings: result.warnings,
+        ok: result.ok,
+        imported: result.imported || 0,
+        skipped: result.skipped || 0,
+        backupPath: result.backupPath || '',
+        warnings: result.warnings || [],
       };
     } catch (e) {
       return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: [e.message] };

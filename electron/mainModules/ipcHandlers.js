@@ -144,7 +144,8 @@ function setupIpcHandlers(env, platform) {
 
   // 打开文件夹
   ipcMain.handle("open-folder", async (event, folderPath) => {
-    shell.openPath(folderPath);
+    const err = await shell.openPath(folderPath);
+    return { ok: !err, error: err || '' };
   });
 
   ipcMain.handle("open-file-with-default", async (_event, filePath) => {
@@ -181,6 +182,7 @@ function setupHostIpcHandlers() {
   });
   ipcMain.handle('set-login-item-settings', (_event, openAtLogin) => {
     app.setLoginItemSettings({ openAtLogin });
+    return app.getLoginItemSettings().openAtLogin;
   });
 
   // Open OS system settings (privacy-microphone)

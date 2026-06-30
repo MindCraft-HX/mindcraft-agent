@@ -297,7 +297,8 @@ async function handleAutoStartToggle(event) {
   const enabled = Boolean(event?.target?.checked)
   autoStartEnabled.value = enabled
   try {
-    await window.electronAPI?.setLoginItemSettings?.(enabled)
+    const v = await window.electronAPI?.setLoginItemSettings?.(enabled)
+    if (v !== undefined) autoStartEnabled.value = Boolean(v)
   } catch (_) {
     autoStartEnabled.value = !enabled
   }
