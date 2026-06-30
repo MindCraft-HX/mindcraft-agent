@@ -87,7 +87,6 @@ function getClaudeContextUsageFromUsageLike(usage, model) {
   const inputTokens = toSafeTokenCount(usage?.input_tokens)
   const cacheReadTokens = toSafeTokenCount(usage?.cache_read_input_tokens)
   const cacheCreationTokens = toSafeTokenCount(usage?.cache_creation_input_tokens)
-  if (isNativeClaudeModel(model)) return inputTokens
   return inputTokens + cacheReadTokens + cacheCreationTokens
 }
 
@@ -247,8 +246,8 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, lastAssistantTimestamp, null)
   }
 
-  // Do not derive context from assistant usage: cache-read tokens are billable
-  // per-turn usage, not reliable session context occupancy.
+  // Assistant usage is a per-sample context estimate, not a running total.
+  // Prompt-cache read/create tokens still occupy the context window.
   if (!contextWindow && !lastContextUsage) {
     contextUsage = 0
     contextWindow = 0
@@ -506,8 +505,10 @@ function getCachedUsageData() {
 // ==================== 主导出接口 ====================
 
 const CLAUDE_MODEL_CONTEXT = [
-  ['opus-4-6', 200000], ['opus-4', 200000], ['opus', 200000],
-  ['sonnet-4-6', 200000], ['sonnet-4', 200000], ['sonnet-3-5', 200000], ['sonnet-3', 200000], ['sonnet', 200000],
+  ['fable-5', 1000000], ['mythos-5', 1000000], ['mythos-preview', 1000000],
+  ['opus-4-8', 1000000], ['opus-4-7', 1000000], ['opus-4-6', 1000000],
+  ['opus-4', 200000], ['opus', 200000],
+  ['sonnet-4-6', 1000000], ['sonnet-4', 200000], ['sonnet-3-5', 200000], ['sonnet-3', 200000], ['sonnet', 200000],
   ['haiku-4-5', 200000], ['haiku-4', 200000], ['haiku-3', 200000], ['haiku', 200000],
 ]
 
@@ -619,5 +620,6 @@ module.exports = {
     getLatestSessionCwd,
     pickClaudeTurnDurationMs,
     parseClaudeTimestampMs,
+    getContextWindowForModel,
   },
 }

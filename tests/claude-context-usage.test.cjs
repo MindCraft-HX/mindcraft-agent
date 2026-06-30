@@ -17,7 +17,7 @@ function runNativeClaudeModelTest() {
     cache_creation_input_tokens: 400,
   }, 'claude-sonnet-4-20250514')
 
-  assert.equal(total, 1200)
+  assert.equal(total, 9600)
   assert.equal(__test__.isNativeClaudeModel('claude-sonnet-4-20250514'), true)
 }
 
@@ -55,7 +55,7 @@ function runNativeClaudeUiNormalizationTest() {
     outputTokens: 50,
     cacheReadTokens: 800,
     cacheCreationTokens: 100,
-    contextUsage: 1200,
+    contextUsage: 2100,
   })
 }
 
@@ -81,6 +81,12 @@ function runClaudeTurnDurationTest() {
   assert.equal(__test__.pickClaudeTurnDurationMs(null, 4500, 2800), 2800)
   assert.equal(__test__.pickClaudeTurnDurationMs(5000, 3000, 1200), 1200)
   assert.equal(__test__.pickClaudeTurnDurationMs(null, null, null), null)
+}
+
+function runClaudeContextWindowMappingTest() {
+  assert.equal(__test__.getContextWindowForModel('claude-sonnet-4-6-20260601'), 1000000)
+  assert.equal(__test__.getContextWindowForModel('claude-opus-4-6-20260601'), 1000000)
+  assert.equal(__test__.getContextWindowForModel('claude-sonnet-4-20250514'), 200000)
 }
 
 function runAssistantUsageUpdatesSessionContextTest() {
@@ -112,7 +118,7 @@ function runAssistantUsageUpdatesSessionContextTest() {
   assert.equal(metrics.contextWindow, 200000)
 }
 
-function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
+function runClaudeAgentLiveUsageEmitsContextTest() {
   const metrics = claudeAgentTest.extractClaudeLiveUsageMetricsFromSdkMessage({
     message: {
       model: 'deepseek-v4-pro',
@@ -130,8 +136,9 @@ function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
     outputTokens: 2600,
     cacheReadTokens: 619600,
     cacheCreationTokens: 0,
+    contextUsage: 627500,
+    contextWindow: 200000,
   })
-  assert.equal(Object.prototype.hasOwnProperty.call(metrics, 'contextUsage'), false)
 }
 
 function runCompactBoundaryProvidesContextTest() {
@@ -213,6 +220,42 @@ function runCompactBoundaryThenAssistantUsageUsesLatestContextTest() {
   assert.equal(metrics.contextWindow, 200000)
 }
 
+function runAssistantUsageContextUsesLatestSampleNotAccumulatedTest() {
+  const metrics = __test__.collectClaudeTokenMetricsFromLines([
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:00:00.000Z',
+      model_name: 'claude-sonnet-4-20250514',
+      message: {
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 50,
+          output_tokens: 20,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:01:00.000Z',
+      model_name: 'claude-sonnet-4-20250514',
+      message: {
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 200,
+          cache_read_input_tokens: 2000,
+          cache_creation_input_tokens: 100,
+          output_tokens: 30,
+        },
+      },
+    }),
+  ])
+
+  assert.equal(metrics.contextUsage, 2300)
+  assert.equal(metrics.contextWindow, 200000)
+}
+
 function run() {
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
@@ -220,11 +263,13 @@ function run() {
   runNativeClaudeUiNormalizationTest()
   runThirdPartyClaudeUiNormalizationTest()
   runClaudeTurnDurationTest()
+  runClaudeContextWindowMappingTest()
   runAssistantUsageUpdatesSessionContextTest()
-  runClaudeAgentLiveUsageDoesNotEmitContextTest()
+  runClaudeAgentLiveUsageEmitsContextTest()
   runCompactBoundaryProvidesContextTest()
   runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest()
   runCompactBoundaryThenAssistantUsageUsesLatestContextTest()
+  runAssistantUsageContextUsesLatestSampleNotAccumulatedTest()
   runLatestSessionCwdFromLinesTest()
   console.log('claude context usage tests passed')
 }
