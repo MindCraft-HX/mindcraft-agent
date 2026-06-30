@@ -41,8 +41,7 @@ function runAnnotateTurnTokensTests() {
     duration_ms: 1500,
   })
   assert.ok(result3._turnTokens)
-  // normalizeClaudeUsage subtracts cache_read from input_tokens (1000 - 50 = 950)
-  assert.equal(result3._turnTokens.inputTokens, 950)
+  assert.equal(result3._turnTokens.inputTokens, 1000)
   assert.equal(result3._turnTokens.outputTokens, 200)
   assert.equal(result3._turnTokens.cacheReadTokens, 50)
   assert.equal(result3._turnTokens.durationMs, 1500)

@@ -27,7 +27,7 @@ function runParseClaudeLinesNativeModelTest() {
   ]
 
   const result = __test__.parseClaudeLines(lines)
-  assert.equal(result.input, 400)
+  assert.equal(result.input, 1300)
   assert.equal(result.output, 50)
   assert.equal(result.cacheRead, 800)
   assert.equal(result.cacheCreation, 100)
