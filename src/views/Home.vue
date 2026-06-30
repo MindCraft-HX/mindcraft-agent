@@ -285,7 +285,15 @@ const updateAvailable = ref(false)
 const pendingManualCheckId = ref(0)
 let _cleanupUpdateStatus = null
 
-onMounted(async () => {
+onMounted(() => {
+  // 监听器必须在任何异步 IPC 之前注册，
+  // 否则 getAppVersion/getAppUpdateStatus 等待主进程时用户可能点击按钮，
+  // 导致主进程发出的 app-update-status 事件丢失，按钮永远卡在"检查中…"
+  _cleanupUpdateStatus = window.electronAPI?.onAppUpdateStatus?.((data) => {
+    if (!data) return
+    applyUpdateStatus(data)
+  })
+
   requestAnimationFrame(() => {
     setTimeout(async () => {
       try {
@@ -297,11 +305,6 @@ onMounted(async () => {
         const status = await window.electronAPI?.getAppUpdateStatus()
         applyUpdateStatus(status, { fromSnapshot: true })
       } catch (_) {}
-
-      _cleanupUpdateStatus = window.electronAPI?.onAppUpdateStatus?.((data) => {
-        if (!data) return
-        applyUpdateStatus(data)
-      })
     }, 0)
   })
 })
