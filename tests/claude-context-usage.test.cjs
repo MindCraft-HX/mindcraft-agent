@@ -51,7 +51,7 @@ function runNativeClaudeUiNormalizationTest() {
   }, 'claude-sonnet-4-20250514')
 
   assert.deepEqual(metrics, {
-    inputTokens: 400,
+    inputTokens: 1300,
     outputTokens: 50,
     cacheReadTokens: 800,
     cacheCreationTokens: 100,

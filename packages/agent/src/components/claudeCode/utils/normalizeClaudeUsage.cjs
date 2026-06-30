@@ -23,9 +23,7 @@ function normalizeClaudeUsage(usage, model) {
   const cacheRead = toSafeInt(usage.cache_read_input_tokens)
   const cacheCreation = toSafeInt(usage.cache_creation_input_tokens)
 
-  const inputTokens = isNativeClaudeModel(model)
-    ? Math.max(0, rawInput - cacheRead)
-    : rawInput + cacheCreation
+  const inputTokens = rawInput + cacheCreation
 
   return {
     inputTokens,
