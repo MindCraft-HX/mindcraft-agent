@@ -118,16 +118,18 @@ export function buildDiffLinesEnhanced(oldStr, newStr) {
     }
   }
 
+  // diffArrays change blocks carry ch.value as an array of lines,
+  // not a single string — spread each block into individual buffers.
   for (const ch of changes) {
     if (ch.added) {
       flushCtx()
-      addBuffer.push(ch.value)
+      addBuffer.push(...ch.value)
     } else if (ch.removed) {
       flushCtx()
-      delBuffer.push(ch.value)
+      delBuffer.push(...ch.value)
     } else {
       if (delBuffer.length || addBuffer.length) flushHunk()
-      ctxBuffer.push(ch.value)
+      ctxBuffer.push(...ch.value)
     }
   }
   flushHunk()
