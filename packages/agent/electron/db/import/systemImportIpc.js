@@ -233,9 +233,15 @@ function registerSystemImportIpc(ipcMain, deps) {
           }
         }
 
+        // When user opts out of CC Switch active flag, clear isActive on preview
+        // providers before commitImport writes to SQLite
+        const codexPreviewForCommit = previewProviders
+          .filter((p) => p.agentType === 'codex')
+          .map((p) => applyActiveFromCcSwitch ? p : { ...p, isActive: false });
+
         codexResult = commitImport(db, {
           providers: codexDecisions,
-          previewProviders: previewProviders.filter((p) => p.agentType === 'codex'),
+          previewProviders: codexPreviewForCommit,
           existingProviders: codexExisting.map((p, i) => ({
             id: `codex-${i}`,
             name: p.name,
@@ -290,9 +296,15 @@ function registerSystemImportIpc(ipcMain, deps) {
         const claudeExisting = claudeStored.providers || [];
         const claudeOrigActiveIdx = claudeStored.activeIdx ?? -1;
 
+        // When user opts out of CC Switch active flag, clear isActive on preview
+        // providers before commitImport writes to SQLite
+        const claudePreviewForCommit = previewProviders
+          .filter((p) => p.agentType === 'claude')
+          .map((p) => applyActiveFromCcSwitch ? p : { ...p, isActive: false });
+
         claudeResult = commitImport(db, {
           providers: claudeDecisions,
-          previewProviders: previewProviders.filter((p) => p.agentType === 'claude'),
+          previewProviders: claudePreviewForCommit,
           existingProviders: claudeExisting.map((p, i) => ({
             id: `claude-${i}`,
             name: p.name,

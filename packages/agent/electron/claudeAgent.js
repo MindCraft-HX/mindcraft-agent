@@ -23,6 +23,9 @@ const {
 const { buildFullInstructionPrompt } = require('./sessionInstructionAttachments')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
+const { getMindCraftUserDataDir } = require('./userDataPath')
+const { getDb, persistDb } = require('./db/index')
+const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
@@ -1885,6 +1888,91 @@ function setupClaudeHandlers() {
       return { success: false, error: e?.message || String(e) }
     }
   })
+
+  // ---- Import: preview (local-cli only) ----
+  ipcMain.handle('claude-config-import-preview', async (_, payload) => {
+    const { source } = payload || {};
+
+    if (source === 'cc-switch') {
+      return { ok: false, providers: [], warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
+    }
+    if (source !== 'local-cli') {
+      return { ok: false, providers: [], warnings: [`Unsupported source: ${source}`] };
+    }
+
+    try {
+      const fromFile = readRuntimeConfigFromUserSettingsFile();
+      const cliConfig = { ANTHROPIC_AUTH_TOKEN: fromFile.apiKey || '', ANTHROPIC_BASE_URL: fromFile.baseURL || '' };
+      const preview = previewLocalCliConfig({ agentType: 'claude', cliConfig });
+      if (!preview.ok) return preview;
+
+      const stored = confGet('claudeProviders', { providers: [], activeIdx: -1 });
+      preview.providers = annotateConflicts(preview.providers, stored.providers || []);
+
+      return preview;
+    } catch (e) {
+      return { ok: false, providers: [], warnings: [e.message] };
+    }
+  });
+
+  // ---- Import: commit (local-cli only) ----
+  ipcMain.handle('claude-config-import-commit', async (_, payload) => {
+    const { source, providers: decisions } = payload || {};
+
+    if (source === 'cc-switch') {
+      return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
+    }
+    if (source !== 'local-cli') {
+      return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: [`Unsupported source: ${source}`] };
+    }
+
+    try {
+      const fromFile = readRuntimeConfigFromUserSettingsFile();
+      const cliConfig = { ANTHROPIC_AUTH_TOKEN: fromFile.apiKey || '', ANTHROPIC_BASE_URL: fromFile.baseURL || '' };
+      const preview = previewLocalCliConfig({ agentType: 'claude', cliConfig });
+      if (!preview.ok) return { ...preview, imported: 0, skipped: 0, backupPath: '' };
+
+      const stored = confGet('claudeProviders', { providers: [], activeIdx: -1 });
+      const existing = stored.providers || [];
+
+      const userDataDir = getMindCraftUserDataDir();
+      const db = await getDb({ userDataDir });
+
+      const result = commitImport(db, {
+        providers: decisions || [],
+        previewProviders: preview.providers,
+        existingProviders: existing.map((p, i) => ({ id: `claude-${i}`, name: p.name, config: { key: p.key || '', url: p.url || '', model: '', reasoningEffort: '', apiFormat: '' }, isActive: i === stored.activeIdx })),
+        agentType: 'claude',
+        source: 'local-cli',
+        sourcePath: null,
+        userDataDir,
+      });
+
+      if (!result.ok) return result;
+
+      // Persist to disk (sql.js is in-memory)
+      await persistDb();
+
+      // Project to existing Claude storage
+      const newProviderList = result.providers.map((p) => ({
+        name: p.name,
+        key: p.key || p.config?.key || '',
+        url: p.url || p.config?.url || '',
+        tierModels: (existing.find((ep) => ep.name === p.name)?.tierModels) || {},
+      }));
+      confSet('claudeProviders', { providers: newProviderList, activeIdx: stored.activeIdx });
+
+      return {
+        ok: true,
+        imported: result.imported || 0,
+        skipped: result.skipped || 0,
+        backupPath: '',
+        warnings: result.warnings || [],
+      };
+    } catch (e) {
+      return { ok: false, imported: 0, skipped: 0, backupPath: '', warnings: [e.message] };
+    }
+  });
 
   // ── 简易对话：读取运行时配置（合并 UI 配置 + settings.json）──
   function readChatRuntimeConfig() {

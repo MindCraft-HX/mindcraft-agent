@@ -218,7 +218,7 @@ function commitImport(db, {
     toUpsert.push({
       id: providerId,
       agentType: preview.agentType || agentType,
-      name: preview.name,
+      name: d.action === 'rename' ? (d.finalName || preview.name) : preview.name,
       config: preview.config || {},
       metadata: preview.metadata || {},
       isActive: preview.isActive === true,
