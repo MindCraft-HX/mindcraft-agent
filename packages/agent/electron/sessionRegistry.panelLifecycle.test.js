@@ -45,16 +45,48 @@ function getIndex(userDataDir) {
 test('old panel cache with stale cliSessionId cannot overwrite active binding', () => {
   const userDataDir = makeTempUserData()
 
-  // Step 1: Initial panel sync with cliSessionId 'thread-old'
+  // Step 1: Provider scan establishes record with thread-new as authoritative binding.
+  // Scan source wins over panel (mergeProviderBinding without 'panel' source
+  // uses incoming-wins strategy). This simulates the scenario after a restart
+  // where the scan finds the latest provider session on disk.
+  const enriched = attachRegistrySessionToScanSummary('codex', {
+    id: 'thread-new',
+    cliSessionId: 'thread-new',
+    providerSessionId: 'thread-new',
+    name: 'Codex session',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-new.jsonl',
+    cwd: 'D:/repo',
+    fileSize: 6000,
+    createdAt: 100,
+    updatedAt: 300,
+    runtime: { model: 'gpt-5.1-codex' },
+  }, { id: 'project-1', cwd: 'D:/repo' }, { userDataDir })
+
+  const chatKey = enriched.chatKey
+  assert.ok(chatKey, 'scan produces a chatKey')
+
+  // Verify scan-established binding
+  const afterScan = listSessionRecords({ userDataDir }).find(r => r.chatKey === chatKey)
+  assert.ok(afterScan, 'record exists after scan')
+  assert.equal(afterScan.provider.cliSessionId, 'thread-new',
+    'scan-established binding is thread-new')
+  assert.equal(afterScan.provider.filePath,
+    'C:/Users/demo/.codex/sessions/thread-new.jsonl')
+
+  // Step 2: Stale panel cache carries older cliSessionId (e.g., from before
+  // restart, or from a different window's cached state).
+  // syncPanelStateSessions uses providerBindingSource='panel', which
+  // preserves the existing active binding — panel source cannot overwrite
+  // a scan-established binding.
   syncPanelStateSessions('codex', {
     projects: [{
       id: 'project-1',
       cwd: 'D:/repo',
       chats: [{
         id: 'chat-1',
-        sessionId: 'chat-key-1',
-        name: 'Codex session',
-        cliSessionId: 'thread-old',
+        sessionId: chatKey,
+        name: 'Codex session (stale cache)',
+        cliSessionId: 'thread-old',  // stale — from before the restart
         filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',
         createdAt: 100,
         updatedAt: 200,
@@ -62,50 +94,24 @@ test('old panel cache with stale cliSessionId cannot overwrite active binding', 
     }],
   }, { userDataDir })
 
-  // Step 2: New turn → new cliSessionId (simulates provider binding update)
-  // Recreate a panel sync with new provider info
-  syncPanelStateSessions('codex', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'chat-key-1',
-        name: 'Codex session',
-        cliSessionId: 'thread-new',
-        filePath: 'C:/Users/demo/.codex/sessions/thread-new.jsonl',
-        createdAt: 100,
-        updatedAt: 300,
-      }],
-    }],
-  }, { userDataDir })
-
-  // Step 3: Stale panel cache (from before restart) tries to sync old data
-  // syncPanelStateSessions uses providerBindingSource='panel', which
-  // should merge gently and not overwrite the active binding
-  syncPanelStateSessions('codex', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'chat-key-1',
-        name: 'Codex session (stale cache)',
-        cliSessionId: 'thread-old',  // stale
-        filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',  // stale
-        createdAt: 100,
-        updatedAt: 200,
-      }],
-    }],
-  }, { userDataDir })
-
-  // Assert: the active binding (thread-new) should be preserved
+  // Assert: the scan-established binding (thread-new) must survive stale panel sync
   const records = listSessionRecords({ userDataDir })
-  const record = records.find(r => r.chatKey === 'chat-key-1')
-  assert.ok(record, 'record still exists after stale panel sync')
-  // Panel sync with providerBindingSource='panel' preserves existing active
-  // provider bindings. The exact behavior depends on merge strategy.
   assert.equal(records.length, 1, 'single record — no duplicate from stale cache')
+
+  const finalRecord = records.find(r => r.chatKey === chatKey)
+  assert.ok(finalRecord, 'record still exists after stale panel sync')
+  assert.equal(finalRecord.provider.cliSessionId, 'thread-new',
+    'active binding must remain thread-new — stale panel cannot overwrite')
+  assert.equal(finalRecord.provider.filePath,
+    'C:/Users/demo/.codex/sessions/thread-new.jsonl',
+    'active filePath must remain thread-new')
+
+  // Index must reflect active binding, not stale cache
+  const index = getIndex(userDataDir)
+  assert.ok(index.providers['codex:session:thread-new'],
+    'index must contain codex:session:thread-new')
+  assert.equal(index.providers['codex:session:thread-old'], undefined,
+    'index must NOT contain stale codex:session:thread-old')
 })
 
 test('stale panel cache after provider unbind does not create orphan record', () => {

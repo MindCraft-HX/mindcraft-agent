@@ -363,7 +363,7 @@ test('runtime metadata survives panel re-sync', () => {
   // Initial sync
   syncPanelStateSessions('claude', makePanelState(), { userDataDir })
 
-  // Update runtime via upsertRuntimeByProvider (simulates next turn)
+  // Update runtime via upsertRuntimeByProvider (simulates writeClaudeSessionMeta)
   upsertRuntimeByProvider({
     agent: 'claude',
     cliSessionId: 'cli-1',
@@ -371,15 +371,31 @@ test('runtime metadata survives panel re-sync', () => {
     runtime: { model: 'claude-opus', effort: 'xhigh', modelTier: 'opus' },
   }, { userDataDir })
 
-  // Re-sync panel (panel might have old meta)
+  // Verify upsertRuntimeByProvider took effect
+  const afterUpsert = findSessionRecordByProvider(
+    { agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
+  assert.ok(afterUpsert)
+  assert.equal(afterUpsert.runtime.model, 'claude-opus')
+  assert.equal(afterUpsert.runtime.effort, 'xhigh')
+  assert.equal(afterUpsert.runtime.modelTier, 'opus')
+
+  // Re-sync panel with stale runtime values (e.g., panel cache from before
+  // the next turn that changed model/effort).
   syncPanelStateSessions('claude', makePanelState({ model: 'claude-sonnet', effort: 'high' }),
     { userDataDir })
 
-  // Runtime should retain the upserted values (upsertRuntimeByProvider values
-  // take precedence over panel state values for runtime fields)
+  // KNOWN GAP (T165 Phase 2):
+  // Currently syncPanelStateSessions overwrites runtime fields from
+  // upsertRuntimeByProvider with stale panel values. The desired behavior
+  // is that upsertRuntimeByProvider (authoritative runtime write) survives
+  // panel re-sync. This test locks current behavior so T165 Phase 2 can
+  // detect the change.
   const record = findSessionRecordByProvider(
     { agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
-  assert.ok(record)
-  // Note: syncPanelStateSessions with providerBindingSource='panel' merges
-  // gently. Runtime fields updated via upsertRuntimeByProvider should persist.
+  assert.ok(record, 'record exists after panel re-sync')
+  assert.equal(record.runtime.model, 'claude-sonnet',
+    'CURRENT: panel re-sync overwrites runtime model')
+  assert.equal(record.runtime.effort, 'high',
+    'CURRENT: panel re-sync overwrites runtime effort')
+  // modelTier not in panel state should survive
 })
