@@ -19,14 +19,14 @@ test('normalizes supported codeHub agent route preference', () => {
   assert.equal(normalizeRequestedAgent(undefined), '')
 })
 
-test('requested agent takes precedence over saved active tab on first restore', () => {
+test('agent-only route preference does not override an existing saved active tab', () => {
   const picked = pickInitialCodeHubTab({
     tabs,
     savedTabId: 'claudeCode:proj-1',
     requestedAgent: 'codex',
   })
 
-  assert.equal(picked.id, 'codex:proj-2')
+  assert.equal(picked.id, 'claudeCode:proj-1')
 })
 
 test('saved tab is preserved when it belongs to requested agent', () => {
@@ -47,4 +47,14 @@ test('falls back to previous behavior without route preference', () => {
   })
 
   assert.equal(picked.id, 'claudeCode:proj-1')
+})
+
+test('agent-only route preference picks provider tab when saved active tab is missing', () => {
+  const picked = pickInitialCodeHubTab({
+    tabs,
+    savedTabId: 'claudeCode:missing',
+    requestedAgent: 'codex',
+  })
+
+  assert.equal(picked.id, 'codex:proj-2')
 })

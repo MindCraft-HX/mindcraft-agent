@@ -9,7 +9,7 @@ export function normalizeRequestedAgent(value) {
 export function pickInitialCodeHubTab({ tabs = [], savedTabId = '', requestedAgent = '' } = {}) {
   const agent = normalizeRequestedAgent(requestedAgent)
   const saved = tabs.find(t => t.id === savedTabId)
-  if (saved && (!agent || saved.agentType === agent)) return saved
+  if (saved) return saved
   if (agent) {
     const agentTabs = tabs.filter(t => t.agentType === agent)
     if (agentTabs.length) return agentTabs[agentTabs.length - 1]
