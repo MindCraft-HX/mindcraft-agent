@@ -672,11 +672,55 @@ function setupClaudeHandlers() {
     } catch {}
     return {}
   }
+  function sanitizeClaudeSettingsForWrite(settings = {}, { preserveExistingInternal = false } = {}) {
+    const next = settings && typeof settings === 'object' && !Array.isArray(settings)
+      ? { ...settings }
+      : {}
+    if (next.permissionPolicy !== undefined) {
+      if (!preserveExistingInternal || !internalConf.get('claudePermissionPolicy')) {
+        internalConf.set('claudePermissionPolicy', next.permissionPolicy)
+      }
+      delete next.permissionPolicy
+    }
+    if (next.language && ['zh-CN', 'en-US'].includes(next.language)) {
+      if (!preserveExistingInternal || !internalConf.get('claudeLanguage')) {
+        internalConf.set('claudeLanguage', next.language)
+      }
+      delete next.language
+    }
+    if (next.pathToClaudeCodeExecutable !== undefined) {
+      if (!preserveExistingInternal || !internalConf.get('claudeExecutablePath')) {
+        internalConf.set('claudeExecutablePath', next.pathToClaudeCodeExecutable)
+      }
+      delete next.pathToClaudeCodeExecutable
+    }
+    if (next.gitMirrorUrl !== undefined) {
+      if (!preserveExistingInternal || !internalConf.get('gitMirrorUrl')) {
+        internalConf.set('gitMirrorUrl', String(next.gitMirrorUrl || '').trim())
+      }
+      delete next.gitMirrorUrl
+    }
+    if (next.memoryInjectMode !== undefined) {
+      if (!preserveExistingInternal || !internalConf.get('claudeMemoryInjectMode')) {
+        internalConf.set('claudeMemoryInjectMode', next.memoryInjectMode)
+      }
+      delete next.memoryInjectMode
+    }
+    if (next.theme !== undefined) {
+      delete next.theme
+    }
+    if (next.effortLevel === 'max') {
+      next.effortLevel = 'xhigh'
+    }
+    return next
+  }
   /** 写入全局 settings.json */
   function writeGlobalSettings(obj) {
     const settingsDir = path.join(os.homedir(), '.claude')
     if (!fs.existsSync(settingsDir)) fs.mkdirSync(settingsDir, { recursive: true })
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(obj, null, 2), 'utf8')
+    fs.writeFileSync(getSettingsPath(), JSON.stringify(sanitizeClaudeSettingsForWrite(obj, {
+      preserveExistingInternal: true,
+    }), null, 2), 'utf8')
   }
   setClaudeConfRef({ readGlobalSettings, writeGlobalSettings })
 
@@ -1464,7 +1508,9 @@ function setupClaudeHandlers() {
       if (fs.existsSync(settingsPath)) {
         try { existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch (_) {}
       }
-      const merged = { ...existing, ...patch }
+      const merged = sanitizeClaudeSettingsForWrite({ ...existing, ...patch }, {
+        preserveExistingInternal: true,
+      })
       // 原子写入：先写临时文件，再 rename，防止并发写损坏
       const tmp = `${settingsPath}.${process.pid}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8')
@@ -1497,6 +1543,9 @@ function setupClaudeHandlers() {
       if (!next || typeof next !== 'object' || Array.isArray(next)) {
         throw new Error('Invalid settings.json content')
       }
+      next = sanitizeClaudeSettingsForWrite(next, {
+        preserveExistingInternal: true,
+      })
       const finalContent = JSON.stringify(next, null, 2) + '\n'
       if (previous === finalContent) return { ok: true, changed: false, backupPath: '' }
       let backupPath = ''
@@ -1531,6 +1580,11 @@ function setupClaudeHandlers() {
       : ''
     const osLine = `Host platform: ${process.platform} (${os.arch()}).`
     return [langLine, effortLine, cwdLine, osLine].filter(Boolean).join('\n')
+  }
+
+  function readMemoryInjectMode() {
+    const mode = internalConf.get('claudeMemoryInjectMode', (readSystemSettingsJson() || {}).memoryInjectMode || 'system')
+    return ['system', 'user', 'off'].includes(mode) ? mode : 'system'
   }
 
   function readPrimaryModel() {
@@ -2379,7 +2433,7 @@ function setupClaudeHandlers() {
           const { query } = await loadClaudeAgentSdk()
           // Memory user 模式注入：在首条消息前加上 memory 内容
           let effectivePrompt = prompt
-          const memInjectMode = (readSystemSettingsJson() || {}).memoryInjectMode || 'system'
+          const memInjectMode = readMemoryInjectMode()
           if (memInjectMode === 'user' && !rid) {
             const memBlock = claudeMemory.buildMemoryPrompt(resolvedCwd)
             if (memBlock) effectivePrompt = memBlock + '\n\n' + (prompt || '')
@@ -2432,7 +2486,7 @@ function setupClaudeHandlers() {
                     ? '当前模式为 Plan mode：在执行任何文件写入、修改或命令执行之前，必须先输出一份清晰的实施计划（包含步骤、涉及文件、预期效果）。计划输出后，可以按步骤逐步执行，不要一次性批量修改。'
                     : '',
                 ]
-                const injectMode = (readSystemSettingsJson() || {}).memoryInjectMode || 'system'
+                const injectMode = readMemoryInjectMode()
                 if (injectMode === 'system') {
                   const memoryBlock = claudeMemory.buildMemoryPrompt(resolvedCwd)
                   if (memoryBlock) parts.push(memoryBlock)
@@ -3518,20 +3572,18 @@ function setupClaudeHandlers() {
   })
 
   ipcMain.handle('claude-memory-get-inject-mode', () => {
-    const sj = readSystemSettingsJson() || {}
-    return sj.memoryInjectMode || 'system'
+    return readMemoryInjectMode()
   })
 
   ipcMain.handle('claude-memory-set-inject-mode', (_, mode) => {
     const valid = ['system', 'user', 'off']
     if (!valid.includes(mode)) return false
-    const sj = readSystemSettingsJson() || {}
-    sj.memoryInjectMode = mode
     try {
-      const claudeDir = path.join(os.homedir(), '.claude')
-      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
-      const settingsPath = path.join(claudeDir, 'settings.json')
-      fs.writeFileSync(settingsPath, JSON.stringify(sj, null, 2), 'utf8')
+      internalConf.set('claudeMemoryInjectMode', mode)
+      const sj = readSystemSettingsJson() || {}
+      if (sj.memoryInjectMode !== undefined) {
+        writeGlobalSettings(sj)
+      }
       return true
     } catch (_) { return false }
   })

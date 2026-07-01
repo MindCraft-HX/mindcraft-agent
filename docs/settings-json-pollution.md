@@ -1,9 +1,9 @@
 # `~/.claude/settings.json` 污染分析
 
-> 创建：2026-06-15 | 最后更新：2026-06-16 (v3)
+> 创建：2026-06-15 | 最后更新：2026-07-01 (v4)
 > 关联：v1.0.7+ ClaudeCode 工具栏多模块异常
 > Schema 来源：`node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` Settings interface（权威来源，非网络文档）
-> **状态**：T118/T119 实施完成
+> **状态**：T118/T119 实施完成；2026-07-01 补强写入净化防线
 
 ## 验证方法
 
@@ -65,7 +65,8 @@ autoCompactWindow?: number;
 | `permissionPolicy` | 字段污染 | ❌ | `claude-internal.json` | ✅ |
 | `pathToClaudeCodeExecutable` | 字段污染 | ❌ | `claude-internal.json` | ✅ |
 | `theme` | 字段污染 | ❌ | `theme.json` | ✅ |
-| `gitMirrorUrl` (CodeX 侧) | 字段污染 | ❌ | `claude-internal.json` | ✅ |
+| `gitMirrorUrl` | 字段污染 | ❌ | `claude-internal.json` | ✅ |
+| `memoryInjectMode` | 字段污染 | ❌ | `claude-internal.json` | ✅ |
 | `language` | **语义冲突** | ✅ | App UI 语言迁出，SDK 回复语言保留 | ✅ |
 
 ### 值纠正（1 个）→ 已修正
@@ -121,6 +122,17 @@ autoCompactWindow?: number;
 
 - **位置**：`codexAgent.js` `getGitMirrorUrl()` 改为从 `claude-internal.json` 读取，fallback settings.json
 
+### 7b. 写入净化防线（2026-07-01）✅
+
+发现问题：`claudeReadSettingsJson()` 会为了 UI 兼容把 internal `gitMirrorUrl` 混入返回对象。如果后续修复/导入流程把这个对象整体写回 `~/.claude/settings.json`，虚拟字段可能重新污染官方配置。
+
+修复：
+- 新增 `sanitizeClaudeSettingsForWrite()`，所有写入官方 `settings.json` 的路径统一剥离 MindCraft 自有字段。
+- `claude-patch-settings-json`、`claude-repair-settings-json`、`writeGlobalSettings()` 写入前均经过净化。
+- `gitMirrorUrl` 在净化时同步到 `internalConf.gitMirrorUrl`，但不落入官方文件。
+- `memoryInjectMode` 也迁到 `internalConf.claudeMemoryInjectMode`，旧 settings 中的值仅作为兼容读取并在写入时清理。
+- 新增 `tests/claude-settings-boundary.test.cjs` 防止回归。
+
 ### 8. 死代码清理 ✅
 
 - `APISetting.vue` `writeSettingsJson()` — 已删除
@@ -143,6 +155,8 @@ autoCompactWindow?: number;
 internalConf.get('claudePermissionPolicy') → s.permissionPolicy → 'ask'
 internalConf.get('claudeLanguage')          → s.language          → 'zh-CN'
 internalConf.get('claudeExecutablePath')    → s.pathToClaudeCodeExecutable → ''
+internalConf.get('gitMirrorUrl')            → s.gitMirrorUrl      → ''
+internalConf.get('claudeMemoryInjectMode')  → s.memoryInjectMode  → 'system'
 ```
 
 ---
@@ -163,6 +177,7 @@ SDK 配置     → ~/.claude/settings.json
 - 写入 SDK 字段时使用 SDK 认可的值域
 - `language` 字段语义冲突：App UI 语言已迁到 `claude-internal.json`，与 SDK 的回复语言分离
 - 所有对 `~/.claude/settings.json` 的读写通过统一入口（`confSet`/`confGet`），禁止新增直接读写路径
+- 即使 UI 需要读取合并视图，写回官方 `settings.json` 前也必须经过 `sanitizeClaudeSettingsForWrite()`
 
 ## 版本记录
 
@@ -171,3 +186,4 @@ SDK 配置     → ~/.claude/settings.json
 | v1 | 2026-06-15 | 初版，基于网络文档 |
 | v2 | 2026-06-16 | 基于 `sdk.d.ts` 重新验证；纠正 `autoCompactWindow` 判定；纠正 `effortLevel:max` 判定 |
 | v3 | 2026-06-16 | T118/T119 实施完成：所有污染字段已迁移，effortLevel 已修正，死代码已清理，API 已补全 |
+| v4 | 2026-07-01 | 补强官方 settings 写入净化防线；`gitMirrorUrl` / `memoryInjectMode` 写入前统一迁到 internalConf |
