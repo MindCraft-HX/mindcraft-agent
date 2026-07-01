@@ -206,6 +206,9 @@ function createAgentBridge(ipcRenderer) {
   configImportPickFile: () => ipcRenderer.invoke('config-import-pick-file'),
   configImportPreview: (payload) => ipcRenderer.invoke('config-import-preview', payload),
   configImportCommit: (payload) => ipcRenderer.invoke('config-import-commit', payload),
+  // System-level config export (mindcraft-providers.sql)
+  configExportPreview: () => ipcRenderer.invoke('config-export-preview'),
+  configExportSave: (payload) => ipcRenderer.invoke('config-export-save', payload),
   codexGetSandboxMode: () => ipcRenderer.invoke('codex-get-sandbox-mode'),
   codexSetSandboxMode: (mode) => ipcRenderer.invoke('codex-set-sandbox-mode', mode),
   codexGetProjectSettings: (cwd) => ipcRenderer.invoke('codex-get-project-settings', { cwd }),

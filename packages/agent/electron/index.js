@@ -8,6 +8,7 @@ const { setupHomeMetricsHandlers } = require('./homeMetrics')
 const { registerSessionInstructionIpc } = require('./sessionInstructionIpc')
 const { setLocale } = require('./localeHelper')
 const { registerSystemImportIpc } = require('./db/import/systemImportIpc')
+const { registerSystemExportIpc } = require('./db/export/systemExportIpc')
 
 let localeConf = null
 
@@ -30,7 +31,7 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
     const claudeStorage = getClaudeProviderStorage()
     const codexStorage = getCodexProviderStorage()
     if (claudeStorage && codexStorage) {
-      registerSystemImportIpc(targetIpcMain, {
+      const deps = {
         readCodexProviders: codexStorage.readProviders,
         writeCodexProviders: codexStorage.writeProviders,
         claudeGetConfig: claudeStorage.confGet,
@@ -38,7 +39,9 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
         userDataDir: claudeStorage.getMindCraftUserDataDir(),
         readCodexConfigTomlRaw: codexStorage.readCodexConfigTomlRaw,
         readClaudeRuntimeConfig: claudeStorage.readRuntimeConfigFromUserSettingsFile,
-      })
+      }
+      registerSystemImportIpc(targetIpcMain, deps)
+      registerSystemExportIpc(targetIpcMain, deps)
     }
   }
 
