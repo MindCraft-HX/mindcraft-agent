@@ -135,6 +135,36 @@ describe('buildClaudeSettingsConfig', () => {
     const cfg = buildClaudeSettingsConfig(provider, { includeSecrets: false });
     assert.strictEqual(cfg.env.ANTHROPIC_AUTH_TOKEN, '');
   });
+
+  it('redacts ANTHROPIC_AUTH_TOKEN leaked from config.env', () => {
+    const provider = {
+      key: '',
+      config: {
+        env: {
+          ANTHROPIC_AUTH_TOKEN: 'sk-old-auth',
+          ANTHROPIC_BASE_URL: 'https://api.example.com',
+        },
+      },
+    };
+    const cfg = buildClaudeSettingsConfig(provider, { includeSecrets: false });
+    assert.strictEqual(cfg.env.ANTHROPIC_AUTH_TOKEN, '');
+    assert.strictEqual(cfg.env.ANTHROPIC_BASE_URL, 'https://api.example.com');
+  });
+
+  it('redacts ANTHROPIC_API_KEY leaked from config.env', () => {
+    const provider = {
+      key: '',
+      config: {
+        env: {
+          ANTHROPIC_API_KEY: 'sk-old-api',
+          ANTHROPIC_BASE_URL: 'https://api.example.com',
+        },
+      },
+    };
+    const cfg = buildClaudeSettingsConfig(provider, { includeSecrets: false });
+    assert.strictEqual(cfg.env.ANTHROPIC_API_KEY, '');
+    assert.strictEqual(cfg.env.ANTHROPIC_BASE_URL, 'https://api.example.com');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -257,6 +287,27 @@ describe('buildProviderSqlExport', () => {
     // Should NOT contain the secret keys
     assert.ok(!sql.includes('sk-secret'));
     assert.ok(!sql.includes('sk-secret2'));
+  });
+
+  it('redacts keys stored in config.env (not just provider.key)', () => {
+    const sql = buildProviderSqlExport({
+      includeSecrets: false,
+      claudeProviders: [{
+        name: 'C',
+        key: '',
+        config: {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: 'sk-env-auth',
+            ANTHROPIC_API_KEY: 'sk-env-api',
+            ANTHROPIC_BASE_URL: 'https://api.example.com',
+          },
+        },
+        selectedTier: 'sonnet',
+        tierModels: {},
+      }],
+    });
+    assert.ok(!sql.includes('sk-env-auth'), 'ANTHROPIC_AUTH_TOKEN should be redacted');
+    assert.ok(!sql.includes('sk-env-api'), 'ANTHROPIC_API_KEY should be redacted');
   });
 
   it('exports is_current when includeActive is true', () => {

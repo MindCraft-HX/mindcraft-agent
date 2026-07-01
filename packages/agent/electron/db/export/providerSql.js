@@ -254,6 +254,14 @@ function buildClaudeSettingsConfig(provider, { includeSecrets }) {
   }
   if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
 
+  // When redacting, explicitly wipe any keys that may have leaked from config.env.
+  // The logic above uses `apiKey || env.OLD_VALUE` which preserves old values
+  // when apiKey is ''; this block ensures both fields are blanked.
+  if (!includeSecrets) {
+    env.ANTHROPIC_AUTH_TOKEN = '';
+    env.ANTHROPIC_API_KEY = '';
+  }
+
   // Tier model env vars — map from tierModels UI slots
   // CC Switch doesn't have a specific "reasoning" tier env var;
   // reasoning models go into the ANTHROPIC_MODEL top-level field when selected.

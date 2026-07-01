@@ -54,7 +54,12 @@ function registerSystemExportIpc(ipcMain, deps) {
         claudeCount: claudeStored.length,
         codexActiveIdx,
         claudeActiveIdx,
-        hasSecrets: claudeStored.some((p) => p.key) || codexStored.some((p) => p.key),
+        hasSecrets: claudeStored.some((p) => {
+          if (p.key) return true;
+          const env = p.config?.env || {};
+          return (typeof env.ANTHROPIC_AUTH_TOKEN === 'string' && env.ANTHROPIC_AUTH_TOKEN.length > 0)
+              || (typeof env.ANTHROPIC_API_KEY === 'string' && env.ANTHROPIC_API_KEY.length > 0);
+        }) || codexStored.some((p) => p.key),
         incompleteCount: incompleteClaude.length + incompleteCodex.length,
         incompleteNames: [
           ...incompleteClaude.map((p) => p.name || '(unnamed)'),
