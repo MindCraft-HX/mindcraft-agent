@@ -160,7 +160,6 @@ function cancelImportPreview() {
 
 async function commitImport() {
   const decisions = importAllProviders.value
-    .filter((p) => p._action !== 'skip')
     .map((p) => ({
       tempId: p.tempId,
       action: p._action,

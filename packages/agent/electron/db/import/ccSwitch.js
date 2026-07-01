@@ -228,7 +228,7 @@ function mapCcSwitchRow(row, source) {
     } else if (tier === 'haiku') {
       model = env.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-3-5-haiku-20241022';
     } else {
-      model = settings.model || '';
+      model = settings.model || env.ANTHROPIC_MODEL || '';
     }
     reasoningEffort = '';
     apiFormat = meta.apiFormat || 'anthropic';
