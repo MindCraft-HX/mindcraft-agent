@@ -471,6 +471,12 @@ function upsertSessionRecord(record, options = {}) {
   removeIndexReferences(index, next.chatKey)
   if (canonicalRecord && record.chatKey && record.chatKey !== canonicalRecord.chatKey) {
     removeIndexReferences(index, record.chatKey)
+    // 合并到 canonical 记录后，删除旧的孤立会话文件，
+    // 避免 listSessionRecords() 扫描出重复记录。
+    try {
+      const orphanPath = getSessionRecordPath(record.chatKey, options)
+      if (orphanPath && fs.existsSync(orphanPath)) fs.unlinkSync(orphanPath)
+    } catch (_) {}
   }
   index.sessions[next.chatKey] = {
     agent: next.agent,
@@ -961,6 +967,17 @@ function restorePanelStateFromSessionRegistry(agent, panelState = {}, options = 
     if (!Array.isArray(project.chats)) project.chats = []
     const exists = project.chats.some(chat => normalizeString(chat?.sessionId) === record.chatKey)
     if (exists) continue
+    // 防止 provider 相同的孤立记录被当作新会话加入（例：upsertSessionRecord
+    // 合并后遗留的旧 chatKey 文件指向同一 JSONL）
+    const providerPath = normalizeProviderPath(record.provider?.filePath)
+    const providerCliId = normalizeString(record.provider?.cliSessionId)
+    if (providerPath || providerCliId) {
+      const sameProvider = project.chats.some(chat =>
+        (providerPath && normalizeProviderPath(chat.filePath) === providerPath)
+        || (providerCliId && normalizeString(chat.cliSessionId) === providerCliId)
+      )
+      if (sameProvider) continue
+    }
 
     const panelChat = buildPanelChatFromRecord(record)
     if (!panelChat) continue
