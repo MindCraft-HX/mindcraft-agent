@@ -145,6 +145,8 @@ const CORE_CHANNELS = Object.freeze({
   CONFIG_IMPORT_PICK_FILE: 'config-import-pick-file',
   CONFIG_IMPORT_PREVIEW: 'config-import-preview',
   CONFIG_IMPORT_COMMIT: 'config-import-commit',
+  CONFIG_EXPORT_PREVIEW: 'config-export-preview',
+  CONFIG_EXPORT_SAVE: 'config-export-save',
 
   // Cross-agent
   SKILLS_INSTALL_PROGRESS: 'skills-install-progress',

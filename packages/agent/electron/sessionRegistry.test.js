@@ -21,6 +21,7 @@ const {
   attachRegistrySessionToScanSummary,
   upsertSessionFromProviderScan,
   upsertRuntimeByProvider,
+  upsertSessionRecord,
   normalizeSessionInstructionInput,
 } = require('./sessionRegistry')
 
@@ -386,6 +387,64 @@ test('upsertSessionRecord keeps one canonical record per provider identity', () 
   const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
   assert.equal(index.providers['codex:session:thread-1'], 'chat-key-canonical')
   assert.equal(index.sessions['thread-1'], undefined)
+})
+
+test('upsertSessionRecord deletes orphan record file after provider merge', () => {
+  const userDataDir = makeTempUserData()
+  const providerFilePath = 'C:/Users/demo/.codex/sessions/thread-1.jsonl'
+
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-canonical',
+        name: 'Canonical user title',
+        _userRenamed: true,
+        cliSessionId: 'thread-1',
+        filePath: providerFilePath,
+      }],
+    }],
+  }, { userDataDir })
+
+  const orphanPath = getSessionRecordPath('thread-1', { userDataDir })
+  fs.writeFileSync(orphanPath, JSON.stringify({
+    schemaVersion: 1,
+    chatKey: 'thread-1',
+    agent: 'codex',
+    projectId: 'project-1',
+    cwd: 'D:/repo',
+    title: 'Orphan provider title',
+    titleSource: 'provider',
+    provider: {
+      cliSessionId: 'thread-1',
+      filePath: providerFilePath,
+    },
+    createdAt: 100,
+    updatedAt: 200,
+  }, null, 2), 'utf8')
+  assert.equal(fs.existsSync(orphanPath), true)
+
+  const ok = upsertSessionRecord({
+    chatKey: 'thread-1',
+    agent: 'codex',
+    projectId: 'project-1',
+    cwd: 'D:/repo',
+    title: 'Scanned provider title',
+    titleSource: 'provider',
+    provider: {
+      cliSessionId: 'thread-1',
+      filePath: providerFilePath,
+    },
+  }, { userDataDir })
+
+  assert.equal(ok, true)
+  assert.equal(fs.existsSync(orphanPath), false)
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records.length, 1)
+  assert.equal(records[0].chatKey, 'chat-key-canonical')
+  assert.equal(records[0].title, 'Canonical user title')
+  assert.equal(records[0].titleSource, 'user')
 })
 
 test('upsertSessionFromProviderScan generates MindCraft chatKey instead of using provider sessionId', () => {
