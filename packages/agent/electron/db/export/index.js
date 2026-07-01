@@ -6,7 +6,7 @@ const {
   buildCodexProviderInsert,
   buildCodexToml,
   escapeSqlLiteral,
-} = require('./ccSwitch');
+} = require('./providerSql');
 
 module.exports = {
   buildProviderSqlExport,

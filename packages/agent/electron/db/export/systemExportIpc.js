@@ -5,7 +5,7 @@
  *
  * These operate at the system level — reading both CodeX and Claude provider
  * state via the same deps as systemImportIpc, then delegating to pure SQL
- * generation in db/export/ccSwitch.js.
+ * generation in db/export/providerSql.js.
  *
  * Handlers:
  *  - config-export-preview  → read providers, return counts + risk info
@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const { dialog } = require('electron');
-const { buildProviderSqlExport } = require('./ccSwitch');
+const { buildProviderSqlExport } = require('./providerSql');
 
 // ---------------------------------------------------------------------------
 // Registration

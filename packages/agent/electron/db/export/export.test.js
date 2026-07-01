@@ -12,7 +12,7 @@ const {
   buildCodexToml,
   buildClaudeSettingsConfig,
   escapeSqlLiteral,
-} = require('./ccSwitch');
+} = require('./providerSql');
 
 const { parseCcSwitchExport } = require('../import/ccSwitch');
 
