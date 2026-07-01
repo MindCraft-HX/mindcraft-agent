@@ -33,7 +33,7 @@
         </span>
         <button class="codehub-tab-close" @click.stop="closeTab(tab)" :title="$t('codehub.close')">×</button>
       </div>
-      <button class="codehub-tab-add" @click="showAgentPicker = true" :title="$t('codehub.newTab')">
+      <button class="codehub-tab-add" @click="openAgentPicker('user')" :title="$t('codehub.newTab')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
       </button>
     </div>
@@ -76,17 +76,17 @@
           <div class="codehub-empty-icon mindcraft-flow-win-iconfont icon-mindcraft-claude1"></div>
           <div class="codehub-empty-title">{{ $t('codehub.title') }}</div>
           <div class="codehub-empty-sub">{{ $t('codehub.selectHint') }}</div>
-          <button class="codehub-empty-btn" @click="showAgentPicker = true">{{ $t('codehub.selectAgentBtn') }}</button>
+          <button class="codehub-empty-btn" @click="openAgentPicker('user')">{{ $t('codehub.selectAgentBtn') }}</button>
         </div>
       </div>
     </div>
 
     <!-- ===== 内联 Agent 选择界面（只在对话区域显示） ===== -->
-    <div v-if="showAgentPicker" class="codehub-picker-local" @click.self="showAgentPicker = false">
+    <div v-if="showAgentPicker" class="codehub-picker-local" @click.self="closeAgentPicker">
       <div class="codehub-picker-card" :class="themeClass" @click.stop>
         <div class="codehub-picker-head">
           <div class="codehub-picker-title">{{ $t('codehub.selectAgent') }}</div>
-          <button v-if="unifiedTabs.length > 0" class="codehub-picker-close" @click="showAgentPicker = false">×</button>
+          <button v-if="unifiedTabs.length > 0" class="codehub-picker-close" @click="closeAgentPicker">×</button>
         </div>
         <div class="codehub-picker-list">
           <div v-for="agent in agents" :key="agent.key"
@@ -119,6 +119,7 @@ import SharedSettings from './SharedSettings.vue'
 import { normalizeRequestedAgent, pickInitialCodeHubTab } from './agentRoutePreference.mjs'
 import { resolveCodeHubSyncedTabId } from './activeTabSync.mjs'
 import { orderCodeHubTabs, reconcileCodeHubTabOrder } from './tabOrder.mjs'
+import { shouldAutoShowAgentPicker } from './agentPickerPrompt.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
 
@@ -131,6 +132,7 @@ const { agents, agentKeys, getAgentMeta, isRegistered, createMountedMap } = useA
 const panelRefs = reactive({})
 const sharedSettingsRef = ref(null)
 const showAgentPicker = ref(false)
+const agentPickerOpenReason = ref(null)
 const activeTabId = ref(null)
 const tabOrder = ref(loadTabOrder())
 const { register } = useKeyboardShortcuts()
@@ -187,6 +189,36 @@ function loadTabOrder() {
 
 function saveTabOrder() {
   localStorage.setItem('codehub_tab_order', JSON.stringify(tabOrder.value))
+}
+
+function openAgentPicker(reason = 'user') {
+  agentPickerOpenReason.value = reason
+  showAgentPicker.value = true
+}
+
+function closeAgentPicker() {
+  agentPickerOpenReason.value = null
+  showAgentPicker.value = false
+}
+
+function restoreHints() {
+  return {
+    savedTabId: localStorage.getItem('codehub_active_tab') || '',
+    requestedAgent: normalizeRequestedAgent(route.query?.agent),
+    requestedProjectId: route.query?.projectId || '',
+    tabOrder: tabOrder.value,
+  }
+}
+
+function maybeAutoOpenAgentPicker() {
+  if (shouldAutoShowAgentPicker({
+    tabs: unifiedTabs.value,
+    ...restoreHints(),
+  })) {
+    openAgentPicker('auto-empty')
+    return
+  }
+  if (agentPickerOpenReason.value === 'auto-empty') closeAgentPicker()
 }
 
 // 统一 Tab 目前依赖各 Agent panel 暴露的 projectTabData；未挂载的 panel 不会执行 loadHistory。
@@ -316,7 +348,7 @@ function restoreActiveTab() {
   const tabs = unifiedTabs.value
   if (!tabs.length) {
     debugCodeHubTabs('restoreActiveTab:empty', {}, { force: true })
-    showAgentPicker.value = true
+    maybeAutoOpenAgentPicker()
     return
   }
 
@@ -383,7 +415,7 @@ onMounted(() => {
         if (unifiedTabs.value.length > 0) {
           restoreActiveTab()
         } else {
-          showAgentPicker.value = true
+          maybeAutoOpenAgentPicker()
         }
       })
     }
@@ -398,7 +430,7 @@ onMounted(() => {
     if (unifiedTabs.value.length > 0) {
       nextTick(() => restoreActiveTab())
     } else {
-      showAgentPicker.value = true
+      maybeAutoOpenAgentPicker()
     }
   }, 5000)
 
@@ -463,8 +495,10 @@ watch(() => unifiedTabs.value.length, (len) => {
   if (len === 0) {
     debugCodeHubTabs('tabs:empty-after-init', {}, { force: true })
     activeTabId.value = null
+    maybeAutoOpenAgentPicker()
     return
   }
+  if (agentPickerOpenReason.value === 'auto-empty') closeAgentPicker()
   // 当前激活的 tab 被删了，fallback 到最后一个
   if (!unifiedTabs.value.find(t => t.id === activeTabId.value)) {
     const last = unifiedTabs.value[unifiedTabs.value.length - 1]
@@ -534,7 +568,7 @@ function reorderUnifiedTab(fromIndex, toIndex) {
 }
 
 function onAgentSelected(agentKey) {
-  showAgentPicker.value = false
+  closeAgentPicker()
   // 惰性挂载：首次选择该 Agent 时挂载它
   if (!mountedMap[agentKey]) {
     mountedMap[agentKey] = true
