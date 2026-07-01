@@ -282,10 +282,11 @@ export function buildToolMessageParts(item, ctx = {}) {
       // shell_command: extract bashCmd from arguments.command (live parity)
       if (name.toLowerCase() === 'shell_command') {
         base.bashCmd = args.command || ''
-        base.bashCwd = ctx.cwd || ''
+        base.bashCwd = args.workdir || ctx.cwd || ''
         base.filePath = ''
         merge.bashCmd = args.command || ''
-        merge.newContent = ''
+        merge.bashOutput = item.aggregated_output || ''
+        merge.newContent = item.aggregated_output || ''
       }
       status = normalizeStatus(item.status, isFinal)
       break
@@ -345,13 +346,18 @@ export function buildHistoryToolMessage(call, output, patchEnd, ctx = {}) {
     }
   }
 
-  return {
+  const message = {
     role: 'tool',
     ...parts.base,
     ...parts.merge,
     status: output ? (output.length < 500 && String(output).toLowerCase().includes('error') ? 'error' : 'done') : parts.status,
     toolResultContent: output || '',
   }
+  if (call.type === 'function_call' && String(call.name || '').toLowerCase() === 'shell_command') {
+    message.bashOutput = output || message.bashOutput || ''
+    message.newContent = output || message.newContent || ''
+  }
+  return message
 }
 
 // ---------------------------------------------------------------------------

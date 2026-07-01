@@ -39,7 +39,7 @@ function ensureAssistantMessage(tab, nextMsgId, onNewMessage) {
 
   const id = nextMsgId()
   tab.currentAssistantId = id
-  msg = { id, role: 'assistant', text: '' }
+  msg = { id, role: 'assistant', text: '', _textSource: '' }
   pushMessage(tab, onNewMessage, msg)
   return msg
 }
@@ -48,6 +48,7 @@ function appendAssistantText(tab, nextMsgId, onNewMessage, text) {
   if (!text) return
   const msg = ensureAssistantMessage(tab, nextMsgId, onNewMessage)
   msg.text = (msg.text || '') + text
+  msg._textSource = 'assistant'
 }
 
 function attachPerTurnTokens(tab, perTurnTokens, options = {}) {
@@ -654,13 +655,13 @@ export function useCodexAgentStream({
           if (isFinal) tab.currentAssistantId = null
           return
         }
-        // Replace with most recent non-empty agent_message text within the
-        // current turn (scoped by currentAssistantId). Empty messages are
-        // skipped above; non-empty messages always update the assistant bubble.
-        // This avoids the "first-wins" risk where an early progress fragment
-        // prevents the final reply from being displayed.
         const aMsg = ensureAssistantMessage(tab, nextMsgId, onNewMessage)
-        aMsg.text = cleaned
+        // agent_message may be the only visible text for a turn, but it is
+        // secondary when the primary assistant stream has already produced text.
+        if (aMsg._textSource !== 'assistant') {
+          aMsg.text = cleaned
+          aMsg._textSource = 'agent_message'
+        }
         if (isFinal) tab.currentAssistantId = null
         scrollBottom(tab.id)
         saveHistory()

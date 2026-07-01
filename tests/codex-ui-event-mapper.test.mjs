@@ -294,6 +294,7 @@ test('buildToolMessageParts: function_call shell_command extracts bashCmd', () =
   assert.equal(parts.base.bashCwd, '/repo')
   assert.equal(parts.base.filePath, '')
   assert.equal(parts.merge.bashCmd, 'npm test')
+  assert.equal(parts.merge.bashOutput, '')
   assert.equal(parts.merge.newContent, '')
   assert.equal(parts.status, 'running')
 })
@@ -358,7 +359,20 @@ test('buildHistoryToolMessage: function_call shell_command → shell tool with b
   assert.equal(msg.toolResultContent, 'file1.txt\nfile2.txt')
   assert.equal(msg.bashCmd, 'ls', 'bashCmd must be extracted from function_call arguments')
   assert.equal(msg.bashCwd, '/repo', 'bashCwd must be propagated from ctx')
+  assert.equal(msg.bashOutput, 'file1.txt\nfile2.txt', 'bashOutput must be available for ToolBash.vue')
+  assert.equal(msg.newContent, 'file1.txt\nfile2.txt', 'newContent keeps modal/raw fallback consistent')
   assert.equal(msg.filePath, '')
+})
+
+test('buildHistoryToolMessage: function_call shell_command prefers arguments.workdir over ctx.cwd', () => {
+  const msg = buildHistoryToolMessage(
+    { type: 'function_call', id: 'fc2', call_id: 'cfc2', name: 'shell_command', arguments: JSON.stringify({ command: 'pwd', workdir: '/actual' }) },
+    '/actual',
+    null,
+    { cwd: '/fallback' }
+  )
+  assert.ok(msg)
+  assert.equal(msg.bashCwd, '/actual')
 })
 
 test('buildHistoryToolMessage: function_call with error output → error status', () => {
