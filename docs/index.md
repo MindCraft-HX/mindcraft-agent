@@ -45,6 +45,7 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-07-01-session-registry-ownership-handoff.md](./plan/2026-07-01-session-registry-ownership-handoff.md) | T165 Session Registry ownership 交接：Phase 1 已完成、T167 覆盖优先、Phase 2 边界 |
 | [plan/2026-07-01-codex-event-rendering-contract.md](./plan/2026-07-01-codex-event-rendering-contract.md) | CodeX event rendering contract：tool call、progress、assistant final、history restore 收口 |
 | [plan/2026-06-30-storage-sqlite-cc-switch-import.md](./plan/2026-06-30-storage-sqlite-cc-switch-import.md) | SQLite 基础设施与 CC Switch 导入首批实现计划 |
 | [plan/2026-06-27-renderer-convergence.md](./plan/2026-06-27-renderer-convergence.md) | Renderer 消费层收敛 |
