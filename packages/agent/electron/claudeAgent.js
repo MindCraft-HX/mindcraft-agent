@@ -216,10 +216,6 @@ function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
     outputTokens: normalized.outputTokens || 0,
     cacheReadTokens: normalized.cacheReadTokens || 0,
     cacheCreationTokens: normalized.cacheCreationTokens || 0,
-    contextUsage: normalized.contextUsage || 0,
-    contextWindow: normalized.contextUsage > 0
-      ? claudeMetrics.getContextWindowForModel(msg?.message?.model || msg?.model || fallbackModel || '')
-      : 0,
   }
 }
 
@@ -2794,8 +2790,6 @@ function setupClaudeHandlers() {
                 outputTokens: normalizedUsage.outputTokens || 0,
                 cacheReadTokens: normalizedUsage.cacheReadTokens || 0,
                 cacheCreationTokens: normalizedUsage.cacheCreationTokens || 0,
-                contextUsage: normalizedUsage.contextUsage || 0,
-                contextWindow: normalizedUsage.contextUsage > 0 ? claudeMetrics.getContextWindowForModel(model || '') : 0,
                 durationMs: msg.duration_ms || 0,
                 costUsd: msg.total_cost_usd || 0,
                 rawUsage: usage || null,

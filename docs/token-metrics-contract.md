@@ -63,11 +63,13 @@ Clarification:
 | --- | --- | --- |
 | SDK `assistant.message.usage` | Real live usage if SDK emits it | Allowed through adapter/normalizer |
 | SDK `result.usage` | Final turn usage | Allowed as final sample |
-| JSONL assistant usage | Transcript sample; may update session context; may update current turn only if isolated by turn boundary/time | Allowed only after boundary guard |
+| JSONL assistant usage | Transcript sample for turn `in/out/cache`; must not update session context | Allowed only after boundary guard |
 | compact boundary | Session context sample | Context only |
 
 Rules:
-- `contextUsage/contextWindow` never derives current-turn `in/out/cache`.
+- `contextUsage/contextWindow` never derives from Claude assistant/result `usage`.
+- Claude assistant/result `usage` only normalizes current-turn `in/out/cache`: `in = input_tokens + cache_creation_input_tokens`, `cache = cache_read_input_tokens`, `out = output_tokens`.
+- Claude context may update only from explicit context samples such as `system context_usage` and `system compact_boundary`.
 - If no valid live SDK/JSONL usage exists before turn end, UI must not fake token growth.
 
 ### CodeX

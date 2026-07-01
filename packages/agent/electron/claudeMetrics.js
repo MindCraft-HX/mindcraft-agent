@@ -93,11 +93,7 @@ function getClaudeContextUsageFromUsageLike(usage, model) {
 function normalizeClaudeUsageForUi(usage, model) {
   // Phase 1：委托给统一 normalizer
   const { normalizeClaudeUsage } = require('./tokenMetrics/normalizer')
-  const base = normalizeClaudeUsage(usage, model)
-  return {
-    ...base,
-    contextUsage: getClaudeContextUsageFromUsageLike(usage, model),
-  }
+  return normalizeClaudeUsage(usage, model)
 }
 
 function readJsonlLines(filePath) {
@@ -161,14 +157,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
         const usage = parsed.message.usage
         const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
         const normalized = normalizeClaudeUsageForUi(usage, entryModel)
-        if (normalized.contextUsage > 0) {
-          contextUsage = normalized.contextUsage
-          contextWindow = getContextWindowForModel(entryModel)
-          lastContextUsage = contextUsage
-          lastContextWindow = contextWindow
-        }
         if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) {
-          // Assistant usage before tokenSinceMs still contributes session context.
           continue
         }
         // inputTokens 鏄?UI 鍙ｅ緞鐨勮緭鍏ヤ晶鎴愭湰锛堝父瑙勮緭鍏?+ cache creation锛夈€?
@@ -246,8 +235,8 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, lastAssistantTimestamp, null)
   }
 
-  // Assistant usage is a per-sample context estimate, not a running total.
-  // Prompt-cache read/create tokens still occupy the context window.
+  // Assistant usage is turn token data only. Session context must come from
+  // explicit context samples such as system context_usage or compact_boundary.
   if (!contextWindow && !lastContextUsage) {
     contextUsage = 0
     contextWindow = 0
