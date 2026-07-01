@@ -146,6 +146,53 @@ function scanCliSessionIds(cwd) {
   return result
 }
 
+const claudeProjectJsonlListCache = new Map()
+const claudeSessionTitleCache = new Map()
+
+function clearClaudeSessionScanCaches() {
+  claudeProjectJsonlListCache.clear()
+  claudeSessionTitleCache.clear()
+}
+
+function getDirectorySignature(dirPath) {
+  try {
+    const stats = fs.statSync(dirPath)
+    return `${Math.trunc(stats.mtimeMs)}:${stats.size}`
+  } catch (_) {
+    return ''
+  }
+}
+
+function listClaudeTopLevelJsonlPaths(projectDir) {
+  const signature = getDirectorySignature(projectDir)
+  const cached = claudeProjectJsonlListCache.get(projectDir)
+  if (cached?.signature === signature) return cached.paths
+
+  const paths = []
+  try {
+    const entries = fs.readdirSync(projectDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        paths.push(path.join(projectDir, entry.name))
+      }
+    }
+  } catch (_) {}
+
+  claudeProjectJsonlListCache.set(projectDir, { signature, paths })
+  return paths
+}
+
+function getCachedClaudeSessionTitle(filePath, fileSize, updatedAt) {
+  const updatedMs = updatedAt ? new Date(updatedAt).getTime() : 0
+  const key = `${filePath}:${fileSize || 0}:${Number.isFinite(updatedMs) ? Math.trunc(updatedMs) : 0}`
+  const cached = claudeSessionTitleCache.get(filePath)
+  if (cached?.key === key) return cached.titleResult
+
+  const titleResult = extractClaudeSessionTitle(filePath)
+  claudeSessionTitleCache.set(filePath, { key, titleResult })
+  return titleResult
+}
+
 /** 安全发送 IPC，避免窗口已销毁时抛错 */
 function safeSend(sender, channel, ...args) {
   try {
@@ -412,25 +459,19 @@ function scanCliSessionsForProject(cwd) {
 
     // 只扫描顶层 .jsonl（不递归，避免把 subagents 的 jsonl 当作独立对话）
     const jsonlFiles = []
-    try {
-      const entries = fs.readdirSync(projectDir, { withFileTypes: true })
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-          const fullPath = path.join(projectDir, entry.name)
-          const cliSessionId = path.basename(entry.name, '.jsonl')
-          let createdAt = null
-          let updatedAt = null
-          let fileSize = null
-          try {
-            const stats = fs.statSync(fullPath)
-            createdAt = stats.birthtime || stats.mtime
-            updatedAt = stats.mtime
-            fileSize = stats.size
-          } catch (_) {}
-          jsonlFiles.push({ cliSessionId, filePath: fullPath, createdAt, updatedAt, fileSize })
-        }
-      }
-    } catch (_) {}
+    for (const fullPath of listClaudeTopLevelJsonlPaths(projectDir)) {
+      const cliSessionId = path.basename(fullPath, '.jsonl')
+      let createdAt = null
+      let updatedAt = null
+      let fileSize = null
+      try {
+        const stats = fs.statSync(fullPath)
+        createdAt = stats.birthtime || stats.mtime
+        updatedAt = stats.mtime
+        fileSize = stats.size
+      } catch (_) {}
+      jsonlFiles.push({ cliSessionId, filePath: fullPath, createdAt, updatedAt, fileSize })
+    }
 
     // 按最新对话时间倒序排序
     jsonlFiles.sort((a, b) => {
@@ -442,11 +483,10 @@ function scanCliSessionsForProject(cwd) {
     })
 
     for (const file of jsonlFiles) {
-      const titleResult = extractClaudeSessionTitle(file.filePath)
+      const titleResult = getCachedClaudeSessionTitle(file.filePath, file.fileSize, file.updatedAt)
       const title = titleResult?.title || ''
       const isCustomTitle = titleResult?.isCustomTitle || false
       const meta = readClaudeSessionMetaByFilePath(file.filePath)
-      console.log('[scanCliSessionsForProject] title:', title || '(empty)', 'isCustomTitle:', isCustomTitle, 'file:', file.filePath)
       const summary = attachRegistrySessionToScanSummary('claude', {
         // `id` is kept for renderer compatibility; new code should read cliSessionId.
         id: file.cliSessionId,
@@ -3613,7 +3653,11 @@ module.exports = {
     resolveClaudeDoneReasonFromError,
     scanCliSessionsForProject,
     buildClaudeHistoryTurnTokensFromEntry,
-    setSessionRegistryOptionsForTest: (options) => { sessionRegistryOptionsForTest = options || null },
+    setSessionRegistryOptionsForTest: (options) => {
+      sessionRegistryOptionsForTest = options || null
+      clearClaudeSessionScanCaches()
+    },
+    clearClaudeSessionScanCaches,
     writeClaudeSessionMeta,
   },
 }

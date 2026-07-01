@@ -547,11 +547,63 @@ function walkFiles(dir, out = []) {
   return out
 }
 
+const codexJsonlScanCache = {
+  root: '',
+  signature: '',
+  files: [],
+}
+const codexSessionSummaryCache = new Map()
+
+function getCodexSessionsTreeSignature(dir) {
+  try {
+    const parts = []
+    function visit(current) {
+      const stat = fs.statSync(current)
+      parts.push(`${current}:${Math.trunc(stat.mtimeMs)}:${stat.size}`)
+      const entries = fs.readdirSync(current, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        visit(path.join(current, entry.name))
+      }
+    }
+    visit(dir)
+    return parts.join('|')
+  } catch (_) {
+    return ''
+  }
+}
+
+function listCodexJsonlFilesCached() {
+  const root = SESSIONS_DIR
+  const signature = getCodexSessionsTreeSignature(root)
+  if (
+    codexJsonlScanCache.root === root
+    && codexJsonlScanCache.signature === signature
+    && Array.isArray(codexJsonlScanCache.files)
+  ) {
+    return codexJsonlScanCache.files
+  }
+
+  const files = walkFiles(root).filter(file => file.toLowerCase().endsWith('.jsonl'))
+  codexJsonlScanCache.root = root
+  codexJsonlScanCache.signature = signature
+  codexJsonlScanCache.files = files
+  return files
+}
+
+function clearCodexJsonlCaches() {
+  jsonlLineCache.clear()
+  codexSessionSummaryCache.clear()
+  codexJsonlScanCache.root = ''
+  codexJsonlScanCache.signature = ''
+  codexJsonlScanCache.files = []
+}
+
 function findCodexSessionFileByThreadId(threadId) {
   const id = String(threadId || '').trim()
   if (!id) return ''
-  const files = walkFiles(SESSIONS_DIR)
-    .filter(file => file.toLowerCase().endsWith('.jsonl') && path.basename(file).includes(id))
+  const files = listCodexJsonlFilesCached()
+    .filter(file => path.basename(file).includes(id))
     .filter(file => {
       try { return fs.statSync(file).isFile() } catch (_) { return false }
     })
@@ -652,7 +704,7 @@ function readJsonlTailLines(filePath, maxLines = 80) {
 
 function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
   const safePage = Math.max(0, Number(page) || 0)
-  const safePageSize = Math.max(1, Math.min(200, Number(pageSize) || 60))
+  const safePageSize = Math.max(1, Math.min(1000, Number(pageSize) || 60))
   const newestToSkip = safePage * safePageSize
   const wanted = safePageSize + 1
   const maxLinesToRead = newestToSkip + wanted
@@ -1150,7 +1202,7 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
 async function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
   const cliSessionId = cliSessionIds.get(sessionId) || sessionId
   if (!cliSessionId) return null
-  const files = walkFiles(SESSIONS_DIR).filter(file => file.toLowerCase().endsWith('.jsonl'))
+  const files = listCodexJsonlFilesCached()
   const matched = files.find(file => {
     const base = path.basename(file, '.jsonl')
     return base === cliSessionId || file.includes(cliSessionId)
@@ -1161,7 +1213,19 @@ async function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
 }
 
 function extractSessionSummary(filePath) {
-  return extractCodexSessionSummary(filePath, collectSessionTailRiskSummary)
+  try {
+    const stat = fs.statSync(filePath)
+    const key = `${filePath}:${stat.size}:${Math.trunc(stat.mtimeMs)}`
+    const cached = codexSessionSummaryCache.get(filePath)
+    if (cached?.key === key) {
+      return cached.summary ? { ...cached.summary, historyLoadGuard: { ...(cached.summary.historyLoadGuard || {}) } } : null
+    }
+    const summary = extractCodexSessionSummary(filePath, collectSessionTailRiskSummary)
+    codexSessionSummaryCache.set(filePath, { key, summary })
+    return summary ? { ...summary, historyLoadGuard: { ...(summary.historyLoadGuard || {}) } } : null
+  } catch (_) {
+    return null
+  }
 }
 
 /** 将 Codex agent item（reasoning/command_execution/file_change 等）转为前端 tool message */
@@ -1423,24 +1487,10 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
     }
 
     if (safePage === 0) {
-      const fullReadThreshold = 256 * 1024
-      const tailSize = Math.min(fileSize, 512 * 1024)
-
-      let rawText = ''
-      if (fileSize <= fullReadThreshold) {
-        rawText = fs.readFileSync(filePath, 'utf8')
-      } else {
-        const start = Math.max(0, fileSize - tailSize)
-        const fd = fs.openSync(filePath, 'r')
-        const buf = Buffer.alloc(fileSize - start)
-        fs.readSync(fd, buf, 0, fileSize - start, start)
-        fs.closeSync(fd)
-        const text = buf.toString('utf8')
-        const firstNewline = text.indexOf('\n')
-        rawText = firstNewline >= 0 ? text.slice(firstNewline + 1) : text
-      }
-
-      const lines = rawText.split(/\r?\n/).filter(line => line.trim())
+      const firstPageLineBudget = Math.max(1000, safePageSize)
+      const maxFirstPageScans = 5
+      const lines = []
+      let pageData = { lines: [], hasMore: false, totalPages: 1 }
       const messages = []
       const seenMessages = new Set()
       const seenToolCallIds = new Set() // 已刷入消息的 call_id，防止 JSONL 重复行导致 tool 消息重复
@@ -1707,7 +1757,19 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         }
       }
 
-      for (const line of lines) collectMessage(line)
+      for (let scanPage = 0; scanPage < maxFirstPageScans; scanPage += 1) {
+        pageData = readJsonlPageLinesFromTail(filePath, scanPage, firstPageLineBudget)
+        if (pageData.lines.length) lines.unshift(...pageData.lines)
+        messages.length = 0
+        seenMessages.clear()
+        seenToolCallIds.clear()
+        for (const key of Object.keys(pendingCalls)) delete pendingCalls[key]
+        patchCalls.clear()
+        historyModel = ''
+        activeTurnTokens = null
+        for (const line of lines) collectMessage(line)
+        if (messages.length >= safePageSize || !pageData.hasMore) break
+      }
       flushActiveTurnTokens()
 
       // Flush remaining calls without output (timeout/cancelled)
@@ -1755,8 +1817,8 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       const sliced = messages.slice(-safePageSize)
       return {
         messages: sliced.map((message, index) => ({ id: index + 1, ...message })),
-        hasMore: messages.length > sliced.length || fileSize > fullReadThreshold,
-        totalPages: Math.max(1, Math.ceil(messages.length / safePageSize)),
+        hasMore: pageData.hasMore || messages.length > sliced.length,
+        totalPages: Math.max(1, pageData.totalPages || Math.ceil(messages.length / safePageSize)),
       }
     }
 
@@ -2035,7 +2097,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 /** 按工作目录列出所有 Codex 会话历史 */
 function listSessionsByCwd(targetCwd) {
   const normalizedTarget = normalizeFsPath(targetCwd)
-  const files = walkFiles(SESSIONS_DIR).filter(file => file.toLowerCase().endsWith('.jsonl'))
+  const files = listCodexJsonlFilesCached()
   const sessions = []
 
   for (const file of files) {
@@ -4176,6 +4238,7 @@ module.exports = {
     buildCodexSessionFingerprint,
     shouldResumeCodexSession,
     readSessionFileRange,
+    listSessionsByCwd,
     resolveCodexSessionFilePath,
     resolveCodexDoneReasonFromError,
     isCodexSessionRunTerminal,
@@ -4195,6 +4258,10 @@ module.exports = {
     mergeCodexTurnSnapshotWithSessionMetrics,
     queryCodexStatusBarMetrics,
     selectCodexTomlProvider,
-    setSessionsDirForTest: (dir) => { SESSIONS_DIR = dir },
+    setSessionsDirForTest: (dir) => {
+      SESSIONS_DIR = dir
+      clearCodexJsonlCaches()
+    },
+    clearCodexJsonlCaches,
   },
 }
