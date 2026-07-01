@@ -18,6 +18,7 @@ const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
 const { normalizeFileChangeItemPreviews } = require('./codexFileChangePreview')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
+const { getToolActivityLabel, buildHistoryToolMessage } = require('../src/components/codeX/utils/codexUiEventMapper.cjs')
 const {
   appendCodexTurnDiagnostic,
   makeCodexTurnDiagnosticId,
@@ -1237,13 +1238,13 @@ function buildToolMessageFromItem(item) {
     reasoning: () => ({
       role: 'tool', toolName: 'thinking', toolUseId: item.id,
       rawType: item.type,
-      activityLabel: getCodexActivityLabel('thinking'),
+      activityLabel: getToolActivityLabel('thinking'),
       status: 'done', text: item.text || '', expanded: false, newContent: '', diffLines: [],
     }),
     command_execution: () => ({
       role: 'tool', toolName: 'shell', toolUseId: item.id,
       rawType: item.type,
-      activityLabel: getCodexActivityLabel('shell'),
+      activityLabel: getToolActivityLabel('shell'),
       status: item.status === 'failed' ? 'error' : 'done',
       filePath: '', bashCmd: item.command || '', bashCwd: '',
       bashOutput: item.aggregated_output || '', bashExitCode: item.exit_code,
@@ -1255,7 +1256,7 @@ function buildToolMessageFromItem(item) {
       return {
         role: 'tool', toolName: 'file_change', toolUseId: item.id,
         rawType: item.type,
-        activityLabel: getCodexActivityLabel('file_change'),
+        activityLabel: getToolActivityLabel('file_change'),
         status: item.status === 'failed' ? 'error' : 'done',
         filePath: changes.map(c => c.path).filter(Boolean).join('\n'),
         expanded: true, newContent: '', diffLines: [],
@@ -1265,7 +1266,7 @@ function buildToolMessageFromItem(item) {
     mcp_tool_call: () => ({
       role: 'tool', toolName: 'mcp_tool', toolUseId: item.id,
       rawType: item.type,
-      activityLabel: getCodexActivityLabel('mcp_tool'),
+      activityLabel: getToolActivityLabel('mcp_tool'),
       status: item.status === 'failed' ? 'error' : 'done',
       expanded: true, newContent: '', diffLines: [],
       text: JSON.stringify(item.arguments || {}, null, 2),
@@ -1277,7 +1278,7 @@ function buildToolMessageFromItem(item) {
     web_search: () => ({
       role: 'tool', toolName: 'web_search', toolUseId: item.id,
       rawType: item.type,
-      activityLabel: getCodexActivityLabel('web_search'),
+      activityLabel: getToolActivityLabel('web_search'),
       status: 'done', expanded: false, newContent: '', diffLines: [],
       text: JSON.stringify({ query: item.query }, null, 2),
     }),
@@ -1289,7 +1290,7 @@ function buildToolMessageFromItem(item) {
       return {
         role: 'tool', toolName: 'todo_list', toolUseId: item.id,
         rawType: item.type,
-        activityLabel: getCodexActivityLabel('todo_list'),
+        activityLabel: getToolActivityLabel('todo_list'),
         status: 'done', expanded: false, newContent: '', diffLines: [],
         text: JSON.stringify({ todos: todoItems }, null, 2), todoItems,
       }
@@ -1297,7 +1298,7 @@ function buildToolMessageFromItem(item) {
     error: () => ({
       role: 'tool', toolName: 'error', toolUseId: item.id,
       rawType: item.type,
-      activityLabel: getCodexActivityLabel('error'),
+      activityLabel: getToolActivityLabel('error'),
       status: 'error', expanded: true, newContent: '', diffLines: [],
       text: item.message || '',
     }),
@@ -1336,7 +1337,7 @@ function buildToolMessageFromResponse(payload) {
     role: 'tool',
     toolName,
     rawType: payload.type || 'tool_result',
-    activityLabel: getCodexActivityLabel(toolName),
+    activityLabel: getToolActivityLabel(toolName),
     toolUseId,
     status,
     text,
@@ -1365,20 +1366,6 @@ function hasRenderableMessageContent(content) {
     if (item.type === 'file' && item.source) return true
     return false
   })
-}
-
-/** 工具名 → 前端展示标签的中文映射 */
-function getCodexActivityLabel(toolName) {
-  const n = String(toolName || '').toLowerCase()
-  if (['shell', 'bash', 'execute', 'command_execution'].includes(n)) return 'Ran'
-  if (isCodeXFileMutationToolName(n)) return 'Edited'
-  if (['web_search'].includes(n)) return 'Searching'
-  if (['thinking', 'reasoning'].includes(n)) return 'Thinking'
-  if (['todo_list'].includes(n)) return 'Planning'
-  if (isCodeXReadToolName(n)) return 'Read'
-  if (['mcp_tool'].includes(n)) return '插件'
-  if (['error'].includes(n)) return 'Error'
-  return 'Tool'
 }
 
 function pushHistoryMessage(messages, seenMessages, message) {
@@ -1412,14 +1399,6 @@ function attachTurnTokensToLastAssistantMessage(messages, turnTokens) {
     }
     return
   }
-}
-
-function isCodeXFileMutationToolName(name) {
-  const normalized = normalizeCodexToolName(name)
-  return normalized === 'file_change'
-    || normalized === 'apply_patch'
-    || isCodeXWriteToolName(normalized)
-    || isCodeXEditToolName(normalized)
 }
 
 function isWriteFunctionTool(name) {
@@ -1654,107 +1633,22 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         const output = entry.output || ''
         const patchEnd = entry.patchEnd
 
-        // apply_patch → file_change tool message (use patch_end data)
-        if (patchCalls.has(callId) && patchEnd) {
-          const changes = []
-          const fileChanges = patchEnd.changes || {}
-          for (const [filePath, info] of Object.entries(fileChanges)) {
-            changes.push({
-              path: filePath,
-              operation: info.type === 'create' ? 'add' : info.type === 'delete' ? 'delete' : info.move_path ? 'rename' : 'modify',
-              unified_diff: info.unified_diff || '',
-            })
-          }
-          const filePaths = changes.map(c => c.path).filter(Boolean).join('\n')
-          messages.push({
-            role: 'tool',
-            toolName: 'file_change',
-            rawType: 'file_change',
-            activityLabel: getCodexActivityLabel('file_change'),
-            toolUseId: callId,
-            status: patchEnd.success !== false ? 'done' : 'error',
-            filePath: filePaths,
-            expanded: true,
-            newContent: '',
-            diffLines: [],
-            text: JSON.stringify({ changes, status: patchEnd.status }, null, 2),
-          })
-          delete pendingCalls[callId]
-          return
-        }
-
-        // apply_patch without patch_end yet → skip for now
+        // apply_patch without patch_end yet → skip for now (defer fusion)
         if (patchCalls.has(callId) && !patchEnd) return
 
-        // function_call → shell or generic tool
-        if (call.type === 'function_call') {
-          const name = call.name || ''
+        // Use shared mapper for tool message construction (live/history parity)
+        const msg = buildHistoryToolMessage(call, output, patchEnd, {})
+        if (!msg) return
+
+        // Enrich function_call (non-shell) with file preview state
+        if (call.type === 'function_call' && call.name !== 'shell_command') {
           let args = {}
           try { args = JSON.parse(call.arguments || '{}') } catch (_) {}
-
-          if (name === 'shell_command') {
-            messages.push({
-              role: 'tool',
-              toolName: 'shell',
-              rawType: 'command_execution',
-              activityLabel: getCodexActivityLabel('shell'),
-              toolUseId: callId,
-              status: output.toLowerCase().includes('error') && output.length < 500 ? 'error' : 'done',
-              filePath: '',
-              bashCmd: args.command || '',
-              bashCwd: args.workdir || '',
-              bashOutput: output,
-              expanded: true,
-              newContent: output,
-              diffLines: [],
-              text: JSON.stringify({ command: args.command || '', status: 'completed', exit_code: null }, null, 2),
-            })
-          } else {
-            const previewState = buildFunctionCallPreviewState(name, args)
-            messages.push({
-              role: 'tool',
-              toolName: name,
-              rawType: name || 'tool',
-              activityLabel: getCodexActivityLabel(name || 'tool'),
-              toolUseId: callId,
-              status: 'done',
-              expanded: true,
-              ...previewState,
-              text: JSON.stringify(args, null, 2),
-              toolResultContent: output,
-            })
-          }
-          delete pendingCalls[callId]
-          return
+          Object.assign(msg, buildFunctionCallPreviewState(call.name, args))
         }
 
-        // custom_tool_call (non apply_patch)
-        if (call.type === 'custom_tool_call' && !patchCalls.has(callId)) {
-          const name = call.name || 'tool'
-          const input = call.input || ''
-          // apply_patch: 从 input 中提取文件路径
-          let filePath = ''
-          if (name === 'apply_patch') {
-            const match = String(input).match(/\*\*\*\s+Update File:\s*(.+)/)
-            if (match) filePath = match[1].trim()
-          }
-          messages.push({
-            role: 'tool',
-            toolName: name,
-            rawType: name || 'custom_tool_call',
-            activityLabel: getCodexActivityLabel(name || 'tool'),
-            toolUseId: callId,
-            status: call.status === 'failed' ? 'error' : 'done',
-            expanded: true,
-            newContent: '',
-            diffLines: [],
-            filePath,
-            text: JSON.stringify({ name, input: input.substring(0, 2000) }, null, 2),
-            toolResultContent: output,
-          })
-          delete pendingCalls[callId]
-          return
-        }
+        messages.push(msg)
+        delete pendingCalls[callId]
       }
 
       for (let scanPage = 0; scanPage < maxFirstPageScans; scanPage += 1) {
@@ -1784,7 +1678,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
             role: 'tool',
             toolName: 'thinking',
             rawType: 'reasoning',
-            activityLabel: getCodexActivityLabel('thinking'),
+            activityLabel: getToolActivityLabel('thinking'),
             toolUseId: callId,
             status: 'done',
             text: '',
@@ -1804,7 +1698,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
           role: 'tool',
           toolName: name,
           rawType: name || call.type || 'tool',
-          activityLabel: getCodexActivityLabel(name || call.type || 'tool'),
+          activityLabel: getToolActivityLabel(name || call.type || 'tool'),
           toolUseId: callId,
           status: 'done',
           expanded: true,
@@ -1981,103 +1875,22 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       const output = entry.output || ''
       const patchEnd = entry.patchEnd
 
-      if (patchCalls.has(callId) && patchEnd) {
-        const changes = []
-        const fileChanges = patchEnd.changes || {}
-        for (const [filePath, info] of Object.entries(fileChanges)) {
-          changes.push({
-            path: filePath,
-            operation: info.type === 'create' ? 'add' : info.type === 'delete' ? 'delete' : info.move_path ? 'rename' : 'modify',
-            unified_diff: info.unified_diff || '',
-          })
-        }
-        const filePaths = changes.map(c => c.path).filter(Boolean).join('\n')
-        messages.push({
-          role: 'tool',
-          toolName: 'file_change',
-          rawType: 'file_change',
-          activityLabel: getCodexActivityLabel('file_change'),
-          toolUseId: callId,
-          status: patchEnd.success !== false ? 'done' : 'error',
-          filePath: filePaths,
-          expanded: true,
-          newContent: '',
-          diffLines: [],
-          text: JSON.stringify({ changes, status: patchEnd.status }, null, 2),
-        })
-        delete pendingCalls[callId]
-        return
-      }
-
+      // apply_patch without patch_end yet → skip (defer fusion)
       if (patchCalls.has(callId) && !patchEnd) return
 
-      if (call.type === 'function_call') {
-        const name = call.name || ''
+      // Use shared mapper (live/history parity)
+      const msg = buildHistoryToolMessage(call, output, patchEnd, {})
+      if (!msg) return
+
+      // Enrich function_call (non-shell) with file preview state
+      if (call.type === 'function_call' && call.name !== 'shell_command') {
         let args = {}
         try { args = JSON.parse(call.arguments || '{}') } catch (_) {}
-
-        if (name === 'shell_command') {
-          messages.push({
-            role: 'tool',
-            toolName: 'shell',
-            rawType: 'command_execution',
-            activityLabel: getCodexActivityLabel('shell'),
-            toolUseId: callId,
-            status: output.toLowerCase().includes('error') && output.length < 500 ? 'error' : 'done',
-            filePath: '',
-            bashCmd: args.command || '',
-            bashCwd: args.workdir || '',
-            bashOutput: output,
-            expanded: true,
-            newContent: output,
-            diffLines: [],
-            text: JSON.stringify({ command: args.command || '', status: 'completed', exit_code: null }, null, 2),
-          })
-        } else {
-          const previewState = buildFunctionCallPreviewState(name, args)
-          messages.push({
-            role: 'tool',
-            toolName: name,
-            rawType: name || 'tool',
-            activityLabel: getCodexActivityLabel(name || 'tool'),
-            toolUseId: callId,
-            status: 'done',
-            expanded: true,
-            ...previewState,
-            text: JSON.stringify(args, null, 2),
-            toolResultContent: output,
-          })
-        }
-        delete pendingCalls[callId]
-        return
+        Object.assign(msg, buildFunctionCallPreviewState(call.name, args))
       }
 
-      if (call.type === 'custom_tool_call' && !patchCalls.has(callId)) {
-        const name = call.name || 'tool'
-        const input = call.input || ''
-        // apply_patch: 从 input 中提取文件路径
-        let filePath = ''
-        if (name === 'apply_patch') {
-          const match = String(input).match(/\*\*\*\s+Update File:\s*(.+)/)
-          if (match) filePath = match[1].trim()
-        }
-        messages.push({
-          role: 'tool',
-          toolName: name,
-          rawType: name || 'custom_tool_call',
-          activityLabel: getCodexActivityLabel(name || 'tool'),
-          toolUseId: callId,
-          status: call.status === 'failed' ? 'error' : 'done',
-          expanded: true,
-          newContent: '',
-          diffLines: [],
-          filePath,
-          text: JSON.stringify({ name, input: input.substring(0, 2000) }, null, 2),
-          toolResultContent: output,
-        })
-        delete pendingCalls[callId]
-        return
-      }
+      messages.push(msg)
+      delete pendingCalls[callId]
     }
 
     for (const line of pageData.lines) collectMessage(line)

@@ -654,10 +654,15 @@ export function useCodexAgentStream({
           if (isFinal) tab.currentAssistantId = null
           return
         }
-        // Only create/update assistant text when no prior text exists.
+        // Only create/update assistant text when no prior text exists in
+        // the current turn. Use currentAssistantId to scope to the current
+        // turn's assistant message — tab.messages.find would leak across
+        // turns and silently drop new-turn agent_message text.
         // agent_message is a secondary notification; assistant type messages
         // are the primary streaming text source. Never overwrite.
-        const existing = tab.messages.find(m => m.role === 'assistant')
+        const existing = tab.currentAssistantId
+          ? tab.messages.find(m => m.id === tab.currentAssistantId)
+          : null
         if (existing && existing.text) {
           if (isFinal) tab.currentAssistantId = null
           scrollBottom(tab.id)

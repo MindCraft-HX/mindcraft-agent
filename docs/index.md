@@ -1,6 +1,6 @@
 # MindCraft Agent 知识库
 
-> 最后更新：2026-06-28
+> 最后更新：2026-07-01
 > 定位：文档体系入口索引，覆盖所有活跃文档。过期/已完成的计划见 `archive/`。
 
 ---
@@ -45,6 +45,7 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-07-01-codex-event-rendering-contract.md](./plan/2026-07-01-codex-event-rendering-contract.md) | CodeX event rendering contract：tool call、progress、assistant final、history restore 收口 |
 | [plan/2026-06-30-storage-sqlite-cc-switch-import.md](./plan/2026-06-30-storage-sqlite-cc-switch-import.md) | SQLite 基础设施与 CC Switch 导入首批实现计划 |
 | [plan/2026-06-27-renderer-convergence.md](./plan/2026-06-27-renderer-convergence.md) | Renderer 消费层收敛 |
 | [plan/2026-06-26-markdown-renderer-consolidation.md](./plan/2026-06-26-markdown-renderer-consolidation.md) | Markdown 渲染收口 |

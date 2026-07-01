@@ -336,6 +336,47 @@ test('agent_message mixed thinking and real content — thinking stripped, real 
     'real content must be preserved')
 })
 
+// ── 多轮 agent_message ────────────────────────────────────────────
+
+test('agent_message in new turn creates new assistant bubble (cross-turn)', () => {
+  const { tab, stream } = createStreamHarness()
+
+  // Turn 1: assistant streaming + agent_message complete
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Turn 1 reply' }] },
+    },
+  })
+  // Simulate turn end — currentAssistantId cleared
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.completed',
+      item: { id: 'agent-1', type: 'agent_message', message: 'Turn 1 reply', text: 'Turn 1 reply' },
+    },
+  })
+  assert.equal(tab.currentAssistantId, null, 'currentAssistantId cleared after turn end')
+
+  // Turn 2: new user message, then agent_message with no prior 'assistant' type event
+  tab.messages.push({ id: 'msg-user-2', role: 'user', text: 'Second question' })
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.completed',
+      item: { id: 'agent-2', type: 'agent_message', message: 'Turn 2 reply', text: 'Turn 2 reply' },
+    },
+  })
+
+  const assistants = tab.messages.filter(m => m.role === 'assistant')
+  assert.equal(assistants.length, 2,
+    'new turn agent_message must create its own assistant bubble')
+  assert.equal(assistants[1].text, 'Turn 2 reply',
+    'Turn 2 agent_message text must be set, not skipped due to Turn 1')
+})
+
 // ── turn 边界 ──────────────────────────────────────────────────────
 
 test('turn.completed does not clear existing tool messages', () => {

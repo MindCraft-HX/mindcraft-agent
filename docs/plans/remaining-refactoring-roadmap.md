@@ -279,7 +279,28 @@ codex/pluginIpc.js
 
 1. ✅ ~~新版实际使用 smoke test~~ — 已完成，发现并修复 1 个 P0 导入缺失；修复后再次 smoke 正常。
 2. 进入稳定观察期：近期只记录真实使用中的 P0/P1 回归，不主动继续拆 agent 主循环。
-3. 长期 IPC 统一：先补 E2E（至少 preload/main 端到端启动验证），再单独开新阶段评估。
+3. 重复 session 已暴露 Session Registry ownership 中间态：身份模型已经拆清楚，但 scan / done / panel sync / restore / repair 的写入口仍需按 T165 收口。
+4. 长期 IPC 统一：先补 E2E（至少 preload/main 端到端启动验证），再单独开新阶段评估。
+
+### 2026-07-01 Post-refactor 稳定性 follow-up
+
+这不是新的“继续减行数”重构批次，而是对 Batch 0-5 后暴露出的中间态做收尾登记。后续 Claudecode 执行时应按 TODO 任务单独开分支/提交，不要混入普通功能开发。
+
+| TODO | 优先级 | 问题 | 执行边界 |
+|---|---|---|---|
+| T165 | P1 | Session Registry ownership 未收口，scan / done / panel sync / restore / repair 都可能参与 provider binding 写入 | 只收口 identity owner API 和回归测试；不改官方 transcript 存储位置；不做 UI 大改 |
+| T166 | P2 | IPC registry 已有 baseline，但新增通道仍可能绕过常量引用 | 保持历史 channel 兼容；只强化新增 main/preload channel 的登记和常量引用约束 |
+| T167 | P2 | 缺少覆盖重启、restore、done 后快速下一轮的 Electron E2E/集成测试 | 先覆盖 ClaudeCode/CodeX 核心 session/run 链路；不把 R10 IPC 命名统一作为前置实现 |
+| T168 | P1 | CodeX live stream / JSONL history / renderer 对事件语义解释不一致，导致 tool card、progress、final assistant 显示漂移 | 先补 live/history 契约测试，再抽共享 mapper；不触碰 ClaudeCode 流式逻辑；不隐藏中间进度 |
+
+相关文档：
+
+- `docs/session-pitfalls.md#trap-8session-registry-ownership-中间态`
+- `docs/plan/2026-06-17-session-registry-and-official-dir-boundary.md`
+- `docs/plan/2026-06-18-agent-session-identity-registry.md`
+- `docs/bugs/codex-conversation-interruption.md`
+- `docs/plan/2026-07-01-codex-event-rendering-contract.md`
+- `docs/TODO.md` T165-T168
 
 ### 下一阶段入口
 
@@ -287,8 +308,10 @@ codex/pluginIpc.js
 
 | 优先级 | 任务 | 进入条件 | 不做什么 |
 |---|---|---|---|
-| P1 | 使用观察 | 新版日常使用 1-2 天，记录会话卡死、done 丢失、配置保存、skills/plugin 异常 | 不为行数继续拆 `claudeAgent.js` / `codexAgent.js` |
-| P2 | Electron E2E 调研 | 需要重启 R10 IPC 统一前 | 不先改 IPC channel 命名 |
+| P1 | T165 Session Registry ownership 收口 | 重复 session、orphan record、scan/done 顺序竞态再次出现；或继续开发 session instruction / orchestration 前 | 不继续用 panel state 小补丁修 provider binding |
+| P2 | T167 Electron session/run E2E 前置覆盖 | T165 开工前，或需要重启 R10 IPC 统一前 | 不先改 IPC channel 命名 |
+| P2 | T166 IPC registry 新增通道硬约束 | 继续新增 main/preload IPC，或发现新增 channel 只登记未引用常量 | 不重命名历史 channel |
+| P1 | T168 CodeX event rendering contract 收口 | CodeX tool call/progress/assistant 空泡泡或 live/history 不一致继续出现；或执行 `docs/plan/2026-07-01-codex-event-rendering-contract.md` 前 | 不顺手改 ClaudeCode，不隐藏 process，不做 IPC 大统一 |
 | P3 | R10 独立路线图 | E2E 能覆盖 preload/main/renderer 至少一条完整链路后 | 不并入当前 Batch 0-5 文档继续追加执行项 |
 
 ## 6. 验证基线
