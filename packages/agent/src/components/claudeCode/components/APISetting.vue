@@ -8,7 +8,7 @@
       :tier-models="settingsTierModels"
       :permission-policy="settingsPermissionPolicy"
       :language="settingsLanguage"
-      :effort-level="settingsEffortLevel"
+      :effort-level="editingNewProvider ? settingsEffortLevel : (currentProvider?.effortLevel ?? settingsEffortLevel)"
       :config-json="formInitialConfigJson"
       @save="handleProviderFormSave"
       @close="handleProviderFormClose"

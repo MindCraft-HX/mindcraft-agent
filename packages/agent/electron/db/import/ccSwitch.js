@@ -264,7 +264,7 @@ function mapCcSwitchRow(row, source) {
     // Build runtime config for MindCraft Claude provider.config.
     // Start from the original CC Switch settings to preserve unsupported fields
     // (permissions, hooks, enabledPlugins, theme, etc.) and override/normalize
-    // the fields MindCraft understands.
+    // the fields MindCraft understands. Skip empty values so the JSON stays clean.
     runtimeConfig = {
       ...settings,
       env: {
@@ -272,11 +272,14 @@ function mapCcSwitchRow(row, source) {
         ANTHROPIC_AUTH_TOKEN: apiKey,
         ANTHROPIC_BASE_URL: baseUrl,
       },
-      model: selectedTier || settings.model || '',
-      permissionPolicy: claudePermissionPolicy,
-      language: claudeLanguage,
-      effortLevel: claudeEffortLevel,
     };
+
+    if (selectedTier || settings.model) {
+      runtimeConfig.model = selectedTier || settings.model;
+    }
+    if (claudePermissionPolicy) runtimeConfig.permissionPolicy = claudePermissionPolicy;
+    if (claudeLanguage) runtimeConfig.language = claudeLanguage;
+    if (claudeEffortLevel) runtimeConfig.effortLevel = claudeEffortLevel;
 
     // Only include ANTHROPIC_MODEL / tier defaults in env when we have values,
     // matching ProviderForm's buildJsonFromForm output.

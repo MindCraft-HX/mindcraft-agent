@@ -311,7 +311,7 @@ function registerSystemImportIpc(ipcMain, deps) {
             selectedTier: p.selectedTier || 'sonnet',
             language: p.language || 'zh-CN',
             permissionPolicy: p.permissionPolicy || 'ask',
-            effortLevel: p.effortLevel || 'medium',
+            effortLevel: p.effortLevel !== undefined ? p.effortLevel : 'medium',
             config: p.runtimeConfig || null,
           }));
 

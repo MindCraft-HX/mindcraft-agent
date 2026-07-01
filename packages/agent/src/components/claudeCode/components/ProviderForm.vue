@@ -104,6 +104,7 @@
           <label class="setting-label">{{ $t('settings.reasoningEffort') }} <span class="setting-tip">{{ $t('settings.reasoningEffortHint') }}</span></label>
           <div class="setting-select-wrap">
             <select class="setting-input setting-select" v-model="effort" @change="syncFormToJson">
+              <option value="">{{ $t('settings.reasoningNotSet') }}</option>
               <option value="low">{{ $t('settings.reasoningLow') }}</option>
               <option value="medium">{{ $t('settings.reasoningMid') }}</option>
               <option value="high">{{ $t('settings.reasoningHigh') }}</option>
@@ -202,7 +203,7 @@ function initFromProps() {
   tierKey.value = props.selectedTier || 'sonnet'
   policy.value = props.permissionPolicy || 'ask'
   lang.value = props.language || 'zh-CN'
-  effort.value = props.effortLevel || 'medium'
+  effort.value = props.effortLevel ?? 'medium'
 
   let initial = null
   if (p.config && typeof p.config === 'object') initial = p.config
