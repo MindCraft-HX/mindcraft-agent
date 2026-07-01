@@ -150,10 +150,11 @@ function buildToolMessageParts(item, ctx) {
       break
 
     case 'patch_apply_end':
-      merge.filePath = (Array.isArray(item.changes)
-        ? Object.keys(item.changes || {}).join('\n')
-        : '')
-      merge.text = JSON.stringify({ changes: item.changes || [], status: item.status }, null, 2)
+      // CodeX SDK sends changes as an object keyed by file path
+      merge.filePath = (item.changes && typeof item.changes === 'object' && !Array.isArray(item.changes))
+        ? Object.keys(item.changes).join('\n')
+        : ''
+      merge.text = JSON.stringify({ changes: item.changes || {}, status: item.status }, null, 2)
       status = normalizeStatus(item.status, true)
       break
 

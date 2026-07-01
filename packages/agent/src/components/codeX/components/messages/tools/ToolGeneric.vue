@@ -7,6 +7,9 @@
       <summary>{{ $t('agent.rawParams') }}</summary>
       <pre class="tool-raw">{{ msg.text }}</pre>
     </details>
+    <div v-if="msg.toolResultContent" class="tool-result">
+      <pre class="tool-result-text">{{ msg.toolResultContent }}</pre>
+    </div>
   </div>
 </template>
 
@@ -64,5 +67,11 @@ const summaryLines = computed(() => {
   margin: 0; padding: 7px 10px; font-size: 11px; color: var(--cc-text-dim);
   font-family: 'Cascadia Code', Consolas, monospace;
   overflow-x: auto; max-height: 160px; white-space: pre;
+}
+.tool-result { border-top: 1px solid var(--cc-bg-tertiary); }
+.tool-result-text {
+  margin: 0; padding: 7px 10px; font-size: 12px; color: var(--cc-text-primary);
+  font-family: 'Cascadia Code', Consolas, monospace;
+  overflow-x: auto; max-height: 240px; white-space: pre-wrap; word-break: break-word;
 }
 </style>

@@ -217,9 +217,10 @@ test('BASELINE: non-empty agent_message text is stored on assistant message', ()
   assert.equal(assistantMessages[0].role, 'assistant')
 })
 
-test('FIXED: agent_message preserves first-arrived text (no overwrite)', () => {
-  // agent_message is a secondary notification. Assistant type messages are the
-  // primary streaming text source. Once text is set, agent_message must not overwrite.
+test('FIXED: agent_message last non-empty wins (replaces prior text in same turn)', () => {
+  // Each non-empty agent_message replaces prior text within the same turn.
+  // This avoids the "first-wins" risk where an early progress fragment
+  // prevents the final reply from being displayed.
   const { tab, stream } = createHarness()
 
   sendAgentMessage(stream, 'Step 1')
@@ -229,9 +230,9 @@ test('FIXED: agent_message preserves first-arrived text (no overwrite)', () => {
   const assistantMessages = tab.messages.filter(msg => msg.role === 'assistant')
   assert.equal(assistantMessages.length, 1,
     'All agent_message events should share one assistant bubble')
-  // First text wins; subsequent agent_messages do NOT overwrite.
-  assert.equal(assistantMessages[0].text, 'Step 1',
-    'First agent_message text is preserved; subsequent messages do not overwrite')
+  // Last non-empty text wins
+  assert.equal(assistantMessages[0].text, 'Final answer',
+    'Last non-empty agent_message text is displayed')
 })
 
 // ---------------------------------------------------------------------------

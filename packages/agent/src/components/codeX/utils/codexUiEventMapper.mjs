@@ -213,10 +213,12 @@ export function buildToolMessageParts(item, ctx = {}) {
     }
 
     case 'patch_apply_end': {
-      merge.filePath = (Array.isArray(item.changes)
-        ? Object.keys(item.changes || {}).join('\n')
-        : '')
-      merge.text = JSON.stringify({ changes: item.changes || [], status: item.status }, null, 2)
+      // CodeX SDK sends changes as an object keyed by file path,
+      // e.g. { "src/a.ts": { type: "update", unified_diff: "..." } }
+      merge.filePath = (item.changes && typeof item.changes === 'object' && !Array.isArray(item.changes))
+        ? Object.keys(item.changes).join('\n')
+        : ''
+      merge.text = JSON.stringify({ changes: item.changes || {}, status: item.status }, null, 2)
       status = normalizeStatus(item.status, true)
       break
     }
