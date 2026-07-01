@@ -180,27 +180,121 @@ function mapCcSwitchRow(row, source) {
   }
 
   // Parse settings_config
-  let config = {};
+  let settings = {};
   try {
     const raw = row.settings_config;
     if (typeof raw === 'string') {
-      config = JSON.parse(raw);
+      settings = JSON.parse(raw);
     } else if (raw && typeof raw === 'object') {
-      config = raw;
+      settings = raw;
     }
   } catch (_) {
     return { __skipped: true, reason: `invalid settings_config JSON for "${row.name}"`, raw: row };
   }
 
-  // Normalise config fields (handle CC Switch field name variants)
-  const apiKey = config.api_key || config.key || '';
-  const baseUrl = config.api_base || config.base_url || config.url || '';
-  const model = config.model || '';
-  const reasoningEffort = config.reasoning_effort || config.reasoningEffort || '';
-  const apiFormat = config.api_format || config.apiFormat || '';
+  // Parse meta (separate column, not in settings_config)
+  let meta = {};
+  try {
+    const raw = row.meta;
+    if (typeof raw === 'string') {
+      meta = JSON.parse(raw);
+    } else if (raw && typeof raw === 'object') {
+      meta = raw;
+    }
+  } catch (_) { /* keep empty */ }
 
   const name = String(row.name || '').trim() || 'Unnamed';
   const isActive = row.is_current === 1 || row.is_current === '1' || row.is_current === true;
+
+  let apiKey = '';
+  let baseUrl = '';
+  let model = '';
+  let reasoningEffort = '';
+  let apiFormat = '';
+
+  if (appType === 'claude') {
+    // CC Switch Claude settings_config:
+    //   { env: { ANTHROPIC_AUTH_TOKEN (or ANTHROPIC_API_KEY), ANTHROPIC_BASE_URL, ... }, model: "opus"|"sonnet"|"haiku", ... }
+    //   Some providers use ANTHROPIC_API_KEY instead of ANTHROPIC_AUTH_TOKEN (meta.apiKeyField indicates which).
+    const env = settings.env || {};
+    apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '';
+    baseUrl = env.ANTHROPIC_BASE_URL || '';
+    // Resolve model from tier
+    const tier = String(settings.model || '').toLowerCase();
+    if (tier === 'opus') {
+      model = env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-opus-4-1-20250805';
+    } else if (tier === 'sonnet') {
+      model = env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514';
+    } else if (tier === 'haiku') {
+      model = env.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-3-5-haiku-20241022';
+    } else {
+      model = settings.model || '';
+    }
+    reasoningEffort = '';
+    apiFormat = meta.apiFormat || 'anthropic';
+  } else if (appType === 'codex') {
+    // CC Switch CodeX settings_config:
+    //   { auth: { OPENAI_API_KEY, ... }, config: "toml-like string" }
+    const auth = settings.auth || {};
+    apiKey = auth.OPENAI_API_KEY || Object.values(auth).find((v) => typeof v === 'string' && v.length > 0) || '';
+
+    // Parse TOML-like config string
+    const configStr = settings.config || '';
+    if (configStr) {
+      // Simple line-by-line TOML parser
+      const lines = configStr.split('\n');
+      let modelProvider = '';
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) continue;
+
+        // [section]
+        const sectionMatch = line.match(/^\[model_providers\.(\w+)\]/i);
+        if (sectionMatch) {
+          modelProvider = sectionMatch[1];
+          continue;
+        }
+        // Leave a section via [features], [windows], etc.
+        if (line.startsWith('[') && line.endsWith(']')) {
+          modelProvider = '';
+          continue;
+        }
+
+        // key = "value" or key = value
+        const kv = line.match(/^(\w+)\s*=\s*"([^"]*)"$/);
+        if (!kv) {
+          const kv2 = line.match(/^(\w+)\s*=\s*(.+)$/);
+          if (!kv2) continue;
+          // Only extract global keys (outside model_providers section)
+          if (modelProvider) continue;
+          const k = kv2[1].trim();
+          const v = kv2[2].trim().replace(/^"|"$/g, '');
+          if (k === 'model') model = v || model;
+          if (k === 'model_reasoning_effort') reasoningEffort = v || reasoningEffort;
+          if (k === 'wire_api') apiFormat = v || apiFormat;
+          continue;
+        }
+        if (modelProvider) {
+          // Inside [model_providers.<name>], capture base_url and wire_api
+          const k = kv[1];
+          const v = kv[2];
+          if (k === 'base_url') baseUrl = v || baseUrl;
+          if (k === 'wire_api') apiFormat = v || apiFormat;
+        } else {
+          const k = kv[1];
+          const v = kv[2];
+          if (k === 'model') model = v || model;
+          if (k === 'model_reasoning_effort') reasoningEffort = v || reasoningEffort;
+          if (k === 'base_url') baseUrl = v || baseUrl;
+          if (k === 'wire_api') apiFormat = v || apiFormat;
+        }
+      }
+    }
+
+    // Fallback: try flat settings_config keys
+    if (!model) model = settings.model || '';
+    if (!apiFormat) apiFormat = meta.apiFormat || settings.api_format || settings.apiFormat || 'openai';
+  }
 
   // Preserve unknown CC Switch fields in metadata
   const metadata = {
@@ -208,7 +302,7 @@ function mapCcSwitchRow(row, source) {
     ccSwitch: {
       id: row.id || null,
       appType: row.app_type,
-      rawMeta: (() => { try { return typeof row.meta === 'string' ? JSON.parse(row.meta) : (row.meta || {}); } catch (_) { return {}; } })(),
+      rawMeta: meta,
       rawSettings: typeof row.settings_config === 'string' ? row.settings_config : JSON.stringify(row.settings_config || {}),
     },
   };

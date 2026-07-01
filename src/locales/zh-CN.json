@@ -277,6 +277,7 @@
 		"importAgentTypeClaude": "Claude Code",
 		"importAgentTypeSkipped": "已跳过（不支持的配置类型）",
 		"importCcSwitchDesc": "CC Switch 导出的 .sql 文件可能同时包含 CodeX 和 Claude Code 配置。导入时自动按类型分流，默认跳过冲突项且不切换当前活跃配置。",
+		"importSuccessSummary": "导入完成：CodeX {codex} 项，Claude Code {claude} 项，跳过 {skipped} 项",
 		"providerSort": "拖拽排序",
 		"systemSettings": "系统设置",
 		"appVersion": "应用版本",

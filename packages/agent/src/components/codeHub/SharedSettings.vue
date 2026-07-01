@@ -33,6 +33,7 @@ import { useI18n } from 'vue-i18n'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import SystemSettings from '../agentCommon/components/SystemSettings.vue'
 import ShortcutSettings from '../agentCommon/components/ShortcutSettings.vue'
+import ImportConfig from '../agentCommon/components/ImportConfig.vue'
 
 const { agents } = useAgentRegistry()
 const { t } = useI18n()
@@ -64,6 +65,14 @@ const tabs = computed(() => {
     iconClass: 'ss-icon-system',
     iconStyle: { color: '#7e8ba3', fontSize: '16px' },
     settingsComponent: SystemSettings,
+  })
+  // 导入配置 Tab
+  agentTabs.push({
+    key: 'import',
+    label: t('settings.importConfig'),
+    iconClass: 'ss-icon-import',
+    iconStyle: { color: '#7e8ba3', fontSize: '16px' },
+    settingsComponent: ImportConfig,
   })
   return agentTabs
 })
@@ -133,6 +142,7 @@ defineExpose({ open, close })
 .shared-settings-close:hover { background: var(--cc-menu-hover); color: var(--cc-text); }
 .ss-icon-system::before { content: '⚙'; }
 .ss-icon-shortcuts::before { content: '⌨'; }
+.ss-icon-import::before { content: '⬇'; }
 .shared-settings-body {
   flex: 1; overflow-y: auto; min-height: 0;
   background: var(--cc-bg-secondary);

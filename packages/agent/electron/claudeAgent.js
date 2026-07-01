@@ -38,6 +38,7 @@ const {
 const CLAUDE_FREEZE_DIAG_MAX_BYTES = DEFAULT_MAX_BYTES
 const CLAUDE_METRICS_POLL_INTERVAL_MS = 1000
 let sessionRegistryOptionsForTest = null
+let _claudeProviderStorage = null
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
 // Note: getMindCraftSettingsPath / readMindCraftSettings / writeMindCraftSettings
@@ -1741,6 +1742,14 @@ function setupClaudeHandlers() {
     if (env.ANTHROPIC_REASONING_MODEL) tierEnv.ANTHROPIC_REASONING_MODEL = env.ANTHROPIC_REASONING_MODEL
 
     return { apiKey, baseURL, model, tierKey, tierEnv }
+  }
+
+  // Capture provider storage for system-level import IPC (T163).
+  _claudeProviderStorage = {
+    confGet,
+    confSet,
+    getMindCraftUserDataDir,
+    readRuntimeConfigFromUserSettingsFile,
   }
 
   ipcMain.handle('claude-get-model', () => readPrimaryModel())
@@ -3591,6 +3600,7 @@ function setupClaudeHandlers() {
 
 module.exports = {
   setupClaudeHandlers,
+  getClaudeProviderStorage: () => _claudeProviderStorage,
   __test__: {
     analyzeClaudeJsonlFileIntegrity,
     buildClaudeAgentDonePayload,

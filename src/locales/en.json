@@ -277,6 +277,7 @@
 		"importAgentTypeClaude": "Claude Code",
 		"importAgentTypeSkipped": "Skipped (unsupported config types)",
 		"importCcSwitchDesc": "CC Switch .sql exports may contain both CodeX and Claude Code providers. They are auto-split by type during import. Conflicts are skipped by default and current active providers are preserved.",
+		"importSuccessSummary": "Import complete: CodeX {codex}, Claude Code {claude}, skipped {skipped}",
 		"providerSort": "Drag to sort",
 		"systemSettings": "System Settings",
 		"appVersion": "App Version",

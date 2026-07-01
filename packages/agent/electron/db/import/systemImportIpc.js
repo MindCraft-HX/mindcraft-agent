@@ -161,7 +161,6 @@ function registerSystemImportIpc(ipcMain, deps) {
       source,
       providers: decisions,
       filePath,
-      applyActiveFromCcSwitch = false,
     } = payload || {};
 
     try {
@@ -233,11 +232,10 @@ function registerSystemImportIpc(ipcMain, deps) {
           }
         }
 
-        // When user opts out of CC Switch active flag, clear isActive on preview
-        // providers before commitImport writes to SQLite
+        // Always clear CC Switch active flag — MindCraft manages its own active state
         const codexPreviewForCommit = previewProviders
           .filter((p) => p.agentType === 'codex')
-          .map((p) => applyActiveFromCcSwitch ? p : { ...p, isActive: false });
+          .map((p) => ({ ...p, isActive: false }));
 
         codexResult = commitImport(db, {
           providers: codexDecisions,
@@ -265,24 +263,10 @@ function registerSystemImportIpc(ipcMain, deps) {
             tomlText: codexStored?.providers?.find((ep) => ep.name === p.name)?.tomlText || '',
           }));
 
-          // Handle active: keep existing activeIdx unless applyActiveFromCcSwitch is on
-          let newActiveIdx = codexActiveIdx;
-          if (applyActiveFromCcSwitch) {
-            // Resolve active via tempId->finalName so renames are tracked
-            const activePreview = previewProviders.find((p) => p.agentType === 'codex' && p.isActive);
-            if (activePreview) {
-              const renameDecision = codexDecisions.find((d) => d.tempId === activePreview.tempId && d.action === 'rename');
-              const lookupName = renameDecision?.finalName?.trim() || activePreview.name;
-              const foundIdx = newProviderList.findIndex(
-                (p) => (p.name || '').toLowerCase() === lookupName.toLowerCase(),
-              );
-              if (foundIdx >= 0) newActiveIdx = foundIdx;
-            }
-          }
-
+          // Keep existing activeIdx — MindCraft manages its own active state
           writeCodexProviders({
             providers: newProviderList,
-            activeIdx: Math.max(-1, newActiveIdx),
+            activeIdx: Math.max(-1, codexActiveIdx),
           });
         }
       }
@@ -296,11 +280,10 @@ function registerSystemImportIpc(ipcMain, deps) {
         const claudeExisting = claudeStored.providers || [];
         const claudeOrigActiveIdx = claudeStored.activeIdx ?? -1;
 
-        // When user opts out of CC Switch active flag, clear isActive on preview
-        // providers before commitImport writes to SQLite
+        // Always clear CC Switch active flag — MindCraft manages its own active state
         const claudePreviewForCommit = previewProviders
           .filter((p) => p.agentType === 'claude')
-          .map((p) => applyActiveFromCcSwitch ? p : { ...p, isActive: false });
+          .map((p) => ({ ...p, isActive: false }));
 
         claudeResult = commitImport(db, {
           providers: claudeDecisions,
@@ -325,23 +308,10 @@ function registerSystemImportIpc(ipcMain, deps) {
             tierModels: (claudeExisting.find((ep) => ep.name === p.name)?.tierModels) || {},
           }));
 
-          let newActiveIdx = claudeOrigActiveIdx;
-          if (applyActiveFromCcSwitch) {
-            // Resolve active via tempId->finalName so renames are tracked
-            const activePreview = previewProviders.find((p) => p.agentType === 'claude' && p.isActive);
-            if (activePreview) {
-              const renameDecision = claudeDecisions.find((d) => d.tempId === activePreview.tempId && d.action === 'rename');
-              const lookupName = renameDecision?.finalName?.trim() || activePreview.name;
-              const foundIdx = newProviderList.findIndex(
-                (p) => (p.name || '').toLowerCase() === lookupName.toLowerCase(),
-              );
-              if (foundIdx >= 0) newActiveIdx = foundIdx;
-            }
-          }
-
+          // Keep existing activeIdx — MindCraft manages its own active state
           claudeSetConfig('claudeProviders', {
             providers: newProviderList,
-            activeIdx: Math.max(-1, newActiveIdx),
+            activeIdx: Math.max(-1, claudeOrigActiveIdx),
           });
         }
       }

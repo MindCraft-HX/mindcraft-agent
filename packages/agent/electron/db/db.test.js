@@ -355,12 +355,12 @@ test('parseInsertLine handles reordered columns', () => {
 
 test('parseCcSwitchExport produces normalised providers', () => {
   const { parseCcSwitchExport } = require('./import/ccSwitch');
-  const sql = `
+  const sql = String.raw`
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('cc-1', 'codex', 'DeepSeek', '{"api_key":"sk-ds","base_url":"https://api.deepseek.com","model":"deepseek-chat"}', '{}', 1);
+VALUES ('cc-1', 'codex', 'DeepSeek', '{"auth":{"OPENAI_API_KEY":"sk-ds"},"config":"model = \"deepseek-chat\"\nbase_url = \"https://api.deepseek.com\""}', '{}', 1);
 
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('cc-2', 'codex', 'OpenAI', '{"key":"sk-oai","url":"https://api.openai.com","model":"gpt-4o","api_format":"responses"}', '{}', 0);
+VALUES ('cc-2', 'codex', 'OpenAI', '{"auth":{"OPENAI_API_KEY":"sk-oai"},"config":"model = \"gpt-4o\"\nwire_api = \"responses\""}', '{}', 0);
 `;
 
   const result = parseCcSwitchExport(sql);
@@ -372,6 +372,7 @@ VALUES ('cc-2', 'codex', 'OpenAI', '{"key":"sk-oai","url":"https://api.openai.co
   assert.equal(ds.agentType, 'codex');
   assert.equal(ds.name, 'DeepSeek');
   assert.equal(ds.config.key, 'sk-ds');
+  assert.equal(ds.config.url, 'https://api.deepseek.com');
   assert.equal(ds.isActive, true);
   assert.equal(ds.metadata.source, 'cc-switch');
 
@@ -385,8 +386,7 @@ test('parseCcSwitchExport handles escaped quotes in JSON', () => {
   const { parseCcSwitchExport } = require('./import/ccSwitch');
   const sql = `
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('cc-esc', 'codex', 'Test', '{"api_key":"key''with''quotes","model":"test"}', '{}', 0);
-`;
+VALUES ('cc-esc', 'codex', 'Test', '{"auth":{"OPENAI_API_KEY":"key''with''quotes"},"config":"model = \\"test\\""}', '{}', 0);`;
 
   const result = parseCcSwitchExport(sql);
   assert.equal(result.providers.length, 1);
@@ -395,9 +395,9 @@ VALUES ('cc-esc', 'codex', 'Test', '{"api_key":"key''with''quotes","model":"test
 
 test('parseCcSwitchExport handles CC Switch field name variants', () => {
   const { parseCcSwitchExport } = require('./import/ccSwitch');
-  const sql = `
+  const sql = String.raw`
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('cc-var', 'codex', 'Variant', '{"key":"sk1","base_url":"https://x.com","reasoning_effort":"high","api_format":"chat"}', '{}', 0);
+VALUES ('cc-var', 'codex', 'Variant', '{"auth":{"OPENAI_API_KEY":"sk1"},"config":"model = \"gpt-4o\"\nbase_url = \"https://x.com\"\nmodel_reasoning_effort = \"high\"\nwire_api = \"chat\""}', '{}', 0);
 `;
 
   const result = parseCcSwitchExport(sql);
@@ -557,13 +557,13 @@ test('T163 parseCcSwitchExport handles mixed CodeX and Claude providers', () => 
   const { parseCcSwitchExport } = require('./import/ccSwitch');
   const sql = `
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('mx-1', 'codex', 'DeepSeek', '{"api_key":"sk-ds","model":"deepseek-chat"}', '{}', 1);
+VALUES ('mx-1', 'codex', 'DeepSeek', '{"auth":{"OPENAI_API_KEY":"sk-ds"},"config":"model = \\"deepseek-chat\\""}', '{}', 1);
 
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('mx-2', 'claude', 'Anthropic', '{"api_key":"sk-ant","model":"claude-sonnet-4-20250514"}', '{}', 0);
+VALUES ('mx-2', 'claude', 'Anthropic', '{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-ant","ANTHROPIC_BASE_URL":"https://api.anthropic.com"},"model":"sonnet"}', '{"apiFormat":"anthropic"}', 0);
 
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('mx-3', 'codex', 'OpenAI', '{"api_key":"sk-oai","model":"gpt-4o"}', '{}', 0);
+VALUES ('mx-3', 'codex', 'OpenAI', '{"auth":{"OPENAI_API_KEY":"sk-oai"},"config":"model = \\"gpt-4o\\""}', '{}', 0);
 `;
 
   const result = parseCcSwitchExport(sql);
@@ -579,6 +579,21 @@ VALUES ('mx-3', 'codex', 'OpenAI', '{"api_key":"sk-oai","model":"gpt-4o"}', '{}'
   assert.equal(codexProviders[1].name, 'OpenAI');
   assert.equal(claudeProviders[0].name, 'Anthropic');
   assert.equal(claudeProviders[0].agentType, 'claude');
+});
+
+test('T163 parseCcSwitchExport handles ANTHROPIC_API_KEY variant', () => {
+  const { parseCcSwitchExport } = require('./import/ccSwitch');
+  const sql = String.raw`
+INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
+VALUES ('api-key-1', 'claude', 'MindCraft', '{"env":{"ANTHROPIC_API_KEY":"mc-test-key","ANTHROPIC_BASE_URL":"https://api.mindcraft.com.cn","ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-cc"},"model":"sonnet"}', '{"apiKeyField":"ANTHROPIC_API_KEY","apiFormat":"anthropic"}', 0);
+`;
+  const result = parseCcSwitchExport(sql);
+  assert.equal(result.providers.length, 1);
+  const p = result.providers[0];
+  assert.equal(p.name, 'MindCraft');
+  assert.equal(p.config.key, 'mc-test-key');
+  assert.equal(p.config.url, 'https://api.mindcraft.com.cn');
+  assert.equal(p.config.model, 'claude-sonnet-cc');
 });
 
 test('T163 commitImport overwrites by name without targetProviderId', async () => {
@@ -693,7 +708,7 @@ test('T163 anti-pollution: unknown CC Switch fields stay in metadata only', () =
   const { parseCcSwitchExport } = require('./import/ccSwitch');
   const sql = `
 INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
-VALUES ('ap-1', 'codex', 'AntiPollution', '{"api_key":"sk-ap","model":"gpt-4","unknown_field":"should-not-leak","internal_flag":true}', '{}', 0);
+VALUES ('ap-1', 'codex', 'AntiPollution', '{"auth":{"OPENAI_API_KEY":"sk-ap"},"config":"model = \\"gpt-4\\"","unknown_field":"should-not-leak","internal_flag":true}', '{}', 0);
 `;
 
   const result = parseCcSwitchExport(sql);
