@@ -131,35 +131,12 @@
       </div>
     </div>
 
-    <div class="ss-section">
-      <div class="ss-section-title">{{ $t('settings.exportConfig') }}</div>
-      <div class="ss-section-body">
-        <p class="ss-export-desc">{{ $t('settings.exportConfigHint') }}</p>
-        <div class="ss-item">
-          <button class="ss-action-btn" @click="handleExportConfig">
-            {{ $t('settings.exportButton') }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <ExportConfirmDialog
-      v-if="showExportDialog"
-      :claude-count="exportPreview.claudeCount"
-      :codex-count="exportPreview.codexCount"
-      :has-secrets="exportPreview.hasSecrets"
-      :incomplete-names="exportPreview.incompleteNames"
-      @confirm="doExport"
-      @close="showExportDialog = false"
-    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ExportConfirmDialog from './ExportConfirmDialog.vue'
-
 const { t, locale } = useI18n()
 
 function L(zh, en) {
@@ -294,52 +271,6 @@ function applyUpdateStatus(data, options = {}) {
   if (data.dev != null) isDevMode.value = Boolean(data.dev)
   if (data.releaseNotes !== undefined) releaseNotes.value = data.releaseNotes || ''
   if (data.force != null) forceUpdate.value = Boolean(data.force)
-}
-
-// ---- Export ----
-const showExportDialog = ref(false)
-const exportPreview = ref({ claudeCount: 0, codexCount: 0, hasSecrets: false, incompleteNames: [] })
-
-async function handleExportConfig() {
-  try {
-    const result = await window.electronAPI?.configExportPreview?.()
-    if (!result?.ok) {
-      alert(t('settings.exportFailed') + ': ' + (result?.error || ''))
-      return
-    }
-    if (result.codexCount === 0 && result.claudeCount === 0) {
-      alert(t('settings.exportNoProviders'))
-      return
-    }
-    exportPreview.value = {
-      claudeCount: result.claudeCount || 0,
-      codexCount: result.codexCount || 0,
-      hasSecrets: result.hasSecrets || false,
-      incompleteNames: result.incompleteNames || [],
-    }
-    showExportDialog.value = true
-  } catch (e) {
-    alert(t('settings.exportFailed') + ': ' + (e.message || ''))
-  }
-}
-
-async function doExport({ includeSecrets, includeActive }) {
-  showExportDialog.value = false
-  try {
-    const result = await window.electronAPI?.configExportSave?.({ includeSecrets, includeActive })
-    if (!result?.ok) {
-      if (result?.canceled) return
-      alert(t('settings.exportFailed') + ': ' + (result?.error || ''))
-      return
-    }
-    alert(t('settings.exportDone', {
-      codex: result.codexCount || 0,
-      claude: result.claudeCount || 0,
-      total: result.exported || 0,
-    }))
-  } catch (e) {
-    alert(t('settings.exportFailed') + ': ' + (e.message || ''))
-  }
 }
 
 onMounted(() => {})
@@ -582,10 +513,5 @@ defineExpose({ openSettings })
   transform: translateX(18px);
 }
 
-.ss-export-desc {
-  font-size: 12px;
-  color: var(--cc-text-muted);
-  margin: 0 0 8px;
-  line-height: 1.5;
-}
+
 </style>

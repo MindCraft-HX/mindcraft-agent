@@ -249,6 +249,7 @@
 		"importNoConfigToml": "config.toml not found or is empty",
 		"importNoAuthToken": "No experimental_bearer_token, auth_token, or base_url found in config file",
 		"importConfig": "Import Config",
+		"importExportConfig": "Import/Export Config",
 		"importConfigHint": "Import provider configuration from local CLI or CC Switch",
 		"importLocalCliConfig": "Import Local CLI Config",
 		"importLocalCliConfigDesc": "Read provider info from the current CLI config file",

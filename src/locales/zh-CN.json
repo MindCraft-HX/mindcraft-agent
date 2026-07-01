@@ -249,6 +249,7 @@
 		"importNoConfigToml": "未找到 config.toml 或文件为空",
 		"importNoAuthToken": "配置文件中未找到 experimental_bearer_token、auth_token 或 base_url",
 		"importConfig": "导入配置",
+		"importExportConfig": "导入/导出配置",
 		"importConfigHint": "从本地 CLI 或 CC Switch 导入提供商配置",
 		"importLocalCliConfig": "导入本地 CLI 配置",
 		"importLocalCliConfigDesc": "从当前 CLI 配置文件读取提供商信息",

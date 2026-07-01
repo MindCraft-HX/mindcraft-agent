@@ -66,10 +66,10 @@ const tabs = computed(() => {
     iconStyle: { color: '#7e8ba3', fontSize: '16px' },
     settingsComponent: SystemSettings,
   })
-  // 导入配置 Tab
+  // 导入/导出配置 Tab
   agentTabs.push({
     key: 'import',
-    label: t('settings.importConfig'),
+    label: t('settings.importExportConfig'),
     iconClass: 'ss-icon-import',
     iconStyle: { color: '#7e8ba3', fontSize: '16px' },
     settingsComponent: ImportConfig,
