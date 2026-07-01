@@ -10,7 +10,7 @@
                 <span v-for="(seg, k) in h.delSegments[j]" :key="k"
                   :class="{ 'diff-word-changed': seg.type === 'changed' }">{{ seg.value }}</span>
               </template>
-              <template v-else v-html="highlight(t, filePath)"></template>
+              <span v-else v-html="highlight(t, filePath)"></span>
             </div>
             <div v-for="n in Math.max(0, (h.add?.length || 0) - (h.del?.length || 0))" :key="'ep'+n" class="diff-line empty"></div>
           </template>
@@ -26,7 +26,7 @@
                 <span v-for="(seg, k) in h.addSegments[j]" :key="k"
                   :class="{ 'diff-word-changed': seg.type === 'changed' }">{{ seg.value }}</span>
               </template>
-              <template v-else v-html="highlight(t, filePath)"></template>
+              <span v-else v-html="highlight(t, filePath)"></span>
             </div>
           </template>
         </template>
@@ -55,12 +55,25 @@ defineProps({
 }
 .diff-split-side::-webkit-scrollbar { height: 4px; }
 .diff-split-side.left { border-right: 1px solid var(--cc-border-strong); }
-.diff-line { display: flex; padding: 0 10px; min-height: 19.2px; white-space: pre; }
+.diff-line {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  padding: 0 10px;
+  min-height: 19.2px;
+  white-space: pre;
+}
 .diff-line.add { background: var(--cc-diff-add-bg); }
 .diff-line.del { background: var(--cc-diff-del-bg); }
 .diff-line.ctx { color: var(--cc-diff-ctx); }
 .diff-line.empty { background: var(--cc-diff-empty-bg); }
-.diff-line :deep(.hljs) { white-space: pre; }
+.diff-line > span { display: block; min-width: max-content; }
+.diff-line :deep(.hljs) {
+  display: block;
+  min-width: max-content;
+  white-space: pre;
+  background: transparent !important;
+}
 .diff-line.del .diff-word-changed {
   background: var(--cc-diff-word-del-bg, #6b2828);
   border-radius: 2px; padding: 0 1px;
