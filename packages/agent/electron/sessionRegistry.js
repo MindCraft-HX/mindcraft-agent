@@ -396,10 +396,68 @@ function findIndexedRecordForProvider(record = {}, index = {}, options = {}) {
   return null
 }
 
+function findProviderOwnerRecords(record = {}, index = {}, options = {}) {
+  const providerKeys = new Set(getProviderKeysFromRecord(record))
+  if (!providerKeys.size) return []
+
+  const normalizedAgent = normalizeAgent(record.agent)
+  const provider = record.provider || {}
+  const byChatKey = new Map()
+  const addCandidate = (candidate) => {
+    if (!candidate?.chatKey) return
+    if (normalizedAgent !== 'unknown' && normalizeAgent(candidate.agent) !== normalizedAgent) return
+    byChatKey.set(candidate.chatKey, candidate)
+  }
+
+  for (const key of providerKeys) {
+    const chatKey = index.providers?.[key]
+    if (chatKey) addCandidate(readJson(getSessionRecordPath(chatKey, options), null))
+  }
+
+  for (const candidate of listSessionRecords(options)) {
+    if (normalizedAgent !== 'unknown' && normalizeAgent(candidate.agent) !== normalizedAgent) continue
+    const candidateKeys = new Set(getProviderKeysFromRecord(candidate))
+    const sameProvider = Array.from(providerKeys).some(key => candidateKeys.has(key))
+    const detachedProvider = isDetachedProviderBinding({
+      cliSessionId: provider.cliSessionId,
+      filePath: provider.filePath,
+    }, candidate.metadata?.detachedProviderBinding)
+    if (sameProvider || detachedProvider) addCandidate(candidate)
+  }
+
+  return Array.from(byChatKey.values())
+}
+
+function chooseProviderOwnerRecord(record = {}, index = {}, options = {}) {
+  const candidates = findProviderOwnerRecords(record, index, options)
+  if (!candidates.length) return null
+  return candidates.slice().sort((a, b) => scoreRepairCandidate(b) - scoreRepairCandidate(a))[0] || null
+}
+
+function mergeProviderBinding(existingProvider = {}, incomingProvider = {}, source = '') {
+  const existingCliSessionId = normalizeString(existingProvider.cliSessionId)
+  const existingFilePath = normalizeString(existingProvider.filePath)
+  const incomingCliSessionId = normalizeString(incomingProvider.cliSessionId)
+  const incomingFilePath = normalizeString(incomingProvider.filePath)
+
+  if (source === 'panel') {
+    return {
+      cliSessionId: existingCliSessionId || incomingCliSessionId,
+      filePath: existingFilePath || incomingFilePath,
+    }
+  }
+
+  return {
+    cliSessionId: incomingCliSessionId || existingCliSessionId,
+    filePath: incomingFilePath || existingFilePath,
+  }
+}
+
 function upsertSessionRecord(record, options = {}) {
   if (!record?.chatKey) return false
   const index = readIndex(options)
-  const canonicalRecord = findIndexedRecordForProvider(record, index, options)
+  const ownerRecords = findProviderOwnerRecords(record, index, options)
+  const canonicalRecord = chooseProviderOwnerRecord(record, index, options) || findIndexedRecordForProvider(record, index, options)
   const effectiveRecord = canonicalRecord
     ? {
         ...canonicalRecord,
@@ -422,7 +480,7 @@ function upsertSessionRecord(record, options = {}) {
   const filePath = getSessionRecordPath(effectiveRecord.chatKey, options)
   if (!filePath) return false
   const existing = readJson(filePath, {})
-  const incomingProvider = { ...(effectiveRecord.provider || {}) }
+  const incomingProvider = mergeProviderBinding(existing?.provider || {}, effectiveRecord.provider || {}, options.providerBindingSource)
   const titleState = chooseTitle(existing, effectiveRecord)
   const incomingInst = effectiveRecord.instruction || {}
   const hasRealInstruction = incomingInst.enabled || String(incomingInst.content || '').trim()
@@ -431,10 +489,7 @@ function upsertSessionRecord(record, options = {}) {
     ...effectiveRecord,
     title: titleState.title,
     titleSource: titleState.titleSource,
-    provider: {
-      ...(existing?.provider || {}),
-      ...incomingProvider,
-    },
+    provider: incomingProvider,
     runtime: {
       ...(existing?.runtime || {}),
       ...(effectiveRecord.runtime || {}),
@@ -469,12 +524,16 @@ function upsertSessionRecord(record, options = {}) {
   writeJsonAtomic(filePath, next)
 
   removeIndexReferences(index, next.chatKey)
-  if (canonicalRecord && record.chatKey && record.chatKey !== canonicalRecord.chatKey) {
-    removeIndexReferences(index, record.chatKey)
+  const orphanChatKeys = new Set(ownerRecords
+    .map(owner => normalizeString(owner.chatKey))
+    .filter(chatKey => chatKey && chatKey !== next.chatKey))
+  if (record.chatKey && record.chatKey !== next.chatKey) orphanChatKeys.add(record.chatKey)
+  for (const orphanChatKey of orphanChatKeys) {
+    removeIndexReferences(index, orphanChatKey)
     // 合并到 canonical 记录后，删除旧的孤立会话文件，
     // 避免 listSessionRecords() 扫描出重复记录。
     try {
-      const orphanPath = getSessionRecordPath(record.chatKey, options)
+      const orphanPath = getSessionRecordPath(orphanChatKey, options)
       if (orphanPath && fs.existsSync(orphanPath)) fs.unlinkSync(orphanPath)
     } catch (_) {}
   }
@@ -860,7 +919,7 @@ function syncPanelStateSessions(agent, panelState = {}, options = {}) {
       const chats = Array.isArray(project?.chats) ? project.chats : []
       for (const chat of chats) {
         const record = buildSessionRecordFromChat(agent, project, chat)
-        if (record && upsertSessionRecord(record, options)) count += 1
+        if (record && upsertSessionRecord(record, { ...options, providerBindingSource: 'panel' })) count += 1
       }
     }
   } catch (e) {

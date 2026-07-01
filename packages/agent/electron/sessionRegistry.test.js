@@ -447,6 +447,117 @@ test('upsertSessionRecord deletes orphan record file after provider merge', () =
   assert.equal(records[0].titleSource, 'user')
 })
 
+test('upsertSessionRecord cleans duplicate provider records even when index misses the orphan', () => {
+  const userDataDir = makeTempUserData()
+  const providerFilePath = 'C:/Users/demo/.codex/sessions/thread-1.jsonl'
+
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-canonical',
+        name: 'Canonical user title',
+        titleSource: 'user',
+        cliSessionId: 'thread-1',
+        filePath: providerFilePath,
+      }],
+    }],
+  }, { userDataDir })
+
+  const orphanPath = getSessionRecordPath('chat-key-orphan', { userDataDir })
+  fs.writeFileSync(orphanPath, JSON.stringify({
+    schemaVersion: 1,
+    chatKey: 'chat-key-orphan',
+    agent: 'codex',
+    projectId: 'project-1',
+    cwd: 'D:/repo',
+    title: 'Orphan provider title',
+    titleSource: 'provider',
+    provider: {
+      cliSessionId: 'thread-1',
+      filePath: providerFilePath,
+    },
+    createdAt: 100,
+    updatedAt: 300,
+  }, null, 2), 'utf8')
+
+  const indexPath = path.join(userDataDir, 'session-registry', 'index.json')
+  const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'))
+  delete index.providers['codex:session:thread-1']
+  delete index.providers['codex:path:c:/users/demo/.codex/sessions/thread-1.jsonl']
+  fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), 'utf8')
+
+  const ok = upsertSessionRecord({
+    chatKey: 'chat-key-fresh',
+    agent: 'codex',
+    projectId: 'project-1',
+    cwd: 'D:/repo',
+    title: 'Scanned provider title',
+    titleSource: 'provider',
+    provider: {
+      cliSessionId: 'thread-1',
+      filePath: providerFilePath,
+    },
+  }, { userDataDir })
+
+  assert.equal(ok, true)
+  assert.equal(fs.existsSync(orphanPath), false)
+  assert.equal(fs.existsSync(getSessionRecordPath('chat-key-fresh', { userDataDir })), false)
+  const records = listSessionRecords({ userDataDir })
+  assert.equal(records.length, 1)
+  assert.equal(records[0].chatKey, 'chat-key-canonical')
+  const repairedIndex = JSON.parse(fs.readFileSync(indexPath, 'utf8'))
+  assert.equal(repairedIndex.providers['codex:session:thread-1'], 'chat-key-canonical')
+})
+
+test('panel-state sync does not overwrite an existing provider binding', () => {
+  const userDataDir = makeTempUserData()
+
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Original thread',
+        cliSessionId: 'thread-old',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  const rebound = setSessionTitle('chat-key-1', 'Retargeted thread', {
+    userDataDir,
+    agent: 'codex',
+    cwd: 'D:/repo',
+    cliSessionId: 'thread-new',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-new.jsonl',
+  })
+  assert.equal(rebound.ok, true)
+
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Stale panel cache',
+        cliSessionId: 'thread-old',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-old.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  const record = listSessionRecords({ userDataDir })[0]
+  assert.equal(record.chatKey, 'chat-key-1')
+  assert.equal(record.provider.cliSessionId, 'thread-new')
+  assert.equal(record.provider.filePath, 'C:/Users/demo/.codex/sessions/thread-new.jsonl')
+  const index = JSON.parse(fs.readFileSync(path.join(userDataDir, 'session-registry', 'index.json'), 'utf8'))
+  assert.equal(index.providers['codex:session:thread-new'], 'chat-key-1')
+  assert.equal(index.providers['codex:session:thread-old'], undefined)
+})
+
 test('upsertSessionFromProviderScan generates MindCraft chatKey instead of using provider sessionId', () => {
   const userDataDir = makeTempUserData()
   const record = upsertSessionFromProviderScan('codex', {
