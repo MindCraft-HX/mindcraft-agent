@@ -28,6 +28,7 @@ const {
   listSessionRecords,
   setSessionTitle,
   repairSessionRegistry,
+  upsertRuntimeByProvider,
 } = require('./sessionRegistry')
 
 // ---------------------------------------------------------------------------
@@ -340,6 +341,69 @@ test('readPanelState sequence: sync → restore → repair is consistent', () =>
   // Records intact
   const records = listSessionRecords({ userDataDir })
   assert.equal(records.length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// T165 Phase 2a: reasoningEffort survives panel re-sync
+// ---------------------------------------------------------------------------
+
+test('CodeX reasoningEffort survives panel re-sync', () => {
+  const userDataDir = makeTempUserData()
+
+  // Initial sync with reasoningEffort: 'medium'
+  syncPanelStateSessions('codex', makePanelState({ reasoningEffort: 'medium' }),
+    { userDataDir })
+
+  // Authoritative runtime update (simulates next turn with different effort)
+  upsertRuntimeByProvider({
+    agent: 'codex',
+    cliSessionId: 'thread-1',
+    cwd: 'D:/repo',
+    runtime: { reasoningEffort: 'xhigh' },
+  }, { userDataDir })
+
+  // Verify upsert took effect
+  const afterUpsert = findSessionRecordByProvider(
+    { agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.ok(afterUpsert)
+  assert.equal(afterUpsert.runtime.reasoningEffort, 'xhigh',
+    'upserted reasoningEffort should be xhigh')
+
+  // Stale panel re-sync with old reasoningEffort value
+  syncPanelStateSessions('codex', makePanelState({ reasoningEffort: 'medium' }),
+    { userDataDir })
+
+  // T165 Phase 2a: panel source must not overwrite runtime fields
+  // set by upsertRuntimeByProvider.
+  const record = findSessionRecordByProvider(
+    { agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.ok(record, 'record exists after panel re-sync')
+  assert.equal(record.runtime.reasoningEffort, 'xhigh',
+    'reasoningEffort must survive stale panel re-sync')
+})
+
+test('CodeX reasoningEffort from panel sync fills gaps only', () => {
+  const userDataDir = makeTempUserData()
+
+  // Panel sync without reasoningEffort — field is missing
+  syncPanelStateSessions('codex', makePanelState({ reasoningEffort: undefined }),
+    { userDataDir })
+
+  const afterFirst = findSessionRecordByProvider(
+    { agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.ok(afterFirst)
+  assert.equal(afterFirst.runtime.reasoningEffort || '', '',
+    'reasoningEffort not set when panel has no value')
+
+  // Panel sync now provides reasoningEffort — should fill the gap
+  syncPanelStateSessions('codex', makePanelState({ reasoningEffort: 'medium' }),
+    { userDataDir })
+
+  const afterSecond = findSessionRecordByProvider(
+    { agent: 'codex', cliSessionId: 'thread-1' }, { userDataDir })
+  assert.ok(afterSecond)
+  assert.equal(afterSecond.runtime.reasoningEffort, 'medium',
+    'panel source can fill missing reasoningEffort')
 })
 
 // ---------------------------------------------------------------------------

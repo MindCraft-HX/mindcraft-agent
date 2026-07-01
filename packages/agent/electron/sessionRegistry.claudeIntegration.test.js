@@ -379,23 +379,22 @@ test('runtime metadata survives panel re-sync', () => {
   assert.equal(afterUpsert.runtime.effort, 'xhigh')
   assert.equal(afterUpsert.runtime.modelTier, 'opus')
 
-  // Re-sync panel with stale runtime values (e.g., panel cache from before
+  // Re-sync panel with stale runtime values (panel cache from before
   // the next turn that changed model/effort).
   syncPanelStateSessions('claude', makePanelState({ model: 'claude-sonnet', effort: 'high' }),
     { userDataDir })
 
-  // KNOWN GAP (T165 Phase 2):
-  // Currently syncPanelStateSessions overwrites runtime fields from
-  // upsertRuntimeByProvider with stale panel values. The desired behavior
-  // is that upsertRuntimeByProvider (authoritative runtime write) survives
-  // panel re-sync. This test locks current behavior so T165 Phase 2 can
-  // detect the change.
+  // T165 Phase 2a: panel source (providerBindingSource='panel') must NOT
+  // overwrite runtime fields already set by upsertRuntimeByProvider.
+  // Panel can only fill in missing runtime fields; existing values from
+  // authoritative writes (upsertRuntimeByProvider, scan) are preserved.
   const record = findSessionRecordByProvider(
     { agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
   assert.ok(record, 'record exists after panel re-sync')
-  assert.equal(record.runtime.model, 'claude-sonnet',
-    'CURRENT: panel re-sync overwrites runtime model')
-  assert.equal(record.runtime.effort, 'high',
-    'CURRENT: panel re-sync overwrites runtime effort')
-  // modelTier not in panel state should survive
+  assert.equal(record.runtime.model, 'claude-opus',
+    'runtime model must survive panel re-sync')
+  assert.equal(record.runtime.effort, 'xhigh',
+    'runtime effort must survive panel re-sync')
+  assert.equal(record.runtime.modelTier, 'opus',
+    'runtime modelTier must survive panel re-sync')
 })

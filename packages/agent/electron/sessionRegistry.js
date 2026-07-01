@@ -453,6 +453,37 @@ function mergeProviderBinding(existingProvider = {}, incomingProvider = {}, sour
   }
 }
 
+/**
+ * Merge runtime fields with source-aware strategy.
+ *
+ * Panel source (syncPanelStateSessions) is untrusted for runtime — it can only
+ * fill in fields that don't yet have a value. Non-panel sources (scan,
+ * upsertRuntimeByProvider, direct upsert) are authoritative — incoming wins.
+ *
+ * Uses the same `existing || incoming` pattern as mergeProviderBinding
+ * to handle empty strings correctly (normalizeRuntime produces '' for unset).
+ */
+function mergeRuntime(source, existingRuntime, effectiveRuntime) {
+  const e = existingRuntime || {}
+  const n = effectiveRuntime || {}
+
+  if (source === 'panel') {
+    return {
+      model: e.model || n.model || '',
+      effort: e.effort || n.effort || null,
+      modelTier: e.modelTier || n.modelTier || '',
+      reasoningEffort: e.reasoningEffort || n.reasoningEffort || null,
+    }
+  }
+
+  return {
+    model: n.model || e.model || '',
+    effort: n.effort || e.effort || null,
+    modelTier: n.modelTier || e.modelTier || '',
+    reasoningEffort: n.reasoningEffort || e.reasoningEffort || null,
+  }
+}
+
 function upsertSessionRecord(record, options = {}) {
   if (!record?.chatKey) return false
   const index = readIndex(options)
@@ -490,10 +521,7 @@ function upsertSessionRecord(record, options = {}) {
     title: titleState.title,
     titleSource: titleState.titleSource,
     provider: incomingProvider,
-    runtime: {
-      ...(existing?.runtime || {}),
-      ...(effectiveRecord.runtime || {}),
-    },
+    runtime: mergeRuntime(options.providerBindingSource, existing?.runtime, effectiveRecord.runtime),
     metadata: {
       ...(existing?.metadata || {}),
       ...(effectiveRecord.metadata || {}),
