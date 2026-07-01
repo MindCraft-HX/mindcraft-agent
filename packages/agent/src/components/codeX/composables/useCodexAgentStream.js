@@ -391,6 +391,33 @@ const ITEM_TOOL_HANDLERS = {
     mergeProps: (item) => ({ text: item.message || '' }),
     status: () => 'error',
   },
+  // 普通 custom_tool_call（非 apply_patch）：如 web_search、read_file 等
+  // 实时流中之前被遗漏（仅 history restore 有处理），现在补齐为通用 tool card。
+  custom_tool_call: {
+    toolName: (item) => item.name || 'tool',
+    baseProps: (item) => ({
+      expanded: true,
+      newContent: '',
+      diffLines: [],
+      filePath: '',
+    }),
+    mergeProps: (item) => ({
+      text: JSON.stringify({ name: item.name, input: String(item.input || '').substring(0, 2000) }, null, 2),
+      filePath: item.name === 'apply_patch'
+        ? (String(item.input || '').match(/\*\*\*\s+Update File:\s*(.+)/) || [])[1]?.trim() || ''
+        : '',
+    }),
+    status: (item, isFinal) => normalizeToolStatus(item.status, isFinal),
+  },
+  custom_tool_call_output: {
+    toolName: (item) => item.name || 'tool',
+    baseProps: () => ({ expanded: true, newContent: '', diffLines: [] }),
+    mergeProps: (item, existing) => ({
+      text: existing?.text || '',
+      toolResultContent: item.output || '',
+    }),
+    status: (item) => item.status === 'failed' ? 'error' : 'done',
+  },
 }
 
 export function useCodexAgentStream({
@@ -619,8 +646,26 @@ export function useCodexAgentStream({
       }
 
       if (item.type === 'agent_message') {
+        const raw = item.message || item.text || ''
+        // Strip <thinking>...</thinking> blocks; these are internal progress,
+        // not final assistant content. Empty after stripping → skip entirely.
+        const cleaned = raw.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim()
+        if (!cleaned) {
+          if (isFinal) tab.currentAssistantId = null
+          return
+        }
+        // Only create/update assistant text when no prior text exists.
+        // agent_message is a secondary notification; assistant type messages
+        // are the primary streaming text source. Never overwrite.
+        const existing = tab.messages.find(m => m.role === 'assistant')
+        if (existing && existing.text) {
+          if (isFinal) tab.currentAssistantId = null
+          scrollBottom(tab.id)
+          saveHistory()
+          return
+        }
         const aMsg = ensureAssistantMessage(tab, nextMsgId, onNewMessage)
-        aMsg.text = item.message || item.text || ''
+        if (!aMsg.text) aMsg.text = cleaned
         if (isFinal) tab.currentAssistantId = null
         scrollBottom(tab.id)
         saveHistory()

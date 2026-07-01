@@ -5,16 +5,10 @@ import { ref } from 'vue'
 import { useCodexAgentStream } from '../packages/agent/src/components/codeX/composables/useCodexAgentStream.js'
 
 /**
- * CodeX 事件渲染契约 — characterization tests
+ * CodeX 事件渲染契约测试
  *
- * 锁定 live stream 中 custom_tool_call、agent_message、thinking 标签
- * 的当前行为（含已知 bug），为 Phase 1-3 修复提供回归护栏。
- *
- * 场景覆盖：
- *   - live custom_tool_call 非 apply_patch 生成 tool message
- *   - 空 agent_message 不覆盖已有 assistant 文本
- *   - 空 agent_message 不创建 assistant bubble
- *   - <thinking> 标签不进入 final assistant bubble
+ * 覆盖 live stream 中 custom_tool_call、agent_message、thinking 标签的
+ * 期望行为，确保 live 和 history 路径渲染一致。
  */
 
 function createStreamHarness() {
@@ -56,7 +50,7 @@ function createStreamHarness() {
 
 // ── custom_tool_call ──────────────────────────────────────────────
 
-test('BUG: live custom_tool_call (non-apply_patch) is silently dropped', () => {
+test('custom_tool_call (non-apply_patch) creates a generic tool message', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -74,14 +68,16 @@ test('BUG: live custom_tool_call (non-apply_patch) is silently dropped', () => {
     },
   })
 
-  // BUG: custom_tool_call not in ITEM_TOOL_HANDLERS → silently dropped.
-  // Expected (after fix): at least 1 tool message for web_search.
   const toolMessages = tab.messages.filter(m => m.role === 'tool')
-  assert.equal(toolMessages.length, 0,
-    'BUG: custom_tool_call should create a tool message but is currently dropped')
+  assert.equal(toolMessages.length, 1,
+    'custom_tool_call should create a tool message')
+  assert.equal(toolMessages[0].toolName, 'web_search')
+  assert.equal(toolMessages[0].rawType, 'custom_tool_call')
+  assert.equal(toolMessages[0].toolUseId, 'call-ws-1')
+  assert.equal(toolMessages[0].status, 'running')
 })
 
-test('custom_tool_call apply_patch creates a tool message (baseline)', () => {
+test('custom_tool_call apply_patch creates apply_patch tool message (baseline)', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -104,36 +100,89 @@ test('custom_tool_call apply_patch creates a tool message (baseline)', () => {
   assert.equal(toolMessages[0].toolName, 'apply_patch')
 })
 
-test('non-apply_patch custom_tool_call falls through to ITEM_TOOL_HANDLERS (currently undefined)', () => {
+test('custom_tool_call receives toolResultContent from custom_tool_call_output', () => {
   const { tab, stream } = createStreamHarness()
+
+  // Start a custom_tool_call
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.started',
+      item: {
+        id: 'tool-read-1',
+        type: 'custom_tool_call',
+        call_id: 'call-read-1',
+        name: 'read_file',
+        input: '{"path":"src/demo.ts"}',
+        status: 'in_progress',
+      },
+    },
+  })
+
+  // Output arrives
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.completed',
+      item: {
+        id: 'tool-read-output-1',
+        type: 'custom_tool_call_output',
+        call_id: 'call-read-1',
+        output: 'file content here',
+      },
+    },
+  })
+
+  const toolMessages = tab.messages.filter(m => m.role === 'tool')
+  assert.equal(toolMessages.length, 1, 'upsert should not create duplicate')
+  // Output should be attached to the same tool message
+  assert.ok(toolMessages[0].toolResultContent, 'output should be attached')
+})
+
+test('custom_tool_call completed sets status to done', () => {
+  const { tab, stream } = createStreamHarness()
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.started',
+      item: {
+        id: 'tool-1',
+        type: 'custom_tool_call',
+        call_id: 'call-1',
+        name: 'some_tool',
+        input: '{}',
+        status: 'in_progress',
+      },
+    },
+  })
 
   stream.onAgentMessage({
     sessionId: 'sess-1',
     msg: {
       type: 'item.completed',
       item: {
-        id: 'tool-generic-1',
+        id: 'tool-1',
         type: 'custom_tool_call',
-        call_id: 'call-gen-1',
-        name: 'read_file',
-        input: '{"path":"src/demo.ts"}',
+        call_id: 'call-1',
+        name: 'some_tool',
+        input: '{}',
         status: 'completed',
       },
     },
   })
 
-  // No tool message created — falls into ITEM_TOOL_HANDLERS lookup which is undefined.
   const toolMessages = tab.messages.filter(m => m.role === 'tool')
-  assert.equal(toolMessages.length, 0,
-    'custom_tool_call read_file is not in ITEM_TOOL_HANDLERS → dropped')
+  assert.equal(toolMessages.length, 1)
+  assert.equal(toolMessages[0].status, 'done')
 })
 
-// ── agent_message 空覆盖 ───────────────────────────────────────────
+// ── agent_message 覆盖保护 ───────────────────────────────────────────
 
-test('BUG: empty agent_message overwrites existing assistant text', () => {
+test('empty agent_message does NOT overwrite existing assistant text', () => {
   const { tab, stream } = createStreamHarness()
 
-  // First: send real assistant text
+  // Build up assistant text via assistant type chunks
   stream.onAgentMessage({
     sessionId: 'sess-1',
     msg: {
@@ -142,17 +191,16 @@ test('BUG: empty agent_message overwrites existing assistant text', () => {
     },
   })
 
-  const assistantMsg = tab.messages.find(m => m.role === 'assistant')
-  assert.ok(assistantMsg, 'assistant message should exist')
-  assert.equal(assistantMsg.text, 'Hello world')
+  const a1 = tab.messages.find(m => m.role === 'assistant')
+  assert.equal(a1.text, 'Hello world')
 
-  // Then: empty agent_message comes in
+  // Empty agent_message comes in — should NOT overwrite
   stream.onAgentMessage({
     sessionId: 'sess-1',
     msg: {
       type: 'item.updated',
       item: {
-        id: 'agent-msg-1',
+        id: 'agent-empty-1',
         type: 'agent_message',
         message: '',
         text: '',
@@ -160,13 +208,12 @@ test('BUG: empty agent_message overwrites existing assistant text', () => {
     },
   })
 
-  // BUG: agent_message overwrites with empty string
-  const am = tab.messages.find(m => m.role === 'assistant')
-  assert.equal(am.text, '',
-    'BUG: empty agent_message should NOT overwrite existing assistant text')
+  const a2 = tab.messages.find(m => m.role === 'assistant')
+  assert.equal(a2.text, 'Hello world',
+    'empty agent_message must not overwrite existing assistant text')
 })
 
-test('BUG: empty agent_message creates assistant bubble when none exists', () => {
+test('empty agent_message does NOT create assistant bubble when none exists', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -182,14 +229,12 @@ test('BUG: empty agent_message creates assistant bubble when none exists', () =>
     },
   })
 
-  // BUG: ensureAssistantMessage creates a bubble even for empty text
   const assistantMessages = tab.messages.filter(m => m.role === 'assistant')
-  assert.equal(assistantMessages.length, 1,
-    'BUG: empty agent_message should NOT create an assistant bubble but currently does')
-  assert.equal(assistantMessages[0].text, '')
+  assert.equal(assistantMessages.length, 0,
+    'empty agent_message must not create an assistant bubble')
 })
 
-test('agent_message with real text creates assistant bubble and sets text (baseline)', () => {
+test('agent_message with real text creates assistant bubble and sets text', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -210,9 +255,42 @@ test('agent_message with real text creates assistant bubble and sets text (basel
   assert.equal(am.text, 'Here is the result')
 })
 
+test('non-empty agent_message preserves existing assistant text (no overwrite)', () => {
+  const { tab, stream } = createStreamHarness()
+
+  // Build up text via assistant type chunks
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Part 1. ' }] },
+    },
+  })
+
+  // agent_message with more text — should not overwrite the already-built text
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.updated',
+      item: {
+        id: 'agent-append-1',
+        type: 'agent_message',
+        message: 'Part 2. Final.',
+        text: 'Part 2. Final.',
+      },
+    },
+  })
+
+  // The assistant text accumulated via 'assistant' type chunks is preserved.
+  // agent_message is a secondary notification, not the primary text source.
+  const am = tab.messages.find(m => m.role === 'assistant')
+  assert.equal(am.text, 'Part 1. ',
+    'agent_message text must not overwrite text accumulated via assistant type chunks')
+})
+
 // ── <thinking> 标签归类 ────────────────────────────────────────────
 
-test('agent_message with <thinking> content appears as assistant text (current behavior)', () => {
+test('agent_message <thinking> tags are stripped from assistant text', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -222,21 +300,19 @@ test('agent_message with <thinking> content appears as assistant text (current b
       item: {
         id: 'agent-thinking-1',
         type: 'agent_message',
-        message: '<thinking>tool call</thinking>',
-        text: '<thinking>tool call</thinking>',
+        message: '<thinking>tool call web_search</thinking>',
+        text: '<thinking>tool call web_search</thinking>',
       },
     },
   })
 
   const am = tab.messages.find(m => m.role === 'assistant')
-  assert.ok(am)
-  // Current behavior: <thinking> tags appear raw in assistant text.
-  // After fix: should be stripped or classified as progress/reasoning.
-  assert.ok(am.text.includes('<thinking>'),
-    'current behavior: <thinking> appears raw in assistant text')
+  // Pure thinking content → stripped to empty → no bubble created
+  assert.ok(!am || am.text === '',
+    '<thinking> tags should be stripped from assistant text')
 })
 
-test('agent_message with mixed thinking and real content', () => {
+test('agent_message mixed thinking and real content — thinking stripped, real kept', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -253,47 +329,11 @@ test('agent_message with mixed thinking and real content', () => {
   })
 
   const am = tab.messages.find(m => m.role === 'assistant')
-  assert.ok(am)
-  assert.ok(am.text.includes('<thinking>'),
-    'current: thinking tags mixed with real content in assistant text')
+  assert.ok(am, 'real content should create assistant bubble')
+  assert.ok(!am.text.includes('<thinking>'),
+    '<thinking> tags must be stripped')
   assert.ok(am.text.includes('I found the following'),
-    'real content still present')
-})
-
-// ── agent_message 覆盖保护 ─────────────────────────────────────────
-
-test('non-empty agent_message appends to existing assistant text (current: overwrites)', () => {
-  const { tab, stream } = createStreamHarness()
-
-  // Build up text via assistant type chunks
-  stream.onAgentMessage({
-    sessionId: 'sess-1',
-    msg: {
-      type: 'assistant',
-      message: { role: 'assistant', content: [{ type: 'text', text: 'Part 1. ' }] },
-    },
-  })
-
-  // Then agent_message comes with more text
-  stream.onAgentMessage({
-    sessionId: 'sess-1',
-    msg: {
-      type: 'item.updated',
-      item: {
-        id: 'agent-append-1',
-        type: 'agent_message',
-        message: 'Part 2. Final.',
-        text: 'Part 2. Final.',
-      },
-    },
-  })
-
-  // Current behavior: agent_message OVERWRITES, does not append
-  const am = tab.messages.find(m => m.role === 'assistant')
-  assert.ok(am)
-  // BUG: text should ideally be 'Part 1. Part 2. Final.' but is just 'Part 2. Final.'
-  assert.equal(am.text, 'Part 2. Final.',
-    'current: agent_message overwrites instead of appending')
+    'real content must be preserved')
 })
 
 // ── turn 边界 ──────────────────────────────────────────────────────
@@ -301,7 +341,6 @@ test('non-empty agent_message appends to existing assistant text (current: overw
 test('turn.completed does not clear existing tool messages', () => {
   const { tab, stream } = createStreamHarness()
 
-  // Create a tool message first
   stream.onAgentMessage({
     sessionId: 'sess-1',
     msg: {
