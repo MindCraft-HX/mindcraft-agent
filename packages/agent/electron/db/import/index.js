@@ -249,6 +249,15 @@ function commitImport(db, {
       metadata: preview.metadata || {},
       isActive: preview.isActive === true,
       source,
+      // Preserve provider-type-specific UI/runtime fields (e.g. Claude tierModels)
+      ...(preview.tierModels !== undefined ? { tierModels: preview.tierModels } : {}),
+      ...(preview.selectedTier !== undefined ? { selectedTier: preview.selectedTier } : {}),
+      ...(preview.language !== undefined ? { language: preview.language } : {}),
+      ...(preview.permissionPolicy !== undefined ? { permissionPolicy: preview.permissionPolicy } : {}),
+      ...(preview.effortLevel !== undefined ? { effortLevel: preview.effortLevel } : {}),
+      ...(preview.website !== undefined ? { website: preview.website } : {}),
+      ...(preview.note !== undefined ? { note: preview.note } : {}),
+      ...(preview.runtimeConfig !== undefined ? { runtimeConfig: preview.runtimeConfig } : {}),
     });
   }
 
@@ -321,6 +330,15 @@ function commitImport(db, {
       metadata: p.metadata,
       isActive: p.isActive,
       source: p.source,
+      // Preserve provider-type-specific UI/runtime fields for downstream projection
+      ...(p.tierModels !== undefined ? { tierModels: p.tierModels } : {}),
+      ...(p.selectedTier !== undefined ? { selectedTier: p.selectedTier } : {}),
+      ...(p.language !== undefined ? { language: p.language } : {}),
+      ...(p.permissionPolicy !== undefined ? { permissionPolicy: p.permissionPolicy } : {}),
+      ...(p.effortLevel !== undefined ? { effortLevel: p.effortLevel } : {}),
+      ...(p.website !== undefined ? { website: p.website } : {}),
+      ...(p.note !== undefined ? { note: p.note } : {}),
+      ...(p.runtimeConfig !== undefined ? { runtimeConfig: p.runtimeConfig } : {}),
     })),
   ];
 

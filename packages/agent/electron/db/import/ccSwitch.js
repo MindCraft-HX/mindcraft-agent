@@ -212,6 +212,16 @@ function mapCcSwitchRow(row, source) {
   let reasoningEffort = '';
   let apiFormat = '';
 
+  // Claude-specific UI/runtime fields
+  let tierModels = null;
+  let selectedTier = '';
+  let claudeLanguage = '';
+  let claudePermissionPolicy = '';
+  let claudeEffortLevel = '';
+  let website = '';
+  let note = '';
+  let runtimeConfig = null;
+
   if (appType === 'claude') {
     // CC Switch Claude settings_config:
     //   { env: { ANTHROPIC_AUTH_TOKEN (or ANTHROPIC_API_KEY), ANTHROPIC_BASE_URL, ... }, model: "opus"|"sonnet"|"haiku", ... }
@@ -219,8 +229,18 @@ function mapCcSwitchRow(row, source) {
     const env = settings.env || {};
     apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '';
     baseUrl = env.ANTHROPIC_BASE_URL || '';
+
+    // Tier models used by MindCraft Claude ProviderForm
+    tierModels = {
+      haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '',
+      sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL || '',
+      opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL || '',
+      reasoning: env.ANTHROPIC_REASONING_MODEL || '',
+    };
+
     // Resolve model from tier
     const tier = String(settings.model || '').toLowerCase();
+    selectedTier = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(tier) ? tier : '';
     if (tier === 'opus') {
       model = env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-opus-4-1-20250805';
     } else if (tier === 'sonnet') {
@@ -230,8 +250,42 @@ function mapCcSwitchRow(row, source) {
     } else {
       model = settings.model || env.ANTHROPIC_MODEL || '';
     }
+
     reasoningEffort = '';
     apiFormat = meta.apiFormat || 'anthropic';
+
+    // Other MindCraft ProviderForm-supported fields
+    claudeLanguage = settings.language || '';
+    claudePermissionPolicy = settings.permissionPolicy || '';
+    claudeEffortLevel = settings.effortLevel || '';
+    website = String(row.website_url || '').trim();
+    note = String(row.notes || '').trim();
+
+    // Build runtime config for MindCraft Claude provider.config.
+    // Start from the original CC Switch settings to preserve unsupported fields
+    // (permissions, hooks, enabledPlugins, theme, etc.) and override/normalize
+    // the fields MindCraft understands.
+    runtimeConfig = {
+      ...settings,
+      env: {
+        ...env,
+        ANTHROPIC_AUTH_TOKEN: apiKey,
+        ANTHROPIC_BASE_URL: baseUrl,
+      },
+      model: selectedTier || settings.model || '',
+      permissionPolicy: claudePermissionPolicy,
+      language: claudeLanguage,
+      effortLevel: claudeEffortLevel,
+    };
+
+    // Only include ANTHROPIC_MODEL / tier defaults in env when we have values,
+    // matching ProviderForm's buildJsonFromForm output.
+    if (tierModels.haiku) runtimeConfig.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = tierModels.haiku;
+    if (tierModels.sonnet) runtimeConfig.env.ANTHROPIC_DEFAULT_SONNET_MODEL = tierModels.sonnet;
+    if (tierModels.opus) runtimeConfig.env.ANTHROPIC_DEFAULT_OPUS_MODEL = tierModels.opus;
+    if (tierModels.reasoning) runtimeConfig.env.ANTHROPIC_REASONING_MODEL = tierModels.reasoning;
+    const primaryModel = (selectedTier && tierModels[selectedTier]) || env.ANTHROPIC_MODEL || '';
+    if (primaryModel) runtimeConfig.env.ANTHROPIC_MODEL = primaryModel;
   } else if (appType === 'codex') {
     // CC Switch CodeX settings_config:
     //   { auth: { OPENAI_API_KEY, ... }, config: "toml-like string" }
@@ -319,6 +373,17 @@ function mapCcSwitchRow(row, source) {
     },
     metadata,
     isActive,
+    // Claude-specific UI/runtime fields (preserved by commitImport)
+    ...(appType === 'claude' ? {
+      tierModels,
+      selectedTier,
+      language: claudeLanguage,
+      permissionPolicy: claudePermissionPolicy,
+      effortLevel: claudeEffortLevel,
+      website,
+      note,
+      runtimeConfig,
+    } : {}),
   };
 }
 

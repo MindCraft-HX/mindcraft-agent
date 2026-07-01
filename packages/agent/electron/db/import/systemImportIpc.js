@@ -305,7 +305,14 @@ function registerSystemImportIpc(ipcMain, deps) {
             name: p.name,
             key: p.key || p.config?.key || '',
             url: p.url || p.config?.url || '',
-            tierModels: (claudeExisting.find((ep) => ep.name === p.name)?.tierModels) || {},
+            website: p.website || '',
+            note: p.note || '',
+            tierModels: p.tierModels || (claudeExisting.find((ep) => ep.name === p.name)?.tierModels) || {},
+            selectedTier: p.selectedTier || 'sonnet',
+            language: p.language || 'zh-CN',
+            permissionPolicy: p.permissionPolicy || 'ask',
+            effortLevel: p.effortLevel || 'medium',
+            config: p.runtimeConfig || null,
           }));
 
           // Keep existing activeIdx — MindCraft manages its own active state
