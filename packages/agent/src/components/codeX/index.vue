@@ -299,6 +299,7 @@ import { countVisibleCodexUserMessages, isVisibleCodexUserMessage } from './util
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
+import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
@@ -1277,13 +1278,16 @@ function hasPendingToolInChats(chats) {
   return false
 }
 
-const projectTabs = computed(() =>
-  projects.value.map(p => ({
+const projectTabs = computed(() => {
+  const stop = perfStart('codex.projectTabs')
+  const result = projects.value.map(p => ({
     ...p,
     runningCount: getRunningCount(p.chats || []),
     hasPendingTool: hasPendingToolInChats(p.chats || []),
   }))
-)
+  stop({ projects: result.length, chats: result.reduce((s, p) => s + (p.chats?.length || 0), 0) })
+  return result
+})
 
 // Tool helpers
 // ─── Tool helpers (backed by shared toolMeta.js + local matchers) ──
@@ -2411,8 +2415,10 @@ function onCompositionEnd(e) {
   onInputChange(e)
 }
 function onInputChange(e) {
+  const stopAutosize = perfStart('codex.autosize')
   if (inputEl.value) inputEl.value.style.height = 'auto'
   if (inputEl.value) inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+  stopAutosize()
   const query = extractMentionQuery(inputText.value || '', e?.target?.selectionStart)
   if (query == null) {
     clearMentionSuggestions()
@@ -2987,19 +2993,24 @@ onMounted(async () => {
 
 // --- expose for codeHub unified tabs ---
 defineExpose({
-  projectTabData: computed(() => projects.value.map(p => {
-    const chats = p.chats || []
-    return {
-      id: p.id,
-      name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
-      cwd: p.cwd || '',
-      cwdLocked: Boolean(p.cwdLocked),
-      runningCount: getRunningCount(chats),
-      hasPendingTool: hasPendingToolInChats(chats),
-      hasDoneNotification: Boolean(p.hasDoneNotification),
-      createdAt: p.createdAt || 0,
-    }
-  })),
+  projectTabData: computed(() => {
+    const stop = perfStart('codex.projectTabData')
+    const result = projects.value.map(p => {
+      const chats = p.chats || []
+      return {
+        id: p.id,
+        name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
+        cwd: p.cwd || '',
+        cwdLocked: Boolean(p.cwdLocked),
+        runningCount: getRunningCount(chats),
+        hasPendingTool: hasPendingToolInChats(chats),
+        hasDoneNotification: Boolean(p.hasDoneNotification),
+        createdAt: p.createdAt || 0,
+      }
+    })
+    stop({ projects: result.length })
+    return result
+  }),
   activeProjectId,
   createProject() { newProject(); return activeProjectId.value },
   switchProject,

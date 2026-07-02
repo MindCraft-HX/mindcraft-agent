@@ -350,6 +350,7 @@ import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
 import { applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
+import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { countVisibleClaudeUserMessages, isClaudeMetaUserEntry } from './utils/internalPromptFilter.mjs'
@@ -689,14 +690,17 @@ function hasPendingToolInChats(chats) {
 }
 
 // 为每个 project 注入 hasRunningSession / hasPendingTool，供 ProjectTabs 显示脉冲点
-const projectTabs = computed(() =>
-  projects.value.map(p => {
+const projectTabs = computed(() => {
+  const stop = perfStart('claude.projectTabs')
+  const result = projects.value.map(p => {
     const chats = p.chats || []
     const runningCount = getRunningCount(chats)
     const hasPendingTool = hasPendingToolInChats(chats)
     return { ...p, runningCount, hasPendingTool }
   })
-)
+  stop({ projects: result.length, chats: result.reduce((s, p) => s + (p.chats?.length || 0), 0) })
+  return result
+})
 
 // ── 侧边栏「项目」通知指示器 ──
 // 直接维护 Main.vue 提供的 codehubHasNotification，确保 keep-alive 失活时仍能更新
@@ -3643,19 +3647,24 @@ function initNonCritical() {
 
 // --- expose for codeHub unified tabs ---
 defineExpose({
-  projectTabData: computed(() => projects.value.map(p => {
-    const chats = p.chats || []
-    return {
-      id: p.id,
-      name: p.cwd ? p.cwd.split(/[\\/]/).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
-      cwd: p.cwd || '',
-      cwdLocked: Boolean(p.cwdLocked),
-      runningCount: getRunningCount(chats),
-      hasPendingTool: hasPendingToolInChats(chats),
-      hasDoneNotification: Boolean(p.hasDoneNotification),
-      createdAt: p.createdAt || 0,
-    }
-  })),
+  projectTabData: computed(() => {
+    const stop = perfStart('claude.projectTabData')
+    const result = projects.value.map(p => {
+      const chats = p.chats || []
+      return {
+        id: p.id,
+        name: p.cwd ? p.cwd.split(/[\\/]/).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
+        cwd: p.cwd || '',
+        cwdLocked: Boolean(p.cwdLocked),
+        runningCount: getRunningCount(chats),
+        hasPendingTool: hasPendingToolInChats(chats),
+        hasDoneNotification: Boolean(p.hasDoneNotification),
+        createdAt: p.createdAt || 0,
+      }
+    })
+    stop({ projects: result.length })
+    return result
+  }),
   activeProjectId,
   createProject() { newProject(); return activeProjectId.value },
   switchProject,

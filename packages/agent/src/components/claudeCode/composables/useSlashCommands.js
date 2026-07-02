@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 
 export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputText, focusInput }) {
   const slashCommands = ref([
@@ -154,9 +155,11 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
   }
 
   function onInput(e) {
+    const stop = perfStart('claude.autosize')
     const el = e.target
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+    stop()
     const val = getInputText?.() || ''
     if (val.startsWith('/') && !val.includes(' ')) {
       slashSuggestions.value = slashCommands.value.filter(s => s.cmd.startsWith(val))

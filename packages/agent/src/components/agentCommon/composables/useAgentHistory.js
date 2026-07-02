@@ -1,4 +1,5 @@
 import { createSaveCooldownGuard } from '../utils/historyHelpers.mjs'
+import { perfStart, perfCount } from '../utils/rendererPerfProbe.mjs'
 
 /**
  * Shared history persistence composable — used by both ClaudeCode and CodeX.
@@ -79,10 +80,14 @@ export function useAgentHistory({
   }
 
   function persistNow(skipStreaming) {
-    if (cooldownGuard()) return
+    if (cooldownGuard()) { perfCount('saveHistory.cooldownSkip'); return }
+    const stopBuild = perfStart('saveHistory.build')
     const payload = buildPanelStatePayload({ skipStreaming })
+    stopBuild()
     try {
+      const stopClone = perfStart('saveHistory.clone')
       const clean = JSON.parse(JSON.stringify(payload))
+      stopClone()
       adapter.saveAsync(clean)?.catch(() => {})
     } catch (_) {}
   }

@@ -122,6 +122,7 @@ import { orderCodeHubTabs, reconcileCodeHubTabOrder } from './tabOrder.mjs'
 import { shouldAutoShowAgentPicker } from './agentPickerPrompt.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
+import { perfStart, perfCount } from '../agentCommon/utils/rendererPerfProbe.mjs'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
@@ -266,9 +267,10 @@ function onDrop(e, toIndex) {
 
 // 统一的 Tab 列表（只从已挂载的 Agent 收集）
 function collectTabs(panel, agentType, meta) {
+  const stop = perfStart('codehub.collectTabs')
   const data = panel?.projectTabData
-  if (!data) return []
-  return data.map(p => ({
+  if (!data) { stop({ tabs: 0 }); return [] }
+  const result = data.map(p => ({
     ...p,
     projectId: p.id,
     id: `${agentType}:${p.id}`,
@@ -276,6 +278,8 @@ function collectTabs(panel, agentType, meta) {
     iconClass: meta.iconClass,
     iconStyle: meta.iconStyle,
   }))
+  stop({ tabs: result.length })
+  return result
 }
 
 const unifiedTabs = computed(() => {
