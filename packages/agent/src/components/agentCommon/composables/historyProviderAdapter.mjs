@@ -168,11 +168,11 @@ export function createClaudeHistoryAdapter({
       setProjects(restored)
       return { loaded: true, activeProjectId: sanitized.activeProjectId || null, activeChatId: sanitized.activeChatId || null }
     },
+    // Phase 4: 删除内部 JSON clone（useAgentHistory.persistNow 已做 clone）
     async saveAsync(payload) {
       if (cooldownGuard()) return
       try {
-        const clean = JSON.parse(JSON.stringify(payload))
-        await window.electronAPI?.claudeSaveCodePanelState?.(clean)
+        await window.electronAPI?.claudeSaveCodePanelState?.(payload)
       } catch (_) {}
     },
 
@@ -332,11 +332,11 @@ export function createCodexHistoryAdapter({
       return { loaded: true }
     },
 
+    // Phase 4: 删除内部 JSON clone（useAgentHistory.persistNow 已做 clone）
     async saveAsync(payload) {
       if (cooldownGuard()) return
       try {
-        const clean = JSON.parse(JSON.stringify(payload))
-        await window.electronAPI?.codexSaveCodePanelState?.(clean)
+        await window.electronAPI?.codexSaveCodePanelState?.(payload)
       } catch (_) {}
     },
 
