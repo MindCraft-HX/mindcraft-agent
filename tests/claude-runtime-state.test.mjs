@@ -101,6 +101,7 @@ test('persistable Claude chat strips memory-only runtime state', () => {
     _thinkingStart: 12345,
     currentAssistantId: 'a1',
     _claudeRuntimeState: 'streaming',
+    draftText: 'do not persist this',
     metrics: {
       thinking: true,
       model: 'claude-sonnet',
@@ -128,6 +129,7 @@ test('persistable Claude chat strips memory-only runtime state', () => {
   assert.equal(persistable.metrics.costUsd, undefined)
   assert.equal(persistable.metrics.contextUsage, 164130)
   assert.equal(persistable.metrics.contextWindow, 200000)
+  assert.equal(persistable.draftText, '')
   assert.equal(Object.hasOwn(persistable, '_claudeRuntimeState'), false)
 })
 

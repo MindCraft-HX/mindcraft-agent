@@ -1,5 +1,12 @@
 const { dialog } = require('electron')
-const { getSessionInstruction, setSessionInstruction, setSessionTitle } = require('./sessionRegistry')
+const {
+  clearSessionDraft,
+  getSessionDraft,
+  getSessionInstruction,
+  setSessionDraft,
+  setSessionInstruction,
+  setSessionTitle,
+} = require('./sessionRegistry')
 const { resolveAttachments, buildFullInstructionPrompt, ALLOWED_EXTENSIONS } = require('./sessionInstructionAttachments')
 
 function registerSessionInstructionIpc(ipcMain) {
@@ -22,6 +29,38 @@ function registerSessionInstructionIpc(ipcMain) {
   ipcMain.handle('agent-set-session-title', (_, payload = {}) => {
     try {
       return setSessionTitle(payload.chatKey, payload.title, payload)
+    } catch (err) {
+      return { ok: false, error: err?.message || 'write failed' }
+    }
+  })
+
+  ipcMain.handle('agent-get-session-draft', (_, { chatKey } = {}) => {
+    try {
+      return getSessionDraft(chatKey)
+    } catch (err) {
+      return { text: '', updatedAt: 0, error: err?.message || 'read failed' }
+    }
+  })
+
+  ipcMain.handle('agent-set-session-draft', (_, { chatKey, draft } = {}) => {
+    try {
+      return setSessionDraft(chatKey, draft || {})
+    } catch (err) {
+      return { ok: false, error: err?.message || 'write failed' }
+    }
+  })
+
+  ipcMain.on('agent-set-session-draft-sync', (event, { chatKey, draft } = {}) => {
+    try {
+      event.returnValue = setSessionDraft(chatKey, draft || {})
+    } catch (err) {
+      event.returnValue = { ok: false, error: err?.message || 'write failed' }
+    }
+  })
+
+  ipcMain.handle('agent-clear-session-draft', (_, { chatKey } = {}) => {
+    try {
+      return clearSessionDraft(chatKey)
     } catch (err) {
       return { ok: false, error: err?.message || 'write failed' }
     }

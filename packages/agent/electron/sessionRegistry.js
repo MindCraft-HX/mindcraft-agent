@@ -185,7 +185,7 @@ function hasMeaningfulRecordChange(current = {}, next = {}) {
   for (const field of fields) {
     if (normalizeString(current[field]) !== normalizeString(next[field])) return true
   }
-  for (const field of ['provider', 'runtime', 'instruction', 'metadata']) {
+  for (const field of ['provider', 'runtime', 'instruction', 'metadata', 'draft']) {
     if (stableJson(current[field] || {}) !== stableJson(next[field] || {})) return true
   }
   return false
@@ -333,6 +333,16 @@ function normalizeSessionTitleContext(data = {}) {
     cliSessionId: normalizeString(data.cliSessionId || data.providerSessionId),
     filePath: normalizeString(data.filePath),
     runtime: normalizedRuntime,
+  }
+}
+
+function normalizeSessionDraftInput(data = {}) {
+  const text = typeof data === 'string'
+    ? data
+    : (typeof data?.text === 'string' ? data.text : '')
+  return {
+    text,
+    updatedAt: normalizeTimestamp(data?.updatedAt) || Date.now(),
   }
 }
 
@@ -739,6 +749,54 @@ function getSessionInstruction(chatKey, options = {}) {
     content: sessionContent || legacyInstruction?.content || '',
     attachments,
   }
+}
+
+function getSessionDraft(chatKey, options = {}) {
+  const resolvedChatKey = normalizeString(chatKey)
+  if (!resolvedChatKey) return { text: '', updatedAt: 0 }
+  const session = readJson(getSessionRecordPath(resolvedChatKey, options), null)
+  const draft = session?.draft && typeof session.draft === 'object' ? session.draft : {}
+  return {
+    text: typeof draft.text === 'string' ? draft.text : '',
+    updatedAt: normalizeTimestamp(draft.updatedAt),
+  }
+}
+
+function setSessionDraft(chatKey, data = {}, options = {}) {
+  const resolvedChatKey = normalizeString(chatKey)
+  if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
+  const draft = normalizeSessionDraftInput(data)
+  const now = Date.now()
+  const existing = readJson(getSessionRecordPath(resolvedChatKey, options), {})
+  const record = {
+    ...(existing || {}),
+    schemaVersion: SCHEMA_VERSION,
+    chatKey: resolvedChatKey,
+    agent: normalizeAgent(existing?.agent),
+    provider: existing?.provider || {},
+    runtime: existing?.runtime || {},
+    metadata: existing?.metadata || {},
+    draft,
+    createdAt: existing?.createdAt || now,
+    updatedAt: Math.max(now, normalizeTimestamp(existing?.updatedAt) + 1),
+  }
+  writeJsonAtomic(getSessionRecordPath(resolvedChatKey, options), record)
+  return { ok: true, draft: getSessionDraft(resolvedChatKey, options) }
+}
+
+function clearSessionDraft(chatKey, options = {}) {
+  const resolvedChatKey = normalizeString(chatKey)
+  if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
+  const existing = readJson(getSessionRecordPath(resolvedChatKey, options), null)
+  if (!existing?.chatKey) return { ok: true, draft: { text: '', updatedAt: 0 } }
+  const now = Date.now()
+  const record = {
+    ...existing,
+    draft: { text: '', updatedAt: now },
+    updatedAt: Math.max(now, normalizeTimestamp(existing.updatedAt) + 1),
+  }
+  writeJsonAtomic(getSessionRecordPath(resolvedChatKey, options), record)
+  return { ok: true, draft: getSessionDraft(resolvedChatKey, options) }
 }
 
 function setSessionInstruction(chatKey, data = {}, options = {}) {
@@ -1434,6 +1492,7 @@ module.exports = {
   deleteSessionRecordsByProvider,
   detachSessionProviderBinding,
   findSessionRecordByProvider,
+  getSessionDraft,
   getSessionInstruction,
   getSessionRecordPath,
   getSessionRegistryRoot,
@@ -1443,7 +1502,9 @@ module.exports = {
   restorePanelStateFromSessionRegistry,
   restoreMissingPanelStateChats,
   resolveSessionByProvider,
+  clearSessionDraft,
   setSessionTitle,
+  setSessionDraft,
   setSessionInstruction,
   syncPanelStateSessions,
   normalizeSessionInstructionInput,

@@ -158,6 +158,7 @@
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd"
               @input="onInputChange"
+              @blur="persistActiveInputDraft"
               @paste="onPaste($event)"
               rows="1"
             ></textarea>
@@ -254,6 +255,7 @@ import { useCodexTabs } from './composables/useCodexTabs.js'
 import { useCodexHistory } from './composables/useCodexHistory.js'
 import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
+import { useSessionDraft } from '../agentCommon/composables/useSessionDraft.js'
 import {
   buildStatusBarMetricsView,
   hasAgentStatusBarSnapshot,
@@ -557,6 +559,21 @@ const allFilesCache = ref(null)  // null=未加载, []=空
 let allFilesCacheTime = 0
 const ALL_FILES_CACHE_TTL = 30000  // 30 秒过期
 const MENTION_REFRESH_DEBOUNCE_MS = 150
+
+function findCodexChatById(chatId) {
+  if (!chatId) return null
+  for (const project of projects.value || []) {
+    const chat = (project?.chats || []).find(c => c.id === chatId)
+    if (chat) return chat
+  }
+  return null
+}
+
+const sessionDraft = useSessionDraft({
+  inputText,
+  getActiveChat: () => activeTab.value,
+})
+const persistActiveInputDraft = sessionDraft.persistActiveDraftNow
 
 function toggleMentionFlatMode() {
   mentionFlatMode.value = !mentionFlatMode.value
@@ -2091,6 +2108,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   let text = rawText.trim()
   const composerAttachments = isQueuedFlush ? [] : pendingImages.value
   if ((!text && !composerAttachments.length) || !tab) return
+  if (!isQueuedFlush) sessionDraft.clearTimer()
   if (!isQueuedFlush && isActiveTabHistoryDeferred.value) return
   const ownerProject = isQueuedFlush
     ? projects.value.find((project) => (project?.chats || []).some((chat) => chat.id === tab.id)) || null
@@ -2105,8 +2123,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
 
   if (isCodexTurnLocked(tab)) {
     tab._queuedInput = text
-    tab.draftText = ''
-    if (!isQueuedFlush) inputText.value = ''
+    if (!isQueuedFlush) {
+      inputText.value = ''
+      void sessionDraft.clearDraftForChat(tab)
+    }
     return
   }
 
@@ -2182,8 +2202,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }))
   if (!isQueuedFlush) {
     pendingImages.value = []
-    tab.draftText = ''
     inputText.value = ''
+    void sessionDraft.clearDraftForChat(tab)
     // 重置 textarea 高度，避免多行内容发送后输入框被撑大
     nextTick(() => {
       if (inputEl.value) {
@@ -2298,13 +2318,12 @@ async function sendMessage(textOverride = null, targetTab = null) {
 function sendFromStatusBar(text) {
   if (text === '/compact' && statusBarMetrics.value.compacting) return
   inputText.value = String(text || '')
-  if (activeTab.value) activeTab.value.draftText = inputText.value
   if (inputEl.value) inputEl.value.value = inputText.value
   sendMessage(inputText.value)
 }
 
 async function openModelPicker() {
-  if (activeTab.value) activeTab.value.draftText = ''
+  void sessionDraft.clearDraftForChat(activeTab.value)
   inputText.value = ''
   slashSuggestions.value = []
   const tab = activeTab.value
@@ -2598,6 +2617,17 @@ watch(() => activeTab.value?.sessionId, () => {
 }, { immediate: true })
 
 watch(
+  () => activeTab.value?.id || '',
+  (id, oldId) => {
+    void sessionDraft.persistDraftForChat(findCodexChatById(oldId), inputText.value)
+    const tab = activeTab.value
+    void sessionDraft.loadDraftForChat(tab)
+    resetHistory()
+  },
+  { immediate: true }
+)
+
+watch(
   () => ({
     id: activeTab.value?.id || '',
     sessionId: activeTab.value?.sessionId || '',
@@ -2607,8 +2637,6 @@ watch(
   }),
   () => {
     const tab = activeTab.value
-    inputText.value = typeof tab?.draftText === 'string' ? tab.draftText : ''
-    resetHistory()
     syncMetricsTimerForActiveTab()
     syncActiveMetricsFromTab(tab, {
       model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',
@@ -2620,12 +2648,8 @@ watch(
 )
 
 watch(inputText, (value) => {
-  const tab = activeTab.value
-  if (!tab) return
-  const next = typeof value === 'string' ? value : ''
-  if (tab.draftText === next) return
-  tab.draftText = next
-  saveHistory()
+  if (!activeTab.value) return
+  sessionDraft.scheduleActiveDraftPersist()
 })
 
 const canSend = computed(() => {
@@ -2885,6 +2909,7 @@ onMounted(async () => {
   codexConfigStore.loadDefaultWebSearch()
   await loadCodexModelDefaults()
   await loadGlobalCodexSafeMode()
+  window.addEventListener('beforeunload', persistActiveInputDraft)
   window.addEventListener('beforeunload', flushOnUnload)
   window.addEventListener('codex-open-plugins', () => { codexPluginsRef.value?.open?.() })
   window.electronAPI.onCodexAgentMessage(onAgentMessage)
@@ -2994,11 +3019,14 @@ onUnmounted(() => {
     mentionRefreshTimer = null
   }
   stopMetricsTimer()
+  window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushOnUnload)
   for (const sessionId of codexDoneMetricsRetryTimers.keys()) clearCodexDoneMetricsRetry(sessionId)
   for (const timer of queuedRetryTimers.values()) clearTimeout(timer)
   queuedRetryTimers.clear()
+  void persistActiveInputDraft()
   flushOnUnload()
+  sessionDraft.dispose()
   dispose()
   _unregAgentEvent?.()
   window.electronAPI.offCodexAgentListeners?.()

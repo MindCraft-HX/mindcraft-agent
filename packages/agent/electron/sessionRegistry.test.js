@@ -8,6 +8,7 @@ const {
   deleteSessionRecordsByProvider,
   detachSessionProviderBinding,
   findSessionRecordByProvider,
+  getSessionDraft,
   getSessionInstruction,
   getSessionRecordPath,
   listSessionRecords,
@@ -15,7 +16,9 @@ const {
   repairSessionRegistry,
   restoreMissingPanelStateChats,
   resolveSessionByProvider,
+  clearSessionDraft,
   setSessionTitle,
+  setSessionDraft,
   setSessionInstruction,
   syncPanelStateSessions,
   attachRegistrySessionToScanSummary,
@@ -1129,6 +1132,91 @@ test('syncPanelStateSessions preserves existing instruction data (no overwrite)'
   const instruction = getSessionInstruction('chat-key-1', { userDataDir })
   assert.equal(instruction.enabled, true, 'enabled should survive panel state sync')
   assert.equal(instruction.content, 'Important instruction content', 'content should survive panel state sync')
+})
+
+test('setSessionDraft stores draft in session registry without changing provider mapping', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('codex', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Draft session',
+        cliSessionId: 'thread-1',
+        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  const result = setSessionDraft('chat-key-1', { text: 'unfinished prompt', updatedAt: 1234 }, { userDataDir })
+
+  assert.equal(result.ok, true)
+  assert.deepEqual(getSessionDraft('chat-key-1', { userDataDir }), {
+    text: 'unfinished prompt',
+    updatedAt: 1234,
+  })
+
+  const resolved = findSessionRecordByProvider({
+    agent: 'codex',
+    cliSessionId: 'thread-1',
+    filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
+  }, { userDataDir })
+  assert.equal(resolved.chatKey, 'chat-key-1')
+  assert.equal(resolved.draft.text, 'unfinished prompt')
+})
+
+test('syncPanelStateSessions preserves existing draft data', () => {
+  const userDataDir = makeTempUserData()
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Draft session',
+        cliSessionId: 'cli-1',
+        filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  setSessionDraft('chat-key-1', { text: 'keep this draft', updatedAt: 2222 }, { userDataDir })
+  syncPanelStateSessions('claude', {
+    projects: [{
+      id: 'project-1',
+      cwd: 'D:/repo',
+      chats: [{
+        sessionId: 'chat-key-1',
+        name: 'Draft session updated',
+        cliSessionId: 'cli-1',
+        filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
+      }],
+    }],
+  }, { userDataDir })
+
+  assert.deepEqual(getSessionDraft('chat-key-1', { userDataDir }), {
+    text: 'keep this draft',
+    updatedAt: 2222,
+  })
+})
+
+test('clearSessionDraft clears only draft content', () => {
+  const userDataDir = makeTempUserData()
+  setSessionInstruction('chat-key-1', {
+    enabled: true,
+    description: 'Instruction',
+    content: 'Keep instruction',
+  }, { userDataDir })
+  setSessionDraft('chat-key-1', { text: 'temporary draft', updatedAt: 3333 }, { userDataDir })
+
+  const cleared = clearSessionDraft('chat-key-1', { userDataDir })
+  const instruction = getSessionInstruction('chat-key-1', { userDataDir })
+
+  assert.equal(cleared.ok, true)
+  assert.equal(getSessionDraft('chat-key-1', { userDataDir }).text, '')
+  assert.equal(instruction.enabled, true)
+  assert.equal(instruction.content, 'Keep instruction')
 })
 
 test('getSessionInstruction returns disabled empty state for unknown chat', () => {

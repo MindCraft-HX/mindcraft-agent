@@ -176,6 +176,7 @@
             @compositionstart="onCompositionStart"
             @compositionend="onCompositionEnd"
             @input="onInputChange"
+            @blur="persistActiveInputDraft"
             @paste="onPaste($event)"
             rows="1"
           ></textarea>
@@ -343,6 +344,7 @@ import {
   toggleTaskBarCollapsed as toggleClaudeTaskBarCollapsed,
 } from './composables/useClaudeTaskState.mjs'
 import { useSessionRefresh } from '../agentCommon/composables/useSessionRefresh'
+import { useSessionDraft } from '../agentCommon/composables/useSessionDraft.js'
 import { useAgentMetricsController } from '../agentCommon/composables/useAgentMetricsController.js'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
 import { useScrollBottom } from './composables/useScrollBottom.js'
@@ -745,23 +747,35 @@ function toggleActiveTaskBarCollapsed() {
   saveHistory()
 }
 
+function findClaudeChatById(chatId) {
+  if (!chatId) return null
+  for (const project of projects.value || []) {
+    const chat = (project?.chats || []).find(c => c.id === chatId)
+    if (chat) return chat
+  }
+  return null
+}
+
+const sessionDraft = useSessionDraft({
+  inputText,
+  getActiveChat: () => activeTab.value,
+})
+const persistActiveInputDraft = sessionDraft.persistActiveDraftNow
+
 // 同步活跃消息容器 ref 给 useScrollBottom hook
-watch(activeChatId, (id) => {
+watch(activeChatId, (id, oldId) => {
+  void sessionDraft.persistDraftForChat(findClaudeChatById(oldId), inputText.value)
   activeMsgContainer.value = id ? msgRefs[id] : null
   const chat = id ? (activeProject.value?.chats || []).find(c => c.id === id) || null : null
-  inputText.value = typeof chat?.draftText === 'string' ? chat.draftText : ''
+  void sessionDraft.loadDraftForChat(chat)
   resetHistory()
   refreshMetricsForChat(chat)
   void refreshActiveSessionInstructionState()
 }, { immediate: true })
 
 watch(inputText, (value) => {
-  const chat = activeTab.value
-  if (!chat) return
-  const next = typeof value === 'string' ? value : ''
-  if (chat.draftText === next) return
-  chat.draftText = next
-  saveHistory()
+  if (!activeTab.value) return
+  sessionDraft.scheduleActiveDraftPersist()
 })
 
 watch(() => activeTab.value?.sessionId, () => {
@@ -2752,6 +2766,7 @@ async function sendMessage() {
   const text = (raw || '').trim()
   const hasAttachments = pendingImages.value.length > 0
   if ((!text && !hasAttachments) || !tab) return
+  sessionDraft.clearTimer()
   if (!activeProject.value?.cwdLocked) return
   beginTaskBatch(tab, { reason: 'user_turn', now: Date.now() })
 
@@ -2799,8 +2814,8 @@ async function sendMessage() {
     pendingImages.value = []
     if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
     pushToHistory(text, tab.inputHistory)
-    tab.draftText = ''
     inputText.value = ''
+    void sessionDraft.clearDraftForChat(tab)
     saveHistory({ immediate: true })
     nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
     // fire-and-forget：消息通过 claude-agent-message 事件通道回来
@@ -2821,9 +2836,9 @@ async function sendMessage() {
   // slash 命令：仅保留少量本地命令，其余 /xxx 透传给 Claude（skills/commands）
   if (text && text.startsWith('/')) {
     const [cmd] = text.split(/\s+/)
-    tab.draftText = ''
     inputText.value = ''
     slashSuggestions.value = []
+    void sessionDraft.clearDraftForChat(tab)
     if (cmd === '/clear') {
       pushTabMessage(tab, {
         id: nextMsgId(),
@@ -3514,6 +3529,7 @@ onActivated(() => {
 onMounted(() => {
   // ─── 性能检测：首次进入页面 ───
   // 关键路径：立即注册监听器和基础初始化，不阻塞首屏渲染
+  window.addEventListener('beforeunload', persistActiveInputDraft)
   window.addEventListener('beforeunload', flushHistoryOnUnload)
   window.electronAPI.onClaudeAgentMessage(onAgentMessage)
   window.electronAPI.onClaudeAgentDone(onAgentDone)
@@ -3660,8 +3676,11 @@ onUnmounted(() => {
   if (loadMoreCooldownTimer) { clearTimeout(loadMoreCooldownTimer); loadMoreCooldownTimer = null }
   _clearAskTimeout()
   _clearPlanReviewTimeout()
+  window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushHistoryOnUnload)
+  void persistActiveInputDraft()
   flushHistoryOnUnload()
+  sessionDraft.dispose()
   disposeImageAttachments()
   _unregAgentEvent?.()
   window.electronAPI.offClaudeAgentListeners?.()

@@ -237,7 +237,7 @@ export function buildPersistableCodexChat(chat = {}) {
   c._awaitingDone = c.filePath ? false : Boolean(c._awaitingDone)
   c.thinking = false
   c.currentAssistantId = null
-  c.draftText = typeof c.draftText === 'string' ? c.draftText : ''
+  c.draftText = ''
   c.inputHistory = Array.isArray(c.inputHistory) ? c.inputHistory.slice(0, 5) : []
   c.metrics = sanitizeCodexPersistedMetrics(c.metrics)
   return c

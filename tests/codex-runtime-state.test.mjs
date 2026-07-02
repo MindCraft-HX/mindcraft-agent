@@ -102,6 +102,7 @@ test('queued state keeps runtime lock and persistable cleanup removes memory-onl
 
   const persistable = buildPersistableCodexChat({
     ...tab,
+    draftText: 'do not persist this',
     filePath: 'C:/Users/demo/.codex/sessions/rollout-thread-1.jsonl',
   })
 
@@ -109,6 +110,7 @@ test('queued state keeps runtime lock and persistable cleanup removes memory-onl
   assert.equal(persistable._awaitingDone, false)
   assert.equal(persistable._thinkingStart, null)
   assert.equal(persistable.currentAssistantId, null)
+  assert.equal(persistable.draftText, '')
   assert.equal(Object.hasOwn(persistable, '_codexRuntimeState'), false)
 })
 
