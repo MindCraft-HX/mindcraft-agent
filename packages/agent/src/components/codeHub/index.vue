@@ -266,15 +266,22 @@ function onDrop(e, toIndex) {
 }
 
 // 统一的 Tab 列表（只从已挂载的 Agent 收集）
+// Phase 3: 白名单拷贝，不再 ...p spread，防止上游新增字段自动进入 unifiedTabs
 function collectTabs(panel, agentType, meta) {
   const stop = perfStart('codehub.collectTabs')
   const data = panel?.projectTabData
   if (!data) { stop({ tabs: 0 }); return [] }
   const result = data.map(p => ({
-    ...p,
-    projectId: p.id,
     id: `${agentType}:${p.id}`,
+    projectId: p.id,
     agentType,
+    name: p.name,
+    cwd: p.cwd,
+    cwdLocked: p.cwdLocked,
+    runningCount: p.runningCount,
+    hasPendingTool: p.hasPendingTool,
+    hasDoneNotification: p.hasDoneNotification,
+    createdAt: p.createdAt,
     iconClass: meta.iconClass,
     iconStyle: meta.iconStyle,
   }))
