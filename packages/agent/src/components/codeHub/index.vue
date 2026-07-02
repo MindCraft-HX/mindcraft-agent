@@ -138,7 +138,12 @@ const activeTabId = ref(null)
 const tabOrder = ref(loadTabOrder())
 const { register } = useKeyboardShortcuts()
 const _shortcutUnregisters = []
-const CODEHUB_TAB_DEBUG = import.meta.env?.DEV
+import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
+const CODEHUB_TAB_DEBUG = (() => {
+  if (typeof window !== 'undefined' && window.__MCPF_DEBUG__?.codehubTabs) return true
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_debug')?.includes('codehubTabs')) return true
+  return false
+})()
 let lastTabDebugSignature = ''
 
 function tabDebugSnapshot(extra = {}) {

@@ -351,6 +351,7 @@ import { useScrollBottom } from './composables/useScrollBottom.js'
 import { applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
@@ -1753,7 +1754,7 @@ async function refreshActiveSessionInstructionState() {
 async function setActiveSessionInstructionEnabled(enabled) {
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) return
-  console.log('[cc] setActiveSessionInstructionEnabled:', { chatKey, enabled: Boolean(enabled) })
+  debugLog('sessionInstruction', 'setActiveSessionInstructionEnabled', { chatKey, enabled: Boolean(enabled) })
   activeSessionInstructionEnabled.value = Boolean(enabled)
   try {
     const current = await window.electronAPI?.getSessionInstruction?.(chatKey)
@@ -2059,7 +2060,7 @@ async function refreshProjectSessionsInBackground(p) {
         // 自卫补充 filePath：新建对话可能未设置，从扫描器补回来
         if (!cached.filePath && s.filePath) {
           cached.filePath = s.filePath
-          console.log('[ClaudeRefresh] filePath healed (fileSize-branch):', s.filePath)
+          debugLog('sessionRefresh', 'filePath healed (fileSize-branch)', { name: s.name, filePath: s.filePath })
         }
         const canReloadMessages = shouldReloadClaudeChatFromDisk(cached)
         // 如果该会话是当前正在查看的对话，重置加载状态并清空消息，让 UI 重新加载最新内容
@@ -2082,7 +2083,7 @@ async function refreshProjectSessionsInBackground(p) {
         // 自卫补充 filePath：新建对话可能未设置，从扫描器补回来
         if (!cached.filePath && s.filePath) {
           cached.filePath = s.filePath
-          console.log('[ClaudeRefresh] filePath healed (nochange-branch):', s.filePath)
+          debugLog('sessionRefresh', 'filePath healed (nochange-branch)', { name: s.name, filePath: s.filePath })
         }
       }
     }

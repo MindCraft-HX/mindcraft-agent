@@ -300,6 +300,7 @@ import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentC
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
@@ -1520,7 +1521,7 @@ async function refreshProjectSessionsInBackground(project) {
         if (summary.fileSize != null && cached.fileSize !== summary.fileSize) {
           changedCount++
           // fileSize 变化：更新 fileSize 并清空消息缓存
-          console.log('[refresh] fileSize changed for', cached.name, 'from', cached.fileSize, 'to', summary.fileSize)
+          debugLog('sessionRefresh', 'fileSize changed', { name: cached.name, from: cached.fileSize, to: summary.fileSize })
           cached.fileSize = summary.fileSize
           if (allowHydrateFromDisk && cached.id === activeChatId.value) {
             cached._messagesLoaded = false
@@ -2071,7 +2072,7 @@ async function refreshActiveSessionInstructionState() {
 async function setActiveSessionInstructionEnabled(enabled) {
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) return
-  console.log('[cx] setActiveSessionInstructionEnabled:', { chatKey, enabled: Boolean(enabled) })
+  debugLog('sessionInstruction', 'setActiveSessionInstructionEnabled', { chatKey, enabled: Boolean(enabled) })
   activeSessionInstructionEnabled.value = Boolean(enabled)
   try {
     const current = await window.electronAPI?.getSessionInstruction?.(chatKey)

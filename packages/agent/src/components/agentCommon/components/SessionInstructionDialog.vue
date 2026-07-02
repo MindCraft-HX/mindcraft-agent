@@ -70,6 +70,7 @@
 
 <script setup>
 import { reactive, ref, toRaw } from 'vue'
+import { log as debugLog } from '../utils/rendererDebug.mjs'
 
 defineProps({
   themeClass: { type: String, default: '' },
@@ -95,7 +96,7 @@ function assignDraft(data = {}) {
 async function open(nextChatKey) {
   chatKey.value = nextChatKey || ''
   const data = await window.electronAPI?.getSessionInstruction?.(chatKey.value).catch(() => null)
-  console.log('[si-dialog] open loaded:', { chatKey: chatKey.value, enabled: data?.enabled, hasContent: Boolean(data?.content) })
+  debugLog('sessionInstruction', 'open loaded', { chatKey: chatKey.value, enabled: data?.enabled, hasContent: Boolean(data?.content) })
   assignDraft(data || {})
   visible.value = true
 }
@@ -128,9 +129,9 @@ async function save() {
       attachments: plain.attachments,
     },
   }
-  console.log('[si-dialog] save payload:', { chatKey: payload.chatKey, enabled: payload.instruction.enabled, contentLen: payload.instruction.content.length })
+  debugLog('sessionInstruction', 'save payload', { chatKey: payload.chatKey, enabled: payload.instruction.enabled, contentLen: payload.instruction.content.length })
   const result = await window.electronAPI?.setSessionInstruction?.(payload)
-  console.log('[si-dialog] save result:', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
+  debugLog('sessionInstruction', 'save result', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
   emit('saved', chatKey.value)
   close()
 }
