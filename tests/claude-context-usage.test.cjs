@@ -11,33 +11,31 @@ const {
 } = require('../packages/agent/electron/claude/historyReader.js')
 
 function runNativeClaudeModelTest() {
-  const total = __test__.getClaudeContextUsageFromUsageLike({
+  const total = __test__.getClaudeSystemContextUsageFromData({
     input_tokens: 1200,
     cache_read_input_tokens: 8000,
     cache_creation_input_tokens: 400,
-  }, 'claude-sonnet-4-20250514')
+  })
 
   assert.equal(total, 9600)
-  assert.equal(__test__.isNativeClaudeModel('claude-sonnet-4-20250514'), true)
 }
 
 function runThirdPartyClaudeSdkModelTest() {
-  const total = __test__.getClaudeContextUsageFromUsageLike({
+  const total = __test__.getClaudeSystemContextUsageFromData({
     input_tokens: 139,
     cache_read_input_tokens: 41344,
     cache_creation_input_tokens: 256,
-  }, 'deepseek-v4-pro')
+  })
 
   assert.equal(total, 41739)
-  assert.equal(__test__.isNativeClaudeModel('deepseek-v4-pro'), false)
 }
 
 function runUnknownModelFallsBackToConservativeSumTest() {
-  const total = __test__.getClaudeContextUsageFromUsageLike({
+  const total = __test__.getClaudeSystemContextUsageFromData({
     input_tokens: 500,
     cache_read_input_tokens: 2000,
     cache_creation_input_tokens: 0,
-  }, '')
+  })
 
   assert.equal(total, 2500)
 }
@@ -87,7 +85,7 @@ function runClaudeContextWindowMappingTest() {
   assert.equal(__test__.getContextWindowForModel('claude-sonnet-4-20250514'), 200000)
 }
 
-function runAssistantUsageDoesNotUpdateSessionContextTest() {
+function runAssistantUsageUpdatesContextEstimateTest() {
   const metrics = __test__.collectClaudeTokenMetricsFromLines([
     JSON.stringify({
       type: 'user',
@@ -112,11 +110,11 @@ function runAssistantUsageDoesNotUpdateSessionContextTest() {
   assert.equal(metrics.inputTokens, 7900)
   assert.equal(metrics.outputTokens, 2600)
   assert.equal(metrics.cacheReadTokens, 619600)
-  assert.equal(metrics.contextUsage, 0)
-  assert.equal(metrics.contextWindow, 0)
+  assert.equal(metrics.contextUsage, 630100)
+  assert.equal(metrics.contextWindow, 200000)
 }
 
-function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
+function runClaudeAgentLiveUsageEmitsContextEstimateTest() {
   const metrics = claudeAgentTest.extractClaudeLiveUsageMetricsFromSdkMessage({
     message: {
       model: 'deepseek-v4-pro',
@@ -134,6 +132,8 @@ function runClaudeAgentLiveUsageDoesNotEmitContextTest() {
     outputTokens: 2600,
     cacheReadTokens: 619600,
     cacheCreationTokens: 0,
+    contextUsage: 630100,
+    contextWindow: 200000,
   })
 }
 
@@ -185,7 +185,7 @@ function runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest() {
   })
 }
 
-function runCompactBoundaryThenAssistantUsagePreservesCompactContextTest() {
+function runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest() {
   const metrics = __test__.collectClaudeTokenMetricsFromLines([
     JSON.stringify({
       type: 'system',
@@ -212,11 +212,11 @@ function runCompactBoundaryThenAssistantUsagePreservesCompactContextTest() {
     }),
   ])
 
-  assert.equal(metrics.contextUsage, 4580)
+  assert.equal(metrics.contextUsage, 123598)
   assert.equal(metrics.contextWindow, 200000)
 }
 
-function runAssistantUsageNeverBecomesSessionContextTest() {
+function runAssistantUsageBeforeCompactBoundaryPreservesCompactContextTest() {
   const metrics = __test__.collectClaudeTokenMetricsFromLines([
     JSON.stringify({
       type: 'assistant',
@@ -224,6 +224,37 @@ function runAssistantUsageNeverBecomesSessionContextTest() {
       model_name: 'claude-sonnet-4-20250514',
       message: {
         stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 50,
+          output_tokens: 20,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: 'system',
+      subtype: 'compact_boundary',
+      timestamp: '2026-06-26T10:01:00.000Z',
+      compactMetadata: {
+        preTokens: 167615,
+        postTokens: 4580,
+      },
+    }),
+  ])
+
+  assert.equal(metrics.contextUsage, 4580)
+  assert.equal(metrics.contextWindow, 200000)
+}
+
+function runMultipleAssistantUsageAccumulatesTurnTokensButUsesLatestContextTest() {
+  const metrics = __test__.collectClaudeTokenMetricsFromLines([
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:00:00.000Z',
+      model_name: 'claude-sonnet-4-20250514',
+      message: {
+        stop_reason: 'tool_use',
         usage: {
           input_tokens: 100,
           cache_read_input_tokens: 1000,
@@ -248,8 +279,12 @@ function runAssistantUsageNeverBecomesSessionContextTest() {
     }),
   ])
 
-  assert.equal(metrics.contextUsage, 0)
-  assert.equal(metrics.contextWindow, 0)
+  assert.equal(metrics.inputTokens, 450)
+  assert.equal(metrics.outputTokens, 50)
+  assert.equal(metrics.cacheReadTokens, 3000)
+  assert.equal(metrics.cacheCreationTokens, 150)
+  assert.equal(metrics.contextUsage, 2330)
+  assert.equal(metrics.contextWindow, 200000)
 }
 
 function run() {
@@ -260,12 +295,13 @@ function run() {
   runThirdPartyClaudeUiNormalizationTest()
   runClaudeTurnDurationTest()
   runClaudeContextWindowMappingTest()
-  runAssistantUsageDoesNotUpdateSessionContextTest()
-  runClaudeAgentLiveUsageDoesNotEmitContextTest()
+  runAssistantUsageUpdatesContextEstimateTest()
+  runClaudeAgentLiveUsageEmitsContextEstimateTest()
   runCompactBoundaryProvidesContextTest()
   runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest()
-  runCompactBoundaryThenAssistantUsagePreservesCompactContextTest()
-  runAssistantUsageNeverBecomesSessionContextTest()
+  runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest()
+  runAssistantUsageBeforeCompactBoundaryPreservesCompactContextTest()
+  runMultipleAssistantUsageAccumulatesTurnTokensButUsesLatestContextTest()
   runLatestSessionCwdFromLinesTest()
   console.log('claude context usage tests passed')
 }

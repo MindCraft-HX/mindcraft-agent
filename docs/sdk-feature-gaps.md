@@ -50,12 +50,30 @@
 
 ### 1.3 Query 运行时控制方法（22 total，~19 未用）
 
+#### 2026-07-02 validation: `getContextUsage()`
+
+`Query.getContextUsage()` is present in the SDK and returns
+`{ categories, totalTokens, maxTokens }` by type contract, but it is not a
+drop-in replacement for token metric polling in the current app integration.
+
+Local validation with the production-style SDK `query()` path showed:
+
+- Calling immediately after query creation timed out after 60s.
+- Calling after the first assistant message failed with
+  `Query closed before response received`.
+- Calling after `result` failed because the process transport was no longer
+  ready for writing.
+
+Conclusion: keep this API as a manual/diagnostic candidate only. Do not call it
+from 1s polling, live usage events, or automatic StatusBar refresh until the
+transport lifecycle is changed and the call is proven non-blocking.
+
 | 方法 | 用途 | 优先级 |
 |------|------|:---:|
 | `setModel(model)` | 中途切换模型，无需重建 query | **H** |
 | `setPermissionMode(mode)` | 中途切换权限模式 | **H** |
 | `applyFlagSettings(settings)` | 运行时合并 settings | **H** |
-| `getContextUsage()` | 精确上下文窗口分解（system prompt/tools/messages/MCP/memory 各占多少） | **H** |
+| `getContextUsage()` | Context breakdown API exists, but automatic metric use is blocked by current transport lifecycle validation | Blocked |
 | `interrupt()` | 优雅中断当前执行 | M |
 | `supportedModels()` | 列出可用模型 + 能力标识（effort 支持、adaptive thinking、fast mode） | M |
 | `supportedAgents()` | 列出可用子 agent | M |
@@ -200,7 +218,7 @@ Codex SDK (v0.135.0) API 面较小，App 已用 `startThread()`/`resumeThread()`
 |------|------|
 | `listSessions()` / `getSessionInfo()` / `getSessionMessages()` | ~200 行 JSONL 扫描消除 |
 | `deleteSession()` / `forkSession()` | 替换 `fs.unlinkSync`，增加 fork 能力 |
-| `getContextUsage()` | 精确上下文分解，替代手动估算 |
+| `getContextUsage()` | Blocked for automatic metrics; manual/diagnostic candidate only |
 | `setModel()` / `setPermissionMode()` | 中途切换无需重建 query |
 
 ### Tier 2：新增核心能力（HIGH-MEDIUM impact）

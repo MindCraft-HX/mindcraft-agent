@@ -230,6 +230,38 @@ test('sdk-result with empty context preserves live context', () => {
   assert.strictEqual(snap.contextWindow, 200000)
 })
 
+test('session-context updates context only and never changes turn tokens', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  applySample({
+    provider: 'claude',
+    source: 'sdk-live',
+    scope: 'turn-live',
+    chatKey: 'test-chat',
+    inputTokens: 300,
+    outputTokens: 40,
+    cacheReadTokens: 20,
+  })
+  applySample({
+    provider: 'claude',
+    source: 'context-snapshot',
+    scope: 'session-context',
+    chatKey: 'test-chat',
+    inputTokens: 999999,
+    outputTokens: 999999,
+    cacheReadTokens: 999999,
+    contextUsage: 45000,
+    contextWindow: 200000,
+  })
+
+  const snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.inputTokens, 300)
+  assert.strictEqual(snap.outputTokens, 40)
+  assert.strictEqual(snap.cacheReadTokens, 20)
+  assert.strictEqual(snap.contextUsage, 45000)
+  assert.strictEqual(snap.contextWindow, 200000)
+})
+
 // ==================== clearCurrentTurn ====================
 
 test('clearCurrentTurn removes unfinalized turn', () => {

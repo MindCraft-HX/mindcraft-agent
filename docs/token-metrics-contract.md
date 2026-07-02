@@ -61,15 +61,21 @@ Clarification:
 
 | Source | Semantics | StatusBar use |
 | --- | --- | --- |
-| SDK `assistant.message.usage` | Real live usage if SDK emits it | Allowed through adapter/normalizer |
-| SDK `result.usage` | Final turn usage | Allowed as final sample |
-| JSONL assistant usage | Transcript sample for turn `in/out/cache`; must not update session context | Allowed only after boundary guard |
-| compact boundary | Session context sample | Context only |
+| SDK `assistant.message.usage` | Real live request usage if SDK emits it | Allowed through adapter/normalizer; current-turn `in/out/cache` may accumulate samples, context may use the latest single-sample estimate |
+| SDK `result.usage` | Final turn-consumption usage | Allowed as final sample for `in/out/cache/duration/cost` |
+| SDK `query.getContextUsage()` | Official current context-window snapshot | Not used for automatic sampling: local validation showed it can block around 60s before init and fail after assistant/result on the current transport |
+| JSONL assistant usage | Transcript request sample for turn `in/out/cache`; latest single sample can estimate context | Allowed only after boundary guard |
+| compact boundary | Confirmed transcript context fallback | Context only |
+| system context_usage | Legacy/defensive transcript parser branch; not observed as a reliable ClaudeCode source in current samples | Context only if present |
 
 Rules:
-- `contextUsage/contextWindow` never derives from Claude assistant/result `usage`.
-- Claude assistant/result `usage` only normalizes current-turn `in/out/cache`: `in = input_tokens + cache_creation_input_tokens`, `cache = cache_read_input_tokens`, `out = output_tokens`.
-- Claude context may update only from explicit context samples such as `system context_usage` and `system compact_boundary`.
+- Claude assistant/message `usage` has two different consumers:
+  - Current-turn consumption: accumulate request samples within the same user turn for `in/out/cache`, because tool-heavy turns can produce multiple real usage records.
+  - Current context estimate: use only the latest single assistant/message usage sample, computed as `inputTokens + cacheReadTokens + outputTokens`; never sum multiple samples for context.
+- Claude assistant/result `usage` normalizes current-turn tokens as `in = input_tokens + cache_creation_input_tokens`, `cache = cache_read_input_tokens`, `out = output_tokens`.
+- Claude context may also update from explicit context samples. Current reliable transcript source is `compact_boundary`; the legacy `system context_usage` branch is accepted only if the provider emits it. SDK `query.getContextUsage()` must stay manual/diagnostic until proven non-blocking in the app runtime.
+- `result.usage` must not be used as context. If `result.usage` is missing token fields, finalization must preserve the live/request aggregate instead of replacing it with zeros.
+- Do not call `query.getContextUsage()` from 1s polling or live usage events. It is a control request over the active CLI transport, not a cheap metric getter in the current integration.
 - If no valid live SDK/JSONL usage exists before turn end, UI must not fake token growth.
 
 ### CodeX

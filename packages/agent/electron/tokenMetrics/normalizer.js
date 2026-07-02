@@ -7,7 +7,7 @@
  *   in = 常规输入 + cache creation
  *   cache = cache read
  *
- * Provider 映射规则见 docs/token-metrics.md §0。
+ * Provider mapping rules are defined in docs/token-metrics-contract.md.
  */
 
 /**

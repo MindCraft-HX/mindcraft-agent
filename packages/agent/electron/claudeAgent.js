@@ -212,11 +212,51 @@ function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
   const usage = msg?.message?.usage
   if (!usage || typeof usage !== 'object') return null
   const normalized = claudeMetrics.normalizeClaudeUsageForUi(usage, msg?.message?.model || msg?.model || fallbackModel || '')
+  const contextUsage = (normalized.inputTokens || 0) + (normalized.cacheReadTokens || 0) + (normalized.outputTokens || 0)
+  const contextWindow = contextUsage > 0
+    ? claudeMetrics.getContextWindowForModel(msg?.message?.model || msg?.model || fallbackModel || '')
+    : 0
   return {
     inputTokens: normalized.inputTokens || 0,
     outputTokens: normalized.outputTokens || 0,
     cacheReadTokens: normalized.cacheReadTokens || 0,
     cacheCreationTokens: normalized.cacheCreationTokens || 0,
+    contextUsage,
+    contextWindow,
+  }
+}
+
+function hasClaudeUsageTokenFields(usage) {
+  if (!usage || typeof usage !== 'object') return false
+  return [
+    usage.input_tokens,
+    usage.output_tokens,
+    usage.cache_read_input_tokens,
+    usage.cache_creation_input_tokens,
+  ].some(value => Number.isFinite(Number(value)))
+}
+
+function createClaudeTurnUsageAccumulator() {
+  const totals = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  }
+  return {
+    add(sample = {}) {
+      totals.inputTokens += toNonNegativeMetricNumber(sample.inputTokens)
+      totals.outputTokens += toNonNegativeMetricNumber(sample.outputTokens)
+      totals.cacheReadTokens += toNonNegativeMetricNumber(sample.cacheReadTokens)
+      totals.cacheCreationTokens += toNonNegativeMetricNumber(sample.cacheCreationTokens)
+      return {
+        ...sample,
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        cacheReadTokens: totals.cacheReadTokens,
+        cacheCreationTokens: totals.cacheCreationTokens,
+      }
+    },
   }
 }
 
@@ -2695,6 +2735,7 @@ function setupClaudeHandlers() {
           })
           // Phase 3：TurnStore — 开始新 turn
           beginTurn({ provider: 'claude', chatKey, startedAt: Date.now() })
+          const sdkUsageAccumulator = createClaudeTurnUsageAccumulator()
           // 启动 metrics 轮询器。只推送真实 transcript 样本，不伪造中间值；
           // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
@@ -2754,14 +2795,15 @@ function setupClaudeHandlers() {
             }
             const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
             if (liveUsageMetrics) {
+              const liveUsageSnapshot = sdkUsageAccumulator.add(liveUsageMetrics)
               liveSampleCounts.sdkLiveCount += 1
-              if ((liveUsageMetrics.inputTokens || 0) > 0 || (liveUsageMetrics.outputTokens || 0) > 0 || (liveUsageMetrics.cacheReadTokens || 0) > 0 || (liveUsageMetrics.cacheCreationTokens || 0) > 0) liveSampleCounts.sawLiveTurnTokens = true
+              if ((liveUsageSnapshot.inputTokens || 0) > 0 || (liveUsageSnapshot.outputTokens || 0) > 0 || (liveUsageSnapshot.cacheReadTokens || 0) > 0 || (liveUsageSnapshot.cacheCreationTokens || 0) > 0) liveSampleCounts.sawLiveTurnTokens = true
               // Phase 3：TurnStore — sdk-live 更新 live snapshot
               emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-live',
                 scope: 'turn-live',
                 providerSessionId: cliSessionIds.get(chatKey) || '',
-                ...liveUsageMetrics,
+                ...liveUsageSnapshot,
                 durationMs: Math.max(0, Date.now() - pollStart),
                 rawUsage: msg?.message?.usage || null,
               }, sessionId, model || '')
@@ -2790,14 +2832,15 @@ function setupClaudeHandlers() {
               liveSampleCounts.sdkResultCount += 1
               const usage = msg.usage || {}
               const normalizedUsage = claudeMetrics.normalizeClaudeUsageForUi(usage, model || '')
+              const hasResultUsage = hasClaudeUsageTokenFields(usage)
               const snapshot = emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-result',
                 scope: 'turn-final',
                 providerSessionId: msg.session_id || '',
-                inputTokens: normalizedUsage.inputTokens || 0,
-                outputTokens: normalizedUsage.outputTokens || 0,
-                cacheReadTokens: normalizedUsage.cacheReadTokens || 0,
-                cacheCreationTokens: normalizedUsage.cacheCreationTokens || 0,
+                inputTokens: hasResultUsage ? (normalizedUsage.inputTokens || 0) : undefined,
+                outputTokens: hasResultUsage ? (normalizedUsage.outputTokens || 0) : undefined,
+                cacheReadTokens: hasResultUsage ? (normalizedUsage.cacheReadTokens || 0) : undefined,
+                cacheCreationTokens: hasResultUsage ? (normalizedUsage.cacheCreationTokens || 0) : undefined,
                 durationMs: msg.duration_ms || 0,
                 costUsd: msg.total_cost_usd || 0,
                 rawUsage: usage || null,

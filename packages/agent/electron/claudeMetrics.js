@@ -74,38 +74,32 @@ function parseClaudeTimestampMs(value) {
   return null
 }
 
-function isNativeClaudeModel(model) {
-  const lower = String(model || '').toLowerCase()
-  if (!lower) return false
-  return lower.includes('claude') ||
-    lower.includes('sonnet') ||
-    lower.includes('opus') ||
-    lower.includes('haiku')
-}
-
-function getClaudeContextUsageFromUsageLike(usage, model) {
-  const inputTokens = toSafeTokenCount(usage?.input_tokens)
-  const cacheReadTokens = toSafeTokenCount(usage?.cache_read_input_tokens)
-  const cacheCreationTokens = toSafeTokenCount(usage?.cache_creation_input_tokens)
+function getClaudeSystemContextUsageFromData(data) {
+  const inputTokens = toSafeTokenCount(data?.input_tokens)
+  const cacheReadTokens = toSafeTokenCount(data?.cache_read_input_tokens)
+  const cacheCreationTokens = toSafeTokenCount(data?.cache_creation_input_tokens)
   return inputTokens + cacheReadTokens + cacheCreationTokens
-}
-
-function getBoundedClaudeContextEstimateFromUsageLike(usage, model, fallbackContextWindow = 0) {
-  const rawContextUsage = getClaudeContextUsageFromUsageLike(usage, model)
-  const contextWindow = toSafeTokenCount(fallbackContextWindow) || getContextWindowForModel(model)
-  if (!rawContextUsage || !contextWindow) {
-    return { contextUsage: 0, contextWindow: 0 }
-  }
-  return {
-    contextUsage: Math.min(rawContextUsage, contextWindow),
-    contextWindow,
-  }
 }
 
 function normalizeClaudeUsageForUi(usage, model) {
   // Phase 1：委托给统一 normalizer
   const { normalizeClaudeUsage } = require('./tokenMetrics/normalizer')
   return normalizeClaudeUsage(usage, model)
+}
+
+function getClaudeContextEstimateFromNormalizedUsage(normalized) {
+  if (!normalized || typeof normalized !== 'object') return 0
+  return toSafeTokenCount(normalized.inputTokens) +
+    toSafeTokenCount(normalized.cacheReadTokens) +
+    toSafeTokenCount(normalized.outputTokens)
+}
+
+function addNormalizedUsageToTotals(totals, normalized) {
+  if (!totals || !normalized) return
+  totals.inputTokens += toSafeTokenCount(normalized.inputTokens)
+  totals.outputTokens += toSafeTokenCount(normalized.outputTokens)
+  totals.cacheReadTokens += toSafeTokenCount(normalized.cacheReadTokens)
+  totals.cacheCreationTokens += toSafeTokenCount(normalized.cacheCreationTokens)
 }
 
 function readJsonlLines(filePath) {
@@ -153,11 +147,20 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   let lastTurnDurationMs = null
   let lastContextUsage = null
   let lastContextWindow = null
-  let boundedUsageContextUsage = 0
-  let boundedUsageContextWindow = 0
+  let lastContextOrder = -1
+  let latestUsageContextUsage = 0
+  let latestUsageContextWindow = 0
+  let latestUsageContextOrder = -1
+  const turnUsageTotals = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  }
 
   // 扫描所有 assistant 消息提取 usage
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
     try {
       const parsed = JSON.parse(line)
       const ts = parseClaudeTimestampMs(parsed.timestamp)
@@ -175,13 +178,20 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           continue
         }
         // inputTokens 鏄?UI 鍙ｅ緞鐨勮緭鍏ヤ晶鎴愭湰锛堝父瑙勮緭鍏?+ cache creation锛夈€?
-        inputTokens = Math.max(inputTokens, normalized.inputTokens || 0)
+        const usageContext = getClaudeContextEstimateFromNormalizedUsage(normalized)
+        if (usageContext > 0) {
+          latestUsageContextUsage = usageContext
+          latestUsageContextWindow = getContextWindowForModel(entryModel)
+          latestUsageContextOrder = lineIndex
+        }
+        addNormalizedUsageToTotals(turnUsageTotals, normalized)
+        inputTokens = turnUsageTotals.inputTokens
+        outputTokens = turnUsageTotals.outputTokens
+        cacheReadTokens = turnUsageTotals.cacheReadTokens
+        cacheCreationTokens = turnUsageTotals.cacheCreationTokens
         // output/cache 鏄?per-round 鍊硷紝浠呬俊浠诲凡瀹屾垚鐨勮疆娆★紙閬垮厤娴佸紡璺冲洖 0锛?
         const stopReason = parsed.message.stop_reason
         if (stopReason) {
-          outputTokens = normalized.outputTokens || outputTokens
-          cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens
-          cacheCreationTokens = normalized.cacheCreationTokens || cacheCreationTokens
           lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, ts, lastTurnDurationMs)
         }
       }
@@ -194,13 +204,15 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           contextWindow = data.total_tokens || data.context_window_size || 0
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
+          lastContextOrder = lineIndex
         }
         if (data.input_tokens && !data.usage) {
           const model = data.model || data.model_name || parsed.model || parsed.model_name || ''
-          contextUsage = getClaudeContextUsageFromUsageLike(data, model)
+          contextUsage = getClaudeSystemContextUsageFromData(data)
           contextWindow = data.context_window_size || 0
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
+          lastContextOrder = lineIndex
         }
       }
 
@@ -213,18 +225,20 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           contextWindow = getContextWindowForModel('')
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
+          lastContextOrder = lineIndex
         } else if (preTokens > 0) {
           contextUsage = preTokens
           contextWindow = getContextWindowForModel('')
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
+          lastContextOrder = lineIndex
         }
       }
     } catch (_) {}
   }
 
   // 如果没有完整的 stop_reason 过滤，统计所有
-  if (inputTokens === 0 && outputTokens === 0) {
+  if (turnUsageTotals.inputTokens === 0 && turnUsageTotals.outputTokens === 0) {
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line)
@@ -235,10 +249,11 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           // 同上：input/output/cache 均取最后值避免跨轮不对称
           const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
           const normalized = normalizeClaudeUsageForUi(usage, entryModel)
-          inputTokens = normalized.inputTokens || inputTokens
-          outputTokens = normalized.outputTokens || outputTokens
-          cacheReadTokens = normalized.cacheReadTokens || cacheReadTokens
-          cacheCreationTokens = normalized.cacheCreationTokens || cacheCreationTokens
+          addNormalizedUsageToTotals(turnUsageTotals, normalized)
+          inputTokens = turnUsageTotals.inputTokens
+          outputTokens = turnUsageTotals.outputTokens
+          cacheReadTokens = turnUsageTotals.cacheReadTokens
+          cacheCreationTokens = turnUsageTotals.cacheCreationTokens
           lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, ts, lastTurnDurationMs)
         }
       } catch (_) {}
@@ -249,16 +264,18 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     lastTurnDurationMs = pickClaudeTurnDurationMs(lastUserTimestamp, lastAssistantTimestamp, null)
   }
 
-  // Assistant usage is turn token data only. Session context must come from
-  // explicit context samples such as system context_usage or compact_boundary.
-  if (!contextWindow && !lastContextUsage) {
-    contextUsage = 0
-    contextWindow = 0
-  }
-
-  if (lastContextUsage !== null) {
+  // The latest single assistant usage sample may estimate current context.
+  // Never accumulate usage samples: repeated cache_read across tool requests
+  // is real consumption but not additive context occupancy.
+  if (latestUsageContextUsage > 0 && latestUsageContextOrder >= lastContextOrder) {
+    contextUsage = latestUsageContextUsage
+    contextWindow = latestUsageContextWindow || getContextWindowForModel('')
+  } else if (lastContextUsage !== null) {
     contextUsage = lastContextUsage
     contextWindow = lastContextWindow || getContextWindowForModel('')
+  } else {
+    contextUsage = 0
+    contextWindow = 0
   }
 
   // 如果仍然没有 contextWindow，用默认值兜底
@@ -615,10 +632,10 @@ module.exports = {
   getContextWindowForModel,
   normalizeClaudeUsageForUi,
   __test__: {
-    getClaudeContextUsageFromUsageLike,
-    isNativeClaudeModel,
+    getClaudeSystemContextUsageFromData,
     normalizeClaudeUsageForUi,
     collectClaudeTokenMetricsFromLines,
+    getClaudeContextEstimateFromNormalizedUsage,
     getLatestSessionCwdFromLines,
     getLatestSessionCwd,
     pickClaudeTurnDurationMs,
