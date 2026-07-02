@@ -2576,11 +2576,14 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       if (!tab.thinking && sameThinkingCycle) {
         syncCodexFooterTurnTokens(tab, result, { replace: true })
       }
-      onMetricsUpdate({
-        ...result,
-        sessionId: requestSessionId,
-        thinking: Boolean(tab.thinking),
-      })
+      // sameThinkingCycle=false 时不调用 onMetricsUpdate，避免旧 turn 的 token/duration 污染新运行态
+      if (sameThinkingCycle) {
+        onMetricsUpdate({
+          ...result,
+          sessionId: requestSessionId,
+          thinking: Boolean(tab.thinking),
+        })
+      }
     }).catch(() => {})
     stop()
     return
