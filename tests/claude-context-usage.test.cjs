@@ -8,6 +8,7 @@ const {
 } = require('../packages/agent/electron/claudeAgent.js')
 const {
   buildClaudeHistoryTurnTokensFromEntry,
+  annotateClaudeHistoryMessagesWithTurnTokens,
 } = require('../packages/agent/electron/claude/historyReader.js')
 
 function runNativeClaudeModelTest() {
@@ -287,6 +288,112 @@ function runMultipleAssistantUsageAccumulatesTurnTokensButUsesLatestContextTest(
   assert.equal(metrics.contextWindow, 200000)
 }
 
+function runDefaultMetricsUseLatestTurnNotWholeSessionTest() {
+  const metrics = __test__.collectClaudeTokenMetricsFromLines([
+    JSON.stringify({
+      type: 'user',
+      timestamp: '2026-06-26T10:00:00.000Z',
+      message: { content: 'first' },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:00:10.000Z',
+      model_name: 'claude-sonnet-4-20250514',
+      message: {
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 1000,
+          cache_read_input_tokens: 100000,
+          cache_creation_input_tokens: 0,
+          output_tokens: 500,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      timestamp: '2026-06-26T10:01:00.000Z',
+      message: { content: 'second' },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-06-26T10:01:05.000Z',
+      model_name: 'claude-sonnet-4-20250514',
+      message: {
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 10,
+          cache_read_input_tokens: 20,
+          cache_creation_input_tokens: 0,
+          output_tokens: 5,
+        },
+      },
+    }),
+  ])
+
+  assert.equal(metrics.inputTokens, 10)
+  assert.equal(metrics.outputTokens, 5)
+  assert.equal(metrics.cacheReadTokens, 20)
+  assert.equal(metrics.durationMs, 5000)
+  assert.equal(metrics.contextUsage, 35)
+}
+
+function runHistoryTurnTokensAggregateOneUserTurnTest() {
+  const entries = [
+    {
+      type: 'user',
+      timestamp: '2026-06-26T10:00:00.000Z',
+      message: { content: 'do work' },
+    },
+    {
+      type: 'assistant',
+      timestamp: '2026-06-26T10:00:10.000Z',
+      message: {
+        role: 'assistant',
+        usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 50,
+          output_tokens: 20,
+        },
+      },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-06-26T10:00:15.000Z',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1' }] },
+    },
+    {
+      type: 'assistant',
+      timestamp: '2026-06-26T10:00:30.000Z',
+      message: {
+        role: 'assistant',
+        usage: {
+          input_tokens: 200,
+          cache_read_input_tokens: 2000,
+          cache_creation_input_tokens: 100,
+          output_tokens: 30,
+        },
+      },
+    },
+  ]
+  const messages = entries.map((entry) => {
+    if (entry.type === 'assistant') return { role: 'assistant', _source_type: 'assistant' }
+    return { role: entry.type, _source_type: entry.type }
+  })
+
+  annotateClaudeHistoryMessagesWithTurnTokens(messages, entries)
+
+  assert.equal(messages[1]._turnTokens, undefined)
+  assert.deepEqual(messages[3]._turnTokens, {
+    inputTokens: 450,
+    outputTokens: 50,
+    cacheReadTokens: 3000,
+    cacheCreationTokens: 150,
+    durationMs: 30000,
+    costUsd: 0,
+  })
+}
+
 function run() {
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
@@ -302,6 +409,8 @@ function run() {
   runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest()
   runAssistantUsageBeforeCompactBoundaryPreservesCompactContextTest()
   runMultipleAssistantUsageAccumulatesTurnTokensButUsesLatestContextTest()
+  runDefaultMetricsUseLatestTurnNotWholeSessionTest()
+  runHistoryTurnTokensAggregateOneUserTurnTest()
   runLatestSessionCwdFromLinesTest()
   console.log('claude context usage tests passed')
 }

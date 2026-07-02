@@ -73,6 +73,8 @@ Rules:
   - Current-turn consumption: accumulate request samples within the same user turn for `in/out/cache`, because tool-heavy turns can produce multiple real usage records.
   - Current context estimate: use only the latest single assistant/message usage sample, computed as `inputTokens + cacheReadTokens + outputTokens`; never sum multiple samples for context.
 - Claude assistant/result `usage` normalizes current-turn tokens as `in = input_tokens + cache_creation_input_tokens`, `cache = cache_read_input_tokens`, `out = output_tokens`.
+- Claude transcript restore must identify user-turn boundaries. Without an explicit `tokenSinceMs`, JSONL metrics may summarize only the latest user turn for StatusBar; they must never sum the whole transcript as current-turn `in/out/cache`.
+- Claude history/footer restore must aggregate all assistant usage samples inside the same user turn and attach the final `_turnTokens` to the last renderable assistant message in that turn. Tool-result-only `user` entries are not new turn boundaries.
 - Claude context may also update from explicit context samples. Current reliable transcript source is `compact_boundary`; the legacy `system context_usage` branch is accepted only if the provider emits it. SDK `query.getContextUsage()` must stay manual/diagnostic until proven non-blocking in the app runtime.
 - `result.usage` must not be used as context. If `result.usage` is missing token fields, finalization must preserve the live/request aggregate instead of replacing it with zeros.
 - Do not call `query.getContextUsage()` from 1s polling or live usage events. It is a control request over the active CLI transport, not a cheap metric getter in the current integration.

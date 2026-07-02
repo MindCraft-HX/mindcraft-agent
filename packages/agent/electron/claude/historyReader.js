@@ -19,6 +19,56 @@
 const fs = require('fs')
 const { normalizeClaudeUsage } = require('../tokenMetrics/normalizer')
 
+function parseTimestampMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
+function isToolResultOnlyContent(content) {
+  return Array.isArray(content) && content.length > 0 && content.every(block => block?.type === 'tool_result')
+}
+
+function isRealUserTurnBoundary(entry = {}) {
+  if (entry?.type === 'queue-operation' && typeof entry.content === 'string' && entry.content.trim()) return true
+  if (entry?.type !== 'user') return false
+  const content = entry?.message?.content ?? entry?.content
+  if (isToolResultOnlyContent(content)) return false
+  if (typeof content === 'string') {
+    const text = content.trim()
+    return text && text !== '[Request interrupted by user]'
+  }
+  if (!Array.isArray(content)) return false
+  return content.some(block => {
+    if (block?.type !== 'text' || !block.text) return false
+    const text = String(block.text).trim()
+    if (!text || text === '[Request interrupted by user]') return false
+    if (text.startsWith('<system-reminder') || text.startsWith('<environment_context') || text.startsWith('<ide_')) return false
+    return true
+  })
+}
+
+function addTurnTokens(target, source) {
+  if (!target || !source) return
+  target.inputTokens += Number(source.inputTokens || 0)
+  target.outputTokens += Number(source.outputTokens || 0)
+  target.cacheReadTokens += Number(source.cacheReadTokens || 0)
+  target.cacheCreationTokens += Number(source.cacheCreationTokens || 0)
+  target.costUsd += Number(source.costUsd || 0)
+}
+
+function hasMeaningfulTurnTokens(tokens = {}) {
+  return Number(tokens.inputTokens || 0) > 0 ||
+    Number(tokens.outputTokens || 0) > 0 ||
+    Number(tokens.cacheReadTokens || 0) > 0 ||
+    Number(tokens.cacheCreationTokens || 0) > 0 ||
+    Number(tokens.durationMs || 0) > 0 ||
+    Number(tokens.costUsd || 0) > 0
+}
+
 /**
  * Build a turn-token summary from a raw Claude history entry.
  * Returns null when all token/duration values are zero (not meaningful).
@@ -63,6 +113,78 @@ function annotateClaudeHistoryEntryWithTurnTokens(msgData, entry) {
   if (!turnTokens || !msgData || typeof msgData !== 'object') return msgData
   msgData._turnTokens = turnTokens
   return msgData
+}
+
+function annotateClaudeHistoryMessagesWithTurnTokens(messages, entries) {
+  if (!Array.isArray(messages) || !Array.isArray(entries) || messages.length === 0) return messages
+  let currentTurn = null
+  const finalized = []
+
+  function finalizeTurn() {
+    if (!currentTurn) return
+    if (currentTurn.lastAssistantMessage && hasMeaningfulTurnTokens(currentTurn.tokens)) {
+      if (currentTurn.userTs !== null && currentTurn.lastAssistantTs !== null && currentTurn.lastAssistantTs >= currentTurn.userTs) {
+        currentTurn.tokens.durationMs = currentTurn.lastAssistantTs - currentTurn.userTs
+      }
+      finalized.push({
+        message: currentTurn.lastAssistantMessage,
+        tokens: { ...currentTurn.tokens },
+      })
+    }
+    currentTurn = null
+  }
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i]
+    const message = messages[i]
+    if (!entry || !message) continue
+    if (isRealUserTurnBoundary(entry)) {
+      finalizeTurn()
+      currentTurn = {
+        userTs: parseTimestampMs(entry.timestamp),
+        lastAssistantTs: null,
+        lastAssistantMessage: null,
+        tokens: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          durationMs: 0,
+          costUsd: 0,
+        },
+      }
+      continue
+    }
+    const sourceType = message._source_type || entry.type
+    if (sourceType !== 'assistant') continue
+    const turnTokens = buildClaudeHistoryTurnTokensFromEntry(entry)
+    if (!turnTokens) continue
+    if (!currentTurn) {
+      currentTurn = {
+        userTs: null,
+        lastAssistantTs: null,
+        lastAssistantMessage: null,
+        tokens: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          durationMs: 0,
+          costUsd: 0,
+        },
+      }
+    }
+    addTurnTokens(currentTurn.tokens, turnTokens)
+    currentTurn.lastAssistantTs = parseTimestampMs(entry.timestamp)
+    currentTurn.lastAssistantMessage = message
+    if (Number(turnTokens.durationMs || 0) > 0) currentTurn.tokens.durationMs = Number(turnTokens.durationMs || 0)
+  }
+  finalizeTurn()
+
+  for (const item of finalized) {
+    item.message._turnTokens = item.tokens
+  }
+  return messages
 }
 
 /**
@@ -144,5 +266,6 @@ function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
 module.exports = {
   buildClaudeHistoryTurnTokensFromEntry,
   annotateClaudeHistoryEntryWithTurnTokens,
+  annotateClaudeHistoryMessagesWithTurnTokens,
   readJsonlPageLinesFromTail,
 }

@@ -48,6 +48,7 @@ const { getAgentProtocol } = require('./agentProtocolBridge')
 const {
   buildClaudeHistoryTurnTokensFromEntry,
   annotateClaudeHistoryEntryWithTurnTokens,
+  annotateClaudeHistoryMessagesWithTurnTokens,
   readJsonlPageLinesFromTail,
 } = require('./claude/historyReader')
 const { perfStartIpc, setPerfEnabled } = require('./shared/mainPerfProbe')
@@ -926,12 +927,14 @@ function setupClaudeHandlers() {
 
       const lines = rawText.split('\n').filter(line => line.trim())
       const messages = []
+      const entriesForMessages = []
       for (const line of lines) {
         try {
           const entry = JSON.parse(line)
 
           if (entry.type === 'queue-operation' && entry.content) {
             messages.push({ type: 'queue-operation', content: entry.content })
+            entriesForMessages.push(entry)
             continue
           }
 
@@ -946,17 +949,18 @@ function setupClaudeHandlers() {
               msgData._is_user_wrapper = true
             } else if (sourceType === 'assistant') {
               msgData._is_assistant_wrapper = true
-              annotateClaudeHistoryEntryWithTurnTokens(msgData, entry)
             } else if (entry.type === 'command' || entry.type === 'skill' || entry.type === 'tool_use') {
               msgData._is_tool_message = true
             }
 
             messages.push(msgData)
+            entriesForMessages.push(entry)
           }
         } catch (e) {
           console.warn('[claude-read-session-file] parse error:', e?.message)
         }
       }
+      annotateClaudeHistoryMessagesWithTurnTokens(messages, entriesForMessages)
       return messages
     } catch (e) {
       console.warn('[claude-read-session-file] failed:', e?.message || e)
@@ -995,6 +999,7 @@ function setupClaudeHandlers() {
       })
 
       const messages = []
+      const entriesForMessages = []
       const collectStart = Date.now()
       appendClaudeFreezeDiag('session-range.collect-page.start', {
         file: path.basename(filePath),
@@ -1010,6 +1015,7 @@ function setupClaudeHandlers() {
           const entry = JSON.parse(cleanLine)
           if (entry.type === 'queue-operation' && entry.content) {
             messages.push({ type: 'queue-operation', content: entry.content })
+            entriesForMessages.push(entry)
             return
           }
           if (entry.uuid) {
@@ -1021,18 +1027,20 @@ function setupClaudeHandlers() {
             if (entry.type === 'user' && entry.message) msgData._is_user_wrapper = true
             else if (sourceType === 'assistant') {
               msgData._is_assistant_wrapper = true
-              annotateClaudeHistoryEntryWithTurnTokens(msgData, entry)
             }
             else if (entry.type === 'command' || entry.type === 'skill' || entry.type === 'tool_use') msgData._is_tool_message = true
             messages.push(msgData)
+            entriesForMessages.push(entry)
           } else if (entry.type === 'ai-title') {
             // AI 生成的标题，作为特殊消息保留
             messages.push({ type: 'ai-title', aiTitle: entry.aiTitle })
+            entriesForMessages.push(entry)
           }
         } catch (_) {}
       }
 
       for (const line of pageData.lines) collectMessages(line)
+      annotateClaudeHistoryMessagesWithTurnTokens(messages, entriesForMessages)
 
       const hasMore = pageData.hasMore
       const collectMs = Date.now() - collectStart
@@ -2841,7 +2849,7 @@ function setupClaudeHandlers() {
                 outputTokens: hasResultUsage ? (normalizedUsage.outputTokens || 0) : undefined,
                 cacheReadTokens: hasResultUsage ? (normalizedUsage.cacheReadTokens || 0) : undefined,
                 cacheCreationTokens: hasResultUsage ? (normalizedUsage.cacheCreationTokens || 0) : undefined,
-                durationMs: msg.duration_ms || 0,
+                durationMs: Number.isFinite(Number(msg.duration_ms)) && Number(msg.duration_ms) > 0 ? Number(msg.duration_ms) : undefined,
                 costUsd: msg.total_cost_usd || 0,
                 rawUsage: usage || null,
               }, sessionId, model || '', {

@@ -74,6 +74,29 @@ function parseClaudeTimestampMs(value) {
   return null
 }
 
+function isClaudeToolResultUserContent(content) {
+  return Array.isArray(content) && content.length > 0 && content.every(block => block?.type === 'tool_result')
+}
+
+function isClaudeRealUserTurnBoundary(entry = {}) {
+  if (entry?.type === 'queue-operation' && typeof entry.content === 'string' && entry.content.trim()) return true
+  if (entry?.type !== 'user') return false
+  const content = entry?.message?.content ?? entry?.content
+  if (isClaudeToolResultUserContent(content)) return false
+  if (typeof content === 'string') {
+    const text = content.trim()
+    return text && text !== '[Request interrupted by user]'
+  }
+  if (!Array.isArray(content)) return false
+  return content.some(block => {
+    if (block?.type !== 'text' || !block.text) return false
+    const text = String(block.text).trim()
+    if (!text || text === '[Request interrupted by user]') return false
+    if (text.startsWith('<system-reminder') || text.startsWith('<environment_context') || text.startsWith('<ide_')) return false
+    return true
+  })
+}
+
 function getClaudeSystemContextUsageFromData(data) {
   const inputTokens = toSafeTokenCount(data?.input_tokens)
   const cacheReadTokens = toSafeTokenCount(data?.cache_read_input_tokens)
@@ -135,6 +158,16 @@ function getTokenMetrics(cliSessionId, options = {}) {
 function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   if (lines.length === 0) return null
   const tokenSinceMs = Number.isFinite(options?.tokenSinceMs) ? Number(options.tokenSinceMs) : null
+  const latestTurnOnly = tokenSinceMs === null && options?.latestTurnOnly !== false
+  let latestTurnStartOrder = -1
+  if (latestTurnOnly) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      try {
+        const parsed = JSON.parse(lines[lineIndex])
+        if (isClaudeRealUserTurnBoundary(parsed)) latestTurnStartOrder = lineIndex
+      } catch (_) {}
+    }
+  }
 
   let inputTokens = 0
   let outputTokens = 0
@@ -164,7 +197,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     try {
       const parsed = JSON.parse(line)
       const ts = parseClaudeTimestampMs(parsed.timestamp)
-      if (parsed.type === 'user' && typeof ts === 'number') {
+      if (isClaudeRealUserTurnBoundary(parsed) && typeof ts === 'number') {
         lastUserTimestamp = ts
       }
 
@@ -175,6 +208,9 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
         const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
         const normalized = normalizeClaudeUsageForUi(usage, entryModel)
         if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) {
+          continue
+        }
+        if (latestTurnOnly && latestTurnStartOrder >= 0 && lineIndex < latestTurnStartOrder) {
           continue
         }
         // inputTokens 鏄?UI 鍙ｅ緞鐨勮緭鍏ヤ晶鎴愭湰锛堝父瑙勮緭鍏?+ cache creation锛夈€?
@@ -239,12 +275,14 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
 
   // 如果没有完整的 stop_reason 过滤，统计所有
   if (turnUsageTotals.inputTokens === 0 && turnUsageTotals.outputTokens === 0) {
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex]
       try {
         const parsed = JSON.parse(line)
         if (parsed.type === 'assistant' && parsed.message?.usage) {
           const ts = parseClaudeTimestampMs(parsed.timestamp)
           if (tokenSinceMs !== null && (ts === null || ts < tokenSinceMs)) continue
+          if (latestTurnOnly && latestTurnStartOrder >= 0 && lineIndex < latestTurnStartOrder) continue
           const usage = parsed.message.usage
           // 同上：input/output/cache 均取最后值避免跨轮不对称
           const entryModel = parsed.model_name || parsed.model || parsed.message?.model || ''
