@@ -2529,15 +2529,17 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   const dedupKey = chat.cliSessionId || chat.sessionId
   if (dedupKey && _codexMetricsTracker.has(dedupKey)) { stop(); return }
 
+  const hasSnapshot = !chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})
+
   // 快照 guard：非 thinking 且 metrics 已有数据 → 直接显示缓存，跳过 IPC
-  if (!chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})) {
+  if (hasSnapshot) {
     if (reason === 'active-tab-state-watch' || reason === 'switch-chat') { stop(); return }
   }
 
   if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
 
   // 缓存优先：先显示已有的
-  if (!chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})) {
+  if (hasSnapshot) {
     onMetricsUpdate({ ...chat.metrics, sessionId: chat.sessionId, thinking: false })
   }
 

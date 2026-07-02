@@ -698,6 +698,11 @@ async function refreshMetricsForChat(chat) {
         Object.assign(metricsData.value, result)
         syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
       }
+    } else if (activeChatId.value === chat.id) {
+      // IPC 返回空结果：如果之前也没有缓存数据，重置状态栏避免残留旧数据
+      if (!chat.metrics || chat.metrics.durationMs == null) {
+        resetMetrics()
+      }
     }
   } catch (_) {
     // IPC 失败不清除已有显示

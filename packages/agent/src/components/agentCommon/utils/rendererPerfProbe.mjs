@@ -53,18 +53,29 @@ export function perfDump() {
 // ── internal ────────────────────────────────────────────
 
 let _perfSyncDone = false
+let _localStorageChecked = false
+let _localStorageEnabled = false
 
 function isEnabled() {
-  const ok = (
-    (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__)) ||
-    (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_perf') === '1')
-  )
-  // 一次性同步 renderer perf flag 到主进程，让 [perf:ipc] 也能输出
-  if (ok && !_perfSyncDone) {
-    _perfSyncDone = true
-    try { window.electronAPI?.setPerfEnabled?.(true) } catch (_) {}
+  // window.__MCPF_PERF__ 是运行时开关，每次检查（属性访问 O(1)）
+  const windowOn = typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__)
+  if (windowOn) {
+    if (!_perfSyncDone) {
+      _perfSyncDone = true
+      try { window.electronAPI?.setPerfEnabled?.(true) } catch (_) {}
+    }
+    return true
   }
-  return ok
+  // localStorage 只读一次，避免同步 DOM API 在热路径上反复调用
+  if (!_localStorageChecked) {
+    _localStorageChecked = true
+    _localStorageEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_perf') === '1'
+    if (_localStorageEnabled && !_perfSyncDone) {
+      _perfSyncDone = true
+      try { window.electronAPI?.setPerfEnabled?.(true) } catch (_) {}
+    }
+  }
+  return _localStorageEnabled
 }
 
 function record(label, elapsedMs, meta = {}) {

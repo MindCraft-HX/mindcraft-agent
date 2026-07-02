@@ -28,8 +28,9 @@ function setPerfEnabled(v) {
  * @param {object} [meta] - 入口附加字段（只取 number 值）
  * @returns {function} stop(extraMeta?) — 在所有出口调用
  */
-function perfStartIpc(channel, meta = {}) {
+function perfStartIpc(channel, meta) {
   if (!isEnabled()) return NOOP
+  if (meta === undefined) meta = {}
   const t0 = Date.now()
   return (extraMeta = {}) => {
     const elapsed = Date.now() - t0

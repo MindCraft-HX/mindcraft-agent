@@ -30,10 +30,11 @@ function registerSessionInstructionIpc(ipcMain) {
   })
 
   ipcMain.handle('agent-set-session-title', (_, payload = {}) => {
+    const stop = perfStartIpc('agent-set-session-title')
     try {
-      return setSessionTitle(payload.chatKey, payload.title, payload)
+      const result = setSessionTitle(payload.chatKey, payload.title, payload); stop(); return result
     } catch (err) {
-      return { ok: false, error: err?.message || 'write failed' }
+      stop(); return { ok: false, error: err?.message || 'write failed' }
     }
   })
 

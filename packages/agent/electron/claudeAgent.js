@@ -1016,7 +1016,7 @@ function setupClaudeHandlers() {
         collectMs,
         totalMs,
       })
-      stop({ fileSize: pageData.fileSize, returned: messages.length, hasMore, totalPages: pageData.totalPages })
+      stop({ fileSize: pageData.fileSize, returned: messages.length, hasMore: hasMore ? 1 : 0, totalPages: pageData.totalPages })
       return { messages, hasMore, totalPages: pageData.totalPages }
     } catch (e) {
       appendClaudeFreezeDiag('session-range.fail', {
