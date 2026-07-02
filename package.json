@@ -168,5 +168,5 @@
   "overrides": {
     "canvas": "npm:browser-canvas@1.0.0"
   },
-  "version": "1.0.26"
+  "version": "1.0.27"
 }
