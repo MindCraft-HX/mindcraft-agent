@@ -50,6 +50,7 @@ const {
   annotateClaudeHistoryEntryWithTurnTokens,
   readJsonlPageLinesFromTail,
 } = require('./claude/historyReader')
+const { perfStartIpc } = require('./shared/mainPerfProbe')
 
 // ---- Shared Skills Marketplace (Batch 4) ----
 const {
@@ -925,6 +926,7 @@ function setupClaudeHandlers() {
   // page=0 读取最后 pageSize 条，page=1 读取再往前 pageSize 条
   // 返回：{ messages, hasMore: boolean, totalPages: number }
   ipcMain.handle('claude-read-session-file-range', async (_, { filePath, page = 0, pageSize = 50 }) => {
+    const stop = perfStartIpc('claude-read-session-file-range', { page, pageSize })
     try {
       const diagStart = Date.now()
       appendClaudeFreezeDiag('session-range.enter', {
@@ -938,6 +940,7 @@ function setupClaudeHandlers() {
           page,
           pageSize,
         })
+        stop()
         return { messages: [], hasMore: false, totalPages: 0, error: 'file_not_found' }
       }
       const pageData = readJsonlPageLinesFromTail(filePath, page, pageSize)
@@ -1010,6 +1013,7 @@ function setupClaudeHandlers() {
         collectMs,
         totalMs,
       })
+      stop({ fileSize: pageData.fileSize, returned: messages.length, hasMore, totalPages: pageData.totalPages })
       return { messages, hasMore, totalPages: pageData.totalPages }
     } catch (e) {
       appendClaudeFreezeDiag('session-range.fail', {
@@ -1019,6 +1023,7 @@ function setupClaudeHandlers() {
         pageSize,
       })
       console.warn('[claude-read-session-file-range] failed:', e?.message || e)
+      stop()
       return { messages: [], hasMore: false, totalPages: 0 }
     }
   })
@@ -3011,7 +3016,8 @@ function setupClaudeHandlers() {
 
   // 主动查询会话 metrics（用于切换 tab 时恢复历史数据）
   ipcMain.handle('claude-agent-query-metrics', async (_, { cliSessionId, model }) => {
-    if (!cliSessionId) return null
+    const stop = perfStartIpc('claude-agent-query-metrics')
+    if (!cliSessionId) { stop(); return null }
     const diagStart = Date.now()
     const resolveStart = Date.now()
     appendClaudeFreezeDiag('metrics.enter', {
@@ -3052,7 +3058,7 @@ function setupClaudeHandlers() {
       totalMs,
       hasMetrics: Boolean(jsonlMetrics),
     })
-    if (!jsonlMetrics) return null
+    if (!jsonlMetrics) { stop(); return null }
     // 速度 fallback：getSpeedMetrics 需要 completed request（stop_reason），
     // 旧 session / 流式中可能返回 null，此时用总量 ÷ 墙钟时间估算。
     let inputPerSec = speedMetrics?.inputTokensPerSec || 0
@@ -3062,7 +3068,7 @@ function setupClaudeHandlers() {
       inputPerSec = Math.round((jsonlMetrics.inputTokens || 0) / elapsedSec)
       outputPerSec = Math.round((jsonlMetrics.outputTokens || 0) / elapsedSec)
     }
-    return {
+    const result = {
       model: model || '',
       costUsd: jsonlMetrics.costUsd || 0,
       inputTokens: jsonlMetrics.inputTokens || 0,
@@ -3076,6 +3082,8 @@ function setupClaudeHandlers() {
       gitBranch: gitInfo?.branch || '',
       gitChanges: gitInfo?.changes || 0,
     }
+    stop({ resolveMs, tokenMs, speedMs, hasMetrics: 1 })
+    return result
   })
 
   ipcMain.handle('claude-permission-response', (_, { sessionId, requestId, allowed }) => {

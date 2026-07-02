@@ -352,6 +352,7 @@ import { applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemC
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
+import { createMetricsDedupTracker } from '../agentCommon/utils/metricsDedupHelper.js'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { useChatScrollState } from '../agentCommon/composables/useChatScrollState.js'
@@ -587,6 +588,7 @@ let _unregAgentEvent = null
 
 // refreshMetricsForChat 期间的轮询锁，防止 polling 数据覆盖刚查出的完整结果
 let _refreshingMetrics = false
+const _metricsTracker = createMetricsDedupTracker()
 
 function findClaudeTabBySessionId(sessionId = '') {
   if (!sessionId) return null
@@ -666,23 +668,31 @@ async function refreshMetricsForChat(chat) {
   const stop = perfStart('claude.refreshMetricsForChat')
   stopMetricsLiveTimer()
   if (!chat?.cliSessionId) { resetMetrics(); stop(); return }
+
+  // 去重：同一 cliSessionId 已有在飞请求 → 复用
+  if (_metricsTracker.has(chat.cliSessionId)) { stop(); return }
+
+  // 缓存优先：已有缓存的 metrics 且非 thinking，先显示缓存的，再异步刷新
+  if (!chat.thinking && chat.metrics && chat.metrics.durationMs != null) {
+    Object.assign(metricsData.value, chat.metrics)
+  }
+
   _refreshingMetrics = true
+  const ipcPromise = window.electronAPI.claudeAgentQueryMetrics?.({
+    cliSessionId: chat.cliSessionId,
+    model: getClaudeTabModel(chat),
+  })
+  _metricsTracker.track(chat.cliSessionId, ipcPromise)
   try {
-    const result = await window.electronAPI.claudeAgentQueryMetrics?.({
-      cliSessionId: chat.cliSessionId,
-      model: getClaudeTabModel(chat),
-    })
+    const result = await ipcPromise
     if (result) {
       if (!result.model) result.model = getClaudeTabModel(chat)
       result.thinking = Boolean(chat.thinking)
-      // 不先 reset 再 assign——先 reset 会导致切换 tab 时闪烁归零
       Object.assign(metricsData.value, result)
       syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
-    } else {
-      resetMetrics()
     }
   } catch (_) {
-    resetMetrics()
+    // IPC 失败不清除已有显示
   } finally {
     _refreshingMetrics = false
     stop()

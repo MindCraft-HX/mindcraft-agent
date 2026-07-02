@@ -8,21 +8,24 @@ const {
   setSessionTitle,
 } = require('./sessionRegistry')
 const { resolveAttachments, buildFullInstructionPrompt, ALLOWED_EXTENSIONS } = require('./sessionInstructionAttachments')
+const { perfStartIpc } = require('./shared/mainPerfProbe')
 
 function registerSessionInstructionIpc(ipcMain) {
   ipcMain.handle('agent-get-session-instruction', (_, { chatKey } = {}) => {
+    const stop = perfStartIpc('agent-get-session-instruction')
     try {
-      return getSessionInstruction(chatKey)
+      const result = getSessionInstruction(chatKey); stop(); return result
     } catch (err) {
-      return { enabled: false, instructionId: '', description: '', content: '', attachments: [], error: err?.message || 'read failed' }
+      stop(); return { enabled: false, instructionId: '', description: '', content: '', attachments: [], error: err?.message || 'read failed' }
     }
   })
 
   ipcMain.handle('agent-set-session-instruction', (_, { chatKey, instruction } = {}) => {
+    const stop = perfStartIpc('agent-set-session-instruction')
     try {
-      return setSessionInstruction(chatKey, instruction || {})
+      const result = setSessionInstruction(chatKey, instruction || {}); stop(); return result
     } catch (err) {
-      return { ok: false, error: err?.message || 'write failed' }
+      stop(); return { ok: false, error: err?.message || 'write failed' }
     }
   })
 
@@ -35,18 +38,20 @@ function registerSessionInstructionIpc(ipcMain) {
   })
 
   ipcMain.handle('agent-get-session-draft', (_, { chatKey } = {}) => {
+    const stop = perfStartIpc('agent-get-session-draft')
     try {
-      return getSessionDraft(chatKey)
+      const result = getSessionDraft(chatKey); stop(); return result
     } catch (err) {
-      return { text: '', updatedAt: 0, error: err?.message || 'read failed' }
+      stop(); return { text: '', updatedAt: 0, error: err?.message || 'read failed' }
     }
   })
 
   ipcMain.handle('agent-set-session-draft', (_, { chatKey, draft } = {}) => {
+    const stop = perfStartIpc('agent-set-session-draft')
     try {
-      return setSessionDraft(chatKey, draft || {})
+      const result = setSessionDraft(chatKey, draft || {}); stop(); return result
     } catch (err) {
-      return { ok: false, error: err?.message || 'write failed' }
+      stop(); return { ok: false, error: err?.message || 'write failed' }
     }
   })
 
@@ -59,10 +64,11 @@ function registerSessionInstructionIpc(ipcMain) {
   })
 
   ipcMain.handle('agent-clear-session-draft', (_, { chatKey } = {}) => {
+    const stop = perfStartIpc('agent-clear-session-draft')
     try {
-      return clearSessionDraft(chatKey)
+      const result = clearSessionDraft(chatKey); stop(); return result
     } catch (err) {
-      return { ok: false, error: err?.message || 'write failed' }
+      stop(); return { ok: false, error: err?.message || 'write failed' }
     }
   })
 

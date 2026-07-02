@@ -300,6 +300,7 @@ import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared 
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
+import { createMetricsDedupTracker } from '../agentCommon/utils/metricsDedupHelper.js'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { useChatScrollState } from '../agentCommon/composables/useChatScrollState.js'
@@ -612,6 +613,7 @@ const slashModelName = ref('')
 const slashEffortLevel = ref('medium')
 let slashLocalRefreshTimer = null
 let _unregAgentEvent = null
+const _codexMetricsTracker = createMetricsDedupTracker()
 const SLASH_LOCAL_REFRESH_DEBOUNCE_MS = 220
 const planModeActive = ref(false)  // /plan 切换的计划模式状态
 const msgRefs = {}
@@ -2522,18 +2524,35 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   }
   if (chat.thinking && chat._thinkingStart) startMetricsTimer(chat._thinkingStart)
   else stopMetricsTimer()
-  if (!chat.thinking && reason === 'active-tab-state-watch' && hasAgentStatusBarSnapshot(chat.metrics || {})) { stop(); return }
+
+  // 去重：同一 sessionId 已有在飞请求 → 跳过
+  const dedupKey = chat.cliSessionId || chat.sessionId
+  if (dedupKey && _codexMetricsTracker.has(dedupKey)) { stop(); return }
+
+  // 快照 guard：非 thinking 且 metrics 已有数据 → 直接显示缓存，跳过 IPC
+  if (!chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})) {
+    if (reason === 'active-tab-state-watch' || reason === 'switch-chat') { stop(); return }
+  }
+
   if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
+
+  // 缓存优先：先显示已有的
+  if (!chat.thinking && chat.metrics && chat.metrics.hasAgentStatusBarSnapshot) {
+    onMetricsUpdate({ ...chat.metrics, sessionId: chat.sessionId, thinking: false })
+  }
+
+  const ipcPromise = window.electronAPI.codexAgentQueryMetrics({
+    sessionId: chat.sessionId,
+    cliSessionId: chat.cliSessionId,
+    filePath: chat.filePath,
+    model: chat.model || chat.metrics?.model || codexDefaultModel.value || '',
+    cwd: activeProject.value?.cwd || chat.cwd || '',
+    thinking: Boolean(chat.thinking),
+    thinkingStart: chat._thinkingStart || 0,
+  })
+  if (dedupKey) _codexMetricsTracker.track(dedupKey, ipcPromise)
   try {
-    const result = await window.electronAPI.codexAgentQueryMetrics({
-      sessionId: chat.sessionId,
-      cliSessionId: chat.cliSessionId,
-      filePath: chat.filePath,
-      model: chat.model || chat.metrics?.model || codexDefaultModel.value || '',
-      cwd: activeProject.value?.cwd || chat.cwd || '',
-      thinking: Boolean(chat.thinking),
-      thinkingStart: chat._thinkingStart || 0,
-    })
+    const result = await ipcPromise
     debugLog('metrics', 'refreshMetricsForChat result', {
       reason,
       sessionId: chat.sessionId,

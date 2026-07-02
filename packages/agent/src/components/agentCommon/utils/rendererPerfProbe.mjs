@@ -11,10 +11,6 @@
  * 可单独 revert。
  */
 
-const enabled =
-  (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__)) ||
-  (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_perf') === '1')
-
 const NOOP = () => {}
 
 const counters = new Map()       // label → count
@@ -27,7 +23,7 @@ const DUMP_MS = 30_000
 
 /** 递增计数 */
 export function perfCount(label, n = 1) {
-  if (!enabled) return
+  if (!isEnabled()) return
   counters.set(label, (counters.get(label) || 0) + n)
   scheduleDump()
 }
@@ -40,7 +36,7 @@ export function perfCount(label, n = 1) {
  *   stop({ projects: 5, chats: 12, messages: 340 })
  */
 export function perfStart(label) {
-  if (!enabled) return NOOP
+  if (!isEnabled()) return NOOP
   const t0 = performance.now()
   return (meta) => {
     const elapsed = performance.now() - t0
@@ -50,11 +46,18 @@ export function perfStart(label) {
 
 /** 强制输出当前聚合摘要 */
 export function perfDump() {
-  if (!enabled) return
+  if (!isEnabled()) return
   flush()
 }
 
 // ── internal ────────────────────────────────────────────
+
+function isEnabled() {
+  return (
+    (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__)) ||
+    (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_perf') === '1')
+  )
+}
 
 function record(label, elapsedMs, meta = {}) {
   const entry = timers.get(label) || { count: 0, total: 0, min: Infinity, max: 0, meta: {} }
@@ -110,5 +113,9 @@ function flush() {
     timers.clear()
   }
 
-  console.debug(lines.join('\n'))
+  console.info(lines.join('\n'))
+}
+
+if (typeof window !== 'undefined') {
+  window.__MCPF_PERF_DUMP__ = perfDump
 }

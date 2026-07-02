@@ -34,6 +34,7 @@ const {
   resolveSkillTargetDir,
   safeTempDir,
 } = require('./skillsSecurity')
+const { perfStartIpc } = require('./shared/mainPerfProbe')
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
 
@@ -3243,17 +3244,24 @@ function setupCodexSdkHandlers() {
   })
 
   ipcMain.handle('codex-read-session-file-range', (_, { filePath, page = 0, pageSize = 60 } = {}) => {
+    const stop = perfStartIpc('codex-read-session-file-range', { page, pageSize })
     if (!filePath || !String(filePath).toLowerCase().endsWith('.jsonl')) {
+      stop()
       return { messages: [], hasMore: false }
     }
-    return readSessionFileRange(filePath, page, pageSize)
+    const result = readSessionFileRange(filePath, page, pageSize)
+    stop({ returned: result?.messages?.length || 0, hasMore: result?.hasMore ? 1 : 0 })
+    return result
   })
 
   // NOTE: Easy-to-misuse bridge. StatusBar current-turn token fields must come from
   // TurnStore snapshots. Session/file aggregate metrics may only supplement session-level
   // fields such as context usage, git info, and speed.
   ipcMain.handle('codex-agent-query-metrics', async (_, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
-    return await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart })
+    const stop = perfStartIpc('codex-agent-query-metrics')
+    const result = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart })
+    stop({ hasMetrics: result ? 1 : 0 })
+    return result
   })
 
   ipcMain.handle('codex-list-slash-commands', async (_, { cwd, sessionId } = {}) => {
