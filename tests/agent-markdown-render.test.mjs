@@ -65,6 +65,24 @@ assert.ok(restartedHtml.includes('<ol class="md-ol" start="2"><li>Refactor the i
 assert.ok(restartedHtml.includes('<p class="md-p">Serve mindcraft-electron and mindcraft-lite first, without forcing npm packaging.</p>'), 'the second explanatory paragraph should remain outside the list')
 assert.ok(restartedHtml.includes('<ol class="md-ol" start="3"><li>Build the Lite shell</li></ol>'), 'the third list should remain independent')
 
+const orderedListWithFencedCode = `1. CodeHub tab switches trigger extra session refresh
+
+   In codeHub/index.vue:
+
+   \`\`\`js
+   nextTick(() => panel.refreshSessions?.())
+   \`\`\`
+
+2. Session clicks also trigger metrics, history hydrate, and scroll/layout`
+
+const orderedListWithFencedCodeHtml = renderContent(orderedListWithFencedCode)
+
+assert.equal((orderedListWithFencedCodeHtml.match(/<ol class="md-ol">/g) || []).length, 1, 'ordered list with fenced code continuation should stay in one ol')
+assert.ok(orderedListWithFencedCodeHtml.includes('<div class="code-block">'), 'fenced code block inside list continuation should render as a code block')
+assert.ok(orderedListWithFencedCodeHtml.includes('refreshSessions'), 'fenced code block inside list continuation should preserve code content')
+assert.ok(orderedListWithFencedCodeHtml.includes('nextTick'), 'fenced code block inside list continuation should preserve surrounding code context')
+assert.ok(!orderedListWithFencedCodeHtml.includes('```js'), 'fenced code markers inside list continuation should not leak as literal text')
+
 const localPathMarkdown = `请查看 docs/TODO.md
 
 [打开主进程](electron/main.js)

@@ -380,6 +380,9 @@ function renderList(items, ordered) {
     if (item.paragraphs?.length) {
       inner += item.paragraphs.map((paragraph) => `<p class="md-p">${renderInline(paragraph)}</p>`).join('')
     }
+    if (item.blocks?.length) {
+      inner += item.blocks.join('')
+    }
     if (item.subHtml) inner += item.subHtml
     if (item.task) {
       return `<li class="md-task-item"><input class="md-task-checkbox" type="checkbox" disabled${item.checked ? ' checked' : ''}><span>${inner}</span></li>`
@@ -495,11 +498,11 @@ function renderNestedList(lines, startIdx) {
     const bulletItem = line.match(/^\s*[-*]\s+(.+)$/)
 
     if (orderedItem) {
-      items.push({ text: orderedItem[2], task: false, checked: false, paragraphs: [], order: Number(orderedItem[1]) })
+      items.push({ text: orderedItem[2], task: false, checked: false, paragraphs: [], blocks: [], order: Number(orderedItem[1]) })
     } else if (taskItem) {
-      items.push({ text: taskItem[2], task: true, checked: taskItem[1].toLowerCase() === 'x', paragraphs: [] })
+      items.push({ text: taskItem[2], task: true, checked: taskItem[1].toLowerCase() === 'x', paragraphs: [], blocks: [] })
     } else if (bulletItem) {
-      items.push({ text: bulletItem[1], task: false, checked: false, paragraphs: [] })
+      items.push({ text: bulletItem[1], task: false, checked: false, paragraphs: [], blocks: [] })
     } else {
       break
     }
@@ -544,6 +547,36 @@ function renderNestedList(lines, startIdx) {
         if (nested.nextIdx > i) {
           items[items.length - 1].subHtml = (items[items.length - 1].subHtml || '') + nested.html
           i = nested.nextIdx
+          continue
+        }
+      }
+
+      if (continuationIndent > baseIndent) {
+        const normalizedContinuation = continuationLine.slice(Math.min(continuationIndent, baseIndent + 3))
+        const fence = normalizedContinuation.trim().match(/^```([\w-]+)?\s*$/)
+        if (fence) {
+          const lang = (fence[1] || '').trim()
+          const codeLines = []
+          i += 1
+          while (i < lines.length) {
+            const codeLine = lines[i]
+            const codeIndent = codeLine.match(/^(\s*)/)[1].length
+            const normalizedCodeLine = codeIndent > baseIndent
+              ? codeLine.slice(Math.min(codeIndent, baseIndent + 3))
+              : codeLine
+            if (normalizedCodeLine.trim().startsWith('```')) break
+            codeLines.push(normalizedCodeLine)
+            i += 1
+          }
+          const code = codeLines.join('\n')
+          const highlighted = lang === 'diff'
+            ? highlightDiffCode(code)
+            : highlightCodePreservePathCandidates(code, lang)
+          const langLabel = lang || 'text'
+          items[items.length - 1].blocks.push(
+            `<div class="code-block"><div class="code-header"><span class="code-lang">${escapeHtml(langLabel)}</span></div><pre><code class="hljs">${highlighted}</code></pre></div>`
+          )
+          i += 1
           continue
         }
       }
