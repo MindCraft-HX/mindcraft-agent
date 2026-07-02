@@ -152,6 +152,38 @@ function runBuildLiveMetricsFromTokenCountTotalsFallbackTest() {
   assert.equal(metrics.durationMs, 3000)
 }
 
+function runBuildLiveMetricsPrefersTurnTotalDeltaOverLastUsageTest() {
+  const metrics = __test__.buildCodexMetricsFromTokenCountPayload({
+    info: {
+      total_token_usage: {
+        input_tokens: 276379598,
+        cached_input_tokens: 241523712,
+        output_tokens: 1005341,
+        total_tokens: 277384939,
+      },
+      last_token_usage: {
+        input_tokens: 132459,
+        cached_input_tokens: 131968,
+        output_tokens: 83,
+        total_tokens: 132542,
+      },
+      model_context_window: 258400,
+    },
+  }, {
+    model: 'gpt-5-codex',
+    turnStartTotals: {
+      input_tokens: 275851819,
+      cached_input_tokens: 240999424,
+      output_tokens: 1004835,
+    },
+  })
+
+  assert.equal(metrics.inputTokens, 3491)
+  assert.equal(metrics.cacheReadTokens, 524288)
+  assert.equal(metrics.outputTokens, 506)
+  assert.equal(metrics.contextUsage, 132542)
+}
+
 function runBuildPerTurnTokensReturnsNullForEmptyTest() {
   const perTurn = __test__.buildCodexPerTurnTokens(null, null)
   assert.equal(perTurn, null)
@@ -293,6 +325,40 @@ function runReadSessionFileRangeBackfillsTurnTokensTest() {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 }
 
+function runReadSessionFileRangeAggregatesCodexTurnFromTotalDeltaTest() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-turn-total-delta-'))
+  const filePath = path.join(tmpDir, 'session.jsonl')
+  const rows = [
+    { timestamp: '2026-06-24T10:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'hello' } },
+    { timestamp: '2026-06-24T10:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'working' }] } },
+    { timestamp: '2026-06-24T10:00:02.000Z', type: 'event_msg', payload: { type: 'token_count', info: {
+      total_token_usage: { input_tokens: 1000, cached_input_tokens: 100, output_tokens: 10, total_tokens: 1010 },
+      last_token_usage: { input_tokens: 100, cached_input_tokens: 20, output_tokens: 5, total_tokens: 105 },
+      model_context_window: 258400,
+    } } },
+    { timestamp: '2026-06-24T10:00:03.000Z', type: 'event_msg', payload: { type: 'token_count', info: {
+      total_token_usage: { input_tokens: 1150, cached_input_tokens: 150, output_tokens: 17, total_tokens: 1167 },
+      last_token_usage: { input_tokens: 150, cached_input_tokens: 50, output_tokens: 7, total_tokens: 157 },
+      model_context_window: 258400,
+    } } },
+    { timestamp: '2026-06-24T10:00:04.000Z', type: 'event_msg', payload: { type: 'task_complete', duration_ms: 4000 } },
+  ]
+  fs.writeFileSync(filePath, rows.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf8')
+
+  const result = __test__.readSessionFileRange(filePath, 0, 60)
+  const assistant = result.messages.find(message => message.role === 'assistant')
+  assert.ok(assistant)
+  assert.deepEqual(assistant._turnTokens, {
+    inputTokens: 180,
+    outputTokens: 12,
+    cacheReadTokens: 70,
+    cacheCreationTokens: 0,
+    durationMs: 4000,
+  })
+
+  fs.rmSync(tmpDir, { recursive: true, force: true })
+}
+
 function runExtractLatestCodexLiveTurnMetricsFromJsonlTest() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-live-turn-metrics-'))
   const filePath = path.join(tmpDir, 'session.jsonl')
@@ -360,6 +426,42 @@ function runQueryCodexStatusBarMetricsPrefersJsonlFinalTurnSnapshotTest() {
   })
 }
 
+function runQueryCodexStatusBarMetricsAggregatesLatestTurnFromTotalDeltaTest() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-statusbar-total-delta-'))
+  const filePath = path.join(tmpDir, 'session.jsonl')
+  const rows = [
+    { timestamp: '2026-06-24T10:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'hello' } },
+    { timestamp: '2026-06-24T10:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] } },
+    { timestamp: '2026-06-24T10:00:02.000Z', type: 'event_msg', payload: { type: 'token_count', info: {
+      total_token_usage: { input_tokens: 1000, cached_input_tokens: 100, output_tokens: 10, total_tokens: 1010 },
+      last_token_usage: { input_tokens: 100, cached_input_tokens: 20, output_tokens: 5, total_tokens: 105 },
+      model_context_window: 258400,
+    } } },
+    { timestamp: '2026-06-24T10:00:03.000Z', type: 'event_msg', payload: { type: 'token_count', info: {
+      total_token_usage: { input_tokens: 1150, cached_input_tokens: 150, output_tokens: 17, total_tokens: 1167 },
+      last_token_usage: { input_tokens: 150, cached_input_tokens: 50, output_tokens: 7, total_tokens: 157 },
+      model_context_window: 258400,
+    } } },
+    { timestamp: '2026-06-24T10:00:04.000Z', type: 'event_msg', payload: { type: 'task_complete', duration_ms: 4000 } },
+  ]
+  fs.writeFileSync(filePath, rows.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf8')
+
+  return __test__.queryCodexStatusBarMetrics({
+    sessionId: 'statusbar-total-delta-chat',
+    filePath,
+    model: 'gpt-5-codex',
+    cwd: tmpDir,
+  }).then((metrics) => {
+    assert.ok(metrics)
+    assert.equal(metrics.inputTokens, 180)
+    assert.equal(metrics.outputTokens, 12)
+    assert.equal(metrics.cacheReadTokens, 70)
+    assert.equal(metrics.durationMs, 4000)
+  }).finally(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+}
+
 async function run() {
   runNormalizeCodexUsageTest()
   runBuildPerTurnTokensPrefersParsedMetricsTest()
@@ -367,14 +469,17 @@ async function run() {
   runBuildLiveMetricsFromTokenCountPayloadTest()
   runBuildLiveMetricsKeepsZeroCacheFromLastUsageTest()
   runBuildLiveMetricsFromTokenCountTotalsFallbackTest()
+  runBuildLiveMetricsPrefersTurnTotalDeltaOverLastUsageTest()
   runBuildPerTurnTokensReturnsNullForEmptyTest()
   runBuildCodexFinalTurnMetricsFallsBackToLiveSnapshotTest()
   runBuildCodexFinalTurnMetricsRejectsAmbiguousSessionTotalsTest()
   runBuildCodexFinalTurnMetricsRejectsUntrustedHugeTerminalUsageTest()
   runNormalizeCodexUsageTerminalSnapshotTest()
   runReadSessionFileRangeBackfillsTurnTokensTest()
+  runReadSessionFileRangeAggregatesCodexTurnFromTotalDeltaTest()
   runExtractLatestCodexLiveTurnMetricsFromJsonlTest()
   await runQueryCodexStatusBarMetricsPrefersJsonlFinalTurnSnapshotTest()
+  await runQueryCodexStatusBarMetricsAggregatesLatestTurnFromTotalDeltaTest()
   console.log('codex turn tokens tests passed')
 }
 

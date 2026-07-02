@@ -170,6 +170,7 @@ function extractLatestCodexFinalTurnSnapshotFromJsonl(filePath, { model = '' } =
     if (!activeTurnTokens) {
       activeTurnTokens = {
         startedAt: ts,
+        startTotals: null,
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,
@@ -208,6 +209,7 @@ function extractLatestCodexFinalTurnSnapshotFromJsonl(filePath, { model = '' } =
       finalizeActiveTurnTokens()
       activeTurnTokens = {
         startedAt: ts,
+        startTotals: null,
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,
@@ -218,12 +220,17 @@ function extractLatestCodexFinalTurnSnapshotFromJsonl(filePath, { model = '' } =
     }
 
     if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+      const totalUsage = row.payload?.info?.total_token_usage || {}
+      const turn = ensureActiveTurnTokens(ts)
+      if (!turn.startTotals && hasCodexUsageFields(totalUsage)) {
+        turn.startTotals = inferCodexTurnStartTotalsFromTokenCountInfo(row.payload?.info || {})
+      }
       const metrics = buildCodexMetricsFromTokenCountPayload(row.payload, {
         model: historyModel,
         durationMs: activeTurnTokens?.startedAt && ts ? Math.max(0, ts - activeTurnTokens.startedAt) : 0,
+        turnStartTotals: turn.startTotals,
       })
       if (!metrics) continue
-      const turn = ensureActiveTurnTokens(ts)
       turn.inputTokens = toNonNegativeNumber(metrics.inputTokens, turn.inputTokens)
       turn.outputTokens = toNonNegativeNumber(metrics.outputTokens, turn.outputTokens)
       turn.cacheReadTokens = toNonNegativeNumber(metrics.cacheReadTokens, turn.cacheReadTokens)
@@ -780,17 +787,21 @@ function extractLatestCodexLiveTurnMetricsFromJsonl(filePath, {
   const minTs = startedAt - 2000
   const lines = readJsonlTailLines(filePath, 120)
   let latest = null
+  let startTotals = null
   for (const line of lines) {
     const row = safeJsonParse(line)
     if (!row || row.type !== 'event_msg' || row.payload?.type !== 'token_count') continue
     const ts = Date.parse(row.timestamp || '')
     if (!Number.isFinite(ts) || ts < minTs) continue
+    const info = row.payload?.info || {}
+    if (!startTotals) startTotals = inferCodexTurnStartTotalsFromTokenCountInfo(info)
     latest = { row, ts }
   }
   if (!latest) return null
   const metrics = buildCodexMetricsFromTokenCountPayload(latest.row.payload, {
     model,
     durationMs: Math.max(0, latest.ts - startedAt || now - startedAt),
+    turnStartTotals: startTotals,
   })
   if (!metrics || !hasMeaningfulCodexTurnMetrics(metrics)) return null
   return metrics
@@ -950,7 +961,12 @@ function buildCodexFinalTurnMetricsFromTerminalUsage(terminalUsage = {}, {
     }
   }
 
-  const hasTurnStartTotals = hasCodexUsageFields(turnStartTotals) && hasMeaningfulCodexTurnMetrics(buildCodexLiveTurnMetricsFromTotals(turnStartTotals, {}, null))
+  const hasTurnStartTotals = hasCodexUsageFields(turnStartTotals) && (
+    toNonNegativeNumber(turnStartTotals.input_tokens) > 0 ||
+    toNonNegativeNumber(turnStartTotals.output_tokens) > 0 ||
+    toNonNegativeNumber(turnStartTotals.cached_input_tokens, turnStartTotals.cache_read_input_tokens) > 0 ||
+    toNonNegativeNumber(turnStartTotals.cache_creation_input_tokens) > 0
+  )
 
   if (tokenCountSeen && hasTurnStartTotals && isCodexTerminalUsageCompatibleWithSessionTotals(terminalUsage, turnStartTotals || {})) {
     return {
@@ -972,9 +988,38 @@ function buildCodexFinalTurnMetricsFromTerminalUsage(terminalUsage = {}, {
 }
 
 function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = {}, fallbackLastUsage = null) {
+  const normalizedTotal = normalizeCodexUsage(totalUsage) || {}
+  const normalizedStart = normalizeCodexUsage(turnStartTotals) || {}
+  const hasTotal = hasCodexUsageFields(totalUsage)
+  const hasStart = hasCodexUsageFields(turnStartTotals)
+
+  if (hasTotal && hasStart) {
+    const rawTotalInput = toNonNegativeNumber(normalizedTotal.raw_input_tokens, normalizedTotal.input_tokens)
+    const rawStartInput = toNonNegativeNumber(normalizedStart.raw_input_tokens, normalizedStart.input_tokens)
+    const totalOutput = toNonNegativeNumber(normalizedTotal.output_tokens)
+    const startOutput = toNonNegativeNumber(normalizedStart.output_tokens)
+    const totalCacheRead = toNonNegativeNumber(normalizedTotal.cache_read_input_tokens)
+    const startCacheRead = toNonNegativeNumber(normalizedStart.cache_read_input_tokens)
+    const totalCacheCreation = toNonNegativeNumber(normalizedTotal.cache_creation_input_tokens)
+    const startCacheCreation = toNonNegativeNumber(normalizedStart.cache_creation_input_tokens)
+
+    const cacheReadTokens = Math.max(0, totalCacheRead - startCacheRead)
+    const cacheCreationTokens = Math.max(0, totalCacheCreation - startCacheCreation)
+    const rawInputTokens = Math.max(0, rawTotalInput - rawStartInput)
+    const inputTokens = Math.max(0, rawInputTokens - cacheReadTokens) + cacheCreationTokens
+    const outputTokens = Math.max(0, totalOutput - startOutput)
+
+    return {
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+    }
+  }
+
   // Codex token_count carries both session cumulative totals and last request usage.
-  // If last_token_usage is present, use it as a coherent per-turn sample. A zero
-  // cached_input_tokens is meaningful and must not fall back to session totals.
+  // Without a reliable turn-start total, last_token_usage is only a degraded
+  // latest-request fallback, not a full-turn aggregate.
   if (hasCodexUsageFields(fallbackLastUsage)) {
     const last = normalizeCodexUsage(fallbackLastUsage) || {}
     return {
@@ -985,31 +1030,21 @@ function buildCodexLiveTurnMetricsFromTotals(totalUsage = {}, turnStartTotals = 
     }
   }
 
-  const normalizedTotal = normalizeCodexUsage(totalUsage) || {}
-  const normalizedStart = normalizeCodexUsage(turnStartTotals) || {}
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+}
 
-  const rawTotalInput = toNonNegativeNumber(normalizedTotal.raw_input_tokens, normalizedTotal.input_tokens)
-  const rawStartInput = toNonNegativeNumber(normalizedStart.raw_input_tokens, normalizedStart.input_tokens)
-  const totalOutput = toNonNegativeNumber(normalizedTotal.output_tokens)
-  const startOutput = toNonNegativeNumber(normalizedStart.output_tokens)
-  const totalCacheRead = toNonNegativeNumber(normalizedTotal.cache_read_input_tokens)
-  const startCacheRead = toNonNegativeNumber(normalizedStart.cache_read_input_tokens)
-  const totalCacheCreation = toNonNegativeNumber(normalizedTotal.cache_creation_input_tokens)
-  const startCacheCreation = toNonNegativeNumber(normalizedStart.cache_creation_input_tokens)
-
-  const cacheReadTokens = Math.max(0, totalCacheRead - startCacheRead)
-  const cacheCreationTokens = Math.max(0, totalCacheCreation - startCacheCreation)
-  const rawInputTokens = Math.max(0, rawTotalInput - rawStartInput)
-  const inputTokens = Math.max(0, rawInputTokens - cacheReadTokens) + cacheCreationTokens
-  const outputTokens = Math.max(0, totalOutput - startOutput)
-
+function inferCodexTurnStartTotalsFromTokenCountInfo(info = {}) {
+  const totalUsage = info?.total_token_usage || {}
+  const lastUsage = info?.last_token_usage || {}
+  if (!hasCodexUsageFields(totalUsage)) return null
   return {
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheCreationTokens,
+    input_tokens: Math.max(0, toNonNegativeNumber(totalUsage.input_tokens) - toNonNegativeNumber(lastUsage.input_tokens)),
+    output_tokens: Math.max(0, toNonNegativeNumber(totalUsage.output_tokens) - toNonNegativeNumber(lastUsage.output_tokens)),
+    cached_input_tokens: Math.max(0, toNonNegativeNumber(totalUsage.cached_input_tokens) - toNonNegativeNumber(lastUsage.cached_input_tokens)),
+    cache_creation_input_tokens: Math.max(0, toNonNegativeNumber(totalUsage.cache_creation_input_tokens) - toNonNegativeNumber(lastUsage.cache_creation_input_tokens)),
   }
 }
+
 function buildCodexMetricsFromTokenCountPayload(payload = {}, {
   model = '',
   durationMs = 0,
@@ -1153,10 +1188,19 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
         const nextCumulativeCacheRead = toNonNegativeNumber(total.cached_input_tokens, cumulativeCacheReadTokens)
         const nextCumulativeCacheCreation = toNonNegativeNumber(total.cache_creation_input_tokens, cumulativeCacheCreationTokens)
 
-        const rawTurnInput = pickCodexTurnTokenValue(last.input_tokens, nextCumulativeInput - turnStartInputTokens, inputTokens)
-        outputTokens = pickCodexTurnTokenValue(last.output_tokens, nextCumulativeOutput - turnStartOutputTokens, outputTokens)
-        cacheReadTokens = pickCodexTurnTokenValue(last.cached_input_tokens, nextCumulativeCacheRead - turnStartCacheReadTokens, cacheReadTokens)
-        cacheCreationTokens = pickCodexTurnTokenValue(last.cache_creation_input_tokens, nextCumulativeCacheCreation - turnStartCacheCreationTokens, cacheCreationTokens)
+        const hasTotal = hasCodexUsageFields(total)
+        const rawTurnInput = hasTotal
+          ? Math.max(0, nextCumulativeInput - turnStartInputTokens)
+          : pickCodexTurnTokenValue(last.input_tokens, null, inputTokens)
+        outputTokens = hasTotal
+          ? Math.max(0, nextCumulativeOutput - turnStartOutputTokens)
+          : pickCodexTurnTokenValue(last.output_tokens, null, outputTokens)
+        cacheReadTokens = hasTotal
+          ? Math.max(0, nextCumulativeCacheRead - turnStartCacheReadTokens)
+          : pickCodexTurnTokenValue(last.cached_input_tokens, null, cacheReadTokens)
+        cacheCreationTokens = hasTotal
+          ? Math.max(0, nextCumulativeCacheCreation - turnStartCacheCreationTokens)
+          : pickCodexTurnTokenValue(last.cache_creation_input_tokens, null, cacheCreationTokens)
         inputTokens = Math.max(0, rawTurnInput - cacheReadTokens) + cacheCreationTokens
         cumulativeInputTokens = nextCumulativeInput
         cumulativeOutputTokens = nextCumulativeOutput
@@ -1487,6 +1531,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         if (!activeTurnTokens) {
           activeTurnTokens = {
             startedAt: ts,
+            startTotals: null,
             inputTokens: 0,
             outputTokens: 0,
             cacheReadTokens: 0,
@@ -1519,6 +1564,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
           flushActiveTurnTokens()
           activeTurnTokens = {
             startedAt: ts,
+            startTotals: null,
             inputTokens: 0,
             outputTokens: 0,
             cacheReadTokens: 0,
@@ -1529,12 +1575,17 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         }
 
         if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+          const totalUsage = row.payload?.info?.total_token_usage || {}
+          const turn = ensureActiveTurnTokens(ts)
+          if (!turn.startTotals && hasCodexUsageFields(totalUsage)) {
+            turn.startTotals = inferCodexTurnStartTotalsFromTokenCountInfo(row.payload?.info || {})
+          }
           const metrics = buildCodexMetricsFromTokenCountPayload(row.payload, {
             model: historyModel,
             durationMs: activeTurnTokens?.startedAt && ts ? Math.max(0, ts - activeTurnTokens.startedAt) : 0,
+            turnStartTotals: turn.startTotals,
           })
           if (metrics) {
-            const turn = ensureActiveTurnTokens(ts)
             turn.inputTokens = toNonNegativeNumber(metrics.inputTokens, turn.inputTokens)
             turn.outputTokens = toNonNegativeNumber(metrics.outputTokens, turn.outputTokens)
             turn.cacheReadTokens = toNonNegativeNumber(metrics.cacheReadTokens, turn.cacheReadTokens)
@@ -1735,6 +1786,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       if (!activeTurnTokens) {
         activeTurnTokens = {
           startedAt: ts,
+          startTotals: null,
           inputTokens: 0,
           outputTokens: 0,
           cacheReadTokens: 0,
@@ -1765,6 +1817,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         flushActiveTurnTokens()
         activeTurnTokens = {
           startedAt: ts,
+          startTotals: null,
           inputTokens: 0,
           outputTokens: 0,
           cacheReadTokens: 0,
@@ -1775,12 +1828,17 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       }
 
       if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+        const totalUsage = row.payload?.info?.total_token_usage || {}
+        const turn = ensureActiveTurnTokens(ts)
+        if (!turn.startTotals && hasCodexUsageFields(totalUsage)) {
+          turn.startTotals = inferCodexTurnStartTotalsFromTokenCountInfo(row.payload?.info || {})
+        }
         const metrics = buildCodexMetricsFromTokenCountPayload(row.payload, {
           model: historyModel,
           durationMs: activeTurnTokens?.startedAt && ts ? Math.max(0, ts - activeTurnTokens.startedAt) : 0,
+          turnStartTotals: turn.startTotals,
         })
         if (metrics) {
-          const turn = ensureActiveTurnTokens(ts)
           turn.inputTokens = toNonNegativeNumber(metrics.inputTokens, turn.inputTokens)
           turn.outputTokens = toNonNegativeNumber(metrics.outputTokens, turn.outputTokens)
           turn.cacheReadTokens = toNonNegativeNumber(metrics.cacheReadTokens, turn.cacheReadTokens)
@@ -2623,14 +2681,9 @@ function setupCodexSdkHandlers() {
             if (ev.type === 'user_message' || ev.payload?.type === 'user_message') {
               const session = codexSessions.get(sessionId)
               if (session) {
-                session._liveTurnStartTotals = {
-                  ...(session._liveLastTotals || {
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    cached_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                  }),
-                }
+                session._liveTurnStartTotals = session._liveLastTotals
+                  ? { ...session._liveLastTotals }
+                  : null
               }
             }
 
@@ -2641,15 +2694,10 @@ function setupCodexSdkHandlers() {
               const tokenPayload = ev.payload?.type === 'token_count' ? ev.payload : ev
               const tokenInfo = tokenPayload?.info || tokenPayload || {}
               const totalUsage = tokenInfo.total_token_usage || {}
-              if (!session?._liveTurnStartTotals) {
-                session._liveTurnStartTotals = {
-                  input_tokens: 0,
-                  output_tokens: 0,
-                  cached_input_tokens: 0,
-                  cache_creation_input_tokens: 0,
-                }
+              if (session && !session._liveTurnStartTotals) {
+                session._liveTurnStartTotals = inferCodexTurnStartTotalsFromTokenCountInfo(tokenInfo)
               }
-              if (session) {
+              if (session && hasCodexUsageFields(totalUsage)) {
                 session._liveLastTotals = {
                   input_tokens: toNonNegativeNumber(totalUsage.input_tokens),
                   output_tokens: toNonNegativeNumber(totalUsage.output_tokens),

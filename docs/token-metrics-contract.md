@@ -84,15 +84,16 @@ Rules:
 
 | Source | Semantics | StatusBar use |
 | --- | --- | --- |
-| `token_count.last_token_usage` | Last request/turn usage sample | Allowed as a coherent set |
+| `token_count.last_token_usage` | Last model-request usage sample | Fallback only when turn-start totals are unavailable |
 | `token_count.total_token_usage` | Session cumulative total | Never direct; delta only when start totals are known |
 | `turn.completed.usage` | Final fallback; may be empty/unstable | Allowed only through adapter/normalizer |
 | `model_context_window` / context fields | Context capacity/occupancy | Context only |
 
 Rules:
-- If `last_token_usage` exists, use it as one coherent sample. A zero field is valid.
+- If `total_token_usage` and turn-start totals exist, current-turn `in/out/cache` must use `total_token_usage - turnStartTotals`. This covers multi-request/tool-heavy turns and naturally deduplicates repeated `token_count` rows.
+- If turn-start totals are unavailable, `last_token_usage` may be used only as a degraded latest-request fallback. A zero field is valid.
 - `last_token_usage.cached_input_tokens = 0` must not fallback to `total_token_usage.cached_input_tokens`.
-- `total_token_usage` can enter current turn only as `total - turnStartTotals`.
+- `total_token_usage` must never be displayed directly as current-turn tokens.
 - `turn.completed.usage` must not be treated as per-turn final when it looks session-cumulative and no current-turn live authority exists. In that case, degrade conservatively instead of fabricating precise turn tokens.
 - Running StatusBar queries must not fall back to historical JSONL final turns. During `thinking=true`, CodeX token fields may come only from a fresh current-turn TurnStore snapshot; JSONL/session aggregate may supplement context only.
 
