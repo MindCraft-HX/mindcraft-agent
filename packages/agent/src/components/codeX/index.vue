@@ -1171,6 +1171,8 @@ const { saveScroll: saveChatScroll, restoreScroll: restoreChatScroll, clearScrol
   useChatScrollState({ getScrollEl: (chatKey) => msgRefs[chatKey], syncLayout })
 
 // Phase 2: 共享 session 刷新调度（按 project cooldown + 延迟去重）
+const sidebarLoading = ref(false)
+const sidebarRefreshing = ref(false)
 const { refreshSessions, cancelScheduledRefresh } = useScheduledSessionRefresh({
   getActiveProject: () => activeProject.value,
   isRefreshing: sidebarRefreshing,
@@ -1625,8 +1627,6 @@ const { saveHistory, flushOnUnload, loadHistory, getLastProjectCwd, setLastProje
 
 const confirmDialogRef = ref(null)
 const selectModelRef = ref(null)
-const sidebarLoading = ref(false)
-const sidebarRefreshing = ref(false)
 let scrollThrottleTimer = null
 let wheelThrottleTimer = null
 let loadMoreCooldownTimer = null
