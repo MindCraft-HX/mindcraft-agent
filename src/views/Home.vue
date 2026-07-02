@@ -226,10 +226,69 @@
       <div class="footer-left"></div>
       <div class="footer-right">
         <span class="footer-version">v{{ appVersion }}</span>
-        <button class="footer-update-btn" :disabled="updateChecking" @click="checkForUpdate">
-          {{ updateChecking ? $t('settings.checking') : $t('settings.checkAppUpdate') }}
+
+        <!-- idle / not-available(非dev)：默认检查按钮 -->
+        <button
+          v-if="updateState === 'idle' || (updateState === 'not-available' && !isDevMode)"
+          class="footer-update-btn"
+          @click="checkForUpdate"
+        >
+          {{ $t('settings.checkAppUpdate') }}
         </button>
-        <span v-if="updateAvailable" class="footer-update-dot" :title="$t('settings.newVersion')"></span>
+
+        <!-- not-available + dev：开发模式（无更新服务器，静默） -->
+        <span
+          v-else-if="updateState === 'not-available' && isDevMode"
+          class="footer-dev-mode"
+          :title="$t('settings.appUpToDate')"
+        >开发模式</span>
+
+        <!-- checking：带 spinner 的禁用按钮 -->
+        <button
+          v-else-if="updateState === 'checking'"
+          class="footer-update-btn"
+          disabled
+        >
+          <span class="footer-spinner"></span>{{ $t('settings.checking') }}
+        </button>
+
+        <!-- available：显示版本号 + 下载按钮 -->
+        <template v-else-if="updateState === 'available'">
+          <span class="footer-new-version" :title="releaseNotes">{{ $t('settings.appUpdateAvailable', { version: newVersion }) }}</span>
+          <button class="footer-update-btn footer-download-btn" @click="handleDownloadUpdate">
+            {{ $t('settings.downloadUpdate') }}
+          </button>
+        </template>
+
+        <!-- downloading：紧凑进度条 -->
+        <div v-else-if="updateState === 'downloading'" class="footer-progress">
+          <div class="footer-progress-bar">
+            <div
+              class="footer-progress-fill"
+              :style="{ width: Math.max(downloadProgress, 2) + '%' }"
+            ></div>
+          </div>
+          <span class="footer-progress-text">{{ Math.round(downloadProgress) }}%</span>
+        </div>
+
+        <!-- downloaded：重启安装按钮 -->
+        <button
+          v-else-if="updateState === 'downloaded'"
+          class="footer-update-btn footer-install-btn"
+          @click="handleInstallUpdate"
+        >
+          {{ $t('settings.restartToInstall') }}
+        </button>
+
+        <!-- error：可重试 -->
+        <button
+          v-else-if="updateState === 'error'"
+          class="footer-update-btn footer-error-btn"
+          :title="$t('settings.appUpdateFailed')"
+          @click="checkForUpdate"
+        >
+          {{ $t('common.retry') }}
+        </button>
       </div>
     </div>
   </div>
@@ -278,10 +337,13 @@ onMounted(async () => {
   })
 })
 
-// 版本号 + 更新检测
+// 版本号 + 更新检测（完整状态机，对齐 SystemSettings.vue）
 const appVersion = ref('')
-const updateChecking = ref(false)
-const updateAvailable = ref(false)
+const updateState = ref('idle')         // idle | checking | available | downloading | downloaded | not-available | error
+const newVersion = ref('')
+const downloadProgress = ref(0)
+const releaseNotes = ref('')
+const isDevMode = ref(false)
 const pendingManualCheckId = ref(0)
 let _cleanupUpdateStatus = null
 
@@ -315,29 +377,47 @@ onUnmounted(() => {
 
 function checkForUpdate() {
   if (!window.electronAPI?.checkForUpdates) return
-  updateChecking.value = true
+  updateState.value = 'checking'
   window.electronAPI.checkForUpdates().then((result) => {
     pendingManualCheckId.value = Number(result?.checkId || 0)
   }).catch(() => {
     pendingManualCheckId.value = 0
-    updateChecking.value = false
+    updateState.value = 'error'
   })
 }
 
 function applyUpdateStatus(data, options = {}) {
-  if (!data) return
+  const nextState = data.error ? 'error' : (data.state || 'idle')
   const fromSnapshot = Boolean(options.fromSnapshot)
   const checkId = Number(data.checkId || 0)
-  if (data.state === 'checking' && checkId > 0) {
+
+  if (nextState === 'checking' && checkId > 0) {
     pendingManualCheckId.value = checkId
   }
-  if (!fromSnapshot && pendingManualCheckId.value > 0 && checkId > 0 && checkId < pendingManualCheckId.value) return
+  // 忽略旧的检查结果（比当前手动检查 ID 小的非快照事件）
+  if (!fromSnapshot && pendingManualCheckId.value > 0 && checkId > 0 && checkId < pendingManualCheckId.value) {
+    return
+  }
 
-  updateChecking.value = data.state === 'checking'
-  updateAvailable.value = data.state === 'available'
-  if (checkId > 0 && checkId === pendingManualCheckId.value && data.state !== 'checking') {
+  updateState.value = nextState
+  if (checkId > 0 && checkId === pendingManualCheckId.value && nextState !== 'checking') {
     pendingManualCheckId.value = 0
   }
+  if (data.version !== undefined) newVersion.value = data.version || ''
+  if (data.progress != null) downloadProgress.value = data.progress
+  if (data.releaseNotes !== undefined) releaseNotes.value = data.releaseNotes || ''
+  if (data.dev != null) isDevMode.value = Boolean(data.dev)
+}
+
+async function handleDownloadUpdate() {
+  const result = await window.electronAPI?.downloadUpdate?.()
+  if (!result?.success) {
+    updateState.value = 'error'
+  }
+}
+
+function handleInstallUpdate() {
+  window.electronAPI?.installUpdate?.()
 }
 
 function openChat(chat) {
@@ -824,12 +904,87 @@ function dirPath(filePath) {
   cursor: not-allowed;
 }
 
-.home-footer .footer-update-dot {
-  width: 7px;
-  height: 7px;
+/* 开发模式提示：低调灰色，不抢眼 */
+.home-footer .footer-dev-mode {
+  font-size: 10px;
+  color: var(--cc-text-dim, #666);
+  opacity: 0.5;
+  cursor: default;
+  user-select: none;
+}
+
+/* 检查中 spinner */
+.home-footer .footer-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--cc-border, rgba(255,255,255,0.2));
+  border-top-color: var(--cc-primary, #4a9eff);
   border-radius: 50%;
-  background: var(--cc-warning, #f0a020);
-  animation: footer-pulse var(--mc-loading-pulse-duration) ease-in-out infinite;
+  animation: footer-spin 0.7s linear infinite;
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+@keyframes footer-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 新版本号提示 */
+.home-footer .footer-new-version {
+  font-size: 10px;
+  color: var(--cc-warning, #f0a020);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 下载按钮 */
+.home-footer .footer-download-btn {
+  color: var(--cc-primary, #4a9eff) !important;
+  border-color: var(--cc-primary, #4a9eff) !important;
+}
+
+/* 安装按钮 */
+.home-footer .footer-install-btn {
+  color: var(--cc-success, #4caf50) !important;
+  border-color: var(--cc-success, #4caf50) !important;
+}
+
+/* 错误重试按钮 */
+.home-footer .footer-error-btn {
+  color: var(--cc-error, #f56c6c) !important;
+  border-color: var(--cc-error, #f56c6c) !important;
+}
+
+/* 下载进度条 */
+.home-footer .footer-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-footer .footer-progress-bar {
+  width: 80px;
+  height: 4px;
+  background: var(--cc-border, rgba(255,255,255,0.12));
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.home-footer .footer-progress-fill {
+  height: 100%;
+  background: var(--cc-primary, #4a9eff);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.home-footer .footer-progress-text {
+  font-size: 10px;
+  color: var(--cc-text-dim, #888);
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
 }
 @keyframes footer-pulse {
   0%, 100% { opacity: 0.4; }
