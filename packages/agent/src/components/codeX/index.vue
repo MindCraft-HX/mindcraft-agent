@@ -1453,7 +1453,8 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
 }
 
 async function refreshProjectSessionsInBackground(project) {
-  if (!project?.cwd || !window.electronAPI?.codexListSessionsByCwd) return null
+  const stop = perfStart('codex.refreshProjectSessionsInBackground')
+  if (!project?.cwd || !window.electronAPI?.codexListSessionsByCwd) { stop(); return null }
   let newCount = 0
   let changedCount = 0
   try {
@@ -1590,8 +1591,9 @@ async function refreshProjectSessionsInBackground(project) {
 }
 
 async function handleRefreshSessions({ silent = false } = {}) {
+  const stop = perfStart('codex.handleRefreshSessions')
   const project = activeProject.value
-  if (!project?.cwd || sidebarRefreshing.value) return
+  if (!project?.cwd || sidebarRefreshing.value) { stop(); return }
   if (!silent && !(project?.chats?.length)) sidebarLoading.value = true
   sidebarRefreshing.value = true
   try {
@@ -1601,6 +1603,7 @@ async function handleRefreshSessions({ silent = false } = {}) {
   } finally {
     if (!silent) sidebarLoading.value = false
     sidebarRefreshing.value = false
+    stop()
   }
 }
 
@@ -1814,6 +1817,7 @@ function findPreferredChat(chats, preferred) {
 }
 
 function switchProject(id, preferredChat = null) {
+  const stop = perfStart('codex.switchProject')
   activeProjectId.value = id
   const p = activeProject.value
   if (p) p.hasDoneNotification = false
@@ -1829,6 +1833,7 @@ function switchProject(id, preferredChat = null) {
     if (!p._settingsLoaded) { p._settingsLoaded = true; loadProjectSettings(p) }
     void refreshProjectSessionsInBackground(p)
   }
+  stop()
 }
 
 async function requestDeleteProject(project) {
@@ -1876,6 +1881,7 @@ function reorderProjects({ fromIndex, toIndex }) {
 }
 
 function switchChat(id) {
+  const stop = perfStart('codex.switchChat')
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   if (chat) trimMessages(chat)
@@ -1904,6 +1910,7 @@ function switchChat(id) {
       inputEl.value?.focus()
     })
   }
+  stop()
 }
 
 function newChat() {
@@ -2045,9 +2052,11 @@ async function loadSessionInstructionForTab(tab) {
 }
 
 async function refreshActiveSessionInstructionState() {
+  const stop = perfStart('codex.refreshActiveSessionInstructionState')
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) {
     activeSessionInstructionEnabled.value = false
+    stop()
     return
   }
   try {
@@ -2499,14 +2508,16 @@ function syncMetricsTimerForActiveTab() {
 }
 
 async function refreshMetricsForChat(chat, reason = 'unknown') {
+  const stop = perfStart('codex.refreshMetricsForChat')
   if (!chat) {
     stopMetricsTimer()
+    stop()
     return
   }
   if (chat.thinking && chat._thinkingStart) startMetricsTimer(chat._thinkingStart)
   else stopMetricsTimer()
-  if (!chat.thinking && reason === 'active-tab-state-watch' && hasAgentStatusBarSnapshot(chat.metrics || {})) return
-  if (!window.electronAPI?.codexAgentQueryMetrics) return
+  if (!chat.thinking && reason === 'active-tab-state-watch' && hasAgentStatusBarSnapshot(chat.metrics || {})) { stop(); return }
+  if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
   try {
     const result = await window.electronAPI.codexAgentQueryMetrics({
       sessionId: chat.sessionId,
@@ -2536,7 +2547,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       sessionId: chat.sessionId,
       thinking: Boolean(chat.thinking),
     })
-  } catch (_) {}
+  } catch (_) {} finally { stop() }
 }
 
 function clearCodexDoneMetricsRetry(sessionId = '') {
@@ -2616,7 +2627,11 @@ watch(
   (id, oldId) => {
     void sessionDraft.persistDraftForChat(findCodexChatById(oldId), inputText.value)
     const tab = activeTab.value
-    void sessionDraft.loadDraftForChat(tab).finally(() => nextTick(() => textareaAutosize.resizeNow()))
+    const stopDraft = perfStart('codex.sessionDraft.loadDraftForChat')
+    void sessionDraft.loadDraftForChat(tab).finally(() => {
+      nextTick(() => textareaAutosize.resizeNow())
+      stopDraft()
+    })
     resetHistory()
   },
   { immediate: true }
@@ -2830,8 +2845,9 @@ function filterCodexSystemMessages(messages) {
 }
 
 async function ensureChatMessagesLoaded(chat) {
+  const stop = perfStart('codex.ensureChatMessagesLoaded')
   if (CODEX_DEBUG) console.log('ensureChatMessagesLoaded', chat)
-  if (!chat?.filePath || !window.electronAPI?.codexReadSessionFileRange) return
+  if (!chat?.filePath || !window.electronAPI?.codexReadSessionFileRange) { stop(); return }
   try {
     const rawData = await window.electronAPI.codexReadSessionFileRange({
       filePath: chat.filePath,
@@ -2850,7 +2866,7 @@ async function ensureChatMessagesLoaded(chat) {
     chat.pageSize = 60
     chat._messagesLoaded = true
     if (chat.id === activeChatId.value) void refreshMetricsForChat(chat, 'history-loaded')
-  } catch (_) {}
+  } catch (_) {} finally { stop() }
 }
 
 async function loadMoreHistory(scrollEl) {

@@ -643,8 +643,9 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
 }
 
 async function refreshMetricsForChat(chat) {
+  const stop = perfStart('claude.refreshMetricsForChat')
   stopMetricsLiveTimer()
-  if (!chat?.cliSessionId) { resetMetrics(); return }
+  if (!chat?.cliSessionId) { resetMetrics(); stop(); return }
   _refreshingMetrics = true
   try {
     const result = await window.electronAPI.claudeAgentQueryMetrics?.({
@@ -664,6 +665,7 @@ async function refreshMetricsForChat(chat) {
     resetMetrics()
   } finally {
     _refreshingMetrics = false
+    stop()
   }
 }
 
@@ -759,7 +761,11 @@ watch(activeChatId, (id, oldId) => {
   void sessionDraft.persistDraftForChat(findClaudeChatById(oldId), inputText.value)
   activeMsgContainer.value = id ? msgRefs[id] : null
   const chat = id ? (activeProject.value?.chats || []).find(c => c.id === id) || null : null
-  void sessionDraft.loadDraftForChat(chat).finally(() => nextTick(() => textareaAutosize.resizeNow()))
+  const stopDraft = perfStart('claude.sessionDraft.loadDraftForChat')
+  void sessionDraft.loadDraftForChat(chat).finally(() => {
+    nextTick(() => textareaAutosize.resizeNow())
+    stopDraft()
+  })
   resetHistory()
   refreshMetricsForChat(chat)
   void refreshActiveSessionInstructionState()
@@ -1727,9 +1733,11 @@ async function loadSessionInstructionForTab(tab) {
 }
 
 async function refreshActiveSessionInstructionState() {
+  const stop = perfStart('claude.refreshActiveSessionInstructionState')
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) {
     activeSessionInstructionEnabled.value = false
+    stop()
     return
   }
   try {
@@ -1739,6 +1747,7 @@ async function refreshActiveSessionInstructionState() {
   } catch (_) {
     activeSessionInstructionEnabled.value = false
   }
+  stop()
 }
 
 async function setActiveSessionInstructionEnabled(enabled) {
@@ -1888,7 +1897,9 @@ function findPreferredChat(chats, preferred) {
 }
 
 async function switchProject(id, preferredChat = null) {
+  const stop = perfStart('claude.switchProject')
   // 顶部项目 Tab 始终可切换；首条回复等待中仍可能锁住侧栏/工具栏，但不把用户困在当前 Tab
+  try {
   teardownHistoryTopObserver()
   activeProjectId.value = id
   const p = activeProject.value
@@ -1922,10 +1933,12 @@ async function switchProject(id, preferredChat = null) {
     if (firstChatId) switchChat(firstChatId)
     nextTick(() => inputEl.value?.focus())
   }
+  } finally { stop() }
 }
 
 async function refreshProjectSessionsInBackground(p) {
-  if (!p?.cwd || !window.electronAPI?.claudeScanProjectsSessions) return null
+  const stop = perfStart('claude.refreshProjectSessionsInBackground')
+  if (!p?.cwd || !window.electronAPI?.claudeScanProjectsSessions) { stop(); return null }
   let newCount = 0
   let changedCount = 0
   try {
@@ -2125,8 +2138,9 @@ function sortChatsByRecency(chats = []) {
 }
 
 async function handleRefreshSessions({ silent = false } = {}) {
+  const stop = perfStart('claude.handleRefreshSessions')
   const p = activeProject.value
-  if (!p?.cwd || sidebarRefreshing.value) return
+  if (!p?.cwd || sidebarRefreshing.value) { stop(); return }
   if (!silent && !(p?.chats?.length)) sidebarLoading.value = true
   sidebarRefreshing.value = true
   try {
@@ -2134,6 +2148,7 @@ async function handleRefreshSessions({ silent = false } = {}) {
   } finally {
     if (!silent) sidebarLoading.value = false
     sidebarRefreshing.value = false
+    stop()
   }
 }
 
@@ -2176,6 +2191,7 @@ function newChat() {
 }
 
 function switchChat(id) {
+  const stop = perfStart('claude.switchChat')
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   // 实时更新斜杠面板的模型/effort显示
@@ -2196,10 +2212,12 @@ function switchChat(id) {
   } else {
     requestAnimationFrame(() => { setupHistoryTopObserver(); scrollBottom(); inputEl.value?.focus() })
   }
+  stop()
 }
 
 async function ensureChatMessagesLoaded(chat) {
-  if (!chat?.filePath || !window.electronAPI?.claudeReadSessionFileRange) return
+  const stop = perfStart('claude.ensureChatMessagesLoaded')
+  if (!chat?.filePath || !window.electronAPI?.claudeReadSessionFileRange) { stop(); return }
   
   try {
     // 初始加载最后 30 条消息
@@ -2235,6 +2253,8 @@ async function ensureChatMessagesLoaded(chat) {
     chat._messagesLoaded = true
   } catch (e) {
     console.warn('[ensureChatMessagesLoaded] failed:', e?.message || e)
+  } finally {
+    stop()
   }
 }
 

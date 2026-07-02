@@ -1,7 +1,10 @@
 /**
- * Renderer 高频链路性能探针 — Phase 0
+ * Renderer 高频链路性能探针 — Phase 0 / T170 扩展
  *
- * 只在 import.meta.env.DEV 或 window.__MCPF_PERF__ 下启用。
+ * 默认全关（包括 dev 模式）。只通过显式 flag 开启：
+ *   window.__MCPF_PERF__ = true     — 运行时开启
+ *   localStorage mcpf_perf = '1'    — 持久化开启
+ *
  * 聚合统计调用次数和耗时，每 30s 输出一次摘要，不刷屏。
  * 不输出消息内容、路径、API key。
  *
@@ -9,8 +12,8 @@
  */
 
 const enabled =
-  (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ||
-  (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__))
+  (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__)) ||
+  (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_perf') === '1')
 
 const NOOP = () => {}
 

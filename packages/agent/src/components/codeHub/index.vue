@@ -314,6 +314,7 @@ const showEmptyOverlay = computed(() => {
 // ── 激活 Tab（核心：同步 activeTabId + 调用 switchProject）──
 let _tabActivationInit = true  // 首次恢复时不刷，避免初始 toast
 function activateTab(tab, preferredChat = null) {
+  const stop = perfStart('codehub.activateTab')
   debugCodeHubTabs('activateTab:start', { tabId: tab?.id, preferredChat }, { force: true })
   activeTabId.value = tab.id
   localStorage.setItem('codehub_active_tab', tab.id)
@@ -321,16 +322,19 @@ function activateTab(tab, preferredChat = null) {
   // 如果 Agent 尚未挂载，先挂载，下一帧再切换
   if (!mountedMap[tab.agentType]) {
     mountedMap[tab.agentType] = true
-    nextTick(() => doSwitchProject(tab, preferredChat))
+    nextTick(() => { doSwitchProject(tab, preferredChat); stop() })
     return
   }
   doSwitchProject(tab, preferredChat)
+  stop()
 }
 
 function doSwitchProject(tab, preferredChat = null) {
+  const stop = perfStart('codehub.doSwitchProject')
   const panel = getPanel(tab.agentType)
   if (!panel) {
     debugCodeHubTabs('switchProject:missing-panel', { tabId: tab?.id, agentType: tab?.agentType }, { force: true })
+    stop()
     return
   }
   debugCodeHubTabs('switchProject:start', {
@@ -341,7 +345,9 @@ function doSwitchProject(tab, preferredChat = null) {
   }, { force: true })
   panel.switchProject(tab.projectId, preferredChat)
   if (!_tabActivationInit) {
-    nextTick(() => panel.refreshSessions?.())
+    nextTick(() => { panel.refreshSessions?.(); stop() })
+  } else {
+    stop()
   }
   _tabActivationInit = false
 }
