@@ -2531,17 +2531,12 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
 
   const hasSnapshot = !chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})
 
-  // 快照 guard：非 thinking 且 metrics 已有数据 → 直接显示缓存，跳过 IPC
-  if (hasSnapshot) {
-    if (reason === 'active-tab-state-watch' || reason === 'switch-chat') { stop(); return }
-  }
-
-  if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
-
-  // 缓存优先：先显示已有的
+  // 缓存优先：有快照就先显示已有数据（所有 reason 统一）
   if (hasSnapshot) {
     onMetricsUpdate({ ...chat.metrics, sessionId: chat.sessionId, thinking: false })
   }
+
+  if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
 
   const ipcPromise = window.electronAPI.codexAgentQueryMetrics({
     sessionId: chat.sessionId,
@@ -2553,6 +2548,34 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
     thinkingStart: chat._thinkingStart || 0,
   })
   if (dedupKey) _codexMetricsTracker.track(dedupKey, ipcPromise)
+
+  // T172: 互动路径（切 tab / 点 session）不 await IPC，后台异步刷新
+  const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
+  if (isInteraction) {
+    ipcPromise.then(result => {
+      if (!result) return
+      debugLog('metrics', 'refreshMetricsForChat background result', {
+        reason,
+        sessionId: chat.sessionId,
+        cliSessionId: chat.cliSessionId,
+        filePath: chat.filePath,
+        thinking: chat.thinking,
+        result,
+      })
+      if (!chat.thinking) {
+        syncCodexFooterTurnTokens(chat, result, { replace: true })
+      }
+      onMetricsUpdate({
+        ...result,
+        sessionId: chat.sessionId,
+        thinking: Boolean(chat.thinking),
+      })
+    }).catch(() => {})
+    stop()
+    return
+  }
+
+  // 非互动路径（session-scan / history-loaded / done-retry 等）：保持 await
   try {
     const result = await ipcPromise
     debugLog('metrics', 'refreshMetricsForChat result', {

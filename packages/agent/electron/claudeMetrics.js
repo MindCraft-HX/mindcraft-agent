@@ -90,6 +90,18 @@ function getClaudeContextUsageFromUsageLike(usage, model) {
   return inputTokens + cacheReadTokens + cacheCreationTokens
 }
 
+function getBoundedClaudeContextEstimateFromUsageLike(usage, model, fallbackContextWindow = 0) {
+  const rawContextUsage = getClaudeContextUsageFromUsageLike(usage, model)
+  const contextWindow = toSafeTokenCount(fallbackContextWindow) || getContextWindowForModel(model)
+  if (!rawContextUsage || !contextWindow) {
+    return { contextUsage: 0, contextWindow: 0 }
+  }
+  return {
+    contextUsage: Math.min(rawContextUsage, contextWindow),
+    contextWindow,
+  }
+}
+
 function normalizeClaudeUsageForUi(usage, model) {
   // Phase 1：委托给统一 normalizer
   const { normalizeClaudeUsage } = require('./tokenMetrics/normalizer')
@@ -141,6 +153,8 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   let lastTurnDurationMs = null
   let lastContextUsage = null
   let lastContextWindow = null
+  let boundedUsageContextUsage = 0
+  let boundedUsageContextWindow = 0
 
   // 扫描所有 assistant 消息提取 usage
   for (const line of lines) {

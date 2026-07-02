@@ -1626,7 +1626,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         }
 
         // 未知 payload 类型兜底日志
-        console.warn('[codex] collectMessage: unhandled payload.type:', p.type, row)
+        if (CODEX_DEBUG) console.warn('[codex] collectMessage: unhandled payload.type:', p.type)
       }
       function tryFlushCall(callId) {
         const entry = pendingCalls[callId]
