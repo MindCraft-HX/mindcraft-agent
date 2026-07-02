@@ -57,13 +57,15 @@ export function hasPendingToolInChats(chats, isPendingTool) {
  * @param {Object} project 原始 project 对象
  * @param {Object} opts
  * @param {Function} [opts.isPendingTool] ClaudeCode 自定义 pending 判断
+ * @param {Function} [opts.getName] 自定义 name 字段。ClaudeCode/CodeX 从 cwd 提取
  * @returns {Object} { id, name, cwd, cwdLocked, runningCount, hasPendingTool, hasDoneNotification, createdAt }
  */
-export function buildProjectTabSummary(project, { isPendingTool } = {}) {
+export function buildProjectTabSummary(project, { isPendingTool, getName } = {}) {
   const chats = project.chats || []
+  const name = typeof getName === 'function' ? getName(project) : (project.name || '')
   return {
     id: project.id,
-    name: project.name,
+    name,
     cwd: project.cwd,
     cwdLocked: project.cwdLocked,
     runningCount: getRunningCount(chats),

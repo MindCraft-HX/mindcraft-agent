@@ -7,7 +7,7 @@
   >
     <ProjectTabs
       v-if="!embedded"
-      :projects="projectTabs"
+      :projects="projectTabSummaries"
       :activeProjectId="activeProjectId"
       @switchProject="switchProject"
       @deleteProject="requestDeleteProject"
@@ -300,6 +300,7 @@ import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentC
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { buildProjectTabSummary } from '../agentCommon/utils/projectTabSummary.mjs'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
@@ -1260,32 +1261,18 @@ watch(
   { immediate: true }
 )
 
-function getRunningCount(chats) {
-  let count = 0
-  for (const chat of chats || []) {
-    if (chat?.thinking) count += 1
-  }
-  return count
-}
-
-function hasPendingToolInChats(chats) {
-  for (const chat of chats || []) {
-    const messages = chat?.messages || []
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i]?.status === 'pending') return true
-    }
-  }
-  return false
-}
-
-const projectTabs = computed(() => {
-  const stop = perfStart('codex.projectTabs')
-  const result = projects.value.map(p => ({
-    ...p,
-    runningCount: getRunningCount(p.chats || []),
-    hasPendingTool: hasPendingToolInChats(p.chats || []),
-  }))
-  stop({ projects: result.length, chats: result.reduce((s, p) => s + (p.chats?.length || 0), 0) })
+// ── 统一 project tab summary（Phase 2）──
+// 单一 computed 同时供：本面板 ProjectTabs、CodeHub expose、notification watcher
+const projectTabSummaries = computed(() => {
+  const stop = perfStart('codex.projectTabSummaries')
+  const result = projects.value.map(p =>
+    buildProjectTabSummary(p, {
+      getName: (proj) => proj.cwd
+        ? proj.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder')
+        : t('codehub.noFolder'),
+    })
+  )
+  stop({ projects: result.length })
   return result
 })
 
@@ -1654,9 +1641,9 @@ const { sidebarOpen } = useCodexTabs({
 const codehubHasNotification = inject('codehubHasNotification', null)
 
 // ── 侧边栏「项目」通知指示器 ──
-// P1-3：对齐 ClaudeCode — 复用 projectTabs computed（已含 ...p spread），避免 flatMap 每次创建新数组
+// Phase 2: 复用统一 projectTabSummaries
 watch(
-  () => projectTabs.value.some(t => t.hasDoneNotification),
+  () => projectTabSummaries.value.some(t => t.hasDoneNotification),
   (has) => {
     if (codehubHasNotification) codehubHasNotification.value = has
   },
@@ -2993,24 +2980,8 @@ onMounted(async () => {
 
 // --- expose for codeHub unified tabs ---
 defineExpose({
-  projectTabData: computed(() => {
-    const stop = perfStart('codex.projectTabData')
-    const result = projects.value.map(p => {
-      const chats = p.chats || []
-      return {
-        id: p.id,
-        name: p.cwd ? p.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder') : t('codehub.noFolder'),
-        cwd: p.cwd || '',
-        cwdLocked: Boolean(p.cwdLocked),
-        runningCount: getRunningCount(chats),
-        hasPendingTool: hasPendingToolInChats(chats),
-        hasDoneNotification: Boolean(p.hasDoneNotification),
-        createdAt: p.createdAt || 0,
-      }
-    })
-    stop({ projects: result.length })
-    return result
-  }),
+  // Phase 2: 复用统一 projectTabSummaries，不再重复扫描 chats/messages
+  projectTabData: projectTabSummaries,
   activeProjectId,
   createProject() { newProject(); return activeProjectId.value },
   switchProject,
