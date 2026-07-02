@@ -2525,18 +2525,25 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   if (chat.thinking && chat._thinkingStart) startMetricsTimer(chat._thinkingStart)
   else stopMetricsTimer()
 
-  // 去重：同一 sessionId 已有在飞请求 → 跳过
   const dedupKey = chat.cliSessionId || chat.sessionId
-  if (dedupKey && _codexMetricsTracker.has(dedupKey)) { stop(); return }
-
+  const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
   const hasSnapshot = !chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})
 
-  // 缓存优先：有快照就先显示已有数据（所有 reason 统一）
+  // 缓存优先：有快照就先显示已有数据（所有 reason 统一，在去重之前）
   if (hasSnapshot) {
     onMetricsUpdate({ ...chat.metrics, sessionId: chat.sessionId, thinking: false })
   }
 
+  // 去重：同一 sessionId 已有在飞请求
+  // 互动路径：缓存已在上面显示，不再发第二个 IPC
+  // 非互动路径：直接跳过
+  if (dedupKey && _codexMetricsTracker.has(dedupKey)) { stop(); return }
+
   if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
+
+  // 捕获请求时刻的 session 身份和 thinking 状态，供后台 resolve 时校验
+  const requestSessionId = chat.sessionId
+  const requestThinking = Boolean(chat.thinking)
 
   const ipcPromise = window.electronAPI.codexAgentQueryMetrics({
     sessionId: chat.sessionId,
@@ -2544,31 +2551,35 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
     filePath: chat.filePath,
     model: chat.model || chat.metrics?.model || codexDefaultModel.value || '',
     cwd: activeProject.value?.cwd || chat.cwd || '',
-    thinking: Boolean(chat.thinking),
+    thinking: requestThinking,
     thinkingStart: chat._thinkingStart || 0,
   })
   if (dedupKey) _codexMetricsTracker.track(dedupKey, ipcPromise)
 
   // T172: 互动路径（切 tab / 点 session）不 await IPC，后台异步刷新
-  const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
   if (isInteraction) {
     ipcPromise.then(result => {
       if (!result) return
+      // resolve 时重新查找当前 tab，不依赖闭包中的旧 chat 对象
+      const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === requestSessionId)
+      if (!tab) return
+      // 如果请求时 thinking=false 但当前 tab 已进入新 thinking 周期，不写旧 turn tokens
+      const sameThinkingCycle = requestThinking === Boolean(tab.thinking)
       debugLog('metrics', 'refreshMetricsForChat background result', {
         reason,
-        sessionId: chat.sessionId,
-        cliSessionId: chat.cliSessionId,
-        filePath: chat.filePath,
-        thinking: chat.thinking,
+        sessionId: requestSessionId,
+        requestThinking,
+        currentThinking: tab.thinking,
+        sameCycle: sameThinkingCycle,
         result,
       })
-      if (!chat.thinking) {
-        syncCodexFooterTurnTokens(chat, result, { replace: true })
+      if (!tab.thinking && sameThinkingCycle) {
+        syncCodexFooterTurnTokens(tab, result, { replace: true })
       }
       onMetricsUpdate({
         ...result,
-        sessionId: chat.sessionId,
-        thinking: Boolean(chat.thinking),
+        sessionId: requestSessionId,
+        thinking: Boolean(tab.thinking),
       })
     }).catch(() => {})
     stop()
