@@ -11,8 +11,13 @@ const MAX_INSTRUCTION_CONTENT_CHARS = 100000
 const MAX_INSTRUCTION_ATTACHMENTS = 20
 const MAX_INSTRUCTION_ATTACHMENT_CHARS = 4096
 
-// T173: per-chatKey draft 读缓存，写操作时更新/失效
+// T173: per-chatKey draft 读缓存，写操作时更新/失效。
+// cache key = registryRoot + "::" + chatKey，隔离不同 userDataDir。
 const _draftCache = new Map()
+
+function _draftCacheKey(chatKey, options = {}) {
+  return getSessionRegistryRoot(options) + '::' + normalizeString(chatKey)
+}
 
 function getUserDataDir(options = {}) {
   if (options.userDataDir) return options.userDataDir
@@ -716,6 +721,7 @@ function deleteSessionRecord(chatKey, options = {}) {
   removeIndexReferences(index, chatKey)
   if (JSON.stringify(index) !== before) deleted = true
   if (deleted) writeIndex(index, options)
+  _draftCache.delete(_draftCacheKey(chatKey, options))
   return deleted
 }
 
@@ -757,7 +763,8 @@ function getSessionInstruction(chatKey, options = {}) {
 function getSessionDraft(chatKey, options = {}) {
   const resolvedChatKey = normalizeString(chatKey)
   if (!resolvedChatKey) return { text: '', updatedAt: 0 }
-  const cached = _draftCache.get(resolvedChatKey)
+  const cacheKey = _draftCacheKey(chatKey, options)
+  const cached = _draftCache.get(cacheKey)
   if (cached) return { text: cached.text, updatedAt: cached.updatedAt }
   const session = readJson(getSessionRecordPath(resolvedChatKey, options), null)
   const draft = session?.draft && typeof session.draft === 'object' ? session.draft : {}
@@ -765,7 +772,7 @@ function getSessionDraft(chatKey, options = {}) {
     text: typeof draft.text === 'string' ? draft.text : '',
     updatedAt: normalizeTimestamp(draft.updatedAt),
   }
-  _draftCache.set(resolvedChatKey, { text: result.text, updatedAt: result.updatedAt })
+  _draftCache.set(cacheKey, { text: result.text, updatedAt: result.updatedAt })
   return result
 }
 
@@ -788,7 +795,7 @@ function setSessionDraft(chatKey, data = {}, options = {}) {
     updatedAt: Math.max(now, normalizeTimestamp(existing?.updatedAt) + 1),
   }
   writeJsonAtomic(getSessionRecordPath(resolvedChatKey, options), record)
-  _draftCache.set(resolvedChatKey, { text: draft.text, updatedAt: draft.updatedAt })
+  _draftCache.set(_draftCacheKey(chatKey, options), { text: draft.text, updatedAt: draft.updatedAt })
   return { ok: true, draft: getSessionDraft(resolvedChatKey, options) }
 }
 
@@ -797,7 +804,7 @@ function clearSessionDraft(chatKey, options = {}) {
   if (!resolvedChatKey) return { ok: false, error: 'missing chatKey' }
   const existing = readJson(getSessionRecordPath(resolvedChatKey, options), null)
   if (!existing?.chatKey) {
-    _draftCache.set(resolvedChatKey, { text: '', updatedAt: 0 })
+    _draftCache.set(_draftCacheKey(chatKey, options), { text: '', updatedAt: 0 })
     return { ok: true, draft: { text: '', updatedAt: 0 } }
   }
   const now = Date.now()
@@ -807,7 +814,7 @@ function clearSessionDraft(chatKey, options = {}) {
     updatedAt: Math.max(now, normalizeTimestamp(existing.updatedAt) + 1),
   }
   writeJsonAtomic(getSessionRecordPath(resolvedChatKey, options), record)
-  _draftCache.set(resolvedChatKey, { text: '', updatedAt: now })
+  _draftCache.set(_draftCacheKey(chatKey, options), { text: '', updatedAt: now })
   return { ok: true, draft: getSessionDraft(resolvedChatKey, options) }
 }
 

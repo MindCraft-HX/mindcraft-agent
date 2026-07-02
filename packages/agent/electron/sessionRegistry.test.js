@@ -7,6 +7,7 @@ const {
   buildSessionRecordFromChat,
   deleteSessionRecordsByProvider,
   detachSessionProviderBinding,
+  deleteSessionRecord,
   findSessionRecordByProvider,
   getSessionDraft,
   getSessionInstruction,
@@ -1480,4 +1481,58 @@ test('restoreMissingPanelStateChats skips legacy empty Codex local drafts from r
   assert.equal(result.changed, false)
   assert.equal(result.added, 0)
   assert.equal(panelState.projects[0].chats.length, 0)
+})
+
+// T173: cache isolation tests
+test('draft cache isolates different userDataDir for same chatKey', () => {
+  const dirA = makeTempUserData()
+  const dirB = makeTempUserData()
+  const optsA = { userDataDir: dirA }
+  const optsB = { userDataDir: dirB }
+
+  // Set up index in both directories (required for setSessionDraft to write)
+  fs.mkdirSync(path.join(dirA, 'session-registry', 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dirA, 'session-registry', 'index.json'), JSON.stringify({
+    schemaVersion: 2, sessions: {}, providers: {},
+  }))
+  fs.mkdirSync(path.join(dirB, 'session-registry', 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dirB, 'session-registry', 'index.json'), JSON.stringify({
+    schemaVersion: 2, sessions: {}, providers: {},
+  }))
+
+  // Write different drafts to same chatKey in different directories
+  setSessionDraft('chat-1', { text: 'draft-in-A', updatedAt: 100 }, optsA)
+  setSessionDraft('chat-1', { text: 'draft-in-B', updatedAt: 200 }, optsB)
+
+  // Read back: each directory should return its own draft
+  const a = getSessionDraft('chat-1', optsA)
+  const b = getSessionDraft('chat-1', optsB)
+
+  assert.equal(a.text, 'draft-in-A', 'dirA should return its own draft')
+  assert.equal(a.updatedAt, 100)
+  assert.equal(b.text, 'draft-in-B', 'dirB should return its own draft')
+  assert.equal(b.updatedAt, 200)
+})
+
+test('deleteSessionRecord clears draft cache so stale data does not revive', () => {
+  const dir = makeTempUserData()
+  const opts = { userDataDir: dir }
+
+  // Set up index + draft
+  fs.mkdirSync(path.join(dir, 'session-registry', 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'session-registry', 'index.json'), JSON.stringify({
+    schemaVersion: 2,
+    sessions: { 'chat-1': { agent: 'codex', chatKey: 'chat-1', cwd: '/test' } },
+    providers: {},
+  }))
+
+  setSessionDraft('chat-1', { text: 'will-be-deleted' }, opts)
+  const before = getSessionDraft('chat-1', opts)
+  assert.equal(before.text, 'will-be-deleted', 'draft present before delete')
+
+  deleteSessionRecord('chat-1', opts)
+
+  const after = getSessionDraft('chat-1', opts)
+  assert.equal(after.text, '', 'draft should be empty after session record deleted')
+  assert.equal(after.updatedAt, 0)
 })
