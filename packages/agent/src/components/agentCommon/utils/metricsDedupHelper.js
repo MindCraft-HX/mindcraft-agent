@@ -19,6 +19,7 @@ export function createMetricsDedupTracker() {
      * Promise resolve/reject 后自动清除。
      */
     track(key, promise) {
+      if (!promise || typeof promise.finally !== 'function') return
       _inFlight.set(key, promise)
       promise.finally(() => {
         if (_inFlight.get(key) === promise) _inFlight.delete(key)

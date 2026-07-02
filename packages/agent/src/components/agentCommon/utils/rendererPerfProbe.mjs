@@ -52,11 +52,19 @@ export function perfDump() {
 
 // ── internal ────────────────────────────────────────────
 
+let _perfSyncDone = false
+
 function isEnabled() {
-  return (
+  const ok = (
     (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__)) ||
     (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_perf') === '1')
   )
+  // 一次性同步 renderer perf flag 到主进程，让 [perf:ipc] 也能输出
+  if (ok && !_perfSyncDone) {
+    _perfSyncDone = true
+    try { window.electronAPI?.setPerfEnabled?.(true) } catch (_) {}
+  }
+  return ok
 }
 
 function record(label, elapsedMs, meta = {}) {

@@ -12,8 +12,14 @@
 
 const NOOP = () => {}
 
+let _runtimeEnabled = false
+
 function isEnabled() {
-  return process.env.MCPF_PERF === '1'
+  return process.env.MCPF_PERF === '1' || _runtimeEnabled
+}
+
+function setPerfEnabled(v) {
+  _runtimeEnabled = Boolean(v)
 }
 
 /**
@@ -35,4 +41,4 @@ function perfStartIpc(channel, meta = {}) {
   }
 }
 
-module.exports = { perfStartIpc }
+module.exports = { perfStartIpc, setPerfEnabled }

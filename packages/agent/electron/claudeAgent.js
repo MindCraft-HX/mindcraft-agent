@@ -50,7 +50,7 @@ const {
   annotateClaudeHistoryEntryWithTurnTokens,
   readJsonlPageLinesFromTail,
 } = require('./claude/historyReader')
-const { perfStartIpc } = require('./shared/mainPerfProbe')
+const { perfStartIpc, setPerfEnabled } = require('./shared/mainPerfProbe')
 
 // ---- Shared Skills Marketplace (Batch 4) ----
 const {
@@ -698,6 +698,9 @@ async function readInstalledPlugins() {
 function setupClaudeHandlers() {
   // 应用启动时立即预热 SDK，避免第一次对话时冷启动延迟
   loadClaudeAgentSdk().catch(() => {})
+
+  // 同步 renderer 端 perf flag 到主进程
+  ipcMain.handle('agent-set-perf-enabled', (_, v) => { setPerfEnabled(v) })
 
   // 直接读写 ~/.claude/settings.json，与系统 Claude 配置一致
   const getSettingsPath = () => path.join(os.homedir(), '.claude', 'settings.json')

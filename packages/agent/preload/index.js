@@ -50,6 +50,7 @@ function createAgentBridge(ipcRenderer) {
   claudeAgentAbort: (sessionId) => ipcRenderer.invoke('claude-agent-abort', sessionId),
   claudeAgentUpdateRunMode: (sessionId, runMode) => ipcRenderer.invoke('claude-agent-update-runmode', { sessionId, runMode }),
   claudeAgentQueryMetrics: (payload) => ipcRenderer.invoke('claude-agent-query-metrics', payload),
+  setPerfEnabled: (v) => ipcRenderer.invoke('agent-set-perf-enabled', v),
   claudeSelectDirectory: () => ipcRenderer.invoke('select-directory'),
   claudeListFiles: (payload) => ipcRenderer.invoke('claude-list-files', payload),
   claudeListSlashCommands: (payload) => ipcRenderer.invoke('claude-list-slash-commands', payload),

@@ -254,6 +254,7 @@ function isCodexSnapshotFreshForRunningTurn(snapshot = null, thinkingStart = 0) 
 }
 
 async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '', thinking = false, thinkingStart = 0 } = {}) {
+  const subResolve = perfStartIpc('codex-metrics.resolve')
   const resolvedFilePath = resolveCodexSessionFilePath({
     sessionId,
     cliSessionId,
@@ -276,12 +277,15 @@ async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', f
     : (turnSnapshot
       || extractLatestCodexFinalTurnSnapshotFromJsonl(resolvedFilePath, { model })
       || extractLatestCodexHistoryTurnSnapshot(resolvedFilePath))
+  subResolve({ hasTurnSnapshot: turnSnapshot ? 1 : 0, hasHistorySnapshot: historyTurnSnapshot ? 1 : 0 })
   let sessionMetrics = null
+  const subSession = perfStartIpc('codex-metrics.session-read')
   if (resolvedFilePath && String(resolvedFilePath).toLowerCase().endsWith('.jsonl')) {
     sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '')
   } else if (sessionId || cliSessionId) {
     sessionMetrics = await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '')
   }
+  subSession({ hasSessionMetrics: sessionMetrics ? 1 : 0 })
   logMetricSample({
     provider: 'codex',
     source: 'statusbar-query',

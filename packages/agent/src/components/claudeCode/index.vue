@@ -669,16 +669,19 @@ async function refreshMetricsForChat(chat) {
   stopMetricsLiveTimer()
   if (!chat?.cliSessionId) { resetMetrics(); stop(); return }
 
-  // 去重：同一 cliSessionId 已有在飞请求 → 复用
+  // 去重：同一 cliSessionId 已有在飞请求 → 跳过
   if (_metricsTracker.has(chat.cliSessionId)) { stop(); return }
 
-  // 缓存优先：已有缓存的 metrics 且非 thinking，先显示缓存的，再异步刷新
+  // guard: preload 缺失或测试环境无 API
+  if (!window.electronAPI?.claudeAgentQueryMetrics) { stop(); return }
+
+  // 缓存优先：已有缓存的 metrics 且非 thinking，先显示
   if (!chat.thinking && chat.metrics && chat.metrics.durationMs != null) {
     Object.assign(metricsData.value, chat.metrics)
   }
 
   _refreshingMetrics = true
-  const ipcPromise = window.electronAPI.claudeAgentQueryMetrics?.({
+  const ipcPromise = window.electronAPI.claudeAgentQueryMetrics({
     cliSessionId: chat.cliSessionId,
     model: getClaudeTabModel(chat),
   })
@@ -688,8 +691,13 @@ async function refreshMetricsForChat(chat) {
     if (result) {
       if (!result.model) result.model = getClaudeTabModel(chat)
       result.thinking = Boolean(chat.thinking)
-      Object.assign(metricsData.value, result)
-      syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
+      // 回写 chat.metrics 作为缓存（总是写，这是 session 级别数据）
+      chat.metrics = { ...chat.metrics, ...result }
+      // 竞态 guard：只有仍是当前 active tab 才更新状态栏
+      if (activeChatId.value === chat.id) {
+        Object.assign(metricsData.value, result)
+        syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
+      }
     }
   } catch (_) {
     // IPC 失败不清除已有显示

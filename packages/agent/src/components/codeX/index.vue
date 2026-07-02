@@ -2537,7 +2537,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   if (!window.electronAPI?.codexAgentQueryMetrics) { stop(); return }
 
   // 缓存优先：先显示已有的
-  if (!chat.thinking && chat.metrics && chat.metrics.hasAgentStatusBarSnapshot) {
+  if (!chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})) {
     onMetricsUpdate({ ...chat.metrics, sessionId: chat.sessionId, thinking: false })
   }
 
