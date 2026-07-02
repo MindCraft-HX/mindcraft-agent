@@ -12,6 +12,8 @@ const enabled =
   (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ||
   (typeof window !== 'undefined' && Boolean(window.__MCPF_PERF__))
 
+const NOOP = () => {}
+
 const counters = new Map()       // label → count
 const timers = new Map()         // label → { count, total, min, max }
 
@@ -35,7 +37,7 @@ export function perfCount(label, n = 1) {
  *   stop({ projects: 5, chats: 12, messages: 340 })
  */
 export function perfStart(label) {
-  if (!enabled) return () => {}
+  if (!enabled) return NOOP
   const t0 = performance.now()
   return (meta) => {
     const elapsed = performance.now() - t0

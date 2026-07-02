@@ -8,28 +8,26 @@ import { onUnmounted } from 'vue'
  *
  * 用法：
  *   const autosize = useTextareaAutosize()
- *   autosize.bindTextarea(inputEl.value)     // 绑定 DOM 元素
+ *   autosize.bindTextarea(inputEl.value)     // 绑定 DOM 元素（自动 resize 已有内容）
  *   autosize.scheduleResize()                // rAF 合并的 resize（input handler 中调用）
- *   autosize.resizeNow()                     // 立即 resize（粘贴/清空后调用）
+ *   autosize.resizeNow()                     // 立即 resize（粘贴/清空/mention 后调用）
  */
 
 export function useTextareaAutosize({ maxHeight = 160 } = {}) {
   let el = null
   let rafId = null
-  let pending = false
 
-  /** 绑定 textarea DOM 元素 */
+  /** 绑定 textarea DOM 元素，并立即 resize 适配已有内容（如 draft 恢复） */
   function bindTextarea(textarea) {
     el = textarea
+    resizeNow()
   }
 
   /** rAF 合并 resize — 同一帧内多次调用只执行一次 */
   function scheduleResize() {
-    if (pending || !el) return
-    pending = true
+    if (rafId != null || !el) return
     rafId = requestAnimationFrame(() => {
       rafId = null
-      pending = false
       if (!el) return
       el.style.height = 'auto'
       el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px'
@@ -41,7 +39,6 @@ export function useTextareaAutosize({ maxHeight = 160 } = {}) {
     if (rafId != null) {
       cancelAnimationFrame(rafId)
       rafId = null
-      pending = false
     }
     if (!el) return
     el.style.height = 'auto'
@@ -50,6 +47,8 @@ export function useTextareaAutosize({ maxHeight = 160 } = {}) {
 
   onUnmounted(() => {
     if (rafId != null) cancelAnimationFrame(rafId)
+    el = null
+    rafId = null
   })
 
   return { bindTextarea, scheduleResize, resizeNow }

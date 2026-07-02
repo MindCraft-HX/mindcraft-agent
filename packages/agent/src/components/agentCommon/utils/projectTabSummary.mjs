@@ -9,6 +9,18 @@
  */
 
 /**
+ * 提取 cwd 的最后一段作为项目名称。
+ * 使用 filter(Boolean) 防止尾部斜杠产生空字符串（统一 ClaudeCode / CodeX 行为）。
+ *
+ * @param {string} cwd
+ * @returns {string} 最后路径段，如果 cwd 为空则返回空字符串
+ */
+export function getCwdBasename(cwd) {
+  if (!cwd) return ''
+  return cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || ''
+}
+
+/**
  * 统计正在 thinking 的 chat 数量。
  * ClaudeCode: chat.thinking === true
  * CodeX:      chat.thinking === true

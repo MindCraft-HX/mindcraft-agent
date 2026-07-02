@@ -351,7 +351,7 @@ import { useScrollBottom } from './composables/useScrollBottom.js'
 import { applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
-import { buildProjectTabSummary } from '../agentCommon/utils/projectTabSummary.mjs'
+import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
@@ -683,9 +683,7 @@ const projectTabSummaries = computed(() => {
   const result = projects.value.map(p =>
     buildProjectTabSummary(p, {
       isPendingTool,
-      getName: (proj) => proj.cwd
-        ? proj.cwd.split(/[\\/]/).pop() || t('codehub.noFolder')
-        : t('codehub.noFolder'),
+      getName: (proj) => getCwdBasename(proj.cwd) || t('codehub.noFolder'),
     })
   )
   stop({ projects: result.length })
@@ -761,7 +759,7 @@ watch(activeChatId, (id, oldId) => {
   void sessionDraft.persistDraftForChat(findClaudeChatById(oldId), inputText.value)
   activeMsgContainer.value = id ? msgRefs[id] : null
   const chat = id ? (activeProject.value?.chats || []).find(c => c.id === id) || null : null
-  void sessionDraft.loadDraftForChat(chat)
+  void sessionDraft.loadDraftForChat(chat).finally(() => nextTick(() => textareaAutosize.resizeNow()))
   resetHistory()
   refreshMetricsForChat(chat)
   void refreshActiveSessionInstructionState()
@@ -1640,8 +1638,7 @@ function applyMention(item) {
         const cursor = (prefix + lead + '@' + dirQuery).length
         inputEl.value.focus()
         inputEl.value.setSelectionRange(cursor, cursor)
-        inputEl.value.style.height = 'auto'
-        inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+        textareaAutosize.resizeNow()
       }
       refreshMentionSuggestions(dirQuery)
     })
@@ -1654,8 +1651,7 @@ function applyMention(item) {
     if (inputEl.value) {
       inputEl.value.focus()
       inputEl.value.setSelectionRange(cursor, cursor)
-      inputEl.value.style.height = 'auto'
-      inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+      textareaAutosize.resizeNow()
     }
   })
 }
@@ -2304,15 +2300,18 @@ async function handleRenameChat(session, newName) {
 
 async function requestDeleteProject(project) {
   if (!project) return
+  // 从 projects.value 查找完整 project（ProjectTabs 传的是 summary，不含 chats）
+  const full = projects.value.find(p => p.id === project.id)
+  if (!full) return
   // 有运行中对话时提示，否则直接关闭
-  const hasRunning = (project.chats || []).some(c => c.thinking)
+  const hasRunning = (full.chats || []).some(c => c.thinking)
   if (hasRunning) {
     const ok = await confirmDialogRef.value?.open({
       message: t('agent.closeProjectTab'),
     })
     if (!ok) return
   }
-  for (const c of project.chats || []) window.electronAPI.claudeAgentAbort?.(c.sessionId)
+  for (const c of full.chats || []) window.electronAPI.claudeAgentAbort?.(c.sessionId)
   projects.value = projects.value.filter(p => p.id !== project.id)
 
   if (activeProjectId.value === project.id) {
@@ -2487,8 +2486,7 @@ function insertTextAtCaret(insertText) {
     const pos = start + insertText.length
     inputEl.value.focus()
     inputEl.value.setSelectionRange(pos, pos)
-    inputEl.value.style.height = 'auto'
-    inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+    textareaAutosize.resizeNow()
   })
 }
 
@@ -2812,7 +2810,7 @@ async function sendMessage() {
     inputText.value = ''
     void sessionDraft.clearDraftForChat(tab)
     saveHistory({ immediate: true })
-    nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
+    nextTick(() => { if (inputEl.value) textareaAutosize.resizeNow() })
     // fire-and-forget：消息通过 claude-agent-message 事件通道回来
     // 主进程 existing 分支命中 → streamInput → SDK 中断并处理
     window.electronAPI.claudeAgentQuery({
@@ -3073,7 +3071,7 @@ async function sendMessage() {
   if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
   pushToHistory(text, tab.inputHistory)
   inputText.value = ''
-  nextTick(() => { if (inputEl.value) inputEl.value.style.height = 'auto' })
+  nextTick(() => { if (inputEl.value) textareaAutosize.resizeNow() })
 
   const userContent = buildUserContentBlocks(text, imgs, files)
   trimMessages(tab, true)

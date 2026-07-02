@@ -300,7 +300,7 @@ import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentC
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
-import { buildProjectTabSummary } from '../agentCommon/utils/projectTabSummary.mjs'
+import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
@@ -731,8 +731,7 @@ function applyMention(item) {
         const cursor = (prefix + lead + '@' + dirQuery).length
         inputEl.value.focus()
         inputEl.value.setSelectionRange(cursor, cursor)
-        inputEl.value.style.height = 'auto'
-        inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+        textareaAutosize.resizeNow()
       }
       refreshMentionSuggestions(dirQuery)
     })
@@ -745,8 +744,7 @@ function applyMention(item) {
     if (inputEl.value) {
       inputEl.value.focus()
       inputEl.value.setSelectionRange(cursor, cursor)
-      inputEl.value.style.height = 'auto'
-      inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+      textareaAutosize.resizeNow()
     }
   })
 }
@@ -1271,9 +1269,7 @@ const projectTabSummaries = computed(() => {
   const stop = perfStart('codex.projectTabSummaries')
   const result = projects.value.map(p =>
     buildProjectTabSummary(p, {
-      getName: (proj) => proj.cwd
-        ? proj.cwd.replace(/\\/g, '/').split('/').filter(Boolean).pop() || t('codehub.noFolder')
-        : t('codehub.noFolder'),
+      getName: (proj) => getCwdBasename(proj.cwd) || t('codehub.noFolder'),
     })
   )
   stop({ projects: result.length })
@@ -1837,8 +1833,11 @@ function switchProject(id, preferredChat = null) {
 
 async function requestDeleteProject(project) {
   if (!project) return
+  // 从 projects.value 查找完整 project（ProjectTabs 传的是 summary，不含 chats）
+  const full = projects.value.find(p => p.id === project.id)
+  if (!full) return
   // 有运行中对话时提示，否则直接关闭
-  const hasRunning = (project.chats || []).some(c => c.thinking)
+  const hasRunning = (full.chats || []).some(c => c.thinking)
   if (hasRunning) {
     const ok = await confirmDialogRef.value?.open({
       message: t('agent.closeProjectTab'),
@@ -1847,7 +1846,7 @@ async function requestDeleteProject(project) {
   }
   const idx = projects.value.findIndex(p => p.id === project.id)
   if (idx < 0) return
-  for (const c of project.chats || []) window.electronAPI.codexAgentAbort?.(c.sessionId)
+  for (const c of full.chats || []) window.electronAPI.codexAgentAbort?.(c.sessionId)
   projects.value.splice(idx, 1)
   if (activeProjectId.value === project.id) {
     activeProjectId.value = projects.value[Math.max(0, idx - 1)]?.id || null
@@ -2202,7 +2201,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     // 重置 textarea 高度，避免多行内容发送后输入框被撑大
     nextTick(() => {
       if (inputEl.value) {
-        inputEl.value.style.height = 'auto'
+        textareaAutosize.resizeNow()
       }
     })
   }
@@ -2617,7 +2616,7 @@ watch(
   (id, oldId) => {
     void sessionDraft.persistDraftForChat(findCodexChatById(oldId), inputText.value)
     const tab = activeTab.value
-    void sessionDraft.loadDraftForChat(tab)
+    void sessionDraft.loadDraftForChat(tab).finally(() => nextTick(() => textareaAutosize.resizeNow()))
     resetHistory()
   },
   { immediate: true }

@@ -122,7 +122,7 @@ import { orderCodeHubTabs, reconcileCodeHubTabOrder } from './tabOrder.mjs'
 import { shouldAutoShowAgentPicker } from './agentPickerPrompt.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
-import { perfStart, perfCount } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
