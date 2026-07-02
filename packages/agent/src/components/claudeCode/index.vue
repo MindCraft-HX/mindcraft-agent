@@ -352,6 +352,7 @@ import { applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemC
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { buildProjectTabSummary } from '../agentCommon/utils/projectTabSummary.mjs'
+import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { countVisibleClaudeUserMessages, isClaudeMetaUserEntry } from './utils/internalPromptFilter.mjs'
@@ -411,6 +412,9 @@ const activeProjectId = ref(null)
 const activeChatId = ref(null)
 const inputText = ref('')
 const inputEl = ref(null)
+// Phase 5: rAF 合并的 autosize，同一帧内多次输入只 resize 一次
+const textareaAutosize = useTextareaAutosize()
+watch(inputEl, (el) => { if (el) textareaAutosize.bindTextarea(el) }, { immediate: true })
 const { handleHistoryKeydown, pushToHistory, resetHistory } = useInputHistory()
 const isComposing = ref(false)
 const msgRefs = {}
@@ -2540,6 +2544,7 @@ const {
   getInputText: () => inputText.value,
   setInputText: (v) => { inputText.value = v },
   focusInput: () => nextTick(() => inputEl.value?.focus()),
+  autosizeSchedule: textareaAutosize.scheduleResize,  // Phase 5: rAF 合并
 })
 
 function setupHistoryTopObserver() {

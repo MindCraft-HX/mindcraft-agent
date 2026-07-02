@@ -301,6 +301,7 @@ import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared 
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { buildProjectTabSummary } from '../agentCommon/utils/projectTabSummary.mjs'
+import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
@@ -550,6 +551,9 @@ const activeProjectId = ref(null)
 const activeChatId = ref(null)
 const inputText = ref('')
 const inputEl = ref(null)
+// Phase 5: rAF 合并的 autosize，同一帧内多次输入只 resize 一次
+const textareaAutosize = useTextareaAutosize()
+watch(inputEl, (el) => { if (el) textareaAutosize.bindTextarea(el) }, { immediate: true })
 const { handleHistoryKeydown, pushToHistory, resetHistory } = useInputHistory()
 const isComposing = ref(false)
 const mentionSuggestions = ref([])
@@ -2403,8 +2407,7 @@ function onCompositionEnd(e) {
 }
 function onInputChange(e) {
   const stopAutosize = perfStart('codex.autosize')
-  if (inputEl.value) inputEl.value.style.height = 'auto'
-  if (inputEl.value) inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 160) + 'px'
+  textareaAutosize.scheduleResize()
   stopAutosize()
   const query = extractMentionQuery(inputText.value || '', e?.target?.selectionStart)
   if (query == null) {

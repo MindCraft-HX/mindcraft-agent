@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 
-export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputText, focusInput }) {
+export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputText, focusInput, autosizeSchedule }) {
   const slashCommands = ref([
     { cmd: '/model', desc: '选择模型（本地命令）' },
     { cmd: '/memory', desc: '管理项目记忆（查看/添加/删除）' },
@@ -156,9 +156,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
 
   function onInput(e) {
     const stop = perfStart('claude.autosize')
-    const el = e.target
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+    autosizeSchedule?.()  // Phase 5: rAF 合并，不再同步读写 layout
     stop()
     const val = getInputText?.() || ''
     if (val.startsWith('/') && !val.includes(' ')) {
