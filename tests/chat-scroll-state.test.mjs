@@ -1,8 +1,9 @@
 /**
- * useChatScrollState 单元测试 — T170 Phase 3 (refined)
+ * useChatScrollState 单元测试 — T170 Phase 3 (refined v2)
  *
  * 测试纯逻辑层：不依赖 Vue/DOM，使用 mock element 模拟 scroll 行为。
- * 覆盖：atBottom 保存/恢复、scrollTop clamp、syncLayout 回调。
+ * 覆盖：atBottom 保存/恢复（200px 阈值与 useScrollBottom 对齐）、
+ *       scrollTop clamp、真实 maxScroll（替换魔法数 999999）、syncLayout 回调。
  * 运行：node --test tests/chat-scroll-state.test.mjs
  */
 
@@ -24,11 +25,12 @@ function mockScrollEl(scrollTop = 0, scrollHeight = 2000, clientHeight = 600) {
   }
 }
 
-function makeApi(els) {
+function makeApi(els, opts) {
   let syncCalled = false
   const api = useChatScrollState({
     getScrollEl: (key) => els[key],
     syncLayout: () => { syncCalled = true },
+    ...opts,
   })
   api._syncCalled = () => syncCalled
   api._resetSync = () => { syncCalled = false }
@@ -36,20 +38,20 @@ function makeApi(els) {
 }
 
 describe('useChatScrollState', () => {
-  it('restoreScroll scrolls to bottom when no saved state', () => {
+  it('restoreScroll scrolls to bottom when no saved state (real maxScroll)', () => {
     const els = { chat1: mockScrollEl(0) }
     const { restoreScroll } = makeApi(els)
     restoreScroll('chat1')
-    assert.ok(els.chat1._lastScrollTo)
-    assert.strictEqual(els.chat1._lastScrollTo.top, 999999)
-    assert.strictEqual(els.chat1._lastScrollTo.behavior, 'instant')
+    // 不再用魔法数 999999，而是真正的 maxScroll = scrollHeight - clientHeight
+    assert.strictEqual(els.chat1.scrollTop, 1400) // 2000 - 600
+    assert.strictEqual(els.chat1._lastScrollTo, null) // 直接设值，不调 scrollTo
   })
 
-  it('restoreScroll restores saved scrollTop when not at bottom', () => {
+  it('restoreScroll restores saved scrollTop when not at bottom (threshold=200)', () => {
     const els = { chat1: mockScrollEl(500, 2000, 600) }
     const { saveScroll, restoreScroll } = makeApi(els)
 
-    // 用户在中间位置（距底部 1500px，不是底部）
+    // 用户在中间位置（距底部 900px > threshold 200，非 atBottom）
     els.chat1.scrollTop = 500
     saveScroll('chat1')
 
@@ -58,27 +60,55 @@ describe('useChatScrollState', () => {
     assert.strictEqual(els.chat1._lastScrollTo, null) // 直接设值，不调 scrollTo
   })
 
-  it('restoreScroll scrolls to bottom when saved atBottom=true', () => {
-    const els = { chat1: mockScrollEl(1398, 2000, 600) } // scrollTop >= maxScroll - 2 → atBottom
+  it('restoreScroll scrolls to bottom when saved atBottom=true (threshold=200)', () => {
+    // maxScroll = 2000-600 = 1400, scrollTop=1300 → 1300 >= 1400-200=1200 → atBottom=true
+    const els = { chat1: mockScrollEl(1300, 2000, 600) }
     const { saveScroll, restoreScroll } = makeApi(els)
 
-    els.chat1.scrollTop = 1398
+    els.chat1.scrollTop = 1300
     saveScroll('chat1')
 
     // 重置位置
     els.chat1.scrollTop = 0
 
     restoreScroll('chat1')
-    // atBottom → should scroll to bottom (scrollTo)
-    assert.ok(els.chat1._lastScrollTo)
-    assert.strictEqual(els.chat1._lastScrollTo.top, 999999)
+    // atBottom → 滚到真实 maxScroll
+    assert.strictEqual(els.chat1.scrollTop, 1400)
+    assert.strictEqual(els.chat1._lastScrollTo, null)
+  })
+
+  it('atBottom threshold aligns with useScrollBottom default (200px)', () => {
+    // scrollHeight=2000, clientHeight=600 → maxScroll=1400
+    const els = { chat1: mockScrollEl(0, 2000, 600) }
+    const { saveScroll, restoreScroll } = makeApi(els)
+
+    // 距底部 50px → 应记 atBottom
+    els.chat1.scrollTop = 1350
+    saveScroll('chat1')
+    els.chat1.scrollTop = 0
+    restoreScroll('chat1')
+    assert.strictEqual(els.chat1.scrollTop, 1400, '1350 (50px from bottom) → atBottom')
+
+    // 距底部 200px（边界）→ 应记 atBottom
+    els.chat1.scrollTop = 1200
+    saveScroll('chat1')
+    els.chat1.scrollTop = 0
+    restoreScroll('chat1')
+    assert.strictEqual(els.chat1.scrollTop, 1400, '1200 (200px from bottom) → atBottom')
+
+    // 距底部 250px → 应记非 atBottom
+    els.chat1.scrollTop = 1150
+    saveScroll('chat1')
+    els.chat1.scrollTop = 0
+    restoreScroll('chat1')
+    assert.strictEqual(els.chat1.scrollTop, 1150, '1150 (250px from bottom) → not atBottom')
   })
 
   it('restoreScroll clamps scrollTop to max scrollable range', () => {
     const els = { chat1: mockScrollEl(500, 800, 600) }
     const { saveScroll, restoreScroll } = makeApi(els)
 
-    // 保存时 scrollHeight=2000, scrollTop=500（距底部 1500px，非 atBottom）
+    // 保存时 scrollHeight=2000, scrollTop=500（距底部 900px > 200，非 atBottom）
     els.chat1.scrollTop = 500
     els.chat1.scrollHeight = 2000
     saveScroll('chat1')
@@ -96,15 +126,13 @@ describe('useChatScrollState', () => {
     const els = { chat1: mockScrollEl(50, 600, 600) }
     const { saveScroll, restoreScroll } = makeApi(els)
 
-    // 保存时在某个位置（非 atBottom：maxScroll=0, scrollTop=50>0 → atBottom via maxScroll<=0）
     // 空的容器 maxScroll=0 时，_calcAtBottom 返回 true（maxScroll <= 0）
-    // 所以 atBottom=true → 会滚到底
+    // 所以 atBottom=true → scrollTop 设为 maxScroll = 0
     els.chat1.scrollTop = 50
     saveScroll('chat1')
 
     restoreScroll('chat1')
-    // atBottom=true → scrollTo(999999) → mock 将 scrollTop 设为 999999
-    assert.ok(els.chat1._lastScrollTo)
+    assert.strictEqual(els.chat1.scrollTop, 0)
   })
 
   it('syncLayout is called after restoreScroll', () => {
@@ -141,8 +169,8 @@ describe('useChatScrollState', () => {
     clearScroll('chat1')
 
     restoreScroll('chat1')
-    assert.ok(els.chat1._lastScrollTo)
-    assert.strictEqual(els.chat1._lastScrollTo.top, 999999)
+    // 无保存 → atBottom 路径 → 真实 maxScroll
+    assert.strictEqual(els.chat1.scrollTop, 1400)
   })
 
   it('multiple chats maintain independent scroll states', () => {
@@ -167,7 +195,8 @@ describe('useChatScrollState', () => {
     clearScroll('b')
     els.b.scrollTop = 0
     restoreScroll('b')
-    assert.ok(els.b._lastScrollTo)
+    // 无保存 → atBottom → 真实 maxScroll
+    assert.strictEqual(els.b.scrollTop, 1400)
   })
 
   it('saveScroll with null/undefined key is no-op', () => {
@@ -180,5 +209,35 @@ describe('useChatScrollState', () => {
     const { restoreScroll } = makeApi({ chat1: mockScrollEl(100) })
     restoreScroll(null)
     restoreScroll(undefined)
+  })
+
+  it('custom threshold is respected', () => {
+    const els = { chat1: mockScrollEl(0, 2000, 600) }
+    const { saveScroll, restoreScroll } = makeApi(els, { threshold: 500 })
+
+    // maxScroll=1400, threshold=500 → atBottom when scrollTop >= 900
+    // scrollTop=1000 >= 900 → atBottom=true
+    els.chat1.scrollTop = 1000
+    saveScroll('chat1')
+    els.chat1.scrollTop = 0
+    restoreScroll('chat1')
+    assert.strictEqual(els.chat1.scrollTop, 1400, '1000 >= 900 → atBottom with threshold=500')
+
+    // scrollTop=800 < 900 → atBottom=false
+    els.chat1.scrollTop = 800
+    saveScroll('chat1')
+    els.chat1.scrollTop = 0
+    restoreScroll('chat1')
+    assert.strictEqual(els.chat1.scrollTop, 800, '800 < 900 → not atBottom with threshold=500')
+  })
+
+  it('very tall session reaches real bottom', () => {
+    // 模拟几十 MB session：scrollHeight 远超 999999
+    const els = { chat1: mockScrollEl(0, 5000000, 600) }
+    const { restoreScroll } = makeApi(els)
+
+    restoreScroll('chat1')
+    // 不再被 999999 截断
+    assert.strictEqual(els.chat1.scrollTop, 5000000 - 600) // 4,999,400
   })
 })
