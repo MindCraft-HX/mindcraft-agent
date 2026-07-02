@@ -14,10 +14,17 @@ assert.doesNotMatch(
   'DiffSplitView must render fallback highlighted diff lines on a real DOM element, not a <template> node',
 )
 
-assert.match(
+const highlightedSpanMatches = source.match(/<span\s+v-html="highlight\(t, filePath\)"><\/span>/g) || []
+assert.equal(
+  highlightedSpanMatches.length,
+  2,
+  'DiffSplitView should render deleted and added diff lines on concrete inline span elements',
+)
+
+assert.doesNotMatch(
   source,
-  /<span\s+v-else\s+v-html=/,
-  'DiffSplitView should keep fallback highlighted diff lines on a concrete inline element',
+  /diff-word-changed|delSegments|addSegments/,
+  'DiffSplitView should not render intra-line word diff markup after the shared line-level diff cleanup',
 )
 
 assert.match(

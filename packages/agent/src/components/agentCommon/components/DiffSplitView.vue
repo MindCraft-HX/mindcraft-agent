@@ -6,11 +6,7 @@
           <div v-if="h.type === 'ctx'" class="diff-line ctx" v-html="highlight(h.text, filePath)"></div>
           <template v-else>
             <div v-for="(t, j) in (h.del || [])" :key="'d'+j" class="diff-line del">
-              <template v-if="h.delSegments && h.delSegments[j]">
-                <span v-for="(seg, k) in h.delSegments[j]" :key="k"
-                  :class="{ 'diff-word-changed': seg.type === 'changed' }">{{ seg.value }}</span>
-              </template>
-              <span v-else v-html="highlight(t, filePath)"></span>
+              <span v-html="highlight(t, filePath)"></span>
             </div>
             <div v-for="n in Math.max(0, (h.add?.length || 0) - (h.del?.length || 0))" :key="'ep'+n" class="diff-line empty"></div>
           </template>
@@ -22,11 +18,7 @@
           <template v-else>
             <div v-for="n in Math.max(0, (h.del?.length || 0) - (h.add?.length || 0))" :key="'ep'+n" class="diff-line empty"></div>
             <div v-for="(t, j) in (h.add || [])" :key="'a'+j" class="diff-line add">
-              <template v-if="h.addSegments && h.addSegments[j]">
-                <span v-for="(seg, k) in h.addSegments[j]" :key="k"
-                  :class="{ 'diff-word-changed': seg.type === 'changed' }">{{ seg.value }}</span>
-              </template>
-              <span v-else v-html="highlight(t, filePath)"></span>
+              <span v-html="highlight(t, filePath)"></span>
             </div>
           </template>
         </template>
@@ -73,13 +65,5 @@ defineProps({
   min-width: max-content;
   white-space: pre;
   background: transparent !important;
-}
-.diff-line.del .diff-word-changed {
-  background: var(--cc-diff-word-del-bg, #6b2828);
-  border-radius: 2px; padding: 0 1px;
-}
-.diff-line.add .diff-word-changed {
-  background: var(--cc-diff-word-add-bg, #3f5c2a);
-  border-radius: 2px; padding: 0 1px;
 }
 </style>
