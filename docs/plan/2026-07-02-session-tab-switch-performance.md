@@ -1,9 +1,21 @@
 # Session / Tab 切换性能专题
 
 > 日期：2026-07-02
-> 状态：方案完成，待执行
+> 状态：已完成
 > 范围：ClaudeCode / CodeX / CodeHub renderer 切换路径
 > 背景：T169 已改善输入框热路径，但 dev 模式下点 session、切 CodeHub tab、`Ctrl+Tab` 环绕仍明显卡顿。现阶段应聚焦切换链路，不再继续扩展输入框优化。
+
+## 0. 执行结果
+
+本专题已完成：
+
+- Phase 0：切换链路探针扩展，量化点 session / 切 CodeHub tab / `Ctrl+Tab` 的后台任务。
+- Phase 1：dev console 收口，默认不再输出大对象和高频切换日志。
+- Phase 2：抽取 shared refresh scheduler，并加入 per-project cooldown，避免 tab 激活时重复 session scan。
+- Phase 3：scroll restore 使用真实 maxScroll、atBottom 阈值与 `useScrollBottom` 对齐，避免 magic number 和错误沉底。
+- Review fixes：补充 shared scheduler 单元测试和 panel composable chain smoke tests。
+
+保留边界不变：不删除 session scan 防御逻辑，不把 scroll 高频状态写入 session registry，不改变 history hydrate / loadMoreHistory / trimMessages 语义。
 
 ## 1. 结论
 

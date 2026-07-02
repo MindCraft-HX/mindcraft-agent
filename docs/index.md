@@ -1,6 +1,6 @@
 # MindCraft Agent 知识库
 
-> 最后更新：2026-07-01
+> 最后更新：2026-07-02
 > 定位：文档体系入口索引，覆盖所有活跃文档。过期/已完成的计划见 `archive/`。
 
 ---
@@ -29,6 +29,7 @@
 | 命令决策 | [clear-command-decision.md](./clear-command-decision.md) | clear 命令设计决策记录 |
 | 架构健康 | [architecture-health-review-2026-06-28.md](./architecture-health-review-2026-06-28.md) | 全量架构审计：巨型文件、重复代码、IPC、依赖、测试，含优先级排序 |
 | 存储架构 | [STORAGE_ARCHITECTURE_ANALYSIS.md](./STORAGE_ARCHITECTURE_ANALYSIS.md) | SQLite 基础设施、CC Switch 导入、本地存储迁移与最终边界 |
+| 配置导入 | [T163-import-feature.md](./T163-import-feature.md) | 系统设置全局 CC Switch 导入、预览/提交边界、防污染规则 |
 
 ## 设计决策
 
@@ -45,6 +46,9 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-07-02-T172-session-switch-performance.md](./plan/2026-07-02-T172-session-switch-performance.md) | T172 Session switch 真优化：CodeX metrics 后台化，Claude Phase 2 跳过 |
+| [plan/2026-07-02-session-tab-switch-performance.md](./plan/2026-07-02-session-tab-switch-performance.md) | T170 Session / Tab 切换性能收口：scheduled refresh、cooldown、scroll restore |
+| [plan/2026-07-02-renderer-hot-path-performance.md](./plan/2026-07-02-renderer-hot-path-performance.md) | T169 Renderer 高频链路瘦身：ProjectTabs summary、CodeHub 白名单、saveHistory/textarea 优化 |
 | [plan/2026-07-01-session-registry-ownership-handoff.md](./plan/2026-07-01-session-registry-ownership-handoff.md) | T165 Session Registry ownership 交接：Phase 1 已完成、T167 覆盖优先、Phase 2 边界 |
 | [plan/2026-07-01-codex-event-rendering-contract.md](./plan/2026-07-01-codex-event-rendering-contract.md) | CodeX event rendering contract：tool call、progress、assistant final、history restore 收口 |
 | [plan/2026-06-30-storage-sqlite-cc-switch-import.md](./plan/2026-06-30-storage-sqlite-cc-switch-import.md) | SQLite 基础设施与 CC Switch 导入首批实现计划 |

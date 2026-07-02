@@ -36,6 +36,7 @@ docs/            -> 项目知识库，默认纳入 git
 | 打包 / 部署 / 版本发布 | `docs/build-and-deploy.md` |
 | 首页功能 | `docs/home-page.md` |
 | 界面性能 | `docs/perf-audit-report.md` |
+| Renderer 高频链路 / tab 切换性能 | `docs/plan/2026-07-02-renderer-hot-path-performance.md`，`docs/plan/2026-07-02-session-tab-switch-performance.md`，`docs/plan/2026-07-02-T172-session-switch-performance.md` |
 | 每日代码审查 | `docs/review.md` |
 | 架构健康审查（优化优先级） | `docs/architecture-health-review-2026-06-28.md` |
 
@@ -47,6 +48,7 @@ docs/            -> 项目知识库，默认纳入 git
 - MindCraft 自有数据必须写入 `app.getPath('userData')` 或 app 自己的 Conf 文件；新会话级数据优先放 `userData/session-registry/`。
 - 允许读取官方 transcript/config 来建立映射；禁止在官方 transcript 旁新增 sidecar。历史遗留 sidecar 只能读旧写新、分阶段迁移。
 - 如确需写官方目录，必须是 SDK/CLI 官方 schema 支持的字段，并在代码注释和 `docs/` 中写明依据与回滚路径。
+- `gitMirrorUrl`、`memoryInjectMode` 是 MindCraft 自有字段，禁止写入 `~/.claude/settings.json`；写官方 settings 前必须经过 sanitizer。
 
 ## 会话与状态
 
@@ -56,6 +58,14 @@ docs/            -> 项目知识库，默认纳入 git
 - `onAgentDone` 不保证触发，crash 时可能没有；`scan` 和 `done` 并发不可假设顺序。
 - `resetAgentRuntime()` / `resetCodexSdkRuntime()` 影响所有窗口。
 - 系统标签剥离统一走 `stripSystemContextTags()`，禁止在其他文件硬编码标签名。
+
+## Renderer 性能红线
+
+- ProjectTabs / CodeHub tab summary 只能暴露轻量 UI 字段；禁止把完整 project、chats、messages 通过 `{ ...p }` 或等价方式传入 tab UI。
+- ClaudeCode 与 CodeX 的 tab summary、provider summary 优先复用共享 helper，禁止重新复制两套全量遍历消息的 computed。
+- session/tab 激活后使用 scheduled refresh 和 per-project cooldown；不要在每次 tab activation 上同步触发 full session scan。
+- draft 走 session-registry + renderer 两级内存缓存；不要恢复到 per-key panel state 写入，也不要让切 tab 触发磁盘 I/O。
+- 性能探针、debug 日志和 metrics 分段日志必须由显式 flag 打开，禁止默认 dev console 噪音。
 
 ## Token Metrics 红线
 

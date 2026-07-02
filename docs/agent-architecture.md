@@ -1,6 +1,6 @@
 # MindCraft Agent 架构契约
 
-> 最后更新：2026-06-27
+> 最后更新：2026-07-02
 > 目的：给后续开发和排障提供稳定的项目架构入口。历史任务、SDK 字段表、Token 细节不再堆在本文，按文档路由进入专题文档。
 
 ## 1. 项目定位
@@ -108,6 +108,7 @@ MindCraft 自有数据包括：
 
 - 通用 UI / 配置状态：`app.getPath('userData')` 或 app 自己的 Conf 文件
 - 会话级 registry：`{userData}/session-registry/`
+- 会话 draft：以 session-registry 为事实来源，renderer 可用两级内存缓存降低切 tab I/O
 - 本地私密/临时文档：`docs/local/`、`docs/private/`、`docs/tmp/`
 
 允许读取官方 transcript/config 建立映射；不允许新增官方目录 sidecar。历史遗留 sidecar 采用读旧写新，分阶段迁移。
@@ -128,6 +129,9 @@ MindCraft 自有数据包括：
 - 不要把 `cliSessionId` 当 UI tab id。
 - 不要用 `filePath` 承载 MindCraft 自有元数据。
 - 会话相关 bug 先读 `docs/session-pitfalls.md`，再动代码。
+- session-registry 的 provider binding / runtime 字段是 source-aware 的：provider/scan/done 的权威写入不能被 panel cache 覆盖。
+- panel cache 只能补缺 UI 状态或 runtime 空洞；不能把旧的 model/effort/reasoningEffort 写回覆盖 provider authoritative state。
+- draft 文本可以走 renderer 两级内存缓存，但最终仍应落到 session-registry；不要恢复到每次切 tab 都读写磁盘，也不要用 panel state 做逐键持久化。
 
 关键异步事实：
 
@@ -135,6 +139,22 @@ MindCraft 自有数据包括：
 - scan、done、history load、panel save 可能并发。
 - 主进程 runtime Map 是所有窗口共享的。
 - reset runtime 会影响所有窗口。
+
+## 5.1 Renderer 性能边界
+
+重构后 renderer 热路径已有专门约束，后续改 ClaudeCode / CodeX / codeHub 时必须保留：
+
+- ProjectTabs / CodeHub tab summary 只能暴露 UI 需要的轻量字段，禁止把完整 project / chats / messages 通过 `{ ...p }` 或等价方式塞入 tab summary。
+- ClaudeCode 与 CodeX 的 tab summary 派生优先复用共享 helper；不要重新引入两套遍历全部消息的 computed。
+- session/tab 激活后使用 scheduled refresh 和 per-project cooldown；不要在每次 tab activation 上直接触发全量 session scan。
+- textarea autosize、scroll restore、metrics refresh 等高频操作应合并到 rAF / scheduled task；不要在输入或切换路径做同步 layout + 磁盘 I/O。
+- 性能探针和 debug 日志必须通过显式 flag 打开，禁止默认 dev console 噪音回潮。
+
+相关计划与验收：
+
+- `docs/plan/2026-07-02-renderer-hot-path-performance.md`
+- `docs/plan/2026-07-02-session-tab-switch-performance.md`
+- `docs/plan/2026-07-02-T172-session-switch-performance.md`
 
 ## 6. 消息来源与持久化
 
@@ -214,6 +234,13 @@ UI 统一语义：
 `~/.claude/settings.json` 是 ClaudeCode SDK 官方配置文件，只能写 SDK schema 支持字段。
 
 App 专属字段必须写入 MindCraft 自有配置，例如 `claude-internal.json` 或 userData 下其他文件。
+
+已确认必须从官方 settings 写入路径剥离的 MindCraft 字段：
+
+- `gitMirrorUrl`
+- `memoryInjectMode`
+
+读写官方 settings 前必须经过 sanitizer；配置导入、保存和迁移逻辑都不能把这些字段重新写回 `~/.claude/settings.json`。
 
 历史污染和合法字段清单见：
 

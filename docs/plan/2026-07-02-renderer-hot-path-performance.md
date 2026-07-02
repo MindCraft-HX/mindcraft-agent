@@ -1,9 +1,21 @@
 # Renderer 高频链路性能专题
 
 > 日期：2026-07-02
-> 状态：方案完成，待执行
+> 状态：已完成
 > 范围：ClaudeCode / CodeX / CodeHub renderer 高频交互路径
 > 背景：输入 draft 已迁移到 `session-registry`，不再每键保存 panel state；剩余卡顿应继续沿 renderer 热路径排查，而不是回到 provider/session lifecycle 大重构。
+
+## 0. 执行结果
+
+本专题已按 Phase 0-5 完成：
+
+- Phase 0：开发态性能探针落地，用于统计 renderer 热路径调用次数和耗时。
+- Phase 1/2：ProjectTabs summary helper 与 provider summary 合并为单一 computed，避免 tab UI 接收完整 project/chats/messages。
+- Phase 3：CodeHub `collectTabs` 改为白名单字段，禁止继续传播上游完整对象。
+- Phase 4：删除 `saveAsync` 内部双重 JSON clone。
+- Phase 5：textarea autosize rAF 合并为 composable，避免输入事件中同步 layout 抖动。
+
+后续同类改动必须保持 lightweight summary 契约；不要为了“更彻底”把 CodeHub SessionIndex、provider runtime 或 unload 同步保存混进本专题。
 
 ## 1. 结论
 

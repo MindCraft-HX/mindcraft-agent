@@ -1,9 +1,38 @@
 # 界面卡顿 — 性能审计与优化方案
 
 > 创建：2026-06-18
-> 状态：第一轮已执行，进入第二轮评估
+> 状态：T169-T173 主线已完成，后续需以探针或 E2E 证据驱动
 > 背景：多轮迭代后界面响应变慢，启动/加载历史/流式对话/输入均有可感知卡顿
 > 人工验收：`docs/qa/2026-06-18-performance-acceptance.md`
+
+---
+
+## 0.1 2026-07-02 执行更新
+
+T169-T173 已完成重构后的主要性能收口。当前重点从“继续拆代码”转为“保持边界、防止回潮、用真实链路验证剩余风险”。
+
+已完成：
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| T169 renderer 高频链路瘦身 | ✅ 已完成 | ProjectTabs summary helper、provider summary 单一 computed、CodeHub `collectTabs` 白名单化、`saveAsync` 双重 clone 删除、textarea autosize rAF 合并。 |
+| T170 session/tab 切换收口 | ✅ 已完成 | 切换链路探针、dev console 收口、共享 `useScheduledSessionRefresh`、per-project cooldown、scroll restore atBottom/clamp 修复。 |
+| T171 metrics 正确性与量化 | ✅ 已完成 | resetMetrics、`isEnabled` 缓存、hasMore 数值修复、IPC guard、perf flag 同步、快照去重和默认参数收口。 |
+| T172 CodeX metrics 后台化 | ✅ Phase 1 完成 | CodeX 切 tab / 点 session 不再 await full metrics IPC；后台完成后通过 active guard 回填。Claude Phase 2 因 T171 后收益过低已跳过。 |
+| T173 draft 两级内存缓存 | ✅ 已完成 | draft 仍以 session-registry 为事实来源，但切 tab 不再每次触发磁盘 I/O；已修复 userDataDir 隔离和删除 record 时缓存清理。 |
+| CodeX turn token aggregation | ✅ 已修复 | 修复 CodeX 回合 token 聚合漂移，避免 metrics 快照继续出现错归属。 |
+
+当前硬规则：
+
+- ProjectTabs / CodeHub tab summary 只能暴露轻量字段，禁止重新把完整 project/chats/messages spread 进 tab UI。
+- session/tab 激活必须走 scheduled refresh / cooldown；不要在每次激活时同步 full scan。
+- draft 不走 per-key panel state 写入；session-registry + renderer memory cache 是当前边界。
+- debug/perf 日志默认关闭，只能通过显式 flag 打开。
+
+后续风险：
+
+- Electron E2E 仍缺真实 preload/main/renderer 链路覆盖，R10 IPC 通道统一和更深的 session 生命周期改动必须等 E2E 前置。
+- 超大 JSONL / 超长历史如果仍慢，下一步应评估 Worker/off-main-thread metrics 或文件解析，而不是继续扩大 computed 改造。
 
 ---
 
