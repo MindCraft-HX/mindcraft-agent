@@ -30,7 +30,7 @@ export function useSessionRefresh(onRefresh) {
     if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'r') {
       e.preventDefault()
-      onRefresh()
+      onRefresh({ force: true })
     }
   }
 

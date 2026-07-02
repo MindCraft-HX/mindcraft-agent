@@ -31,7 +31,7 @@
         @requestDelete="requestDeleteChat"
         @openSettings="openSettings"
         @newChat="newChat"
-        @refresh="handleRefreshSessions"
+        @refresh="refreshSessions({ force: true })"
         @rename="handleRenameChat"
       />
 
@@ -354,6 +354,8 @@ import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
+import { useChatScrollState } from '../agentCommon/composables/useChatScrollState.js'
+import { useScheduledSessionRefresh } from '../agentCommon/composables/useScheduledSessionRefresh.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { countVisibleClaudeUserMessages, isClaudeMetaUserEntry } from './utils/internalPromptFilter.mjs'
@@ -430,7 +432,22 @@ const {
   onScroll: onScrollBottomHook,
   bumpCount: bumpScrollCount,
   scrollOrBump,
+  syncLayout,
 } = useScrollBottom(activeMsgContainer)
+
+// Phase 3: 跨 chat 滚动状态保存/恢复
+const { saveScroll: saveChatScroll, restoreScroll: restoreChatScroll, clearScroll: clearChatScroll } =
+  useChatScrollState({ getScrollEl: (chatKey) => msgRefs[chatKey], syncLayout })
+
+// Phase 2: 共享 session 刷新调度（按 project cooldown + 延迟去重）
+const { refreshSessions, cancelScheduledRefresh } = useScheduledSessionRefresh({
+  getActiveProject: () => activeProject.value,
+  isRefreshing: sidebarRefreshing,
+  setRefreshing: (v) => { sidebarRefreshing.value = v },
+  refreshProject: (p) => refreshProjectSessionsInBackground(p),
+  setLoading: (v) => { sidebarLoading.value = v },
+  perfLabel: 'claude',
+})
 
 /** 智能滚动：活跃 tab 在底部时自动滚，不在底部时 bumpCount；非活跃 tab 直接滚到底部 */
 function smartScrollToBottom(chatId, smooth = true) {
@@ -1725,7 +1742,7 @@ async function loadSessionInstructionForTab(tab) {
   if (!tab?.sessionId) return null
   try {
     const instruction = await window.electronAPI?.getSessionInstruction?.(tab.sessionId)
-    console.log('[cc] loadSessionInstructionForTab:', { sessionId: tab.sessionId, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
+    debugLog('sessionInstruction', 'loadSessionInstructionForTab', { sessionId: tab.sessionId, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
     if (!instruction?.enabled || !String(instruction.content || '').trim()) return null
     return instruction
   } catch (_) {
@@ -1743,7 +1760,7 @@ async function refreshActiveSessionInstructionState() {
   }
   try {
     const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
-    console.log('[cc] refreshActiveSessionInstructionState:', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
+    debugLog('sessionInstruction', 'refreshActiveSessionInstructionState', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
     activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
   } catch (_) {
     activeSessionInstructionEnabled.value = false
@@ -1758,7 +1775,7 @@ async function setActiveSessionInstructionEnabled(enabled) {
   activeSessionInstructionEnabled.value = Boolean(enabled)
   try {
     const current = await window.electronAPI?.getSessionInstruction?.(chatKey)
-    console.log('[cc] setActiveSessionInstructionEnabled current:', { enabled: current?.enabled, contentLen: String(current?.content || '').length })
+    debugLog('sessionInstruction', 'setActiveSessionInstructionEnabled current', { enabled: current?.enabled, contentLen: String(current?.content || '').length })
     const result = await window.electronAPI?.setSessionInstruction?.({
       chatKey,
       instruction: {
@@ -1766,7 +1783,7 @@ async function setActiveSessionInstructionEnabled(enabled) {
         enabled: Boolean(enabled),
       },
     })
-    console.log('[cc] setActiveSessionInstructionEnabled result:', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
+    debugLog('sessionInstruction', 'setActiveSessionInstructionEnabled result', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
     await refreshActiveSessionInstructionState()
   } catch (_) {
     await refreshActiveSessionInstructionState()
@@ -2138,26 +2155,12 @@ function sortChatsByRecency(chats = []) {
   })
 }
 
-async function handleRefreshSessions({ silent = false } = {}) {
-  const stop = perfStart('claude.handleRefreshSessions')
-  const p = activeProject.value
-  if (!p?.cwd || sidebarRefreshing.value) { stop(); return }
-  if (!silent && !(p?.chats?.length)) sidebarLoading.value = true
-  sidebarRefreshing.value = true
-  try {
-    await refreshProjectSessionsInBackground(p)
-  } finally {
-    if (!silent) sidebarLoading.value = false
-    sidebarRefreshing.value = false
-    stop()
-  }
-}
-
 // 会话刷新增强：窗口聚焦自动刷新 + 键盘快捷键
+// Phase 2: handleRefreshSessions 逻辑已提取到 useScheduledSessionRefresh 共享 composable
 // 嵌入模式下不注册 focus 自动刷新（避免非活跃 Tab 时浪费性能）
-// 侧边栏手动刷新按钮仍然直接调用 handleRefreshSessions
+// 侧边栏手动刷新按钮仍然直接调用 refreshSessions
 if (!embedded) {
-  useSessionRefresh(handleRefreshSessions)
+  useSessionRefresh(refreshSessions)
 }
 
 /** 追加消息到 messages */
@@ -2193,6 +2196,8 @@ function newChat() {
 
 function switchChat(id) {
   const stop = perfStart('claude.switchChat')
+  // Phase 3: 保存当前 chat 滚动位置，切回来后恢复
+  if (activeChatId.value) saveChatScroll(activeChatId.value)
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   // 实时更新斜杠面板的模型/effort显示
@@ -2208,10 +2213,10 @@ function switchChat(id) {
     chat._loadingMessages = true
     void ensureChatMessagesLoaded(chat).finally(() => {
       chat._loadingMessages = false
-      requestAnimationFrame(() => { setupHistoryTopObserver(); scrollBottom(); inputEl.value?.focus() })
+      requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
     })
   } else {
-    requestAnimationFrame(() => { setupHistoryTopObserver(); scrollBottom(); inputEl.value?.focus() })
+    requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
   }
   stop()
 }
@@ -2276,6 +2281,7 @@ async function requestDeleteChat(chat) {
     await window.electronAPI.claudeDeleteSessionFile?.(chat.filePath)
   }
   p.chats = p.chats.filter(c => c.id !== chat.id)
+  clearChatScroll(chat.id)
   if (activeChatId.value === chat.id) {
     activeChatId.value = p.chats[0]?.id || null
     const next = p.chats.find(c => c.id === activeChatId.value) || null
@@ -3663,7 +3669,8 @@ defineExpose({
   createProject() { newProject(); return activeProjectId.value },
   switchProject,
   deleteProject(id) { const p = projects.value.find(x => x.id === id); if (p) requestDeleteProject(p) },
-  refreshSessions() { handleRefreshSessions() },
+  refreshSessions,
+  cancelScheduledRefresh,
   ready: isReady,
 })
 
@@ -3672,6 +3679,7 @@ onUnmounted(() => {
     clearTimeout(mentionRefreshTimer)
     mentionRefreshTimer = null
   }
+  cancelScheduledRefresh()
   if (historyTopObserver) {
     historyTopObserver.disconnect()
     historyTopObserver = null

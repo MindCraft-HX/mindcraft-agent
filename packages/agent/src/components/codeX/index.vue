@@ -30,7 +30,7 @@
         @requestDelete="requestDeleteChat"
         @openSettings="openSettings"
         @newChat="newChat"
-        @refresh="handleRefreshSessions"
+        @refresh="refreshSessions({ force: true })"
         @rename="handleRenameChat"
         @addDirectory="addProjectDirectory"
         @removeDirectory="removeProjectDirectory"
@@ -210,7 +210,6 @@
 </template>
 
 <script setup>
-const CODEX_METRICS_DEBUG = false
 
 import { ref, computed, onMounted, onUnmounted, onActivated, nextTick, watch, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -303,6 +302,8 @@ import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
+import { useChatScrollState } from '../agentCommon/composables/useChatScrollState.js'
+import { useScheduledSessionRefresh } from '../agentCommon/composables/useScheduledSessionRefresh.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
@@ -1163,7 +1164,21 @@ function getLatestChatId(chats = []) {
 }
 
 const activeMsgContainer = ref(null)
-const { show: showScrollBottomBtn, newMsgCount, onScroll: onScrollHook, scrollToBottom: scrollToBottomActive, scrollOrBump, bumpCount: bumpScrollCount } = useScrollBottom(activeMsgContainer)
+const { show: showScrollBottomBtn, newMsgCount, onScroll: onScrollHook, scrollToBottom: scrollToBottomActive, scrollOrBump, bumpCount: bumpScrollCount, syncLayout } = useScrollBottom(activeMsgContainer)
+
+// Phase 3: 跨 chat 滚动状态保存/恢复
+const { saveScroll: saveChatScroll, restoreScroll: restoreChatScroll, clearScroll: clearChatScroll } =
+  useChatScrollState({ getScrollEl: (chatKey) => msgRefs[chatKey], syncLayout })
+
+// Phase 2: 共享 session 刷新调度（按 project cooldown + 延迟去重）
+const { refreshSessions, cancelScheduledRefresh } = useScheduledSessionRefresh({
+  getActiveProject: () => activeProject.value,
+  isRefreshing: sidebarRefreshing,
+  setRefreshing: (v) => { sidebarRefreshing.value = v },
+  refreshProject: (p) => refreshProjectSessionsInBackground(p),
+  setLoading: (v) => { sidebarLoading.value = v },
+  perfLabel: 'codex',
+})
 const showScrollPrevBtn = ref(false)
 let scrollPrevCurrentId = null
 const queuedRetryTimers = new Map()
@@ -1591,28 +1606,12 @@ async function refreshProjectSessionsInBackground(project) {
   return null
 }
 
-async function handleRefreshSessions({ silent = false } = {}) {
-  const stop = perfStart('codex.handleRefreshSessions')
-  const project = activeProject.value
-  if (!project?.cwd || sidebarRefreshing.value) { stop(); return }
-  if (!silent && !(project?.chats?.length)) sidebarLoading.value = true
-  sidebarRefreshing.value = true
-  try {
-    await refreshProjectSessionsInBackground(project)
-  } catch (_) {
-    // 静默处理刷新失败
-  } finally {
-    if (!silent) sidebarLoading.value = false
-    sidebarRefreshing.value = false
-    stop()
-  }
-}
-
 // 会话刷新增强：窗口聚焦自动刷新 + 键盘快捷键
+// Phase 2: handleRefreshSessions 逻辑已提取到 useScheduledSessionRefresh 共享 composable
 // 嵌入模式下不注册 focus 自动刷新（避免非活跃 Tab 时弹 toast）
 // 侧边栏手动刷新按钮仍然直接调用 handleRefreshSessions
 if (!embedded) {
-  useSessionRefresh(handleRefreshSessions)
+  useSessionRefresh(refreshSessions)
 }
 
 // History composable
@@ -1832,7 +1831,10 @@ function switchProject(id, preferredChat = null) {
   }
   if (p?.cwdLocked && p?.cwd) {
     if (!p._settingsLoaded) { p._settingsLoaded = true; loadProjectSettings(p) }
-    void refreshProjectSessionsInBackground(p)
+    // Phase 2: 仅新项目（无缓存 sessions）立即扫描；有缓存时由 codeHub 延迟刷新接管，避免双重扫描
+    if (!p.chats?.length) {
+      void refreshProjectSessionsInBackground(p)
+    }
   }
   stop()
 }
@@ -1883,6 +1885,8 @@ function reorderProjects({ fromIndex, toIndex }) {
 
 function switchChat(id) {
   const stop = perfStart('codex.switchChat')
+  // Phase 3: 保存当前 chat 滚动位置，切回来后恢复
+  if (activeChatId.value) saveChatScroll(activeChatId.value)
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   if (chat) trimMessages(chat)
@@ -1900,14 +1904,14 @@ function switchChat(id) {
       chat._loadingMessages = false
       requestAnimationFrame(() => {
         activeMsgContainer.value = msgRefs[id] || null
-        smartScrollBottom()
+        restoreChatScroll(id)
         inputEl.value?.focus()
       })
     })
   } else {
     requestAnimationFrame(() => {
       activeMsgContainer.value = msgRefs[id] || null
-      smartScrollBottom()
+      restoreChatScroll(id)
       inputEl.value?.focus()
     })
   }
@@ -1950,6 +1954,7 @@ async function requestDeleteChat(chat) {
   if (!p) return
   const idx = p.chats.findIndex(c => c.id === chat.id)
   p.chats.splice(idx, 1)
+  clearChatScroll(chat.id)
   if (activeChatId.value === chat.id) {
     activeChatId.value = p.chats[idx]?.id || p.chats[idx - 1]?.id || null
     if (!p.chats.length) newChat()
@@ -2062,7 +2067,7 @@ async function refreshActiveSessionInstructionState() {
   }
   try {
     const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
-    console.log('[cx] refreshActiveSessionInstructionState:', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
+    debugLog('sessionInstruction', 'refreshActiveSessionInstructionState', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
     activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
   } catch (_) {
     activeSessionInstructionEnabled.value = false
@@ -2076,7 +2081,7 @@ async function setActiveSessionInstructionEnabled(enabled) {
   activeSessionInstructionEnabled.value = Boolean(enabled)
   try {
     const current = await window.electronAPI?.getSessionInstruction?.(chatKey)
-    console.log('[cx] setActiveSessionInstructionEnabled current:', { enabled: current?.enabled, contentLen: String(current?.content || '').length })
+    debugLog('sessionInstruction', 'setActiveSessionInstructionEnabled current', { enabled: current?.enabled, contentLen: String(current?.content || '').length })
     const result = await window.electronAPI?.setSessionInstruction?.({
       chatKey,
       instruction: {
@@ -2084,7 +2089,7 @@ async function setActiveSessionInstructionEnabled(enabled) {
         enabled: Boolean(enabled),
       },
     })
-    console.log('[cx] setActiveSessionInstructionEnabled result:', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
+    debugLog('sessionInstruction', 'setActiveSessionInstructionEnabled result', { ok: result?.ok, returnedEnabled: result?.instruction?.enabled })
     await refreshActiveSessionInstructionState()
   } catch (_) {
     await refreshActiveSessionInstructionState()
@@ -2529,16 +2534,14 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       thinking: Boolean(chat.thinking),
       thinkingStart: chat._thinkingStart || 0,
     })
-    if (CODEX_METRICS_DEBUG) {
-      console.log('[codex-metrics] refreshMetricsForChat result', {
-        reason,
-        sessionId: chat.sessionId,
-        cliSessionId: chat.cliSessionId,
-        filePath: chat.filePath,
-        thinking: chat.thinking,
-        result,
-      })
-    }
+    debugLog('metrics', 'refreshMetricsForChat result', {
+      reason,
+      sessionId: chat.sessionId,
+      cliSessionId: chat.cliSessionId,
+      filePath: chat.filePath,
+      thinking: chat.thinking,
+      result,
+    })
     if (!result) return
     if (!chat.thinking) {
       syncCodexFooterTurnTokens(chat, result, { replace: true })
@@ -2582,22 +2585,18 @@ function onMetricsUpdate(data) {
   const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
   if (!tab) return
   const { thinking: metricsThinking, ...metricsPayload } = data
-  if (CODEX_METRICS_DEBUG) {
-    console.log('[codex-metrics] onMetricsUpdate before', {
-      sessionId: data.sessionId,
-      metricsThinking,
-      incoming: metricsPayload,
-      current: tab.metrics,
-      tabThinking: tab.thinking,
-    })
-  }
+  debugLog('metrics', 'onMetricsUpdate before', {
+    sessionId: data.sessionId,
+    metricsThinking,
+    incoming: metricsPayload,
+    current: tab.metrics,
+    tabThinking: tab.thinking,
+  })
   const mergedMetrics = applyMetricsToTab(tab, metricsPayload)
-  if (CODEX_METRICS_DEBUG) {
-    console.log('[codex-metrics] onMetricsUpdate after', {
-      sessionId: data.sessionId,
-      merged: mergedMetrics,
-    })
-  }
+  debugLog('metrics', 'onMetricsUpdate after', {
+    sessionId: data.sessionId,
+    merged: mergedMetrics,
+  })
   if (data.model) tab.model = data.model
   if (typeof metricsThinking === 'boolean') {
     applyCodexMetrics(tab, { ...data, thinking: metricsThinking })
@@ -3005,7 +3004,8 @@ defineExpose({
   createProject() { newProject(); return activeProjectId.value },
   switchProject,
   deleteProject(id) { const p = projects.value.find(x => x.id === id); if (p) requestDeleteProject(p) },
-  refreshSessions() { handleRefreshSessions() },
+  refreshSessions,
+  cancelScheduledRefresh,
   ready: isReady,
 })
 
@@ -3019,6 +3019,7 @@ onUnmounted(() => {
     clearTimeout(mentionRefreshTimer)
     mentionRefreshTimer = null
   }
+  cancelScheduledRefresh()
   stopMetricsTimer()
   window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushOnUnload)

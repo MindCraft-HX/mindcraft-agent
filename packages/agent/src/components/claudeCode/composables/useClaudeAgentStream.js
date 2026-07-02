@@ -1,3 +1,4 @@
+import { log as debugLog } from '../../agentCommon/utils/rendererDebug.mjs'
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
 import { nextTick } from 'vue'
@@ -138,7 +139,7 @@ export function useClaudeAgentStream({
 
     // 诊断日志：记录所有 task 相关消息
     if (msg.type === 'system' && (msg.subtype || '').startsWith('task_')) {
-      console.log('[task-diag] event', {
+      debugLog('taskDiag', 'event', {
         chatKey: chatKey.slice(-8),
         type: msg.type,
         subtype: msg.subtype,
@@ -179,7 +180,7 @@ export function useClaudeAgentStream({
               input,
               now: Date.now(),
             })
-            console.log('[task-diag] tool_use applied', {
+            debugLog('taskDiag', 'tool_use applied', {
               chatKey: chatKey.slice(-8),
               toolName: name,
               toolUseId: block.id || '',
@@ -295,7 +296,7 @@ export function useClaudeAgentStream({
           toolUseId: msg.tool_use_id || '',
           now: Date.now(),
         })
-        console.log('[task-diag] task_started applied', {
+        debugLog('taskDiag', 'task_started applied', {
           chatKey: chatKey.slice(-8),
           taskId: msg.task_id || '',
           toolUseId: msg.tool_use_id || '',
@@ -315,7 +316,7 @@ export function useClaudeAgentStream({
           patch: msg.patch || {},
           now: Date.now(),
         })
-        console.log('[task-diag] task_updated applied', {
+        debugLog('taskDiag', 'task_updated applied', {
           chatKey: chatKey.slice(-8),
           taskId: msg.task_id || '',
           patch: msg.patch || {},
@@ -527,7 +528,7 @@ export function useClaudeAgentStream({
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
     if (cliSessionId) window.electronAPI.claudeRegisterCliSessions?.({ [chatKey]: cliSessionId })
-    if (filePath) console.log('[ClaudeStream] onAgentDone → filePath:', filePath)
+    if (filePath) debugLog('agentDone', 'onAgentDone', { filePath })
     if (tab._awaitingCompactResult) {
       tab._awaitingCompactResult = false
       tab._pendingCompactSummary = ''

@@ -65,5 +65,16 @@ export function useScrollBottom(containerRef, { threshold = 200, atBottomRef } =
     observer?.disconnect()
   })
 
-  return { show, newMsgCount, scrollToBottom, scrollOrBump, onScroll, bumpCount }
+  /**
+   * 同步布局缓存 + UI 状态（切 chat 后 restoreScroll 调用，避免按钮闪烁）。
+   * 刷新 cachedScrollHeight/clientHeight，并基于当前位置更新 show/newMsgCount/atBottomRef。
+   */
+  function syncLayout() {
+    const el = containerRef.value
+    if (!el) return
+    refreshLayoutCache(el)
+    onScroll()
+  }
+
+  return { show, newMsgCount, scrollToBottom, scrollOrBump, onScroll, bumpCount, syncLayout }
 }

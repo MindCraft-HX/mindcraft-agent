@@ -1,4 +1,5 @@
 // Codex 前端 debug 输出开关（需要查看详细日志时改为 true）
+import { log as debugLog } from '../../agentCommon/utils/rendererDebug.mjs'
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
 import { attachTurnTokensToLastRenderableMessage } from '../../agentCommon/utils/turnTokensAttachment.mjs'
@@ -838,7 +839,7 @@ export function useCodexAgentStream({
       // 回退到当前活跃 tab 列表
       tab = tabs.value.find(t => t.sessionId === sid)
     }
-    console.log(`[codex-done] onAgentDone: sid=${sid} tabFound=${!!tab} ownerProj=${ownerProject?.id || 'none'} activeProj=${getActiveProjectId?.() || 'none'} panelActive=${isPanelActive?.value ?? 'N/A'} reason=${reason}`)
+    debugLog('agentDone', 'onAgentDone', { sid, tabFound: !!tab, ownerProj: ownerProject?.id || 'none', activeProj: getActiveProjectId?.() || 'none', panelActive: isPanelActive?.value ?? 'N/A', reason })
     if (!tab) return
     if (detachResume) {
       window.electronAPI.codexUnregisterCliSession?.(sid)

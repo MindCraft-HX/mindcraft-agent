@@ -19,7 +19,7 @@
  *   log('codehubTabs', 'activateTab', { tabId: tab?.id })
  */
 
-const FLAG_NAMESPACES = ['codehubTabs', 'sessionInstruction', 'metrics', 'sessionRefresh']
+const FLAG_NAMESPACES = ['codehubTabs', 'sessionInstruction', 'metrics', 'sessionRefresh', 'taskDiag', 'agentDone']
 
 // 解析启用的 namespace
 function getEnabledNamespaces() {

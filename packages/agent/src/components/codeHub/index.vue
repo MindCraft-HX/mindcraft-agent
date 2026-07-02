@@ -183,7 +183,7 @@ function debugCodeHubTabs(event, extra = {}, { force = false } = {}) {
   })
   if (!force && signature === lastTabDebugSignature) return
   lastTabDebugSignature = signature
-  console.log(`[codehub-tabs] ${event}`, snapshot)
+  debugLog('codehubTabs', event, snapshot)
 }
 
 function loadTabOrder() {
@@ -321,6 +321,13 @@ let _tabActivationInit = true  // 首次恢复时不刷，避免初始 toast
 function activateTab(tab, preferredChat = null) {
   const stop = perfStart('codehub.activateTab')
   debugCodeHubTabs('activateTab:start', { tabId: tab?.id, preferredChat }, { force: true })
+
+  // Phase 2: 取消上一 panel 的 scheduled refresh（跨 agent 快速切换）
+  const prevAgent = activeAgent.value
+  if (prevAgent) {
+    getPanel(prevAgent)?.cancelScheduledRefresh?.()
+  }
+
   activeTabId.value = tab.id
   localStorage.setItem('codehub_active_tab', tab.id)
 
@@ -350,10 +357,11 @@ function doSwitchProject(tab, preferredChat = null) {
   }, { force: true })
   panel.switchProject(tab.projectId, preferredChat)
   if (!_tabActivationInit) {
-    nextTick(() => { panel.refreshSessions?.(); stop() })
-  } else {
-    stop()
+    // Phase 2: 延迟刷新带 cooldown — UI 先切过去，500ms 后再后台扫描
+    // 同一 panel 快速连续切换时，handleRefreshSessions 内部取消旧 timer
+    panel.refreshSessions?.({ reason: 'tab-activate', silent: true, ifStaleMs: 15000, deferMs: 500 })
   }
+  stop()
   _tabActivationInit = false
 }
 
