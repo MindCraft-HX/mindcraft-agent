@@ -16,6 +16,7 @@ export function useSessionDraft({
   let timer = null
   let applyingRemote = false
   let loadSeq = 0
+  const _draftCache = new Map()
 
   function clearTimer() {
     if (!timer) return
@@ -39,10 +40,22 @@ export function useSessionDraft({
       setLocalDraft('')
       return ''
     }
+    const cached = _draftCache.get(chatKey)
+    if (cached) {
+      const currentChatKey = getChatKey(typeof getActiveChat === 'function' ? getActiveChat() : null)
+      if (seq !== loadSeq || currentChatKey !== chatKey) return cached.text
+      let text = cached.text
+      if (!text) text = getLegacyDraft(chat)
+      applyingRemote = true
+      setLocalDraft(text)
+      applyingRemote = false
+      return text
+    }
     let text = ''
     try {
       const draft = await window.electronAPI?.getSessionDraft?.(chatKey)
       text = typeof draft?.text === 'string' ? draft.text : ''
+      _draftCache.set(chatKey, { text, updatedAt: draft?.updatedAt || 0 })
     } catch (_) {
       text = ''
     }
@@ -59,15 +72,20 @@ export function useSessionDraft({
     clearTimer()
     const chatKey = getChatKey(chat)
     if (!chatKey) return null
+    const safeText = typeof text === 'string' ? text : ''
     const payload = {
       chatKey,
-      draft: { text: typeof text === 'string' ? text : '' },
+      draft: { text: safeText },
     }
     try {
+      let result
       if (sync && typeof window.electronAPI?.setSessionDraftSync === 'function') {
-        return window.electronAPI.setSessionDraftSync(payload)
+        result = window.electronAPI.setSessionDraftSync(payload)
+      } else {
+        result = await window.electronAPI?.setSessionDraft?.(payload)
       }
-      return await window.electronAPI?.setSessionDraft?.(payload)
+      _draftCache.set(chatKey, { text: safeText, updatedAt: Date.now() })
+      return result
     } catch (_) {
       return null
     }
@@ -93,7 +111,9 @@ export function useSessionDraft({
     const chatKey = getChatKey(chat)
     if (!chatKey) return null
     try {
-      return await window.electronAPI?.clearSessionDraft?.(chatKey)
+      const result = await window.electronAPI?.clearSessionDraft?.(chatKey)
+      _draftCache.delete(chatKey)
+      return result
     } catch (_) {
       return null
     }
