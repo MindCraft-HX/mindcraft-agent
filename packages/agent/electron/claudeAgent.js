@@ -75,6 +75,7 @@ const {
   isInstallingClaudeCode,
   setInstallingClaudeCode,
 } = require('./claude/environment')
+const { createClaudeBackgroundTaskTracker } = require('./claude/backgroundTaskTracker')
 
 function getClaudeFreezeDiagEnabled() {
   const settings = readMindCraftSettings()
@@ -2508,6 +2509,7 @@ function setupClaudeHandlers() {
       const abortController = new AbortController()
       let gotAnyMessage = false
       let resultReceived = false
+      let doneSent = false
       const liveSampleCounts = { sdkLiveCount: 0, jsonlPollCount: 0, tokenCountCount: 0, sdkResultCount: 0, sawLiveTurnTokens: false, sawFinalTurnTokens: false }
       let _agentRunDoneFilePath = '' // PR 2：在 result/fallback 捕获 filePath，finally 使用
       let exitCode = 0
@@ -2782,11 +2784,41 @@ function setupClaudeHandlers() {
             }
           }, CLAUDE_METRICS_POLL_INTERVAL_MS)
           metricsPollers.set(chatKey, { interval: pollInterval, startTime: pollStart })
+          const backgroundTaskTracker = createClaudeBackgroundTaskTracker()
+
+          async function sendCompletedDoneIfReady(sender, donePayload, { force = false } = {}) {
+            if (doneSent) return false
+            if (!force && backgroundTaskTracker.hasActiveTasks()) {
+              backgroundTaskTracker.setPendingDonePayload(donePayload)
+              return false
+            }
+            const finalPayload = donePayload || backgroundTaskTracker.takePendingDonePayload()
+            if (!finalPayload) return false
+            doneSent = true
+            backgroundTaskTracker.clearPendingDonePayload()
+            console.log('[Claude] agent-done → filePath:', finalPayload.filePath || '(empty)')
+            safeSend(sender, 'claude-agent-done', finalPayload)
+            _agentRunDoneFilePath = finalPayload.filePath || ''
+            agentSessions.delete(chatKey)
+            try {
+              const { buildAgentTurnTerminalEvent, TerminalKind } = await getAgentProtocol()
+              safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
+                agent: 'claudeCode',
+                chatKey: sessionId,
+                cliSessionId: finalPayload.cliSessionId || '',
+                filePath: finalPayload.filePath,
+                terminalKind: TerminalKind.COMPLETED,
+                hasAssistantOutput: true,
+              }))
+            } catch (_) { /* 新通道发送失败不影响旧通道 */ }
+            return true
+          }
 
           for await (const msg of q) {
             if (!agentSessions.has(chatKey)) break
             const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
             gotAnyMessage = true
+            backgroundTaskTracker.updateFromSdkMessage(msg)
             // 尽早注册 cliSessionId，并通知渲染进程用于精确匹配 pending chat
             if (msg?.session_id) {
               if (!cliSessionIds.has(chatKey)) {
@@ -2867,6 +2899,9 @@ function setupClaudeHandlers() {
               }
             }
             safeSend(sender,'claude-agent-message', { sessionId, msg })
+            if (resultReceived && !doneSent && !backgroundTaskTracker.hasActiveTasks() && backgroundTaskTracker.hasPendingDonePayload()) {
+              await sendCompletedDoneIfReady(sender, null, { force: true })
+            }
             if (msg.type === 'result') {
               if (msg.session_id) {
                 cliSessionIds.set(chatKey, msg.session_id)
@@ -2876,33 +2911,21 @@ function setupClaudeHandlers() {
               }
               // Phase 4：emitClaudeMetricsViaStore 已在 safeSend 前调用（TurnStore 已 finalize）
               resultReceived = true
-              // result 到达即视为本 turn 结束：SDK 生成器会 return，query 对象已无法再接收 streamInput。
-              // 立即清出 agentSessions，避免下一条消息命中 existing 分支后塞进死 query 导致静默 hang。
-              // 历史靠 cliSessionIds + resume 保留，不会断。
               const sessionCwd = agentSessions.get(chatKey)?.cwd || resolvedCwd
-              agentSessions.delete(chatKey)
               const donePayload = buildClaudeAgentDonePayload({
                 sessionId,
                 cliSessionId: msg.session_id,
                 cwd: sessionCwd,
                 reason: 'completed',
               })
-              console.log('[Claude] agent-done → filePath:', donePayload.filePath || '(empty)')
-              safeSend(sender, 'claude-agent-done', donePayload)
-              _agentRunDoneFilePath = donePayload.filePath || ''  // PR 2：捕获 filePath 供 finally 使用
-              // PR 2：双发 agent.turn.terminal（旧通道仍是权威路径）
-              try {
-                const { buildAgentTurnTerminalEvent, TerminalKind } = await getAgentProtocol()
-                safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
-                  agent: 'claudeCode',
-                  chatKey: sessionId,
-                  cliSessionId: msg.session_id || '',
-                  filePath: donePayload.filePath,
-                  terminalKind: TerminalKind.COMPLETED,
-                  hasAssistantOutput: true,
-                }))
-              } catch (_) { /* 新通道发送失败不影响旧通道 */ }
+              // SDK 的后台 Agent 会在主 turn result 之后继续发 task_notification。
+              // 还有后台 task 时不能立刻 done，否则 renderer 会解锁输入且后续通知无人消费。
+              await sendCompletedDoneIfReady(sender, donePayload)
             }
+          }
+          if (resultReceived && !doneSent && backgroundTaskTracker.hasPendingDonePayload()) {
+            const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+            await sendCompletedDoneIfReady(sender, null, { force: true })
           }
         } // end runQuery
 

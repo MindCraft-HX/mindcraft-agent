@@ -330,6 +330,63 @@ export function useClaudeAgentStream({
         return
       }
 
+      if (subtype === 'task_progress') {
+        const meta = registerTaskUpdated(tab, {
+          taskId: msg.task_id,
+          patch: {
+            status: 'running',
+            description: msg.description || msg.summary || '',
+            toolUseId: msg.tool_use_id || '',
+          },
+          now: Date.now(),
+        })
+        debugLog('taskDiag', 'task_progress applied', {
+          chatKey: chatKey.slice(-8),
+          taskId: msg.task_id || '',
+          toolUseId: msg.tool_use_id || '',
+          created: meta.created,
+          snapshot: getTaskDebugSnapshot(tab),
+        })
+        if (meta.shouldPersistImmediately) {
+          saveHistory({ immediate: true })
+        }
+        return
+      }
+
+      if (subtype === 'task_notification') {
+        const terminalStatus = msg.status === 'completed'
+          ? 'completed'
+          : msg.status === 'failed'
+            ? 'failed'
+            : 'stopped'
+        const meta = registerTaskUpdated(tab, {
+          taskId: msg.task_id,
+          patch: {
+            status: terminalStatus,
+            description: '',
+            toolUseId: msg.tool_use_id || '',
+          },
+          now: Date.now(),
+        })
+        if (msg.tool_use_id) {
+          applyToolResult(tab.messages, msg.tool_use_id, msg.summary || msg.status || '', msg.status === 'failed', {
+            inferToolFailureFromText, isBashTool, isReadTool, isWriteTool, isEditTool,
+          })
+        }
+        debugLog('taskDiag', 'task_notification applied', {
+          chatKey: chatKey.slice(-8),
+          taskId: msg.task_id || '',
+          toolUseId: msg.tool_use_id || '',
+          status: msg.status || '',
+          becameDone: meta.becameDone,
+          snapshot: getTaskDebugSnapshot(tab),
+        })
+        if (meta.shouldPersistImmediately) {
+          saveHistory({ immediate: true })
+        }
+        return
+      }
+
       if (subtype.startsWith('task_')) {
         return
       }

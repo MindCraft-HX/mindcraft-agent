@@ -24,7 +24,7 @@ function normalizeStatus(status, fallback = 'pending') {
   const value = String(status || fallback || 'pending').toLowerCase()
   if (value === 'completed' || value === 'done') return 'completed'
   if (value === 'in_progress' || value === 'running' || value === 'active') return 'in_progress'
-  if (value === 'cancelled' || value === 'canceled' || value === 'deleted' || value === 'removed') return 'deleted'
+  if (value === 'cancelled' || value === 'canceled' || value === 'deleted' || value === 'removed' || value === 'stopped' || value === 'killed') return 'deleted'
   if (value === 'failed' || value === 'error') return 'failed'
   return 'pending'
 }
