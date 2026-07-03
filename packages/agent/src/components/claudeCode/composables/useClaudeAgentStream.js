@@ -1,4 +1,5 @@
 import { log as debugLog } from '../../agentCommon/utils/rendererDebug.mjs'
+import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
 import { nextTick } from 'vue'
@@ -134,6 +135,8 @@ export function useClaudeAgentStream({
   onPendingApproval,
 }) {
   function onAgentMessage({ sessionId: chatKey, msg }) {
+    const stopMsg = perfStart('claude.onAgentMessage')
+    try {
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
 
@@ -552,6 +555,9 @@ export function useClaudeAgentStream({
 
     // 流式过程中也保存（节流），避免用户中途关闭导致丢历史
     throttledSaveHistory(saveHistory)
+    } finally {
+      stopMsg()
+    }
   }
 
   function onAgentPermission({ sessionId: chatKey, msg }) {

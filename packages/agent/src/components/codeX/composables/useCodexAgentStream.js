@@ -1,5 +1,6 @@
 // Codex 前端 debug 输出开关（需要查看详细日志时改为 true）
 import { log as debugLog } from '../../agentCommon/utils/rendererDebug.mjs'
+import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
 import { attachTurnTokensToLastRenderableMessage } from '../../agentCommon/utils/turnTokensAttachment.mjs'
@@ -594,6 +595,8 @@ export function useCodexAgentStream({
   }
 
   function onAgentMessage({ sessionId: sid, msg }) {
+    const stopMsg = perfStart('codex.onAgentMessage')
+    try {
     // 打印最原始数据
     if (msg.type === 'item.started' || msg.type === 'item.updated' || msg.type === 'item.completed') {
       if (CODEX_DEBUG) console.log('[codex-stream] === RAW onAgentMessage ===',msg)
@@ -823,6 +826,9 @@ export function useCodexAgentStream({
 
     // 未知 msg.type 兜底日志
     console.warn('[codex] onAgentMessage: unhandled msg.type:', msg.type, msg)
+    } finally {
+      stopMsg()
+    }
   }
 
   function onAgentDone({ sessionId: sid, cliSessionId, filePath, reason = 'completed', detachResume = false }) {

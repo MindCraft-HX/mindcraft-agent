@@ -453,10 +453,14 @@ const { refreshSessions, cancelScheduledRefresh } = useScheduledSessionRefresh({
 })
 
 /** 智能滚动：活跃 tab 在底部时自动滚，不在底部时 bumpCount；非活跃 tab 直接滚到底部 */
+// 活跃 tab 路径用 rAF 包裹，避免流式消息处理中同步读 scrollHeight 阻塞事件循环
 function smartScrollToBottom(chatId, smooth = true) {
   const id = chatId || activeChatId.value
   if (id === activeChatId.value) {
-    scrollOrBump(smooth)
+    requestAnimationFrame(() => {
+      if (id !== activeChatId.value) return
+      scrollOrBump(smooth)
+    })
   } else {
     const el = msgRefs[id]
     if (!el) return
@@ -2230,6 +2234,8 @@ function switchChat(id) {
   if (chat) trimMessages(chat)
   resetScrollPrev()
   refreshMetricsForChat(chat)
+  const stopSync = perfStart('claude.switchChat.sync')  // 同步路径结束标记
+  stopSync()
   // 有 filePath 且未从磁盘加载过时，从文件加载
   // 注意：不用 messages.length 判断——中断恢复后内存中可能有部分消息，也需覆盖
   if (chat?.filePath && !chat._messagesLoaded && canHydrateChatFromDisk(chat)) {
@@ -2247,16 +2253,20 @@ function switchChat(id) {
 async function ensureChatMessagesLoaded(chat) {
   const stop = perfStart('claude.ensureChatMessagesLoaded')
   if (!chat?.filePath || !window.electronAPI?.claudeReadSessionFileRange) { stop(); return }
-  
+
+  let stopIpc, stopProc
   try {
     // 初始加载最后 30 条消息
+    stopIpc = perfStart('claude.ensureChatMessagesLoaded.ipc')
     const rawData = await window.electronAPI.claudeReadSessionFileRange({
       filePath: chat.filePath,
       page: 0,  // 最近的页面
       pageSize: 60
     })
+    if (stopIpc) { stopIpc(); stopIpc = null }
     if (!rawData?.messages?.length) return
     if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
+    stopProc = perfStart('claude.ensureChatMessagesLoaded.proc')
     const looksLikeFlatMessages = rawData.messages.some(e =>
       e && (typeof e.role === 'string' || Array.isArray(e.content) || typeof e.content === 'string')
     )
@@ -2280,9 +2290,12 @@ async function ensureChatMessagesLoaded(chat) {
       chat._pendingSessionBinding = false
     }
     chat._messagesLoaded = true
+    if (stopProc) { stopProc(); stopProc = null }
   } catch (e) {
     console.warn('[ensureChatMessagesLoaded] failed:', e?.message || e)
   } finally {
+    if (stopIpc) stopIpc()
+    if (stopProc) stopProc()
     stop()
   }
 }

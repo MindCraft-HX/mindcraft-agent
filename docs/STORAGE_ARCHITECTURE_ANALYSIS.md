@@ -1,6 +1,6 @@
 # MindCraft Storage Architecture Roadmap
 
-> Last updated: 2026-06-30  
+> Last updated: 2026-07-03  
 > Scope: SQLite foundation, CC Switch import, local storage migration, and final storage boundaries.
 
 ## 1. Decision
@@ -13,6 +13,7 @@ Current decision:
 |---|---|
 | SQLite foundation | Build first, with migrations, DAO boundaries, backup, and contract tests. |
 | CC Switch import | Implement early as a global System Settings import, because one CC Switch SQL export can contain both Claude and CodeX providers. |
+| Provider storage migration | Start now as the next storage phase. SQLite should become the authority for CodeX / ClaudeCode provider records, while legacy projection remains during the compatibility window. |
 | Full local storage migration | Do later, module by module, after the provider/import path is stable. |
 | Official CLI directories | Do not replace. Continue using official paths only for official CLI/SDK data. |
 | Existing provider-page import UI | Keep the compact `Import` button style, but scope it to local CLI config import only. CC Switch must not live in a single-agent provider panel. |
@@ -44,6 +45,8 @@ SQLite should become the authority for MindCraft-owned app data. It should not b
 |---|---|---|
 | Provider list, selected provider, import metadata | SQLite | Then project to official config files when required. |
 | App settings, diagnostics toggles, locale, theme | SQLite or a single settings facade backed by SQLite | Device-local settings can stay separate if intentionally local. |
+| Lightweight Chat threads and indexes | SQLite in a later phase | Message bodies should stay in userData files while using `sql.js`, unless a later native driver decision changes this. |
+| Lightweight Chat message bodies and attachments | userData files in a later phase | Prefer `{userData}/simple-chat/threads/<threadId>/messages.jsonl` plus attachment files; DB stores identity/index/summary only. |
 | Session identity: `chatKey`, `cliSessionId`, `filePath`, title, cwd, runtime model | SQLite | Does not replace official transcript JSONL. |
 | Panel layout, expanded/collapsed UI, drafts | Panel state or later SQLite UI table | Must not own provider session identity. |
 | Claude/Codex transcripts | Official CLI directories | Read for history and mapping; do not add MindCraft sidecars. |
@@ -83,8 +86,9 @@ Requirements:
 
 Dependency note:
 
-- Preferred dependency: `better-sqlite3`, if Electron native rebuild is acceptable.
-- Fallback candidate: `sql.js`, only if native dependency risk blocks packaging.
+- Current dependency: `sql.js`, because it avoids Electron native rebuild risk.
+- Long-term candidate: `better-sqlite3`, if DB size or write frequency outgrows `sql.js`.
+- Business code must use repository/facade APIs rather than depending on `sql.js` directly, so a future driver switch is an adapter replacement instead of a business migration.
 
 ### Phase 1: Global Config Import + CC Switch Provider Import
 
@@ -148,6 +152,8 @@ Provider ordering:
 
 Make SQLite the authority for MindCraft provider records.
 
+Execution entry: `docs/plan/2026-07-03-provider-storage-migration.md`.
+
 During the transition, keep compatibility projections:
 
 | Target | Purpose |
@@ -161,11 +167,21 @@ Write strategy:
 
 ```text
 Read: SQLite -> legacy fallback -> backfill SQLite
-Write: SQLite -> required official config projection
+Write: SQLite -> legacy projection -> required official config projection
 Legacy direct writes: removed after compatibility window
 ```
 
 This phase should not change session restoration logic.
+
+Phase 2 implementation boundaries:
+
+- Add a provider repository/facade in the main process; renderer and feature modules should not call provider DAO directly.
+- Add a v2 migration for provider ordering and projection bookkeeping, including `sort_index`.
+- `codex-get-providers` / `claude-get-providers` should read through the repository and backfill SQLite from legacy stores only when DB is empty for that agent type.
+- `codex-set-providers` / `claude-set-providers`, system import, export, activation, and future reorder should write through the repository.
+- Keep legacy projection during the compatibility window so rollback to an older app version can still read provider files.
+- Do not migrate session registry, panel state, transcripts, uploaded file cache, or token metrics in this phase.
+- Fix hidden-key export redaction before or during this phase; redaction must cover both top-level provider keys and nested config/env keys.
 
 ### Phase 3: Settings Migration
 
@@ -220,6 +236,11 @@ Official provider data -> official CLI/SDK directories only
 Transient UI state -> renderer memory; localStorage only for low-risk local preferences
 ```
 
+Compatibility note:
+
+- Official runtime files such as `~/.codex/config.toml` and `~/.claude/settings.json` remain required projections.
+- MindCraft-owned legacy provider stores should not remain permanent authorities. After the compatibility window, SQLite should be the only local authority for provider records, with official runtime files generated/applied from that authority.
+
 ## 5. Initial Schema Sketch
 
 ```sql
@@ -255,16 +276,43 @@ CREATE TABLE import_runs (
 
 Session tables should be designed later, after provider/settings migration proves stable.
 
-## 6. Task Mapping
+## 6. SQLite Size And Maintenance Policy
+
+Current DB implementation uses `sql.js`, which keeps the DB in memory and persists by exporting the whole DB file. This is acceptable for provider/config/settings data, but it should not be used as a dumping ground for large append-heavy data.
+
+Practical guidance:
+
+| DB size / usage | Position |
+|---|---|
+| Under 10 MB, mostly provider/config/settings rows | Safe for current `sql.js` implementation. |
+| 10-50 MB, moderate writes | Still likely fine, but watch export/persist latency. |
+| 50-100 MB or frequent writes | Reassess native `better-sqlite3` or split storage. |
+| Chat transcripts, JSONL history, file blobs, large logs | Do not store in `mindcraft.db` in this roadmap. |
+| Lightweight Chat message bodies while on `sql.js` | Prefer userData files; keep DB to thread/index/summary metadata. |
+
+Maintenance rules:
+
+- Every table needs a documented owner, read path, write path, and retention policy.
+- Every JSON column needs a documented shape. Unknown imported source fields may be retained only in metadata/audit, not projected into runtime config.
+- Add migrations forward-only. Do not rewrite historical migrations after release.
+- Keep `import_runs` and DB backups bounded by retention, for example latest 200 import runs or 90 days, and latest 20 backup files per label family.
+- Do not use SQLite to persist current-turn token metrics, raw provider transcripts, uploaded files, or renderer-only transient state.
+- Do not put append-heavy Simple Chat message bodies into SQLite while the app uses `sql.js`; store DB-owned thread/index metadata separately from file-owned message content.
+- Legacy files must have a compatibility window and cleanup plan; do not keep permanent dual-write unless explicitly documented.
+
+## 7. Task Mapping
 
 | Task | Scope |
 |---|---|
 | T159 | Storage architecture roadmap: SQLite foundation, local storage migration, final boundary contract. |
 | T162 | Import dialog and CC Switch provider import, implemented on top of the new provider/import storage path. |
+| T174 | Provider storage migration: SQLite authority, legacy fallback/backfill/projection, ordering, and provider repository. |
+| T175 | Future lightweight Chat storage migration: SQLite thread/index metadata plus userData message files; not part of T174. |
 
-## 7. Open Questions
+## 8. Open Questions
 
-- Confirm final SQLite dependency: `better-sqlite3` vs `sql.js`, based on packaging/rebuild risk.
-- Confirm whether import should initially support both Claude and CodeX or only CodeX.
+- Confirm when to reassess `sql.js` vs `better-sqlite3`. Current provider/config scope does not require native SQLite.
 - Decide whether provider activation should immediately project to official config, or only when user presses repair/apply.
-- Define backup retention policy for `mindcraft.db` and import runs.
+- Define the exact legacy provider file compatibility window after T174 ships.
+- Decide whether T164 drag-and-drop sorting is implemented inside T174 or immediately after repository migration.
+- Decide T175 Simple Chat table/file format after T174 stabilizes; do not create unused chat schema during T174.

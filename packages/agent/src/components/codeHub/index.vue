@@ -357,9 +357,9 @@ function doSwitchProject(tab, preferredChat = null) {
   }, { force: true })
   panel.switchProject(tab.projectId, preferredChat)
   if (!_tabActivationInit) {
-    // Phase 2: 延迟刷新带 cooldown — UI 先切过去，500ms 后再后台扫描
+    // Phase 2: 延迟刷新带 cooldown — UI 先切过去，50ms 防抖后立即后台扫描
     // 同一 panel 快速连续切换时，handleRefreshSessions 内部取消旧 timer
-    panel.refreshSessions?.({ reason: 'tab-activate', silent: true, ifStaleMs: 15000, deferMs: 500 })
+    panel.refreshSessions?.({ reason: 'tab-activate', silent: true, ifStaleMs: 15000, deferMs: 50 })
   }
   stop()
   _tabActivationInit = false
