@@ -51,6 +51,11 @@ function daoToLegacyProvider(row) {
   return {
     ...base,
     config: row.config || { env: {} },
+    website: row.config?.website || '',
+    note: row.config?.note || '',
+    language: row.config?.language || 'zh-CN',
+    permissionPolicy: row.config?.permissionPolicy || 'ask',
+    effortLevel: row.config?.effortLevel !== undefined ? row.config.effortLevel : 'medium',
     tierModels: row.metadata?.tierModels || { haiku: '', sonnet: '', opus: '', reasoning: '' },
     selectedTier: row.metadata?.selectedTier || row.config?.model || 'sonnet',
   };
@@ -86,6 +91,11 @@ function legacyToDaoProvider(legacyProvider, agentType) {
       ...(legacyProvider.config || {}),
       key: legacyProvider.key || legacyProvider.config?.key || '',
       url: legacyProvider.url || legacyProvider.config?.url || '',
+      website: legacyProvider.website || '',
+      note: legacyProvider.note || '',
+      language: legacyProvider.language || 'zh-CN',
+      permissionPolicy: legacyProvider.permissionPolicy || 'ask',
+      effortLevel: legacyProvider.effortLevel !== undefined ? legacyProvider.effortLevel : 'medium',
     },
     metadata: {
       tierModels: legacyProvider.tierModels || { haiku: '', sonnet: '', opus: '', reasoning: '' },

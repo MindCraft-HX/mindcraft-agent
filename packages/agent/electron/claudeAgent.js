@@ -26,6 +26,7 @@ const { t: lt } = require('./localeHelper')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
+const { getProviders, setProviders, projectToLegacy } = require('./db/providerStorage')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
@@ -1837,12 +1838,54 @@ function setupClaudeHandlers() {
     return { apiKey, baseURL, model, tierKey, tierEnv }
   }
 
+  // ─── Provider storage (T174: SQLite-authoritative with legacy projection) ──
+  async function readClaudeProviders() {
+    try {
+      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const legacyReader = () => confGet('claudeProviders', null)
+      const payload = getProviders(db, 'claude', legacyReader)
+      if (payload.providers.length > 0) {
+        await persistDb()
+      }
+      return payload.providers.length > 0 ? payload : null
+    } catch (e) {
+      console.error('[claude] readProviders error:', e.message)
+      // Fallback: read legacy internalConf directly if DB path fails
+      return confGet('claudeProviders', null)
+    }
+  }
+
+  async function writeClaudeProviders(data) {
+    try {
+      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const result = setProviders(db, 'claude', data || { providers: [], activeIdx: 0 })
+      if (result.ok) {
+        // Legacy projection to internalConf (claude-internal.json)
+        const legacyWriter = (payload) => {
+          internalConf.set('claudeProviders', payload)
+        }
+        projectToLegacy(db, 'claude', legacyWriter)
+        await persistDb()
+      }
+      return true
+    } catch (e) {
+      console.error('[claude] writeProviders error:', e.message)
+      // Fallback: write internalConf directly
+      try {
+        internalConf.set('claudeProviders', data || { providers: [], activeIdx: -1 })
+      } catch (_) {}
+      return true
+    }
+  }
+
   // Capture provider storage for system-level import IPC (T163).
   _claudeProviderStorage = {
     confGet,
     confSet,
     getMindCraftUserDataDir,
     readRuntimeConfigFromUserSettingsFile,
+    readProviders: readClaudeProviders,
+    writeProviders: writeClaudeProviders,
   }
 
   ipcMain.handle('claude-get-model', () => readPrimaryModel())
@@ -1868,10 +1911,10 @@ function setupClaudeHandlers() {
     confSet('claudeModels', list)
     return true
   })
-  ipcMain.handle('claude-get-providers', () => confGet('claudeProviders', null))
-  ipcMain.handle('claude-set-providers', (_, data) => {
-    confSet('claudeProviders', data)
-    // 同步更新 key/url 为当前激活的 provider
+  ipcMain.handle('claude-get-providers', async () => readClaudeProviders())
+  ipcMain.handle('claude-set-providers', async (_, data) => {
+    await writeClaudeProviders(data)
+    // 同步更新 key/url 为当前激活的 provider（写入 ~/.claude/settings.json）
     const active = data.providers?.[data.activeIdx ?? 0]
     if (active) {
       confSet('claudeApiKey', active.key || '')
@@ -1879,7 +1922,7 @@ function setupClaudeHandlers() {
     }
     return true
   })
-  ipcMain.handle('claude-activate-provider', (_, data) => {
+  ipcMain.handle('claude-activate-provider', async (_, data) => {
     const providers = Array.isArray(data?.providers) ? data.providers : []
     const activeIdx = Number.isInteger(data?.activeIdx) ? data.activeIdx : -1
     const selectedTier = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(data?.selectedTier)
@@ -1902,9 +1945,12 @@ function setupClaudeHandlers() {
     const requestedModel = typeof data?.model === 'string' ? data.model.trim() : ''
     const model = requestedModel || (tierModels[selectedTier] || '').trim() || fallbackModel[selectedTier]
 
-    // 重要：配置列表只影响 UI/管理，不允许在这里写入 ~/.claude/settings.json
-    internalConf.set('claudeProviders', { providers, activeIdx })
+    // Write providers to SQLite via repository (with legacy projection to internalConf)
+    await writeClaudeProviders({ providers, activeIdx })
+
+    // tierModels 仍写入 internalConf（独立的配置，不通过 provider repository）
     internalConf.set('tierModels', tierModels)
+
     resetAgentRuntime('provider-activated')
     return { ok: true, model }
   })
@@ -2062,7 +2108,7 @@ function setupClaudeHandlers() {
       const preview = previewLocalCliConfig({ agentType: 'claude', cliConfig });
       if (!preview.ok) return preview;
 
-      const stored = confGet('claudeProviders', { providers: [], activeIdx: -1 });
+      const stored = await readClaudeProviders() || { providers: [], activeIdx: -1 };
       preview.providers = annotateConflicts(preview.providers, stored.providers || []);
 
       return preview;
@@ -2088,7 +2134,7 @@ function setupClaudeHandlers() {
       const preview = previewLocalCliConfig({ agentType: 'claude', cliConfig });
       if (!preview.ok) return { ...preview, imported: 0, skipped: 0, backupPath: '' };
 
-      const stored = confGet('claudeProviders', { providers: [], activeIdx: -1 });
+      const stored = await readClaudeProviders() || { providers: [], activeIdx: -1 };
       const existing = stored.providers || [];
 
       const userDataDir = getMindCraftUserDataDir();
@@ -2097,32 +2143,42 @@ function setupClaudeHandlers() {
       const result = commitImport(db, {
         providers: decisions || [],
         previewProviders: preview.providers,
-        existingProviders: existing.map((p, i) => ({ id: `claude-${i}`, name: p.name, config: { key: p.key || '', url: p.url || '', model: '', reasoningEffort: '', apiFormat: '' }, isActive: i === stored.activeIdx })),
+        existingProviders: existing.map((p, i) => ({
+          id: p.id,  // real UUID from repository
+          name: p.name,
+          config: { key: p.key || '', url: p.url || '', model: '', reasoningEffort: '', apiFormat: '' },
+          isActive: i === (stored.activeIdx ?? -1),
+        })),
         agentType: 'claude',
         source: 'local-cli',
         sourcePath: null,
         userDataDir,
       });
 
-      if (!result.ok) return result;
+      if (!result.ok) return { ...result, imported: 0, skipped: 0, backupPath: '' };
 
       // Persist to disk (sql.js is in-memory)
       await persistDb();
 
-      // Project to existing Claude storage
-      const newProviderList = result.providers.map((p) => ({
-        name: p.name,
-        key: p.key || p.config?.key || '',
-        url: p.url || p.config?.url || '',
-        tierModels: (existing.find((ep) => ep.name === p.name)?.tierModels) || {},
-      }));
-      confSet('claudeProviders', { providers: newProviderList, activeIdx: stored.activeIdx });
+      // Project to legacy via repository (handles projection_status)
+      const legacyWriter = (payload) => { internalConf.set('claudeProviders', payload) };
+      projectToLegacy(db, 'claude', legacyWriter);
+      await persistDb();
+
+      // 同步 active key/url 到 settings.json
+      const newProviders = result.providers || [];
+      const newActiveIdx = Math.max(-1, stored.activeIdx ?? -1);
+      const newActive = newActiveIdx >= 0 && newActiveIdx < newProviders.length ? newProviders[newActiveIdx] : null;
+      if (newActive) {
+        confSet('claudeApiKey', newActive.key || newActive.config?.key || '')
+        confSet('claudeBaseURL', newActive.url || newActive.config?.url || '')
+      }
 
       return {
         ok: true,
         imported: result.imported || 0,
         skipped: result.skipped || 0,
-        backupPath: '',
+        backupPath: result.backupPath || '',
         warnings: result.warnings || [],
       };
     } catch (e) {

@@ -583,3 +583,194 @@ test('migrateFromLegacy data survives persist + reopen', async () => {
   db2.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// F. Claude-specific tests (T174 vertical slice)
+// ---------------------------------------------------------------------------
+
+test('Claude full shape round-trip preserves all fields (language, permissionPolicy, effortLevel, website, note)', () => {
+  const { legacyToDaoProvider, daoToLegacyProvider } = require('./index');
+  const legacy = {
+    name: 'FullClaude',
+    key: 'sk-ant-full',
+    url: 'https://api.anthropic.com',
+    website: 'https://docs.anthropic.com',
+    note: 'Production account',
+    language: 'en',
+    permissionPolicy: 'allow',
+    effortLevel: 'high',
+    config: {
+      env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-full', ANTHROPIC_BASE_URL: 'https://api.anthropic.com' },
+    },
+    tierModels: { haiku: 'haiku-model', sonnet: 'sonnet-model', opus: 'opus-model', reasoning: 'reasoning-model' },
+    selectedTier: 'opus',
+  };
+
+  const dao = legacyToDaoProvider(legacy, 'claude');
+  const result = daoToLegacyProvider({ ...dao, agentType: 'claude', id: 'test-id', metadata: dao.metadata || {}, isActive: false });
+
+  assert.equal(result.name, 'FullClaude');
+  assert.equal(result.key, 'sk-ant-full');
+  assert.equal(result.url, 'https://api.anthropic.com', 'url should survive');
+  assert.equal(result.website, 'https://docs.anthropic.com', 'website should survive');
+  assert.equal(result.note, 'Production account', 'note should survive');
+  assert.equal(result.language, 'en', 'language should survive');
+  assert.equal(result.permissionPolicy, 'allow', 'permissionPolicy should survive');
+  assert.equal(result.effortLevel, 'high', 'effortLevel should survive');
+  assert.equal(result.selectedTier, 'opus');
+  assert.equal(result.tierModels.sonnet, 'sonnet-model');
+});
+
+test('Claude legacy with missing fields gets safe defaults', () => {
+  const { legacyToDaoProvider, daoToLegacyProvider } = require('./index');
+  // Minimal Claude legacy — only name + key
+  const legacy = {
+    name: 'MinimalClaude',
+    key: 'sk-ant-min',
+    url: 'https://api.anthropic.com',
+  };
+
+  const dao = legacyToDaoProvider(legacy, 'claude');
+  const result = daoToLegacyProvider({ ...dao, agentType: 'claude', id: 'test-id-min', metadata: dao.metadata || {}, isActive: false });
+
+  assert.equal(result.name, 'MinimalClaude');
+  assert.equal(result.language, 'zh-CN', 'language should default to zh-CN');
+  assert.equal(result.permissionPolicy, 'ask', 'permissionPolicy should default to ask');
+  assert.equal(result.effortLevel, 'medium', 'effortLevel should default to medium');
+  assert.equal(result.website, '', 'website should default to empty');
+  assert.equal(result.note, '', 'note should default to empty');
+  assert.equal(result.selectedTier, 'sonnet', 'selectedTier should default to sonnet');
+  assert.deepEqual(result.tierModels, { haiku: '', sonnet: '', opus: '', reasoning: '' }, 'tierModels should default to empty tiers');
+});
+
+test('Claude sql.js persistence: write -> persist -> reopen -> all fields survive', async () => {
+  const sql = await getSql();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-ps-claude-'));
+  const dbPath = path.join(tmpDir, 'mindcraft.db');
+
+  // Create DB, write Claude providers with full shape, persist
+  const db1 = new sql.Database();
+  const { runMigrations } = require('../migrations/v1_initial');
+  const migResult = runMigrations(db1);
+  if (!migResult.ok) throw new Error(`Migration failed: ${migResult.message}`);
+
+  const { setProviders, getProviders } = require('./index');
+  setProviders(db1, 'claude', {
+    providers: [
+      {
+        name: 'ClaudePersist',
+        key: 'sk-ant-persist',
+        url: 'https://api.anthropic.com',
+        website: 'https://docs.anthropic.com',
+        note: 'Test persistence',
+        language: 'en',
+        permissionPolicy: 'deny',
+        effortLevel: 'xhigh',
+        tierModels: { haiku: '', sonnet: 'claude-sonnet-4', opus: '', reasoning: '' },
+        selectedTier: 'sonnet',
+        config: { env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-persist' } },
+      },
+    ],
+    activeIdx: 0,
+  });
+
+  // Persist to file
+  const buffer = Buffer.from(db1.export());
+  fs.writeFileSync(dbPath, buffer);
+  db1.close();
+
+  // Reopen and verify
+  const fileBuffer = fs.readFileSync(dbPath);
+  const db2 = new sql.Database(fileBuffer);
+
+  const payload = getProviders(db2, 'claude');
+  assert.equal(payload.providers.length, 1);
+  const p = payload.providers[0];
+  assert.equal(p.name, 'ClaudePersist');
+  assert.equal(p.key, 'sk-ant-persist');
+  assert.equal(p.url, 'https://api.anthropic.com', 'url should survive persist+reopen');
+  assert.equal(p.website, 'https://docs.anthropic.com');
+  assert.equal(p.note, 'Test persistence');
+  assert.equal(p.language, 'en');
+  assert.equal(p.permissionPolicy, 'deny');
+  assert.equal(p.effortLevel, 'xhigh');
+  assert.equal(p.selectedTier, 'sonnet');
+  assert.equal(p.tierModels.sonnet, 'claude-sonnet-4');
+
+  db2.close();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('Claude legacy backfill: DB empty, legacy has data → auto backfill with all fields', async () => {
+  const db = await createFreshDb();
+  const { getProviders } = require('./index');
+
+  const legacyData = {
+    providers: [
+      {
+        name: 'BackfillClaude',
+        key: 'sk-ant-backfill',
+        url: 'https://api.anthropic.com',
+        website: 'https://docs.example.com',
+        note: 'Backfill test',
+        language: 'ja',
+        permissionPolicy: 'ask',
+        effortLevel: 'low',
+        tierModels: { haiku: '', sonnet: 'claude-sonnet-backfill', opus: '', reasoning: '' },
+        selectedTier: 'haiku',
+      },
+    ],
+    activeIdx: 0,
+  };
+
+  const payload = getProviders(db, 'claude', () => legacyData);
+  assert.equal(payload.providers.length, 1);
+  const p = payload.providers[0];
+  assert.equal(p.name, 'BackfillClaude');
+  assert.equal(p.url, 'https://api.anthropic.com', 'url should survive backfill');
+  assert.equal(p.website, 'https://docs.example.com');
+  assert.equal(p.note, 'Backfill test');
+  assert.equal(p.language, 'ja');
+  assert.equal(p.permissionPolicy, 'ask');
+  assert.equal(p.effortLevel, 'low');
+  assert.equal(p.selectedTier, 'haiku');
+  assert.equal(p.tierModels.sonnet, 'claude-sonnet-backfill');
+
+  db.close();
+});
+
+test('Claude id empotency: setProviders multiple times → same ID, no duplicates', async () => {
+  const db = await createFreshDb();
+  const { setProviders, getProviders } = require('./index');
+
+  // Round 1: insert
+  setProviders(db, 'claude', {
+    providers: [
+      {
+        name: 'ClaudeIdem',
+        key: 'sk-ant-idem',
+        url: 'https://api.anthropic.com',
+        language: 'zh-CN',
+        permissionPolicy: 'ask',
+        effortLevel: 'medium',
+      },
+    ],
+    activeIdx: 0,
+  });
+
+  // Round 2: get → set same payload back
+  const payload = getProviders(db, 'claude');
+  assert.equal(payload.providers.length, 1);
+  assert.ok(payload.providers[0].id, 'provider should have an id');
+  const originalId = payload.providers[0].id;
+
+  setProviders(db, 'claude', payload);
+
+  // Round 3: verify no duplicates
+  const final = getProviders(db, 'claude');
+  assert.equal(final.providers.length, 1, 'should still have exactly 1 provider');
+  assert.equal(final.providers[0].id, originalId, 'id should be stable across all rounds');
+  assert.equal(final.providers[0].name, 'ClaudeIdem');
+
+  db.close();
+});

@@ -39,6 +39,26 @@ async function readCodexFromRepo(deps) {
   return deps.readCodexProviders ? deps.readCodexProviders() : null;
 }
 
+/**
+ * Read Claude providers from repository (SQLite-authoritative, T174).
+ * Falls back to legacy deps.claudeGetConfig if DB unavailable.
+ */
+async function readClaudeFromRepo(deps) {
+  try {
+    if (deps.getDb) {
+      const db = await deps.getDb({ userDataDir: deps.userDataDir });
+      return getProviders(db, 'claude', () => {
+        return deps.claudeGetConfig
+          ? deps.claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 })
+          : null;
+      });
+    }
+  } catch (_) { /* fall through to legacy */ }
+  return deps.claudeGetConfig
+    ? deps.claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 })
+    : null;
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -58,9 +78,6 @@ async function readCodexFromRepo(deps) {
  */
 function registerSystemImportIpc(ipcMain, deps) {
   const {
-    readCodexProviders,
-    writeCodexProviders,
-    claudeGetConfig,
     claudeSetConfig,
     userDataDir,
     readCodexConfigTomlRaw,
@@ -99,9 +116,8 @@ function registerSystemImportIpc(ipcMain, deps) {
         // Annotate conflicts against BOTH storages
         const codexPayload = await readCodexFromRepo(deps);
         const codexStored = codexPayload?.providers || [];
-        const claudeStored = claudeGetConfig
-          ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).providers || [])
-          : [];
+        const claudePayload = await readClaudeFromRepo(deps);
+        const claudeStored = claudePayload?.providers || [];
 
         // Annotate per agent type
         const annotated = preview.providers.map((p) => {
@@ -163,9 +179,7 @@ function registerSystemImportIpc(ipcMain, deps) {
           const preview = previewLocalCliConfig({ agentType: 'claude', cliConfig });
           if (!preview.ok) return preview;
 
-          const stored = claudeGetConfig
-            ? claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 })
-            : { providers: [], activeIdx: -1 };
+          const stored = await readClaudeFromRepo(deps) || { providers: [], activeIdx: -1 };
           preview.providers = annotateConflicts(preview.providers, stored.providers || []);
           return preview;
         }
@@ -277,11 +291,9 @@ function registerSystemImportIpc(ipcMain, deps) {
       // ---- Commit Claude providers ----
       let claudeResult = { ok: true, imported: 0, skipped: 0, providers: [], warnings: [], backupPath: '' };
       if (claudeDecisions.length > 0) {
-        const claudeStored = claudeGetConfig
-          ? claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 })
-          : { providers: [], activeIdx: -1 };
-        const claudeExisting = claudeStored.providers || [];
-        const claudeOrigActiveIdx = claudeStored.activeIdx ?? -1;
+        const claudePayload = await readClaudeFromRepo(deps);
+        const claudeExisting = claudePayload?.providers || [];
+        const claudeOrigActiveIdx = claudePayload?.activeIdx ?? -1;
 
         // Always clear CC Switch active flag — MindCraft manages its own active state
         const claudePreviewForCommit = previewProviders
@@ -292,7 +304,7 @@ function registerSystemImportIpc(ipcMain, deps) {
           providers: claudeDecisions,
           previewProviders: claudePreviewForCommit,
           existingProviders: claudeExisting.map((p, i) => ({
-            id: `claude-${i}`,
+            id: p.id,  // real UUID from repository
             name: p.name,
             config: { key: p.key || '', url: p.url || '', model: '', reasoningEffort: '', apiFormat: '' },
             isActive: i === claudeOrigActiveIdx,
@@ -303,26 +315,34 @@ function registerSystemImportIpc(ipcMain, deps) {
           userDataDir,
         });
 
-        if (claudeResult.ok && claudeSetConfig) {
-          const newProviderList = claudeResult.providers.map((p) => ({
-            name: p.name,
-            key: p.key || p.config?.key || '',
-            url: p.url || p.config?.url || '',
-            website: p.website || '',
-            note: p.note || '',
-            tierModels: p.tierModels || (claudeExisting.find((ep) => ep.name === p.name)?.tierModels) || {},
-            selectedTier: p.selectedTier || 'sonnet',
-            language: p.language || 'zh-CN',
-            permissionPolicy: p.permissionPolicy || 'ask',
-            effortLevel: p.effortLevel !== undefined ? p.effortLevel : 'medium',
-            config: p.runtimeConfig || null,
-          }));
-
-          // Keep existing activeIdx — MindCraft manages its own active state
-          claudeSetConfig('claudeProviders', {
-            providers: newProviderList,
-            activeIdx: Math.max(-1, claudeOrigActiveIdx),
-          });
+        if (claudeResult.ok && claudeResult.providers.length > 0) {
+          try {
+            const newProviderList = claudeResult.providers.map((p) => ({
+              id: p.id,
+              name: p.name,
+              key: p.key || p.config?.key || '',
+              url: p.url || p.config?.url || '',
+              website: p.website || '',
+              note: p.note || '',
+              tierModels: p.tierModels || (claudeExisting.find((ep) => ep.name === p.name)?.tierModels) || {},
+              selectedTier: p.selectedTier || 'sonnet',
+              language: p.language || 'zh-CN',
+              permissionPolicy: p.permissionPolicy || 'ask',
+              effortLevel: p.effortLevel !== undefined ? p.effortLevel : 'medium',
+              config: p.runtimeConfig || null,
+            }));
+            await setProviders(db, 'claude', {
+              providers: newProviderList,
+              activeIdx: Math.max(-1, claudeOrigActiveIdx),
+            });
+            // Project to legacy internalConf
+            const legacyWriter = (payload) => {
+              if (claudeSetConfig) claudeSetConfig('claudeProviders', payload);
+            };
+            await projectToLegacy(db, 'claude', legacyWriter);
+          } catch (e) {
+            console.error('[systemImportIpc] Claude projection error:', e.message);
+          }
         }
       }
 

@@ -36,6 +36,27 @@ async function readCodexFromRepo(deps) {
   return deps.readCodexProviders ? deps.readCodexProviders() : null;
 }
 
+/**
+ * Read Claude providers from repository (SQLite-authoritative, T174).
+ * Falls back to legacy deps.claudeGetConfig if DB unavailable.
+ */
+async function readClaudeFromRepo(deps) {
+  try {
+    const { getProviders } = require('../providerStorage');
+    if (deps.getDb) {
+      const db = await deps.getDb({ userDataDir: deps.userDataDir });
+      return getProviders(db, 'claude', () => {
+        return deps.claudeGetConfig
+          ? deps.claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 })
+          : null;
+      });
+    }
+  } catch (_) { /* fall through */ }
+  return deps.claudeGetConfig
+    ? deps.claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 })
+    : null;
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -51,21 +72,16 @@ async function readCodexFromRepo(deps) {
  * @param {string} deps.userDataDir
  */
 function registerSystemExportIpc(ipcMain, deps) {
-  const { claudeGetConfig } = deps;
-
   // ---- Preview ----
   ipcMain.handle('config-export-preview', async () => {
     try {
       const codexPayload = await readCodexFromRepo(deps);
+      const claudePayload = await readClaudeFromRepo(deps);
       const codexStored = codexPayload?.providers || [];
-      const claudeStored = claudeGetConfig
-        ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).providers || [])
-        : [];
+      const claudeStored = claudePayload?.providers || [];
 
       const codexActiveIdx = codexPayload?.activeIdx ?? -1;
-      const claudeActiveIdx = claudeGetConfig
-        ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).activeIdx ?? -1)
-        : -1;
+      const claudeActiveIdx = claudePayload?.activeIdx ?? -1;
 
       // Check for providers missing critical fields
       const incompleteClaude = claudeStored.filter((p) => !p.key && (!p.config || !p.config.env));
@@ -99,16 +115,13 @@ function registerSystemExportIpc(ipcMain, deps) {
     const { includeSecrets = true, includeActive = false } = payload || {};
 
     try {
-      // Read providers: CodeX from repository (T174), Claude from legacy deps
+      // Read providers: both from repository (T174)
       const codexPayload = await readCodexFromRepo(deps);
+      const claudePayload = await readClaudeFromRepo(deps);
       const codexStored = codexPayload?.providers || [];
-      const claudeStored = claudeGetConfig
-        ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).providers || [])
-        : [];
+      const claudeStored = claudePayload?.providers || [];
       const codexActiveIdx = codexPayload?.activeIdx ?? -1;
-      const claudeActiveIdx = claudeGetConfig
-        ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).activeIdx ?? -1)
-        : -1;
+      const claudeActiveIdx = claudePayload?.activeIdx ?? -1;
 
       if (claudeStored.length === 0 && codexStored.length === 0) {
         return { ok: false, error: 'No providers to export' };
