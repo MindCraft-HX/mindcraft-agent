@@ -62,17 +62,14 @@ async function openMindCraftDb({ userDataDir }) {
       const buffer = fs.readFileSync(dbPath);
       db = new SQL.Database(buffer);
     } else {
-      // No local DB — attempt dev bootstrap from a production profile.
+      // No local DB — attempt dev seed from a production profile.
       //
-      // This is a ONE-TIME copy, not an ongoing fallback.  After the copy,
-      // dev and prod have independent DBs.  If you want true DB sharing,
-      // set MINDCRAFT_BOOTSTRAP_DB_PATH to the production DB path.
-      //
-      // Bootstrap order:
-      //   1. MINDCRAFT_BOOTSTRAP_DB_PATH env var (explicit path)
-      //   2. MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD=1 → auto-detect prod sibling
-      //      (only when app.isPackaged === false, i.e. dev mode)
-      let seedPath = process.env.MINDCRAFT_BOOTSTRAP_DB_PATH || null;
+      // This is a ONE-TIME copy, not true sharing.  After the copy, dev and
+      // prod have independent DBs that will diverge.  Set MINDCRAFT_SEED_DB_PATH
+      // to an explicit DB file to copy from; alternativelly set
+      // MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD=1 to auto-detect the production
+      // profile sibling directory.
+      let seedPath = process.env.MINDCRAFT_SEED_DB_PATH || null;
 
       if (!seedPath && process.env.MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD === '1') {
         try {

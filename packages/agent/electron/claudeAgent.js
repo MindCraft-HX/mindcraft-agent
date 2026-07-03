@@ -1957,14 +1957,15 @@ function setupClaudeHandlers() {
   })
   ipcMain.handle('claude-get-providers', async () => readClaudeProviders())
   ipcMain.handle('claude-set-providers', async (_, data) => {
-    await writeClaudeProviders(data)
+    const ok = await writeClaudeProviders(data)
+    if (!ok) return { ok: false, error: 'DB write failed' }
     // 同步更新 key/url 为当前激活的 provider（写入 ~/.claude/settings.json）
     const active = data.providers?.[data.activeIdx ?? 0]
     if (active) {
       confSet('claudeApiKey', active.key || '')
       confSet('claudeBaseURL', active.url || '')
     }
-    return true
+    return { ok: true }
   })
   ipcMain.handle('claude-activate-provider', async (_, data) => {
     const providers = Array.isArray(data?.providers) ? data.providers : []
@@ -1990,7 +1991,8 @@ function setupClaudeHandlers() {
     const model = requestedModel || (tierModels[selectedTier] || '').trim() || fallbackModel[selectedTier]
 
     // Write providers to SQLite via repository (with legacy projection to internalConf)
-    await writeClaudeProviders({ providers, activeIdx })
+    const wrote = await writeClaudeProviders({ providers, activeIdx })
+    if (!wrote) return { ok: false, error: 'DB write failed', model }
 
     // tierModels 仍写入 internalConf（独立的配置，不通过 provider repository）
     internalConf.set('tierModels', tierModels)
