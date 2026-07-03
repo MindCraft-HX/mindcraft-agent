@@ -506,12 +506,16 @@ defineExpose({ openSettings })
 
 async function persistProviders() {
   try {
-    await window.electronAPI?.claudeSetProviders?.({
+    const res = await window.electronAPI?.claudeSetProviders?.({
       providers: JSON.parse(JSON.stringify(settingsForm.value.providers)),
       activeIdx: settingsForm.value.activeIdx,
     })
+    if (res && res.ok === false) {
+      throw new Error(res.error || 'DB write failed')
+    }
   } catch (e) {
     console.warn('[APISetting] claudeSetProviders failed:', e?.message || e)
+    throw e
   }
 }
 
@@ -535,6 +539,9 @@ async function applyAndActivate(activeIdx, opts = {}) {
       tierModels,
       model: targetModel,
     })
+    if (res && res.ok === false) {
+      throw new Error(res.error || 'DB write failed')
+    }
     currentGlobalModel.value = res?.model || targetModel
     await window.electronAPI?.claudeSetPermissionPolicy?.(settingsPermissionPolicy.value)
     await window.electronAPI?.claudeSetLanguage?.(settingsLanguage.value)

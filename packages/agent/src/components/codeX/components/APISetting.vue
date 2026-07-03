@@ -479,11 +479,17 @@ async function validateProviderByIdx(i) {
 
 async function persistProviders() {
   try {
-    await window.electronAPI?.codexSetProviders?.({
+    const res = await window.electronAPI?.codexSetProviders?.({
       providers: JSON.parse(JSON.stringify(settingsForm.value.providers)),
       activeIdx: settingsForm.value.activeIdx,
     })
-  } catch (e) { console.warn('[codexSetProviders]', e) }
+    if (res && res.ok === false) {
+      throw new Error(res.error || 'DB write failed')
+    }
+  } catch (e) {
+    console.warn('[codexSetProviders]', e)
+    throw e
+  }
 }
 
 async function editProviderByIdx(i) {
