@@ -3723,14 +3723,16 @@ function setupCodexSdkHandlers() {
       return true
     } catch (e) {
       console.error('[codex] writeProviders error:', e.message)
-      // Fallback: write legacy file directly
+      // Emergency backup to a separate path — do NOT silently overwrite the
+      // legacy authority file.  If SQLite is the authority and it failed,
+      // returning true would make the UI believe the save succeeded when it
+      // didn't, creating a silent fork between DB and legacy.
       try {
-        if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
-        const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
-        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-        fs.renameSync(tmp, PROVIDERS_FILE)
-      } catch (_) {}
-      return true
+        const emergencyPath = path.join(getMindCraftUserDataDir(), 'codex-providers.emergency.json')
+        fs.writeFileSync(emergencyPath, JSON.stringify(data, null, 2), 'utf8')
+        console.error('[codex] wrote emergency backup to:', emergencyPath)
+      } catch (_) { /* best-effort */ }
+      return false
     }
   }
 

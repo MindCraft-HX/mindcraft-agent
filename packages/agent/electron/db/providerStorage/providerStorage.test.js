@@ -739,13 +739,20 @@ test('Claude legacy backfill: DB empty, legacy has data → auto backfill with a
   db.close();
 });
 
-test('setProviders matches ID-less incoming provider to existing by name (defense against renderer fallback)', async () => {
+test('setProviders ID-less provider is treated as new insert, not name-match overwrite', async () => {
   const db = await createFreshDb();
   const { setProviders, getProviders } = require('./index');
 
-  // Step 1: Create a provider with a known ID (simulating migrated data)
+  // Step 1: Create a provider with real config (simulating migrated data)
   setProviders(db, 'claude', {
-    providers: [{ name: 'ExistingProvider', key: 'sk-existing', url: 'https://existing.com' }],
+    providers: [{
+      name: 'ExistingProvider',
+      key: 'sk-existing-real',
+      url: 'https://existing.com',
+      language: 'en',
+      permissionPolicy: 'allow',
+      effortLevel: 'xhigh',
+    }],
     activeIdx: 0,
   });
   const afterCreate = getProviders(db, 'claude');
@@ -753,60 +760,74 @@ test('setProviders matches ID-less incoming provider to existing by name (defens
   const originalId = afterCreate.providers[0].id;
   assert.ok(originalId, 'should have an id');
 
-  // Step 2: Save a NEW provider WITHOUT id, but with a different name
-  // This should be inserted as a new provider (no name match)
+  // Step 2: Save a same-name provider WITHOUT id and with empty fields.
+  // Since name-matching is NOT done in setProviders, this must be treated
+  // as a NEW insert (fresh UUID). The old provider is deleted via full
+  // replacement, but it must NOT be silently overwritten in-place (which
+  // would be data corruption: old ID still exists but key/url wiped).
   setProviders(db, 'claude', {
-    providers: [
-      { name: 'NewProvider', key: '', url: '' },  // no id, different name
-    ],
+    providers: [{ name: 'ExistingProvider', key: '', url: '' }],
     activeIdx: 0,
   });
   const afterNew = getProviders(db, 'claude');
-  assert.equal(afterNew.providers.length, 1, 'full replacement: existing removed, new inserted');
-  assert.notEqual(afterNew.providers[0].id, originalId, 'new provider should have different id');
+  assert.equal(afterNew.providers.length, 1, 'full replacement: 1 provider');
+  const newId = afterNew.providers[0].id;
+  assert.notEqual(newId, originalId, 'new provider has different id → old was NOT overwritten in-place');
+  assert.equal(afterNew.providers[0].key, '', 'new provider has empty key (as sent)');
+  assert.equal(afterNew.providers[0].url, '', 'new provider has empty url (as sent)');
+
+  // Verify the old UUID is truly gone (was deleted, not overwritten).
+  const allIds = afterNew.providers.map((p) => p.id);
+  assert.ok(!allIds.includes(originalId), 'original UUID must not survive — full replacement');
 
   db.close();
 });
 
-test('setProviders ID-less match by name preserves existing UUID and avoids duplicates', async () => {
+test('setProviders same-name no-ID fallback does not silently corrupt existing Claude extended fields', async () => {
   const db = await createFreshDb();
   const { setProviders, getProviders } = require('./index');
 
-  // Step 1: Create provider via migration (simulating migrated data with real UUID)
+  // Step 1: Create provider with full Claude extended fields (simulating migrated data)
   setProviders(db, 'claude', {
-    providers: [
-      { name: '默认配置', key: 'sk-real', url: 'https://real.com', language: 'en', permissionPolicy: 'allow' },
-      { name: 'SecondConfig', key: 'sk-second', url: 'https://second.com' },
-    ],
+    providers: [{
+      name: '默认配置',
+      key: 'sk-ant-real-key-123',
+      url: 'https://api.anthropic.com',
+      language: 'ja',
+      permissionPolicy: 'deny',
+      effortLevel: 'xhigh',
+      tierModels: { haiku: 'claude-haiku', sonnet: 'claude-sonnet', opus: 'claude-opus', reasoning: 'claude-reasoning' },
+      selectedTier: 'opus',
+    }],
     activeIdx: 0,
   });
   const afterCreate = getProviders(db, 'claude');
-  assert.equal(afterCreate.providers.length, 2, '2 providers after initial create');
-  const firstId = afterCreate.providers[0].id;
-  const secondId = afterCreate.providers[1].id;
+  const originalId = afterCreate.providers[0].id;
+  assert.equal(afterCreate.providers[0].key, 'sk-ant-real-key-123');
 
-  // Step 2: Simulate renderer fallback — save with a default provider that has
-  // NO id field but the SAME name as the first provider, plus the second provider
-  // (with id). This is the "save all providers" pattern in the Vue component.
+  // Step 2: Save same-name provider WITHOUT id, with empty key/url.
+  // This MUST NOT match by name and overwrite the existing record in-place.
   setProviders(db, 'claude', {
-    providers: [
-      { name: '默认配置', key: '', url: '' },  // no id! renderer fallback default
-      { name: 'SecondConfig', key: 'sk-second-updated', url: 'https://second.com', id: secondId },
-    ],
-    activeIdx: 1,
+    providers: [{ name: '默认配置', key: '', url: '' }],
+    activeIdx: 0,
   });
 
   const afterSave = getProviders(db, 'claude');
-  assert.equal(afterSave.providers.length, 2, 'should still have 2 providers');
-  // The first provider should have its original id (matched by name)
-  const firstAfter = afterSave.providers.find((p) => p.name === '默认配置');
-  assert.ok(firstAfter, 'first provider should still exist');
-  assert.equal(firstAfter.id, firstId, 'first provider id should be preserved via name match');
-  // The second should be updated with new key
-  const secondAfter = afterSave.providers.find((p) => p.name === 'SecondConfig');
-  assert.ok(secondAfter, 'second provider should still exist');
-  assert.equal(secondAfter.id, secondId, 'second provider id should be preserved');
-  assert.equal(secondAfter.key, 'sk-second-updated', 'second provider key should be updated');
+  assert.equal(afterSave.providers.length, 1, '1 provider after save');
+
+  // The old UUID must not survive with corrupted fields.
+  const matchOldId = afterSave.providers.find((p) => p.id === originalId);
+  assert.ok(!matchOldId, 'original UUID must not survive — was deleted, not overwritten');
+
+  // The new provider has empty values (as sent by the renderer).
+  const saved = afterSave.providers[0];
+  assert.notEqual(saved.id, originalId, 'new provider has fresh UUID');
+  assert.equal(saved.key, '', 'key is empty (as sent)');
+  assert.equal(saved.url, '', 'url is empty (as sent)');
+  // Extended fields should be defaults (not leaked from old provider via in-place overwrite)
+  assert.strictEqual(saved.language, 'zh-CN', 'language reset to default');
+  assert.strictEqual(saved.permissionPolicy, 'ask', 'permissionPolicy reset to default');
+  assert.strictEqual(saved.effortLevel, 'medium', 'effortLevel reset to default');
 
   db.close();
 });

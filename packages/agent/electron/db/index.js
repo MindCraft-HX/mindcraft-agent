@@ -62,26 +62,38 @@ async function openMindCraftDb({ userDataDir }) {
       const buffer = fs.readFileSync(dbPath);
       db = new SQL.Database(buffer);
     } else {
-      // No local DB — search sibling userData directories for an existing
-      // mindcraft.db (e.g. from a production installation). In dev mode
-      // userData is app-specific while the installed package uses a
-      // different directory; this makes dev and prod share the same data.
-      let seedPath = null;
-      try {
-        const parentDir = path.dirname(userDataDir);
-        const selfName = path.basename(userDataDir);
-        for (const entry of fs.readdirSync(parentDir)) {
-          if (entry === selfName) continue;
-          const candidate = path.join(parentDir, entry, 'mindcraft.db');
-          if (fs.existsSync(candidate)) {
-            seedPath = candidate;
-            break;
+      // No local DB — attempt dev bootstrap from a production profile.
+      //
+      // This is a ONE-TIME copy, not an ongoing fallback.  After the copy,
+      // dev and prod have independent DBs.  If you want true DB sharing,
+      // set MINDCRAFT_BOOTSTRAP_DB_PATH to the production DB path.
+      //
+      // Bootstrap order:
+      //   1. MINDCRAFT_BOOTSTRAP_DB_PATH env var (explicit path)
+      //   2. MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD=1 → auto-detect prod sibling
+      //      (only when app.isPackaged === false, i.e. dev mode)
+      let seedPath = process.env.MINDCRAFT_BOOTSTRAP_DB_PATH || null;
+
+      if (!seedPath && process.env.MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD === '1') {
+        try {
+          const { app } = require('electron');
+          if (app && !app.isPackaged) {
+            const parentDir = path.dirname(userDataDir);
+            // Match sibling by production app name, not first random entry
+            const prodName = app.getName ? app.getName() : 'mindcraft-agent';
+            if (prodName) {
+              const candidate = path.join(parentDir, prodName, 'mindcraft.db');
+              if (fs.existsSync(candidate)) {
+                seedPath = candidate;
+              }
+            }
           }
-        }
-      } catch (_) { /* ignore */ }
+        } catch (_) { /* require('electron') may not be available */ }
+      }
 
       if (seedPath) {
-        console.log('[db] First launch — seeding from:', seedPath);
+        console.log('[db] Dev bootstrap — copying production DB from:', seedPath);
+        console.log('[db] NOTE: this is a one-time copy; future writes are independent.');
         fs.copyFileSync(seedPath, dbPath);
         const buffer = fs.readFileSync(dbPath);
         db = new SQL.Database(buffer);

@@ -1839,36 +1839,48 @@ function setupClaudeHandlers() {
   }
 
   // ─── Provider storage (T174: SQLite-authoritative with legacy projection) ──
+
+  /**
+   * Dev-only bootstrap: when DB is empty and the current profile has no
+   * legacy provider data, attempt a ONE-TIME backfill from the production
+   * profile's claude-internal.json.
+   *
+   * Gated by MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD=1 and only runs in dev
+   * mode (app.isPackaged === false).  Matches the production profile by
+   * app.getName(), not the first random sibling.
+   *
+   * @returns {object|null} { providers, activeIdx } or null
+   */
+  function readDevBootstrapClaudeProviders() {
+    if (process.env.MINDCRAFT_DEV_BOOTSTRAP_FROM_PROD !== '1') return null
+    try {
+      const { app } = require('electron')
+      if (!app || app.isPackaged) return null
+      const prodName = app.getName ? app.getName() : 'mindcraft-agent'
+      if (!prodName) return null
+      const userDataDir = getMindCraftUserDataDir()
+      const parentDir = path.dirname(userDataDir)
+      const ciPath = path.join(parentDir, prodName, 'claude-internal.json')
+      if (!fs.existsSync(ciPath)) return null
+      const data = JSON.parse(fs.readFileSync(ciPath, 'utf8'))
+      const providers = data?.claudeProviders?.providers
+      if (providers && providers.length > 0) {
+        console.log('[claude] Dev bootstrap — backfilling from production config:', prodName)
+        return { providers, activeIdx: data.claudeProviders.activeIdx ?? 0 }
+      }
+    } catch (_) { /* ignore */ }
+    return null
+  }
+
   async function readClaudeProviders() {
     try {
       const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
       const legacyReader = () => {
-        // 1. Dev's own internalConf / settings.json
+        // 1. Current profile's own internalConf
         const self = confGet('claudeProviders', null)
         if (self && self.providers && self.providers.length > 0) return self
-
-        // 2. Dev has no configs — try production's claude-internal.json
-        //    (sibling userData dir, e.g. "mindcraft" vs "mindcraft-agent-dev")
-        try {
-          const userDataDir = getMindCraftUserDataDir()
-          const parentDir = path.dirname(userDataDir)
-          const selfName = path.basename(userDataDir)
-          for (const entry of fs.readdirSync(parentDir)) {
-            if (entry === selfName) continue
-            const ciPath = path.join(parentDir, entry, 'claude-internal.json')
-            if (!fs.existsSync(ciPath)) continue
-            try {
-              const data = JSON.parse(fs.readFileSync(ciPath, 'utf8'))
-              const providers = data?.claudeProviders?.providers
-              if (providers && providers.length > 0) {
-                console.log('[claude] legacyReader: using production config from:', entry)
-                return { providers, activeIdx: data.claudeProviders.activeIdx ?? 0 }
-              }
-            } catch (_) { /* skip unreadable files */ }
-          }
-        } catch (_) { /* ignore if parent dir not listable */ }
-
-        return null
+        // 2. Dev bootstrap from production profile (one-time, explicit gate)
+        return readDevBootstrapClaudeProviders()
       }
       const payload = getProviders(db, 'claude', legacyReader)
       if (payload.providers.length > 0) {
@@ -1897,11 +1909,16 @@ function setupClaudeHandlers() {
       return true
     } catch (e) {
       console.error('[claude] writeProviders error:', e.message)
-      // Fallback: write internalConf directly
+      // Emergency backup to a separate path — do NOT silently overwrite the
+      // legacy authority file.  If SQLite is the authority and it failed,
+      // returning true would make the UI believe the save succeeded when it
+      // didn't, creating a silent fork between DB and legacy.
       try {
-        internalConf.set('claudeProviders', data || { providers: [], activeIdx: -1 })
-      } catch (_) {}
-      return true
+        const emergencyPath = path.join(getMindCraftUserDataDir(), 'claude-providers.emergency.json')
+        fs.writeFileSync(emergencyPath, JSON.stringify(data, null, 2), 'utf8')
+        console.error('[claude] wrote emergency backup to:', emergencyPath)
+      } catch (_) { /* best-effort */ }
+      return false
     }
   }
 
