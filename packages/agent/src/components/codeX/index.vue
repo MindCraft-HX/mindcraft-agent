@@ -1248,10 +1248,14 @@ function smartScrollBottom(chatId) {
 }
 
 // 智能滚动：活跃 tab 用 scrollOrBump（尊重用户上翻位置），后台 tab 强滚
+// 活跃 tab 路径用 rAF 包裹，避免流式消息处理中同步读 scrollHeight 阻塞事件循环
 function smartScrollToBottom(chatId, smooth = true) {
   const id = chatId || activeChatId.value
   if (id === activeChatId.value) {
-    scrollOrBump(smooth)
+    requestAnimationFrame(() => {
+      if (id !== activeChatId.value) return
+      scrollOrBump(smooth)
+    })
   } else {
     const el = msgRefs[id]
     if (!el) return
@@ -2422,9 +2426,8 @@ function onCompositionEnd(e) {
   onInputChange(e)
 }
 function onInputChange(e) {
-  const stopAutosize = perfStart('codex.autosize')
+  const stopInput = perfStart('codex.onInputChange')
   textareaAutosize.scheduleResize()
-  stopAutosize()
   const query = extractMentionQuery(inputText.value || '', e?.target?.selectionStart)
   if (query == null) {
     clearMentionSuggestions()
@@ -2439,6 +2442,7 @@ function onInputChange(e) {
   } else {
     slashSuggestions.value = []
   }
+  stopInput({ len: val.length })
 }
 
 function onKeydown(e) {
@@ -2906,15 +2910,20 @@ async function ensureChatMessagesLoaded(chat) {
   const stop = perfStart('codex.ensureChatMessagesLoaded')
   if (CODEX_DEBUG) console.log('ensureChatMessagesLoaded', chat)
   if (!chat?.filePath || !window.electronAPI?.codexReadSessionFileRange) { stop(); return }
+
+  let stopIpc, stopProc
   try {
+    stopIpc = perfStart('codex.ensureChatMessagesLoaded.ipc')
     const rawData = await window.electronAPI.codexReadSessionFileRange({
       filePath: chat.filePath,
       page: 0,
       pageSize: 60,
     })
+    if (stopIpc) { stopIpc(); stopIpc = null }
     if (CODEX_DEBUG) console.log(rawData,'rawData--------------------------')
     if (!rawData?.messages?.length) return
     if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
+    stopProc = perfStart('codex.ensureChatMessagesLoaded.proc')
     const allMessages = filterCodexSystemMessages(rawData.messages)
     const n = Math.min(MAX_MESSAGES, allMessages.length)
     chat.messages = allMessages.slice(-n)
@@ -2924,7 +2933,12 @@ async function ensureChatMessagesLoaded(chat) {
     chat.pageSize = 60
     chat._messagesLoaded = true
     if (chat.id === activeChatId.value) void refreshMetricsForChat(chat, 'history-loaded')
-  } catch (_) {} finally { stop() }
+    if (stopProc) { stopProc(); stopProc = null }
+  } catch (_) {} finally {
+    if (stopIpc) stopIpc()
+    if (stopProc) stopProc()
+    stop()
+  }
 }
 
 async function loadMoreHistory(scrollEl) {

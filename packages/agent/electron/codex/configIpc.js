@@ -289,6 +289,7 @@ function registerConfigIpc(ipcMain, {
 
       if (result.ok && writeProviders) {
         const newProviderList = result.providers.map((p) => ({
+          id: p.id,  // preserve stable UUID from commitImport
           name: p.name,
           key: p.key || p.config?.key || '',
           url: p.url || p.config?.url || '',
