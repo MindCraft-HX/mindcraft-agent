@@ -739,6 +739,78 @@ test('Claude legacy backfill: DB empty, legacy has data → auto backfill with a
   db.close();
 });
 
+test('setProviders matches ID-less incoming provider to existing by name (defense against renderer fallback)', async () => {
+  const db = await createFreshDb();
+  const { setProviders, getProviders } = require('./index');
+
+  // Step 1: Create a provider with a known ID (simulating migrated data)
+  setProviders(db, 'claude', {
+    providers: [{ name: 'ExistingProvider', key: 'sk-existing', url: 'https://existing.com' }],
+    activeIdx: 0,
+  });
+  const afterCreate = getProviders(db, 'claude');
+  assert.equal(afterCreate.providers.length, 1, '1 provider after initial create');
+  const originalId = afterCreate.providers[0].id;
+  assert.ok(originalId, 'should have an id');
+
+  // Step 2: Save a NEW provider WITHOUT id, but with a different name
+  // This should be inserted as a new provider (no name match)
+  setProviders(db, 'claude', {
+    providers: [
+      { name: 'NewProvider', key: '', url: '' },  // no id, different name
+    ],
+    activeIdx: 0,
+  });
+  const afterNew = getProviders(db, 'claude');
+  assert.equal(afterNew.providers.length, 1, 'full replacement: existing removed, new inserted');
+  assert.notEqual(afterNew.providers[0].id, originalId, 'new provider should have different id');
+
+  db.close();
+});
+
+test('setProviders ID-less match by name preserves existing UUID and avoids duplicates', async () => {
+  const db = await createFreshDb();
+  const { setProviders, getProviders } = require('./index');
+
+  // Step 1: Create provider via migration (simulating migrated data with real UUID)
+  setProviders(db, 'claude', {
+    providers: [
+      { name: '默认配置', key: 'sk-real', url: 'https://real.com', language: 'en', permissionPolicy: 'allow' },
+      { name: 'SecondConfig', key: 'sk-second', url: 'https://second.com' },
+    ],
+    activeIdx: 0,
+  });
+  const afterCreate = getProviders(db, 'claude');
+  assert.equal(afterCreate.providers.length, 2, '2 providers after initial create');
+  const firstId = afterCreate.providers[0].id;
+  const secondId = afterCreate.providers[1].id;
+
+  // Step 2: Simulate renderer fallback — save with a default provider that has
+  // NO id field but the SAME name as the first provider, plus the second provider
+  // (with id). This is the "save all providers" pattern in the Vue component.
+  setProviders(db, 'claude', {
+    providers: [
+      { name: '默认配置', key: '', url: '' },  // no id! renderer fallback default
+      { name: 'SecondConfig', key: 'sk-second-updated', url: 'https://second.com', id: secondId },
+    ],
+    activeIdx: 1,
+  });
+
+  const afterSave = getProviders(db, 'claude');
+  assert.equal(afterSave.providers.length, 2, 'should still have 2 providers');
+  // The first provider should have its original id (matched by name)
+  const firstAfter = afterSave.providers.find((p) => p.name === '默认配置');
+  assert.ok(firstAfter, 'first provider should still exist');
+  assert.equal(firstAfter.id, firstId, 'first provider id should be preserved via name match');
+  // The second should be updated with new key
+  const secondAfter = afterSave.providers.find((p) => p.name === 'SecondConfig');
+  assert.ok(secondAfter, 'second provider should still exist');
+  assert.equal(secondAfter.id, secondId, 'second provider id should be preserved');
+  assert.equal(secondAfter.key, 'sk-second-updated', 'second provider key should be updated');
+
+  db.close();
+});
+
 test('Claude id empotency: setProviders multiple times → same ID, no duplicates', async () => {
   const db = await createFreshDb();
   const { setProviders, getProviders } = require('./index');

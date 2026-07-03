@@ -470,6 +470,7 @@ async function openSettings() {
 
           if (sKey || sUrl) {
             settingsForm.value.providers = [{
+              id: crypto.randomUUID(),
               name: t('settings.defaultProvider'),
               key: sKey,
               url: sUrl,

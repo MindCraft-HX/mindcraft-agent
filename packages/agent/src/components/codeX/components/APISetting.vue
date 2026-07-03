@@ -323,6 +323,7 @@ async function loadProviders() {
       const reasoningEffort = await window.electronAPI?.codexGetReasoningEffort?.() || ''
       const apiFormat = await window.electronAPI?.codexGetApiFormat?.() || 'responses'
       settingsForm.value.providers = [{
+        id: crypto.randomUUID(),
         name: 'default',
         key, url, model, reasoningEffort: normalizeCodexReasoningEffort(reasoningEffort),
         apiFormat,

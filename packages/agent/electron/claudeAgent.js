@@ -1842,7 +1842,34 @@ function setupClaudeHandlers() {
   async function readClaudeProviders() {
     try {
       const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
-      const legacyReader = () => confGet('claudeProviders', null)
+      const legacyReader = () => {
+        // 1. Dev's own internalConf / settings.json
+        const self = confGet('claudeProviders', null)
+        if (self && self.providers && self.providers.length > 0) return self
+
+        // 2. Dev has no configs — try production's claude-internal.json
+        //    (sibling userData dir, e.g. "mindcraft" vs "mindcraft-agent-dev")
+        try {
+          const userDataDir = getMindCraftUserDataDir()
+          const parentDir = path.dirname(userDataDir)
+          const selfName = path.basename(userDataDir)
+          for (const entry of fs.readdirSync(parentDir)) {
+            if (entry === selfName) continue
+            const ciPath = path.join(parentDir, entry, 'claude-internal.json')
+            if (!fs.existsSync(ciPath)) continue
+            try {
+              const data = JSON.parse(fs.readFileSync(ciPath, 'utf8'))
+              const providers = data?.claudeProviders?.providers
+              if (providers && providers.length > 0) {
+                console.log('[claude] legacyReader: using production config from:', entry)
+                return { providers, activeIdx: data.claudeProviders.activeIdx ?? 0 }
+              }
+            } catch (_) { /* skip unreadable files */ }
+          }
+        } catch (_) { /* ignore if parent dir not listable */ }
+
+        return null
+      }
       const payload = getProviders(db, 'claude', legacyReader)
       if (payload.providers.length > 0) {
         await persistDb()

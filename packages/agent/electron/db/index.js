@@ -62,7 +62,32 @@ async function openMindCraftDb({ userDataDir }) {
       const buffer = fs.readFileSync(dbPath);
       db = new SQL.Database(buffer);
     } else {
-      db = new SQL.Database();
+      // No local DB — search sibling userData directories for an existing
+      // mindcraft.db (e.g. from a production installation). In dev mode
+      // userData is app-specific while the installed package uses a
+      // different directory; this makes dev and prod share the same data.
+      let seedPath = null;
+      try {
+        const parentDir = path.dirname(userDataDir);
+        const selfName = path.basename(userDataDir);
+        for (const entry of fs.readdirSync(parentDir)) {
+          if (entry === selfName) continue;
+          const candidate = path.join(parentDir, entry, 'mindcraft.db');
+          if (fs.existsSync(candidate)) {
+            seedPath = candidate;
+            break;
+          }
+        }
+      } catch (_) { /* ignore */ }
+
+      if (seedPath) {
+        console.log('[db] First launch — seeding from:', seedPath);
+        fs.copyFileSync(seedPath, dbPath);
+        const buffer = fs.readFileSync(dbPath);
+        db = new SQL.Database(buffer);
+      } else {
+        db = new SQL.Database();
+      }
     }
 
     // Run migrations

@@ -170,13 +170,40 @@ function setProviders(db, agentType, { providers = [], activeIdx = 0 }) {
     return { ok: true, count: 0, ids: [], deleted };
   }
 
-  const daoProviders = providers.map((p) => ({
-    ...legacyToDaoProvider(p, agentType),
-    id: p.id || undefined,
-    agentType,
-    isActive: false,
-    projectionStatus: PROJECTION_STATUS.PENDING,
-  }));
+  // Resolve missing IDs by matching existing providers by name.
+  // This prevents renderer fallback defaults (which lack an `id` field)
+  // from being treated as new providers that trigger deletion of all
+  // existing migrated/configured providers.
+  const existingByName = new Map();
+  for (const ep of providerDao.listProviders(db, agentType)) {
+    const nameKey = (ep.name || '').toLowerCase();
+    if (nameKey && !existingByName.has(nameKey)) {
+      existingByName.set(nameKey, ep);
+    }
+  }
+
+  const daoProviders = providers.map((p) => {
+    const dao = legacyToDaoProvider(p, agentType);
+    let resolvedId = p.id || undefined;
+
+    // If the incoming provider has no id, try to match an existing
+    // provider by name so we UPDATE rather than INSERT+DELETE.
+    if (!resolvedId) {
+      const nameKey = (p.name || dao.name || '').toLowerCase();
+      const match = nameKey ? existingByName.get(nameKey) : undefined;
+      if (match) {
+        resolvedId = match.id;
+      }
+    }
+
+    return {
+      ...dao,
+      id: resolvedId,
+      agentType,
+      isActive: false,
+      projectionStatus: PROJECTION_STATUS.PENDING,
+    };
+  });
 
   const result = providerDao.upsertProviders(db, daoProviders, { source: 'mindcraft' });
 
