@@ -19,7 +19,7 @@ const os = require('os');
 const { dialog } = require('electron');
 const { previewCcSwitchFile, previewLocalCliConfig, annotateConflicts, commitImport } = require('./index');
 const { getDb, persistDb } = require('../index');
-const { getProviders, setProviders, projectToLegacy } = require('../providerStorage');
+const { getProviders, projectToLegacy } = require('../providerStorage');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -317,25 +317,10 @@ function registerSystemImportIpc(ipcMain, deps) {
 
         if (claudeResult.ok && claudeResult.providers.length > 0) {
           try {
-            const newProviderList = claudeResult.providers.map((p) => ({
-              id: p.id,
-              name: p.name,
-              key: p.key || p.config?.key || '',
-              url: p.url || p.config?.url || '',
-              website: p.website || '',
-              note: p.note || '',
-              tierModels: p.tierModels || (claudeExisting.find((ep) => ep.name === p.name)?.tierModels) || {},
-              selectedTier: p.selectedTier || 'sonnet',
-              language: p.language || 'zh-CN',
-              permissionPolicy: p.permissionPolicy || 'ask',
-              effortLevel: p.effortLevel !== undefined ? p.effortLevel : 'medium',
-              config: p.runtimeConfig || null,
-            }));
-            await setProviders(db, 'claude', {
-              providers: newProviderList,
-              activeIdx: Math.max(-1, claudeOrigActiveIdx),
-            });
-            // Project to legacy internalConf
+            // commitImport() already wrote to DB — just project to legacy.
+            // Do NOT call setProviders() here: it would do a full replacement
+            // with the lossy claudeResult.providers, overwriting existing
+            // providers' website/note/language/permissionPolicy/effortLevel etc.
             const legacyWriter = (payload) => {
               if (claudeSetConfig) claudeSetConfig('claudeProviders', payload);
             };
