@@ -8,7 +8,7 @@
  * - Pure-ish: functions accept an explicit db instance so tests don't depend on the real app profile.
  */
 
-const { VALID_AGENT_TYPES, VALID_PROVIDER_SOURCES } = require('../schema');
+const { VALID_AGENT_TYPES, VALID_PROVIDER_SOURCES, PROJECTION_STATUS } = require('../schema');
 const { v4: uuidv4 } = require('uuid');
 
 // ---------------------------------------------------------------------------
@@ -37,6 +37,9 @@ function parseProviderRow(row) {
     source: row[6],
     createdAt: row[7],
     updatedAt: row[8],
+    sortIndex: typeof row[9] === 'number' ? row[9] : 0,
+    projectionStatus: row[10] || PROJECTION_STATUS.PENDING,
+    lastProjectedAt: row[11] || null,
   };
 }
 
@@ -59,7 +62,7 @@ function listProviders(db, agentType) {
   validateAgentType(agentType);
   try {
     const result = db.exec(
-      'SELECT id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at FROM providers WHERE agent_type = ? ORDER BY updated_at DESC',
+      'SELECT id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at, sort_index, projection_status, last_projected_at FROM providers WHERE agent_type = ? ORDER BY sort_index ASC, updated_at DESC',
       [agentType],
     );
     if (!result || result.length === 0) return [];
@@ -80,7 +83,7 @@ function listProviders(db, agentType) {
 function getProvider(db, id) {
   try {
     const result = db.exec(
-      'SELECT id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at FROM providers WHERE id = ?',
+      'SELECT id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at, sort_index, projection_status, last_projected_at FROM providers WHERE id = ?',
       [id],
     );
     if (!result || result.length === 0 || result[0].values.length === 0) return null;
@@ -114,8 +117,8 @@ function upsertProviders(db, providers, { source = 'mindcraft' } = {}) {
   const now = timestamp();
 
   const stmt = db.prepare(
-    `INSERT INTO providers (id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO providers (id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at, sort_index, projection_status, last_projected_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        agent_type = excluded.agent_type,
        name = excluded.name,
@@ -123,8 +126,20 @@ function upsertProviders(db, providers, { source = 'mindcraft' } = {}) {
        metadata_json = excluded.metadata_json,
        is_active = excluded.is_active,
        source = excluded.source,
-       updated_at = excluded.updated_at`,
+       updated_at = excluded.updated_at,
+       sort_index = excluded.sort_index,
+       projection_status = excluded.projection_status,
+       last_projected_at = excluded.last_projected_at`,
   );
+
+  // Determine max sort_index for auto-assignment
+  let maxSortIndex = -1;
+  try {
+    const maxResult = db.exec('SELECT COALESCE(MAX(sort_index), -1) FROM providers');
+    if (maxResult && maxResult.length > 0 && maxResult[0].values && maxResult[0].values.length > 0) {
+      maxSortIndex = maxResult[0].values[0][0];
+    }
+  } catch (_) { /* ignore */ }
 
   try {
     db.run('BEGIN');
@@ -142,7 +157,14 @@ function upsertProviders(db, providers, { source = 'mindcraft' } = {}) {
         ? p.source
         : (VALID_PROVIDER_SOURCES.includes(source) ? source : 'mindcraft');
 
-      stmt.bind([id, agentType, name, configJson, metadataJson, isActive, providerSource, now, now]);
+      // Auto-assign sort_index for new providers (append to end)
+      const sortIndex = typeof p.sortIndex === 'number'
+        ? p.sortIndex
+        : (typeof p.sort_index === 'number' ? p.sort_index : ++maxSortIndex);
+      const projectionStatus = p.projectionStatus || p.projection_status || PROJECTION_STATUS.PENDING;
+      const lastProjectedAt = p.lastProjectedAt || p.last_projected_at || null;
+
+      stmt.bind([id, agentType, name, configJson, metadataJson, isActive, providerSource, now, now, sortIndex, projectionStatus, lastProjectedAt]);
       stmt.step();
       stmt.reset();
     }
@@ -199,10 +221,96 @@ function deleteProvider(db, id) {
   }
 }
 
+/**
+ * Reorder providers for an agent type by assigning sort_index values
+ * based on the orderedIds array. Sets projection_status to 'pending'
+ * on all reordered rows so the projection layer knows to sync.
+ *
+ * @param {import('sql.js').Database} db
+ * @param {string} agentType
+ * @param {string[]} orderedIds
+ * @returns {{ ok: boolean, count: number }}
+ */
+function reorderProviders(db, agentType, orderedIds) {
+  validateAgentType(agentType);
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return { ok: true, count: 0 };
+  }
+
+  const now = timestamp();
+  try {
+    db.run('BEGIN');
+    for (let i = 0; i < orderedIds.length; i++) {
+      db.run(
+        'UPDATE providers SET sort_index = ?, projection_status = ?, updated_at = ? WHERE id = ? AND agent_type = ?',
+        [i, PROJECTION_STATUS.PENDING, now, orderedIds[i], agentType],
+      );
+    }
+    db.run('COMMIT');
+    return { ok: true, count: orderedIds.length };
+  } catch (e) {
+    db.run('ROLLBACK');
+    console.error('[providers DAO] reorderProviders error:', e.message);
+    return { ok: false, count: 0, error: e.message };
+  }
+}
+
+/**
+ * Update the projection status and timestamp for a provider.
+ *
+ * @param {import('sql.js').Database} db
+ * @param {string} providerId
+ * @param {string} status — one of PROJECTION_STATUS values
+ * @returns {{ ok: boolean }}
+ */
+function setProjectionStatus(db, providerId, status) {
+  if (!Object.values(PROJECTION_STATUS).includes(status)) {
+    return { ok: false, error: `Invalid projection status: "${status}"` };
+  }
+
+  const now = timestamp();
+  try {
+    db.run(
+      'UPDATE providers SET projection_status = ?, last_projected_at = ?, updated_at = ? WHERE id = ?',
+      [status, status === PROJECTION_STATUS.SYNCED ? now : null, now, providerId],
+    );
+    return { ok: true };
+  } catch (e) {
+    console.error('[providers DAO] setProjectionStatus error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * List providers filtered by projection status.
+ *
+ * @param {import('sql.js').Database} db
+ * @param {string} agentType
+ * @param {string} status — one of PROJECTION_STATUS values
+ * @returns {Array<object>}
+ */
+function listProvidersByStatus(db, agentType, status) {
+  validateAgentType(agentType);
+  try {
+    const result = db.exec(
+      'SELECT id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at, sort_index, projection_status, last_projected_at FROM providers WHERE agent_type = ? AND projection_status = ? ORDER BY sort_index ASC',
+      [agentType, status],
+    );
+    if (!result || result.length === 0) return [];
+    return result[0].values.map(parseProviderRow);
+  } catch (e) {
+    console.error('[providers DAO] listProvidersByStatus error:', e.message);
+    return [];
+  }
+}
+
 module.exports = {
   listProviders,
   getProvider,
   upsertProviders,
   setActiveProvider,
   deleteProvider,
+  reorderProviders,
+  setProjectionStatus,
+  listProvidersByStatus,
 };

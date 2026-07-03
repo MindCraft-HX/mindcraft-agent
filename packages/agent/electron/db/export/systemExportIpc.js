@@ -17,6 +17,26 @@ const { dialog } = require('electron');
 const { buildProviderSqlExport } = require('./providerSql');
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Read CodeX providers from repository (SQLite-authoritative, T174).
+ * Falls back to legacy deps.readCodexProviders if DB unavailable.
+ */
+async function readCodexFromRepo(deps) {
+  try {
+    const { getProviders } = require('../providerStorage');
+    if (deps.getDb) {
+      const db = await deps.getDb({ userDataDir: deps.userDataDir });
+      return getProviders(db, 'codex', deps.readCodexProviders);
+    }
+  } catch (_) { /* fall through to legacy */ }
+  // Legacy fallback
+  return deps.readCodexProviders ? deps.readCodexProviders() : null;
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -24,22 +44,25 @@ const { buildProviderSqlExport } = require('./providerSql');
  * Register system-level export IPC handlers.
  *
  * @param {import('electron').IpcMain} ipcMain
- * @param {object} deps — same shape as registerSystemImportIpc
- * @param {function(): object|null} deps.readCodexProviders
+ * @param {object} deps
+ * @param {function(): object|null} deps.readCodexProviders  — legacy fallback
  * @param {function(string, any): any} deps.claudeGetConfig
+ * @param {function} deps.getDb — DB singleton accessor
+ * @param {string} deps.userDataDir
  */
 function registerSystemExportIpc(ipcMain, deps) {
-  const { readCodexProviders, claudeGetConfig } = deps;
+  const { claudeGetConfig } = deps;
 
   // ---- Preview ----
   ipcMain.handle('config-export-preview', async () => {
     try {
-      const codexStored = readCodexProviders ? (readCodexProviders()?.providers || []) : [];
+      const codexPayload = await readCodexFromRepo(deps);
+      const codexStored = codexPayload?.providers || [];
       const claudeStored = claudeGetConfig
         ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).providers || [])
         : [];
 
-      const codexActiveIdx = readCodexProviders ? (readCodexProviders()?.activeIdx ?? -1) : -1;
+      const codexActiveIdx = codexPayload?.activeIdx ?? -1;
       const claudeActiveIdx = claudeGetConfig
         ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).activeIdx ?? -1)
         : -1;
@@ -76,12 +99,13 @@ function registerSystemExportIpc(ipcMain, deps) {
     const { includeSecrets = true, includeActive = false } = payload || {};
 
     try {
-      // Read providers via deps (same adapters used by import)
-      const codexStored = readCodexProviders ? (readCodexProviders()?.providers || []) : [];
+      // Read providers: CodeX from repository (T174), Claude from legacy deps
+      const codexPayload = await readCodexFromRepo(deps);
+      const codexStored = codexPayload?.providers || [];
       const claudeStored = claudeGetConfig
         ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).providers || [])
         : [];
-      const codexActiveIdx = readCodexProviders ? (readCodexProviders()?.activeIdx ?? -1) : -1;
+      const codexActiveIdx = codexPayload?.activeIdx ?? -1;
       const claudeActiveIdx = claudeGetConfig
         ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).activeIdx ?? -1)
         : -1;

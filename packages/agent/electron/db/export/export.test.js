@@ -148,7 +148,8 @@ describe('buildClaudeSettingsConfig', () => {
     };
     const cfg = buildClaudeSettingsConfig(provider, { includeSecrets: false });
     assert.strictEqual(cfg.env.ANTHROPIC_AUTH_TOKEN, '');
-    assert.strictEqual(cfg.env.ANTHROPIC_BASE_URL, 'https://api.example.com');
+    // Blanket redact: ALL env values are blanked, not just the known two
+    assert.strictEqual(cfg.env.ANTHROPIC_BASE_URL, '');
   });
 
   it('redacts ANTHROPIC_API_KEY leaked from config.env', () => {
@@ -163,7 +164,8 @@ describe('buildClaudeSettingsConfig', () => {
     };
     const cfg = buildClaudeSettingsConfig(provider, { includeSecrets: false });
     assert.strictEqual(cfg.env.ANTHROPIC_API_KEY, '');
-    assert.strictEqual(cfg.env.ANTHROPIC_BASE_URL, 'https://api.example.com');
+    // Blanket redact: ALL env values are blanked, not just the known two
+    assert.strictEqual(cfg.env.ANTHROPIC_BASE_URL, '');
   });
 });
 
@@ -308,6 +310,35 @@ describe('buildProviderSqlExport', () => {
     });
     assert.ok(!sql.includes('sk-env-auth'), 'ANTHROPIC_AUTH_TOKEN should be redacted');
     assert.ok(!sql.includes('sk-env-api'), 'ANTHROPIC_API_KEY should be redacted');
+  });
+
+  it('redacts arbitrary custom env keys beyond known Anthropic fields', () => {
+    const sql = buildProviderSqlExport({
+      includeSecrets: false,
+      claudeProviders: [{
+        name: 'Custom',
+        key: '',
+        config: {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: 'sk-auth-token',
+            ANTHROPIC_API_KEY: 'sk-api-key',
+            ANTHROPIC_BASE_URL: 'https://api.example.com',
+            ANTHROPIC_CUSTOM_PROXY: 'secret-proxy-token-123',
+            MY_VENDOR_SECRET: 'super-secret-value',
+          },
+        },
+        selectedTier: 'sonnet',
+        tierModels: {},
+      }],
+    });
+    // Known Anthropic key fields should still be redacted
+    assert.ok(!sql.includes('sk-auth-token'), 'ANTHROPIC_AUTH_TOKEN should be redacted');
+    assert.ok(!sql.includes('sk-api-key'), 'ANTHROPIC_API_KEY should be redacted');
+    // Arbitrary custom env keys should also be redacted
+    assert.ok(!sql.includes('secret-proxy-token-123'), 'custom ANTHROPIC_CUSTOM_PROXY should be redacted');
+    assert.ok(!sql.includes('super-secret-value'), 'custom MY_VENDOR_SECRET should be redacted');
+    // Non-secret structural keys should still be present (but blanked)
+    assert.ok(sql.includes('ANTHROPIC_BASE_URL'), 'structural keys should still exist in output');
   });
 
   it('exports is_current when includeActive is true', () => {

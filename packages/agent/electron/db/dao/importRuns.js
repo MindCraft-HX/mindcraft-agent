@@ -68,7 +68,7 @@ function listImportRuns(db, { limit = 20 } = {}) {
     }));
   } catch (e) {
     console.error('[importRuns DAO] listImportRuns error:', e.message);
-    return [];
+    return null;
   }
 }
 

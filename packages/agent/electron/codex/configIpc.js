@@ -239,7 +239,7 @@ function registerConfigIpc(ipcMain, {
       }
       const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
       if (!preview.ok) return preview;
-      const existing = readProviders ? (readProviders()?.providers || []) : [];
+      const existing = readProviders ? ((await readProviders())?.providers || []) : [];
       preview.providers = annotateConflicts(preview.providers, existing);
       return preview;
     } catch (e) {
@@ -266,7 +266,7 @@ function registerConfigIpc(ipcMain, {
       const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
       if (!preview.ok) return { ...preview, imported: 0, skipped: 0, backupPath: '' };
 
-      const codexStored = readProviders ? readProviders() : null;
+      const codexStored = readProviders ? (await readProviders()) : null;
       const existing = codexStored?.providers || [];
       const activeIdx = codexStored?.activeIdx ?? -1;
 
@@ -276,7 +276,7 @@ function registerConfigIpc(ipcMain, {
         providers: decisions || [],
         previewProviders: preview.providers,
         existingProviders: existing.map((p, i) => ({
-          id: `codex-${i}`,
+          id: p.id,  // real UUID from repository
           name: p.name,
           config: { key: p.key || '', url: p.url || '', model: p.model || '', reasoningEffort: p.reasoningEffort || '', apiFormat: p.apiFormat || '' },
           isActive: i === activeIdx,
@@ -298,7 +298,7 @@ function registerConfigIpc(ipcMain, {
           tomlText: existing.find((ep) => ep.name === p.name)?.tomlText || '',
         }));
 
-        writeProviders({
+        await writeProviders({
           providers: newProviderList,
           activeIdx: Math.max(-1, activeIdx),
         });

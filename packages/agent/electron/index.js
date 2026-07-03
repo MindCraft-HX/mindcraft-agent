@@ -9,6 +9,7 @@ const { registerSessionInstructionIpc } = require('./sessionInstructionIpc')
 const { setLocale } = require('./localeHelper')
 const { registerSystemImportIpc } = require('./db/import/systemImportIpc')
 const { registerSystemExportIpc } = require('./db/export/systemExportIpc')
+const { getDb } = require('./db')
 
 let localeConf = null
 
@@ -39,6 +40,7 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
         userDataDir: claudeStorage.getMindCraftUserDataDir(),
         readCodexConfigTomlRaw: codexStorage.readCodexConfigTomlRaw,
         readClaudeRuntimeConfig: claudeStorage.readRuntimeConfigFromUserSettingsFile,
+        getDb,  // T174: DB singleton for repository-backed reads
       }
       registerSystemImportIpc(targetIpcMain, deps)
       registerSystemExportIpc(targetIpcMain, deps)

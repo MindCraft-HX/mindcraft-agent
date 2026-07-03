@@ -12,7 +12,7 @@
 const path = require('path');
 const fs = require('fs');
 
-const { migrateV1 } = require('./migrations/v1_initial');
+const { runMigrations } = require('./migrations/v1_initial');
 const { backupDb, readBackupBuffer } = require('./backup');
 const providerDao = require('./dao/providers');
 const importRunsDao = require('./dao/importRuns');
@@ -66,7 +66,7 @@ async function openMindCraftDb({ userDataDir }) {
     }
 
     // Run migrations
-    const migrationResult = migrateV1(db);
+    const migrationResult = runMigrations(db);
     if (!migrationResult.ok) {
       db.close();
       return { ok: false, db: null, dbPath, message: migrationResult.message };
@@ -132,7 +132,11 @@ function persistToFile(db, dbPath) {
 async function createTestDb() {
   const SQL = await loadSqlJs();
   const db = new SQL.Database();
-  migrateV1(db);
+  const migResult = runMigrations(db);
+  if (!migResult.ok) {
+    db.close();
+    throw new Error(`Migration failed in createTestDb: ${migResult.message}`);
+  }
   return db;
 }
 

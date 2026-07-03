@@ -24,9 +24,13 @@ async function getSql() {
 async function createFreshDb() {
   const sql = await getSql();
   const db = new sql.Database();
-  // Run migration
-  const { migrateV1 } = require('./migrations/v1_initial');
-  migrateV1(db);
+  // Run all migrations to get latest schema
+  const { runMigrations } = require('./migrations/v1_initial');
+  const migResult = runMigrations(db);
+  if (!migResult.ok) {
+    db.close();
+    throw new Error(`Migration failed in createFreshDb: ${migResult.message}`);
+  }
   return db;
 }
 
@@ -77,6 +81,112 @@ test('getDbVersion returns 0 on fresh un-migrated db', async () => {
   const db = new sql.Database();
 
   assert.equal(getDbVersion(db), 0);
+
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
+// A2. V2 Migration (sort_index, projection_status, last_projected_at)
+// ---------------------------------------------------------------------------
+
+test('runMigrations on fresh db creates v2 schema', async () => {
+  const { runMigrations, getDbVersion } = require('./migrations/v1_initial');
+  const sql = await getSql();
+  const db = new sql.Database();
+
+  const result = runMigrations(db);
+  assert.equal(result.ok, true);
+  assert.equal(result.version, 2);
+
+  const version = getDbVersion(db);
+  assert.equal(version, 2);
+
+  // Verify v2 columns exist
+  const cols = db.exec('PRAGMA table_info(providers)');
+  const colNames = cols[0].values.map((r) => r[1]);
+  assert.ok(colNames.includes('sort_index'), 'sort_index column should exist');
+  assert.ok(colNames.includes('projection_status'), 'projection_status column should exist');
+  assert.ok(colNames.includes('last_projected_at'), 'last_projected_at column should exist');
+
+  // Verify v2 index exists
+  const indexes = db.exec("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name");
+  const idxNames = indexes[0].values.map((r) => r[0]);
+  assert.ok(idxNames.includes('idx_providers_agent_sort'), 'v2 index should exist');
+
+  // Verify default values by inserting a row and reading back
+  db.run(
+    "INSERT INTO providers (id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ['def-test', 'codex', 'DefaultTest', '{}', '{}', 0, 'mindcraft', 1000, 1000],
+  );
+  const row = db.exec('SELECT sort_index, projection_status, last_projected_at FROM providers WHERE id = ?', ['def-test']);
+  assert.equal(row[0].values[0][0], 0, 'sort_index default should be 0');
+  assert.equal(row[0].values[0][1], 'pending', 'projection_status default should be pending');
+  assert.equal(row[0].values[0][2], null, 'last_projected_at default should be null');
+
+  db.close();
+});
+
+test('migrateV2 upgrades v1 DB to v2', async () => {
+  const { migrateV1, migrateV2, getDbVersion } = require('./migrations/v1_initial');
+  const sql = await getSql();
+  const db = new sql.Database();
+
+  // Start from v1
+  migrateV1(db);
+  assert.equal(getDbVersion(db), 1);
+
+  // Insert some v1 data to verify it survives
+  db.run(
+    "INSERT INTO providers (id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ['test-1', 'codex', 'Test', '{}', '{}', 0, 'mindcraft', 1000, 1000],
+  );
+
+  // Upgrade to v2
+  const result = migrateV2(db);
+  assert.equal(result.ok, true, `v2 migration should succeed: ${result.message}`);
+  assert.equal(getDbVersion(db), 2);
+
+  // Verify data survived
+  const rows = db.exec('SELECT id, name, sort_index, projection_status FROM providers WHERE id = ?', ['test-1']);
+  assert.equal(rows[0].values.length, 1);
+  assert.equal(rows[0].values[0][0], 'test-1');
+  assert.equal(rows[0].values[0][1], 'Test');
+  assert.equal(rows[0].values[0][2], 0, 'existing row should have sort_index = 0');
+  assert.equal(rows[0].values[0][3], 'pending', 'existing row should have projection_status = pending');
+
+  // Verify new columns exist
+  const cols = db.exec('PRAGMA table_info(providers)');
+  const colNames = cols[0].values.map((r) => r[1]);
+  assert.ok(colNames.includes('sort_index'));
+  assert.ok(colNames.includes('projection_status'));
+  assert.ok(colNames.includes('last_projected_at'));
+
+  db.close();
+});
+
+test('v2 migration is idempotent', async () => {
+  const { migrateV1, migrateV2, getDbVersion } = require('./migrations/v1_initial');
+  const sql = await getSql();
+  const db = new sql.Database();
+
+  migrateV1(db);
+  migrateV2(db);
+  const result2 = migrateV2(db); // second run
+  assert.equal(result2.ok, true);
+  assert.ok(result2.message.includes('Already at'), 'Should skip already-migrated v2 DB');
+  assert.equal(getDbVersion(db), 2);
+
+  db.close();
+});
+
+test('migrateV2 refuses to run without migrateV1', async () => {
+  const { migrateV2 } = require('./migrations/v1_initial');
+  const sql = await getSql();
+  const db = new sql.Database();
+
+  const result = migrateV2(db);
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes('Must run migrateV1'), 'Should refuse without v1');
 
   db.close();
 });
@@ -232,6 +342,179 @@ test('upsertProviders rejects invalid agentType', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// B2. Provider DAO — sort_index, reorder, projection status
+// ---------------------------------------------------------------------------
+
+test('listProviders orders by sort_index ASC', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, listProviders } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'p-z', agentType: 'codex', name: 'Z', config: {}, sortIndex: 2 },
+    { id: 'p-a', agentType: 'codex', name: 'A', config: {}, sortIndex: 0 },
+    { id: 'p-m', agentType: 'codex', name: 'M', config: {}, sortIndex: 1 },
+  ]);
+
+  const providers = listProviders(db, 'codex');
+  assert.equal(providers.length, 3);
+  assert.equal(providers[0].name, 'A');
+  assert.equal(providers[1].name, 'M');
+  assert.equal(providers[2].name, 'Z');
+
+  db.close();
+});
+
+test('upsertProviders auto-assigns sort_index for new providers', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, listProviders } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'p-1', agentType: 'codex', name: 'First', config: {} },
+    { id: 'p-2', agentType: 'codex', name: 'Second', config: {} },
+    { id: 'p-3', agentType: 'codex', name: 'Third', config: {} },
+  ]);
+
+  const providers = listProviders(db, 'codex');
+  assert.equal(providers.length, 3);
+  assert.equal(providers[0].sortIndex, 0);
+  assert.equal(providers[1].sortIndex, 1);
+  assert.equal(providers[2].sortIndex, 2);
+
+  db.close();
+});
+
+test('upsertProviders preserves new v2 fields', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, getProvider } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'p-v2', agentType: 'codex', name: 'V2Test', config: {}, sortIndex: 5, projectionStatus: 'synced' },
+  ]);
+
+  const p = getProvider(db, 'p-v2');
+  assert.equal(p.sortIndex, 5);
+  assert.equal(p.projectionStatus, 'synced');
+  assert.equal(p.lastProjectedAt, null);
+
+  db.close();
+});
+
+test('reorderProviders updates sort_index and sets projection_status to pending', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, reorderProviders, listProviders } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'r-a', agentType: 'codex', name: 'A', config: {} },
+    { id: 'r-b', agentType: 'codex', name: 'B', config: {} },
+    { id: 'r-c', agentType: 'codex', name: 'C', config: {} },
+  ]);
+
+  // Reverse order
+  const result = reorderProviders(db, 'codex', ['r-c', 'r-b', 'r-a']);
+  assert.equal(result.ok, true);
+  assert.equal(result.count, 3);
+
+  const providers = listProviders(db, 'codex');
+  assert.equal(providers[0].name, 'C');
+  assert.equal(providers[1].name, 'B');
+  assert.equal(providers[2].name, 'A');
+
+  // All should have projection_status = 'pending' after reorder
+  for (const p of providers) {
+    assert.equal(p.projectionStatus, 'pending', `${p.name} should be pending after reorder`);
+  }
+
+  db.close();
+});
+
+test('reorderProviders only affects specified agentType', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, reorderProviders, listProviders } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'cx-a', agentType: 'codex', name: 'CodeX-A', config: {} },
+    { id: 'cx-b', agentType: 'codex', name: 'CodeX-B', config: {} },
+    { id: 'cl-a', agentType: 'claude', name: 'Claude-A', config: {} },
+    { id: 'cl-b', agentType: 'claude', name: 'Claude-B', config: {} },
+  ]);
+
+  reorderProviders(db, 'codex', ['cx-b', 'cx-a']);
+
+  const codex = listProviders(db, 'codex');
+  assert.equal(codex[0].name, 'CodeX-B');
+  assert.equal(codex[1].name, 'CodeX-A');
+
+  // Claude should be unaffected
+  const claude = listProviders(db, 'claude');
+  assert.equal(claude[0].name, 'Claude-A');
+  assert.equal(claude[1].name, 'Claude-B');
+
+  db.close();
+});
+
+test('setProjectionStatus updates status and timestamp', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, setProjectionStatus, getProvider } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'ps-1', agentType: 'codex', name: 'PS', config: {} },
+  ]);
+
+  // Set to synced
+  const before = Date.now();
+  const result = setProjectionStatus(db, 'ps-1', 'synced');
+  assert.equal(result.ok, true);
+
+  const p = getProvider(db, 'ps-1');
+  assert.equal(p.projectionStatus, 'synced');
+  assert.ok(typeof p.lastProjectedAt === 'number');
+  assert.ok(p.lastProjectedAt >= Math.floor(before / 1000));
+
+  // Set to failed
+  setProjectionStatus(db, 'ps-1', 'failed');
+  const p2 = getProvider(db, 'ps-1');
+  assert.equal(p2.projectionStatus, 'failed');
+
+  db.close();
+});
+
+test('setProjectionStatus rejects invalid status', async () => {
+  const db = await createFreshDb();
+  const { setProjectionStatus } = require('./dao/providers');
+
+  const result = setProjectionStatus(db, 'any', 'invalid_status');
+  assert.equal(result.ok, false);
+  assert.ok(result.error.includes('Invalid projection status'));
+
+  db.close();
+});
+
+test('listProvidersByStatus filters by projection status', async () => {
+  const db = await createFreshDb();
+  const { upsertProviders, listProvidersByStatus } = require('./dao/providers');
+
+  upsertProviders(db, [
+    { id: 'ls-1', agentType: 'codex', name: 'Pending1', config: {}, projectionStatus: 'pending' },
+    { id: 'ls-2', agentType: 'codex', name: 'Synced1', config: {}, projectionStatus: 'synced' },
+    { id: 'ls-3', agentType: 'codex', name: 'Failed1', config: {}, projectionStatus: 'failed' },
+  ]);
+
+  const pending = listProvidersByStatus(db, 'codex', 'pending');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].name, 'Pending1');
+
+  const synced = listProvidersByStatus(db, 'codex', 'synced');
+  assert.equal(synced.length, 1);
+  assert.equal(synced[0].name, 'Synced1');
+
+  const failed = listProvidersByStatus(db, 'codex', 'failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].name, 'Failed1');
+
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
 // C. Import Runs DAO
 // ---------------------------------------------------------------------------
 
@@ -247,6 +530,7 @@ test('recordImportRun stores and lists import runs', async () => {
   assert.equal(r2.ok, true);
 
   const runs = listImportRuns(db, { limit: 10 });
+  assert.ok(runs, 'listImportRuns should not return null');
   assert.equal(runs.length, 2);
 
   // Newest first
@@ -520,8 +804,8 @@ test('DB persists and reloads correctly', async () => {
 
   // Create, insert, close
   const db1 = new sql.Database();
-  const { migrateV1 } = require('./migrations/v1_initial');
-  migrateV1(db1);
+  const { runMigrations } = require('./migrations/v1_initial');
+  runMigrations(db1);
 
   const { upsertProviders } = require('./dao/providers');
   upsertProviders(db1, [{ id: 'p-roundtrip', agentType: 'codex', name: 'RoundTrip', config: { key: 'rt' }, isActive: true }]);

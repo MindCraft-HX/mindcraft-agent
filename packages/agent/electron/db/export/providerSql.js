@@ -254,12 +254,14 @@ function buildClaudeSettingsConfig(provider, { includeSecrets }) {
   }
   if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
 
-  // When redacting, explicitly wipe any keys that may have leaked from config.env.
-  // The logic above uses `apiKey || env.OLD_VALUE` which preserves old values
-  // when apiKey is ''; this block ensures both fields are blanked.
+  // When redacting, blank every env key — not just the two known Anthropic fields.
+  // The logic above spreads all of existingEnv into `env`, which could include
+  // arbitrary custom keys (proxy tokens, vendor secrets, etc.).  Blanket redact
+  // prevents those from leaking when includeSecrets is false.
   if (!includeSecrets) {
-    env.ANTHROPIC_AUTH_TOKEN = '';
-    env.ANTHROPIC_API_KEY = '';
+    for (const k of Object.keys(env)) {
+      env[k] = '';
+    }
   }
 
   // Tier model env vars — map from tierModels UI slots

@@ -3675,25 +3675,67 @@ function setupCodexSdkHandlers() {
     event.returnValue = true
   })
 
-  // Codex 配置管理
+  // ─── Provider storage (T174: SQLite-authoritative with legacy projection) ──
   const PROVIDERS_FILE = path.join(CODEX_CONFIG_DIR, 'providers.json')
-  function readProviders() {
+  const { getDb, persistDb } = require('./db')
+  const { getProviders, setProviders, migrateFromLegacy, projectToLegacy } = require('./db/providerStorage')
+
+  async function readProviders() {
     try {
-      if (!fs.existsSync(PROVIDERS_FILE)) return null
-      return JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'))
-    } catch (_) { return null }
-  }
-  function writeProviders(data) {
-    try {
-      if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
-      const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-      fs.renameSync(tmp, PROVIDERS_FILE)
-    } catch (_) {}
+      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const legacyReader = () => {
+        try {
+          if (!fs.existsSync(PROVIDERS_FILE)) return null
+          return JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'))
+        } catch (_) { return null }
+      }
+      const payload = getProviders(db, 'codex', legacyReader)
+      if (payload.providers.length > 0) {
+        await persistDb()
+      }
+      return payload.providers.length > 0 ? payload : null
+    } catch (e) {
+      console.error('[codex] readProviders error:', e.message)
+      // Fallback: read legacy file directly if DB path fails
+      try {
+        if (!fs.existsSync(PROVIDERS_FILE)) return null
+        return JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'))
+      } catch (_) { return null }
+    }
   }
 
-  ipcMain.handle('codex-get-providers', () => readProviders())
-  ipcMain.handle('codex-set-providers', (_, data) => { writeProviders(data); return true })
+  async function writeProviders(data) {
+    try {
+      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const result = setProviders(db, 'codex', data || { providers: [], activeIdx: 0 })
+
+      if (result.ok) {
+        // Project to legacy providers.json for rollback compatibility
+        const legacyWriter = (payload) => {
+          if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
+          const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
+          fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
+          fs.renameSync(tmp, PROVIDERS_FILE)
+        }
+        projectToLegacy(db, 'codex', legacyWriter)
+        await persistDb()
+      }
+      return true
+    } catch (e) {
+      console.error('[codex] writeProviders error:', e.message)
+      // Fallback: write legacy file directly
+      try {
+        if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
+        const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+        fs.renameSync(tmp, PROVIDERS_FILE)
+      } catch (_) {}
+      return true
+    }
+  }
+
+  ipcMain.handle('codex-get-providers', async () => readProviders())
+  ipcMain.handle('codex-set-providers', async (_, data) => { await writeProviders(data); return true })
 
   ipcMain.handle('codex-write-auth-json', (_, obj) => {
     try {
@@ -4085,8 +4127,29 @@ function setupCodexSdkHandlers() {
     return false
   })
 
-  // Capture provider storage for system-level import IPC (T163)
-  _codexProviderStorage = { readProviders, writeProviders, readCodexConfigTomlRaw: () => fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : '', userDataDir: getMindCraftUserDataDir() };
+  // Capture provider storage for system-level import IPC (T163/T174).
+  // Legacy sync wrapper: the async readProviders/writeProviders are the authority,
+  // but system import/export IPC expects sync deps.  Step 6 will switch those
+  // callers to use the repository directly.
+  _codexProviderStorage = {
+    readProviders: () => {
+      // Sync fallback: read legacy file directly; import IPC will be updated in Step 6
+      try {
+        if (!fs.existsSync(PROVIDERS_FILE)) return null
+        return JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'))
+      } catch (_) { return null }
+    },
+    writeProviders: (data) => {
+      try {
+        if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
+        const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+        fs.renameSync(tmp, PROVIDERS_FILE)
+      } catch (_) {}
+    },
+    readCodexConfigTomlRaw: () => fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : '',
+    userDataDir: getMindCraftUserDataDir(),
+  };
 }
 
 // Module-level storage accessor for system-level import IPC (T163)

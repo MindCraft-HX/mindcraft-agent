@@ -13,9 +13,31 @@
  *  - config-import-commit        → write to both CodeX and Claude storages
  */
 
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { dialog } = require('electron');
 const { previewCcSwitchFile, previewLocalCliConfig, annotateConflicts, commitImport } = require('./index');
 const { getDb, persistDb } = require('../index');
+const { getProviders, setProviders, projectToLegacy } = require('../providerStorage');
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Read CodeX providers from repository (SQLite-authoritative, T174).
+ * Falls back to legacy deps.readCodexProviders if DB unavailable.
+ */
+async function readCodexFromRepo(deps) {
+  try {
+    if (deps.getDb) {
+      const db = await deps.getDb({ userDataDir: deps.userDataDir });
+      return getProviders(db, 'codex', deps.readCodexProviders);
+    }
+  } catch (_) { /* fall through to legacy */ }
+  return deps.readCodexProviders ? deps.readCodexProviders() : null;
+}
 
 // ---------------------------------------------------------------------------
 // Registration
@@ -75,7 +97,8 @@ function registerSystemImportIpc(ipcMain, deps) {
         if (!preview.ok) return preview;
 
         // Annotate conflicts against BOTH storages
-        const codexStored = readCodexProviders ? (readCodexProviders()?.providers || []) : [];
+        const codexPayload = await readCodexFromRepo(deps);
+        const codexStored = codexPayload?.providers || [];
         const claudeStored = claudeGetConfig
           ? (claudeGetConfig('claudeProviders', { providers: [], activeIdx: -1 }).providers || [])
           : [];
@@ -125,7 +148,8 @@ function registerSystemImportIpc(ipcMain, deps) {
           const preview = previewLocalCliConfig({ agentType: 'codex', cliConfig: tomlConfig });
           if (!preview.ok) return preview;
 
-          const existing = readCodexProviders ? (readCodexProviders()?.providers || []) : [];
+          const codexPayload = await readCodexFromRepo(deps);
+          const existing = codexPayload?.providers || [];
           preview.providers = annotateConflicts(preview.providers, existing);
           return preview;
         }
@@ -205,33 +229,13 @@ function registerSystemImportIpc(ipcMain, deps) {
       }
 
       // ---- Commit CodeX providers ----
-      const codexExisting = readCodexProviders ? (readCodexProviders()?.providers || []) : [];
-      const codexStored = readCodexProviders ? readCodexProviders() : null;
-      const codexActiveIdx = codexStored?.activeIdx ?? -1;
-
       const db = await getDb({ userDataDir });
+      const codexPayload = await readCodexFromRepo(deps);
+      const codexExisting = codexPayload?.providers || [];
+      const codexActiveIdx = codexPayload?.activeIdx ?? -1;
 
       let codexResult = { ok: true, imported: 0, skipped: 0, providers: [], warnings: [], backupPath: '' };
       if (codexDecisions.length > 0) {
-        // Enrich codex decisions with existing IDs for overwrite matching
-        const codexNameMap = new Map();
-        for (const ep of codexExisting) {
-          const key = (ep.name || '').toLowerCase();
-          if (key && !codexNameMap.has(key)) {
-            codexNameMap.set(key, ep);
-          }
-        }
-        for (const d of codexDecisions) {
-          const preview = previewMap.get(d.tempId);
-          if (d.action === 'overwrite' && !d.targetProviderId) {
-            const nameKey = (preview.name || '').toLowerCase();
-            if (nameKey && codexNameMap.has(nameKey)) {
-              // Assign a synthetic ID for the existing provider
-              d._codexIdx = codexExisting.indexOf(codexNameMap.get(nameKey));
-            }
-          }
-        }
-
         // Always clear CC Switch active flag — MindCraft manages its own active state
         const codexPreviewForCommit = previewProviders
           .filter((p) => p.agentType === 'codex')
@@ -241,7 +245,7 @@ function registerSystemImportIpc(ipcMain, deps) {
           providers: codexDecisions,
           previewProviders: codexPreviewForCommit,
           existingProviders: codexExisting.map((p, i) => ({
-            id: `codex-${i}`,
+            id: p.id,  // real UUID from repository
             name: p.name,
             config: { key: p.key || '', url: p.url || '', model: p.model || '', reasoningEffort: p.reasoningEffort || '', apiFormat: p.apiFormat || '' },
             isActive: i === codexActiveIdx,
@@ -252,22 +256,21 @@ function registerSystemImportIpc(ipcMain, deps) {
           userDataDir,
         });
 
-        if (codexResult.ok && writeCodexProviders) {
-          const newProviderList = codexResult.providers.map((p) => ({
-            name: p.name,
-            key: p.key || p.config?.key || '',
-            url: p.url || p.config?.url || '',
-            model: p.model || p.config?.model || '',
-            reasoningEffort: p.reasoningEffort || p.config?.reasoningEffort || '',
-            apiFormat: p.apiFormat || p.config?.apiFormat || '',
-            tomlText: codexStored?.providers?.find((ep) => ep.name === p.name)?.tomlText || '',
-          }));
-
-          // Keep existing activeIdx — MindCraft manages its own active state
-          writeCodexProviders({
-            providers: newProviderList,
-            activeIdx: Math.max(-1, codexActiveIdx),
-          });
+        if (codexResult.ok) {
+          // T174: Project CodeX providers from DB to legacy providers.json
+          try {
+            const codexDir = path.join(os.homedir(), '.codex');
+            const providersFile = path.join(codexDir, 'providers.json');
+            const legacyWriter = (payload) => {
+              if (!fs.existsSync(codexDir)) fs.mkdirSync(codexDir, { recursive: true });
+              const tmp = `${providersFile}.${process.pid}.tmp`;
+              fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8');
+              fs.renameSync(tmp, providersFile);
+            };
+            await projectToLegacy(db, 'codex', legacyWriter);
+          } catch (e) {
+            console.error('[systemImportIpc] CodeX projection error:', e.message);
+          }
         }
       }
 
