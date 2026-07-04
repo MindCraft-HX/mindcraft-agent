@@ -1532,7 +1532,7 @@ async function refreshProjectSessionsInBackground(project) {
     const applyStop = perfStart('codex.scan.apply')
     const nextChats = []
     for (const summary of scanned) {
-      if (project.id !== activeProjectId.value) return
+      if (project.id !== activeProjectId.value) { applyStop(); return }
       const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
       const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
       const cached = cacheByPath[normalizedPath] || cacheBySid[summary.chatKey] || cacheBySid[providerSessionId] || null

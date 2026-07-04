@@ -2116,24 +2116,33 @@ function listSessionsByCwd(targetCwd) {
   const treeSignature = getCodexSessionsTreeSignature(SESSIONS_DIR)
   const cached = _codexScanByCwdCache.get(normalizedTarget)
   if (cached?.treeSignature === treeSignature) {
-    stop({ cacheHit: 1, sessions: cached.result.length })
-    return cached.result.map(s => ({ ...s }))
+    // T178: cache hit 时重新 attach registry，避免 registry title/model/runtime 过期
+    const sessions = []
+    for (const raw of cached.rawSummaries) {
+      const attached = attachRegistrySessionToScanSummary('codex', raw, { cwd: targetCwd })
+      if (attached) sessions.push(attached)
+    }
+    const result = sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+    stop({ cacheHit: 1, sessions: result.length })
+    return result
   }
 
   const files = listCodexJsonlFilesCached()
+  const rawSummaries = []
   const sessions = []
 
   for (const file of files) {
     const summary = extractSessionSummary(file)
     if (!summary) continue
     if (normalizeFsPath(summary.cwd) === normalizedTarget) {
+      rawSummaries.push(summary)
       const attached = attachRegistrySessionToScanSummary('codex', summary, { cwd: targetCwd })
       if (attached) sessions.push(attached)
     }
   }
 
   const result = sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
-  _codexScanByCwdCache.set(normalizedTarget, { treeSignature, result })
+  _codexScanByCwdCache.set(normalizedTarget, { treeSignature, rawSummaries })
   stop({ cacheHit: 0, sessions: result.length })
   return result
 }

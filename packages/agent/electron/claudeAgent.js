@@ -529,8 +529,13 @@ function scanCliSessionsForProject(cwd) {
 
     const cached = _claudeScanCache.get(cwd)
     if (cached?.signature === signature) {
-      stop({ cacheHit: 1, sessions: cached.result.length })
-      return cached.result.map(s => ({ ...s }))
+      // T178: cache hit 时重新 attach registry，避免 registry title/model/runtime 过期
+      for (const raw of cached.rawSummaries) {
+        const summary = attachRegistrySessionToScanSummary('claude', raw, { cwd })
+        if (summary) result.push(summary)
+      }
+      stop({ cacheHit: 1, sessions: result.length })
+      return result
     }
 
     // 只扫描顶层 .jsonl（不递归，避免把 subagents 的 jsonl 当作独立对话）
@@ -558,12 +563,14 @@ function scanCliSessionsForProject(cwd) {
       return timeB - timeA
     })
 
+    // T178: cache raw summaries (before registry attachment)，避免 registry 变更后缓存过期
+    const rawSummaries = []
     for (const file of jsonlFiles) {
       const titleResult = getCachedClaudeSessionTitle(file.filePath, file.fileSize, file.updatedAt)
       const title = titleResult?.title || ''
       const isCustomTitle = titleResult?.isCustomTitle || false
       const meta = readClaudeSessionMetaByFilePath(file.filePath)
-      const summary = attachRegistrySessionToScanSummary('claude', {
+      const raw = {
         // `id` is kept for renderer compatibility; new code should read cliSessionId.
         id: file.cliSessionId,
         cliSessionId: file.cliSessionId,
@@ -579,11 +586,13 @@ function scanCliSessionsForProject(cwd) {
         model: meta.model || null,
         effort: meta.effort || null,
         modelTier: meta.modelTier || null,
-      }, { cwd })
+      }
+      rawSummaries.push(raw)
+      const summary = attachRegistrySessionToScanSummary('claude', raw, { cwd })
       if (summary) result.push(summary)
     }
 
-    _claudeScanCache.set(cwd, { signature, result })
+    _claudeScanCache.set(cwd, { signature, rawSummaries })
     stop({ cacheHit: 0, sessions: result.length })
   } catch (_) {
     stop({ error: 1 })

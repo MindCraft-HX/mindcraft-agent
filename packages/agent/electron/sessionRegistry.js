@@ -608,6 +608,11 @@ function upsertSessionRecord(record, options = {}) {
     index.providers[key] = next.chatKey
   }
   writeIndex(index, options)
+  // T178: 中心写入口 — 清 instruction cache，避免过期
+  _instructionCache.delete(_instructionCacheKey(next.chatKey, options))
+  for (const orphanChatKey of orphanChatKeys) {
+    _instructionCache.delete(_instructionCacheKey(orphanChatKey, options))
+  }
   return true
 }
 

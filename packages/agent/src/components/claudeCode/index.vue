@@ -727,7 +727,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
         Object.assign(metricsData.value, result)
         syncMetricsTimerForClaudeTab(tab, result.durationMs || 0)
       }
-    }).catch(() => {})
+    }).catch(() => { _refreshingMetrics = false })
     stop()
     return
   }
@@ -2063,7 +2063,7 @@ async function refreshProjectSessionsInBackground(p) {
     let hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
     const applyStop = perfStart('claude.scan.apply')
     for (const s of scanned) {
-      if (p.id !== activeProjectId.value) return
+      if (p.id !== activeProjectId.value) { applyStop(); return }
       const scannedCliSessionId = s.cliSessionId || s.id || ''
       const normalizedPath = (s.filePath || '').replace(/\\/g, '/')
       const cached = cacheByPath[normalizedPath] || cacheBySid[scannedCliSessionId] || null
