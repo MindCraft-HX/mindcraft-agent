@@ -2258,10 +2258,9 @@ function switchChat(id) {
       requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
     })
   } else if (chat?.filePath && chat._messagesLoaded && hasPendingMount(chat)) {
-    // T177-P2: 磁盘已加载但有未补齐的 pending → resume
-    void resumeMount(chat).then(() => {
-      requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
-    })
+    // T177-P2: 磁盘已加载但有未补齐的 pending → 立即恢复 scroll/focus，后台 resume
+    void resumeMount(chat)
+    requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
   } else {
     requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
   }
@@ -2307,7 +2306,8 @@ async function ensureChatMessagesLoaded(chat) {
       chat._pendingSessionBinding = false
     }
     chat._messagesLoaded = true
-    await mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
+    // 同步挂首批 10 条后立即返回，剩余 batch 后台补齐（不阻塞 scroll/focus 恢复）
+    void mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
     if (stopProc) { stopProc(); stopProc = null }
   } catch (e) {
     console.warn('[ensureChatMessagesLoaded] failed:', e?.message || e)
@@ -2696,6 +2696,8 @@ function trimMessages(tab, skipScrollCompensation) {
 async function loadMoreHistory(scrollEl) {
   const chat = activeTab.value
   if (!chat || !chat.hasMoreHistory || chat.loadingMore || !chat.filePath) return
+  // T177-P2: pending 分片未完时禁止翻页，避免 page1 unshift 后 pending unshift 打乱顺序
+  if (hasPendingMount(chat)) return
   if (loadMoreCooldownTimer) return
   loadMoreCooldownTimer = setTimeout(() => { loadMoreCooldownTimer = null }, 1000)
 
