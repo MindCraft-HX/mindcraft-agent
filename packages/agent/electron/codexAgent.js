@@ -1195,7 +1195,12 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
       hasPendingTurn = false
     }
 
+    let yieldCounter = 0
     for (const line of lines) {
+      // T177: 每 5000 行 yield event loop，避免冷启动大文件时长时间阻塞
+      if (++yieldCounter % 5000 === 0) {
+        await new Promise(resolve => setImmediate(resolve))
+      }
       const row = safeJsonParse(line)
       if (!row) continue
 
