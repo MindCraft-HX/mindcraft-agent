@@ -574,6 +574,8 @@ const codexJsonlScanCache = {
   files: [],
 }
 const codexSessionSummaryCache = new Map()
+const _codexScanByCwdCache = new Map() // normalizedCwd → { treeSignature, result }
+const _pendingCodexScans = new Map() // normalizedCwd → Promise<result[]>
 
 function getCodexSessionsTreeSignature(dir) {
   try {
@@ -616,6 +618,7 @@ function clearCodexJsonlCaches() {
   jsonlLineCache.clear()
   _metricsAggregateCache.clear()
   codexSessionSummaryCache.clear()
+  _codexScanByCwdCache.clear()
   codexJsonlScanCache.root = ''
   codexJsonlScanCache.signature = ''
   codexJsonlScanCache.files = []
@@ -2106,7 +2109,17 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 
 /** 按工作目录列出所有 Codex 会话历史 */
 function listSessionsByCwd(targetCwd) {
+  const stop = perfStartIpc('codex-list-sessions-by-cwd')
   const normalizedTarget = normalizeFsPath(targetCwd)
+
+  // T178: scan cache — 用 tree signature 检测文件变更
+  const treeSignature = getCodexSessionsTreeSignature(SESSIONS_DIR)
+  const cached = _codexScanByCwdCache.get(normalizedTarget)
+  if (cached?.treeSignature === treeSignature) {
+    stop({ cacheHit: 1, sessions: cached.result.length })
+    return cached.result.map(s => ({ ...s }))
+  }
+
   const files = listCodexJsonlFilesCached()
   const sessions = []
 
@@ -2119,7 +2132,10 @@ function listSessionsByCwd(targetCwd) {
     }
   }
 
-  return sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+  const result = sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+  _codexScanByCwdCache.set(normalizedTarget, { treeSignature, result })
+  stop({ cacheHit: 0, sessions: result.length })
+  return result
 }
 
 const codexSessions = new Map()
@@ -3358,9 +3374,16 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-list-sessions-by-cwd', (_, cwd) => {
+  // T178: in-flight dedup — 同 cwd 并发调用共享同一结果
+  ipcMain.handle('codex-list-sessions-by-cwd', async (_, cwd) => {
     if (!cwd) return []
-    return listSessionsByCwd(cwd)
+    const normalizedTarget = normalizeFsPath(cwd)
+    const pending = _pendingCodexScans.get(normalizedTarget)
+    if (pending) return (await pending).map(s => ({ ...s }))
+    const promise = Promise.resolve(listSessionsByCwd(cwd))
+    _pendingCodexScans.set(normalizedTarget, promise)
+    try { return await promise }
+    finally { _pendingCodexScans.delete(normalizedTarget) }
   })
 
   ipcMain.handle('codex-delete-session-file', (_, { filePath }) => {

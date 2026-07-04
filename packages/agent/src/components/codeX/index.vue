@@ -1493,7 +1493,9 @@ async function refreshProjectSessionsInBackground(project) {
   let newCount = 0
   let changedCount = 0
   try {
+    const scanStop = perfStart('codex.scan.wall')
     const scanned = await window.electronAPI.codexListSessionsByCwd(project.cwd) || []
+    scanStop()
     if (!Array.isArray(scanned)) return null
     if (project.id !== activeProjectId.value) return null
 
@@ -1527,6 +1529,7 @@ async function refreshProjectSessionsInBackground(project) {
     const hasPendingNewChat = (project.chats || []).some(
       c => c.thinking && !c.cliSessionId && !c.filePath
     )
+    const applyStop = perfStart('codex.scan.apply')
     const nextChats = []
     for (const summary of scanned) {
       if (project.id !== activeProjectId.value) return
@@ -1584,6 +1587,7 @@ async function refreshProjectSessionsInBackground(project) {
       const chat = await buildChatFromSessionSummary(summary)
       nextChats.push(chat)
     }
+    applyStop()
 
     const mergedChats = mergeScannedChatsPreservingRuntime(project.chats, nextChats, {
       activeChatId: activeChatId.value,

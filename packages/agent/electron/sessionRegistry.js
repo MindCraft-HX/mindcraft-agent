@@ -20,6 +20,14 @@ function _draftCacheKey(chatKey, options = {}) {
   return getSessionRegistryRoot(options) + '::' + normalizeString(chatKey)
 }
 
+// T178: per-chatKey instruction 读缓存，写操作时失效。
+// 复用 _draftCache 的 key 隔离模式。
+const _instructionCache = new Map()
+
+function _instructionCacheKey(chatKey, options = {}) {
+  return getSessionRegistryRoot(options) + '::instruction::' + normalizeString(chatKey)
+}
+
 function getUserDataDir(options = {}) {
   if (options.userDataDir) return options.userDataDir
   return getMindCraftUserDataDir(options)
@@ -723,6 +731,7 @@ function deleteSessionRecord(chatKey, options = {}) {
   if (JSON.stringify(index) !== before) deleted = true
   if (deleted) writeIndex(index, options)
   _draftCache.delete(_draftCacheKey(chatKey, options))
+  _instructionCache.delete(_instructionCacheKey(chatKey, options))
   return deleted
 }
 
@@ -735,6 +744,12 @@ function readInstructionRecord(instructionId, options = {}) {
 }
 
 function getSessionInstruction(chatKey, options = {}) {
+  const cacheKey = _instructionCacheKey(chatKey, options)
+  const cached = _instructionCache.get(cacheKey)
+  if (cached) {
+    perfStartIpc('sessionRegistry.getInstruction')({ cacheHit: 1 })
+    return { ...cached }
+  }
   const stop = perfStartIpc('sessionRegistry.getInstruction')
   const tRecord = Date.now()
   const recordPath = getSessionRecordPath(chatKey, options)
@@ -757,14 +772,16 @@ function getSessionInstruction(chatKey, options = {}) {
   const attachments = sessionAttachments && (sessionAttachments.length || !instructionId)
     ? sessionAttachments
     : (legacyInstruction?.attachments || [])
-  stop({ hasInstructionId: instructionId ? 1 : 0, recordReadMs, instructionReadMs })
-  return {
+  const result = {
     enabled: Boolean(sessionInstruction.enabled),
     instructionId,
     description: normalizeString(session?.description) || legacyDescription,
     content: sessionContent || legacyInstruction?.content || '',
     attachments,
   }
+  _instructionCache.set(cacheKey, { ...result })
+  stop({ hasInstructionId: instructionId ? 1 : 0, recordReadMs, instructionReadMs, cacheHit: 0 })
+  return result
 }
 
 function getSessionDraft(chatKey, options = {}) {
@@ -858,6 +875,7 @@ function setSessionInstruction(chatKey, data = {}, options = {}) {
     updatedAt: now,
   }
   upsertSessionRecord(sessionRecord, options)
+  _instructionCache.delete(_instructionCacheKey(resolvedChatKey, options))
   return { ok: true, instruction: getSessionInstruction(resolvedChatKey, options) }
 }
 
@@ -893,6 +911,7 @@ function setSessionTitle(chatKey, title, options = {}) {
     updatedAt: now,
   }
   upsertSessionRecord(record, options)
+  _instructionCache.delete(_instructionCacheKey(resolvedChatKey, options))
   return { ok: true, record: readJson(getSessionRecordPath(resolvedChatKey, options), null) }
 }
 

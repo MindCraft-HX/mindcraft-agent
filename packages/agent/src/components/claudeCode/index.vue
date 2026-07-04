@@ -600,6 +600,8 @@ let _unregAgentEvent = null
 // refreshMetricsForChat 期间的轮询锁，防止 polling 数据覆盖刚查出的完整结果
 let _refreshingMetrics = false
 const _metricsTracker = createMetricsDedupTracker()
+const _claudeMetricsJustSent = new Map() // cliSessionId -> timestamp
+const METRICS_DEDUP_TTL_MS = 300
 
 function findClaudeTabBySessionId(sessionId = '') {
   if (!sessionId) return null
@@ -675,10 +677,20 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
   })
 }
 
-async function refreshMetricsForChat(chat) {
+async function refreshMetricsForChat(chat, reason = 'unknown') {
   const stop = perfStart('claude.refreshMetricsForChat')
   stopMetricsLiveTimer()
   if (!chat?.cliSessionId) { resetMetrics(); stop(); return }
+
+  const dedupKey = chat.cliSessionId
+  const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
+
+  // T178: 切 session 后 300ms TTL — 跳过后续 reason 的重复 metrics 查询
+  if (reason !== 'switch-chat' && dedupKey) {
+    const sent = _claudeMetricsJustSent.get(dedupKey)
+    if (sent && Date.now() - sent < METRICS_DEDUP_TTL_MS) { stop(); return }
+  }
+  if (dedupKey) _claudeMetricsJustSent.set(dedupKey, Date.now())
 
   // 去重：同一 cliSessionId 已有在飞请求 → 跳过
   if (_metricsTracker.has(chat.cliSessionId)) { stop(); return }
@@ -697,6 +709,29 @@ async function refreshMetricsForChat(chat) {
     model: getClaudeTabModel(chat),
   })
   _metricsTracker.track(chat.cliSessionId, ipcPromise)
+
+  // T178: 交互路径不 await IPC，后台异步刷新（对齐 CodeX）
+  if (isInteraction) {
+    const requestChatId = chat.id
+    const requestCliSessionId = chat.cliSessionId
+    const requestThinking = Boolean(chat.thinking)
+    ipcPromise.then(result => {
+      _refreshingMetrics = false
+      if (!result) return
+      const tab = projects.value.flatMap(p => p.chats || []).find(c => c.id === requestChatId)
+      if (!tab) return
+      if (!result.model) result.model = getClaudeTabModel(tab)
+      result.thinking = Boolean(tab.thinking)
+      tab.metrics = { ...tab.metrics, ...result }
+      if (activeChatId.value === tab.id) {
+        Object.assign(metricsData.value, result)
+        syncMetricsTimerForClaudeTab(tab, result.durationMs || 0)
+      }
+    }).catch(() => {})
+    stop()
+    return
+  }
+
   try {
     const result = await ipcPromise
     if (result) {
@@ -822,7 +857,7 @@ watch(activeChatId, (id, oldId) => {
     stopDraft()
   })
   resetHistory()
-  refreshMetricsForChat(chat)
+  refreshMetricsForChat(chat, 'switch-chat')
   void refreshActiveSessionInstructionState()
 }, { immediate: true })
 
@@ -1995,7 +2030,9 @@ async function refreshProjectSessionsInBackground(p) {
   let newCount = 0
   let changedCount = 0
   try {
+    const scanStop = perfStart('claude.scan.wall')
     const scanned = await window.electronAPI.claudeScanProjectsSessions(p.cwd)
+    scanStop()
     if (!Array.isArray(scanned) || !scanned.length) {
       if (!p.chats?.length) {
         const c = createChat()
@@ -2024,6 +2061,7 @@ async function refreshProjectSessionsInBackground(p) {
     // 等 onAgentDone 填充 cliSessionId/filePath 后下次扫描自然匹配。
     // 注意：循环内领养后会重新计算，避免预计算过时导致合法新 JSONL 被忽略
     let hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
+    const applyStop = perfStart('claude.scan.apply')
     for (const s of scanned) {
       if (p.id !== activeProjectId.value) return
       const scannedCliSessionId = s.cliSessionId || s.id || ''
@@ -2139,6 +2177,7 @@ async function refreshProjectSessionsInBackground(p) {
         }
       }
     }
+    applyStop()
 
     // 如果有当前活跃对话的消息被清空了，主动触发重新加载
     const needReload = scanned.find(s => s._needReloadActiveChat)
@@ -2246,7 +2285,7 @@ function switchChat(id) {
   // 切换时如果消息超限，先截断再保存
   if (chat) trimMessages(chat)
   resetScrollPrev()
-  refreshMetricsForChat(chat)
+  refreshMetricsForChat(chat, 'switch-chat')
   const stopSync = perfStart('claude.switchChat.sync')  // 同步路径结束标记
   stopSync()
   // 有 filePath 且未从磁盘加载过时，从文件加载
@@ -2340,7 +2379,7 @@ async function requestDeleteChat(chat) {
   if (activeChatId.value === chat.id) {
     activeChatId.value = p.chats[0]?.id || null
     const next = p.chats.find(c => c.id === activeChatId.value) || null
-    refreshMetricsForChat(next)
+    refreshMetricsForChat(next, 'switch-chat')
   }
   // 删除是破坏性操作：立即落盘，避免 debounce 导致”关掉后立刻重开”丢历史
   saveHistory({ immediate: true })

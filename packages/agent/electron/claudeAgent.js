@@ -152,10 +152,13 @@ function scanCliSessionIds(cwd) {
 
 const claudeProjectJsonlListCache = new Map()
 const claudeSessionTitleCache = new Map()
+const _claudeScanCache = new Map() // cwd → { signature, result }
+const _pendingClaudeScans = new Map() // cwd → Promise<result[]>
 
 function clearClaudeSessionScanCaches() {
   claudeProjectJsonlListCache.clear()
   claudeSessionTitleCache.clear()
+  _claudeScanCache.clear()
   claudeMetrics.clearClaudeMetricsCaches()
 }
 
@@ -505,14 +508,34 @@ function buildClaudeAgentDonePayload({
 
 /** 扫描项目根目录下所有 .jsonl 会话文件，返回带时间戳和标题的会话列表 */
 function scanCliSessionsForProject(cwd) {
+  const stop = perfStartIpc('claude-scan-sessions')
   const result = []
   try {
     const projectDir = getClaudeProjectsRootDir(cwd)
-    if (!fs.existsSync(projectDir)) return result
+    if (!fs.existsSync(projectDir)) { stop({ empty: 1 }); return result }
+
+    // 构建复合签名：目录签名 + 各文件 mtimeMs:size（T178 scan cache）
+    const files = listClaudeTopLevelJsonlPaths(projectDir)
+    const sigParts = [`dir:${getDirectorySignature(projectDir)}`]
+    for (const fp of files) {
+      try {
+        const st = fs.statSync(fp)
+        sigParts.push(`${fp}:${Math.trunc(st.mtimeMs)}:${st.size}`)
+      } catch (_) {
+        sigParts.push(`${fp}:MISSING`)
+      }
+    }
+    const signature = sigParts.join('|')
+
+    const cached = _claudeScanCache.get(cwd)
+    if (cached?.signature === signature) {
+      stop({ cacheHit: 1, sessions: cached.result.length })
+      return cached.result.map(s => ({ ...s }))
+    }
 
     // 只扫描顶层 .jsonl（不递归，避免把 subagents 的 jsonl 当作独立对话）
     const jsonlFiles = []
-    for (const fullPath of listClaudeTopLevelJsonlPaths(projectDir)) {
+    for (const fullPath of files) {
       const cliSessionId = path.basename(fullPath, '.jsonl')
       let createdAt = null
       let updatedAt = null
@@ -559,7 +582,12 @@ function scanCliSessionsForProject(cwd) {
       }, { cwd })
       if (summary) result.push(summary)
     }
-  } catch (_) {}
+
+    _claudeScanCache.set(cwd, { signature, result })
+    stop({ cacheHit: 0, sessions: result.length })
+  } catch (_) {
+    stop({ error: 1 })
+  }
   return result
 }
 
@@ -893,7 +921,15 @@ function setupClaudeHandlers() {
   const pendingPermissionResolvers = new Map() // requestId -> resolver(allowed)
 
   ipcMain.handle('claude-load-code-panel-state', () => readClaudeCodePanelState())
-  ipcMain.handle('claude-scanner-projects-sessions', (_, { cwd }) => scanCliSessionsForProject(cwd))
+  // T178: in-flight dedup — 同 cwd 并发调用共享同一结果
+  ipcMain.handle('claude-scanner-projects-sessions', async (_, { cwd }) => {
+    const pending = _pendingClaudeScans.get(cwd)
+    if (pending) return (await pending).map(s => ({ ...s }))
+    const promise = Promise.resolve(scanCliSessionsForProject(cwd))
+    _pendingClaudeScans.set(cwd, promise)
+    try { return await promise }
+    finally { _pendingClaudeScans.delete(cwd) }
+  })
   ipcMain.handle('claude-read-session-meta', (_, { cwd, cliSessionId, filePath } = {}) => {
     if (filePath) return readClaudeSessionMetaByFilePath(filePath)
     return readClaudeSessionMeta(cwd, cliSessionId)
