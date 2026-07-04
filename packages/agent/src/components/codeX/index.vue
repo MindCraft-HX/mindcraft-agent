@@ -298,7 +298,7 @@ import { countVisibleCodexUserMessages, isVisibleCodexUserMessage } from './util
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
-import { perfStart, isPerfEnabled } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { perfStart, perfCount, isPerfEnabled } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { createMetricsDedupTracker } from '../agentCommon/utils/metricsDedupHelper.js'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
