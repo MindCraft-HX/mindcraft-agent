@@ -156,6 +156,7 @@ const claudeSessionTitleCache = new Map()
 function clearClaudeSessionScanCaches() {
   claudeProjectJsonlListCache.clear()
   claudeSessionTitleCache.clear()
+  claudeMetrics.clearClaudeMetricsCaches()
 }
 
 function getDirectorySignature(dirPath) {
@@ -3223,75 +3224,63 @@ function setupClaudeHandlers() {
   })
 
   // 主动查询会话 metrics（用于切换 tab 时恢复历史数据）
-  ipcMain.handle('claude-agent-query-metrics', async (_, { cliSessionId, model }) => {
+  ipcMain.handle('claude-agent-query-metrics', async (event, { cliSessionId, model }) => {
     const stop = perfStartIpc('claude-agent-query-metrics')
     if (!cliSessionId) { stop(); return null }
-    const diagStart = Date.now()
-    const resolveStart = Date.now()
-    appendClaudeFreezeDiag('metrics.enter', {
-      cliSessionId: String(cliSessionId).slice(-12),
-      model: model || '',
-    })
+
+    // 1. 解析 JSONL 路径（sessionJsonlCache 已缓存，第二次起 0ms）
     const jsonlPath = claudeMetrics.resolveJsonlPath(cliSessionId)
-    const metricsCwd = claudeMetrics.getLatestSessionCwd?.(cliSessionId) || ''
-    const resolveMs = Date.now() - resolveStart
-    appendClaudeFreezeDiag('metrics.resolve.done', {
-      cliSessionId: String(cliSessionId).slice(-12),
-      file: jsonlPath ? path.basename(jsonlPath) : null,
-      resolveMs,
-    })
-    const tokenStart = Date.now()
-    const jsonlMetrics = claudeMetrics.getTokenMetrics(cliSessionId)
-    const tokenMs = Date.now() - tokenStart
-    appendClaudeFreezeDiag('metrics.tokens.done', {
-      cliSessionId: String(cliSessionId).slice(-12),
-      tokenMs,
-      hasMetrics: Boolean(jsonlMetrics),
-    })
-    const speedStart = Date.now()
-    const speedMetrics = claudeMetrics.getSpeedMetrics(cliSessionId)
-    const speedMs = Date.now() - speedStart
-    const gitInfo = metricsCwd ? await claudeMetrics.getGitInfo(metricsCwd) : null
-    const totalMs = Date.now() - diagStart
-    appendClaudeFreezeDiag('metrics.speed.done', {
-      cliSessionId: String(cliSessionId).slice(-12),
-      speedMs,
-    })
-    appendClaudeFreezeDiag('metrics.return', {
-      cliSessionId: String(cliSessionId).slice(-12),
-      file: jsonlPath ? path.basename(jsonlPath) : null,
-      resolveMs,
-      tokenMs,
-      speedMs,
-      totalMs,
-      hasMetrics: Boolean(jsonlMetrics),
-    })
-    if (!jsonlMetrics) { stop(); return null }
-    // 速度 fallback：getSpeedMetrics 需要 completed request（stop_reason），
-    // 旧 session / 流式中可能返回 null，此时用总量 ÷ 墙钟时间估算。
-    let inputPerSec = speedMetrics?.inputTokensPerSec || 0
-    let outputPerSec = speedMetrics?.outputTokensPerSec || 0
-    if (!inputPerSec && !outputPerSec && jsonlMetrics.durationMs > 0) {
-      const elapsedSec = Math.max(1, jsonlMetrics.durationMs / 1000)
-      inputPerSec = Math.round((jsonlMetrics.inputTokens || 0) / elapsedSec)
-      outputPerSec = Math.round((jsonlMetrics.outputTokens || 0) / elapsedSec)
+
+    // 2. 查 aggregate cache
+    const cached = jsonlPath && claudeMetrics.getCachedClaudeAggregate(jsonlPath)
+    if (cached) {
+      // ── 热路径：cache hit → 直接返回 ──
+      const metricsCwd = cached.cwd || claudeMetrics.getLatestSessionCwd?.(cliSessionId) || ''
+      const gitInfo = metricsCwd ? await claudeMetrics.getGitInfo(metricsCwd) : null
+      const result = {
+        model: model || '',
+        costUsd: cached.result.costUsd || 0,
+        inputTokens: cached.result.inputTokens || 0,
+        outputTokens: cached.result.outputTokens || 0,
+        cacheReadTokens: cached.result.cacheReadTokens || 0,
+        cacheCreationTokens: cached.result.cacheCreationTokens || 0,
+        contextUsage: cached.result.contextUsage || 0,
+        contextWindow: cached.result.contextWindow || 0,
+        durationMs: cached.result.durationMs || 0,
+        speedOutputPerSec: cached.result.speedOutputPerSec || 0,
+        gitBranch: gitInfo?.branch || '',
+        gitChanges: gitInfo?.changes || 0,
+      }
+      stop({ cacheHit: 1, hasMetrics: 1 })
+      return result
     }
-    const result = {
-      model: model || '',
-      costUsd: jsonlMetrics.costUsd || 0,
-      inputTokens: jsonlMetrics.inputTokens || 0,
-      outputTokens: jsonlMetrics.outputTokens || 0,
-      cacheReadTokens: jsonlMetrics.cacheReadTokens || 0,
-      cacheCreationTokens: jsonlMetrics.cacheCreationTokens || 0,
-      contextUsage: jsonlMetrics.contextUsage || 0,
-      contextWindow: jsonlMetrics.contextWindow || 0,
-      durationMs: jsonlMetrics.durationMs || 0,
-      speedOutputPerSec: outputPerSec,
-      gitBranch: gitInfo?.branch || '',
-      gitChanges: gitInfo?.changes || 0,
+
+    // ── 冷路径：cache miss → 返回 null + 后台聚合 ──
+    stop({ cacheHit: 0, backgroundAggregate: 1 })
+    const promise = claudeMetrics.scheduleBackgroundClaudeAggregate(cliSessionId)
+    if (promise && event.sender) {
+      const sender = event.sender
+      promise.then((aggResult) => {
+        if (!aggResult || !sender || sender.isDestroyed()) return
+        safeSend(sender, 'claude-agent-metrics', {
+          sessionId: cliSessionId,
+          model: model || '',
+          thinking: false,
+          costUsd: aggResult.costUsd || 0,
+          inputTokens: aggResult.inputTokens || 0,
+          outputTokens: aggResult.outputTokens || 0,
+          cacheReadTokens: aggResult.cacheReadTokens || 0,
+          cacheCreationTokens: aggResult.cacheCreationTokens || 0,
+          contextUsage: aggResult.contextUsage || 0,
+          contextWindow: aggResult.contextWindow || 0,
+          durationMs: aggResult.durationMs || 0,
+          speedOutputPerSec: aggResult.speedOutputPerSec || 0,
+          gitBranch: '',
+          gitChanges: 0,
+        })
+      }).catch(() => {})
     }
-    stop({ resolveMs, tokenMs, speedMs, hasMetrics: 1 })
-    return result
+    return null
   })
 
   ipcMain.handle('claude-permission-response', (_, { sessionId, requestId, allowed }) => {

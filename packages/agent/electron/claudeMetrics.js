@@ -68,7 +68,87 @@ function resolveJsonlPath(cliSessionId) {
 
 // ==================== JSONL 指标解析 ====================
 
-const jsonlLineCache = new Map() // cliSessionId -> { lines: [], mtimeMs: 0 }
+const jsonlLineCache = new Map() // filePath -> { lines: [], mtimeMs: 0 }
+
+// ==================== Aggregate Cache（Phase 1：消除主进程 fs.readFileSync 阻塞）====================
+// 与 CodeX _metricsAggregateCache 同模式：filePath + mtimeMs + size 作为缓存 key，
+// 缓存 getTokenMetrics + getSpeedMetrics 的合并结果。git 状态不进入缓存（独立 30s TTL）。
+const _claudeAggregateCache = new Map() // filePath -> { mtimeMs, size, cwd, result }
+const _pendingClaudeAggregates = new Map() // filePath -> Promise
+
+function getCachedClaudeAggregate(filePath) {
+  if (!filePath) return null
+  const cached = _claudeAggregateCache.get(filePath)
+  if (!cached) return null
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
+      // 返回浅拷贝 + 拆分 cwd，防止调用方污染缓存
+      return { result: { ...cached.result }, cwd: cached.cwd || '' }
+    }
+  } catch (_) { /* 文件被删除 */ }
+  _claudeAggregateCache.delete(filePath)
+  return null
+}
+
+function computeAndCacheClaudeAggregate(cliSessionId) {
+  const filePath = resolveJsonlPath(cliSessionId)
+  if (!filePath) return null
+
+  const tokenMetrics = getTokenMetrics(cliSessionId)
+  const speedMetrics = getSpeedMetrics(cliSessionId)
+  const cwd = getLatestSessionCwd(cliSessionId)
+
+  if (!tokenMetrics) return null
+
+  const result = {
+    costUsd: tokenMetrics.costUsd || 0,
+    inputTokens: tokenMetrics.inputTokens || 0,
+    outputTokens: tokenMetrics.outputTokens || 0,
+    cacheReadTokens: tokenMetrics.cacheReadTokens || 0,
+    cacheCreationTokens: tokenMetrics.cacheCreationTokens || 0,
+    contextUsage: tokenMetrics.contextUsage || 0,
+    contextWindow: tokenMetrics.contextWindow || 0,
+    durationMs: tokenMetrics.durationMs || 0,
+    speedOutputPerSec: speedMetrics?.outputTokensPerSec || 0,
+  }
+
+  try {
+    const stat = fs.statSync(filePath)
+    _claudeAggregateCache.set(filePath, {
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      cwd: cwd || '',
+      result: { ...result },
+    })
+  } catch (_) {}
+
+  return result
+}
+
+function scheduleBackgroundClaudeAggregate(cliSessionId) {
+  const filePath = resolveJsonlPath(cliSessionId)
+  if (!filePath || _pendingClaudeAggregates.has(filePath)) return null
+
+  const promise = (async () => {
+    try {
+      // yield to event loop before heavy work
+      await new Promise(resolve => setImmediate(resolve))
+      return computeAndCacheClaudeAggregate(cliSessionId)
+    } finally {
+      _pendingClaudeAggregates.delete(filePath)
+    }
+  })()
+
+  _pendingClaudeAggregates.set(filePath, promise)
+  return promise
+}
+
+function clearClaudeMetricsCaches() {
+  _claudeAggregateCache.clear()
+  jsonlLineCache.clear()
+  sessionJsonlCache.clear()
+}
 
 function toSafeTokenCount(value) {
   const num = Number(value)
@@ -688,6 +768,10 @@ module.exports = {
   resolveJsonlPath,
   getTokenMetrics,
   getSpeedMetrics,
+  getCachedClaudeAggregate,
+  scheduleBackgroundClaudeAggregate,
+  clearClaudeMetricsCaches,
+  getLatestSessionCwd,
   getGitInfo,
   fetchUsageApiData,
   getCachedUsageData,
