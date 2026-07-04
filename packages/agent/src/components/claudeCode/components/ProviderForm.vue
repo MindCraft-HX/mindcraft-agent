@@ -180,6 +180,8 @@ const policy = ref('ask')
 const lang = ref('zh-CN')
 const effort = ref('medium')
 const jsonText = ref('')
+const tierKeys = ['haiku', 'sonnet', 'opus', 'reasoning']
+const mindCraftAppLocales = ['zh-CN', 'en-US']
 
 watch(() => props.visible, (v) => {
   if (v) initFromProps()
@@ -200,7 +202,7 @@ function initFromProps() {
   tier.opus = (pt.opus || '').toString()
   tier.reasoning = (pt.reasoning || '').toString()
 
-  tierKey.value = props.selectedTier || 'sonnet'
+  tierKey.value = tierKeys.includes(p.selectedTier) ? p.selectedTier : (tierKeys.includes(props.selectedTier) ? props.selectedTier : 'sonnet')
   policy.value = props.permissionPolicy || 'ask'
   lang.value = props.language || 'zh-CN'
   effort.value = props.effortLevel ?? 'medium'
@@ -212,9 +214,11 @@ function initFromProps() {
   if (initial) {
     jsonText.value = JSON.stringify(initial, null, 2)
     applyJsonToForm()
+    syncFormToJson()
   } else if (typeof props.configJson === 'string' && props.configJson) {
     jsonText.value = props.configJson
     applyJsonToForm()
+    syncFormToJson()
   } else {
     jsonText.value = buildJsonFromForm()
   }
@@ -244,15 +248,52 @@ function buildJsonFromForm() {
   const obj = {}
   if (Object.keys(env).length) obj.env = env
   if (tierKey.value) obj.model = tierKey.value
-  if (policy.value) obj.permissionPolicy = policy.value
-  if (lang.value) obj.language = lang.value
+  // `policy` and `lang` are MindCraft UI/runtime fields. They are emitted as
+  // provider fields on save, but intentionally not written into config JSON.
+  // Claude's official `language` setting means response language, not app locale.
   if (effort.value) obj.effortLevel = effort.value
   return JSON.stringify(obj, null, 2)
 }
 
+function cloneConfigObject(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return {}
+  try {
+    return JSON.parse(JSON.stringify(config))
+  } catch (_) {
+    return { ...config }
+  }
+}
+
+function sanitizeClaudeConfig(config) {
+  const parsed = cloneConfigObject(config)
+  // Keep this editor JSON close to Claude's official settings shape. App-owned
+  // provider fields stay on the provider object / repository metadata.
+  delete parsed.reasoningEffort
+  delete parsed.apiFormat
+  delete parsed.key
+  delete parsed.url
+  delete parsed.apiKey
+  delete parsed.primaryApiKey
+  delete parsed.baseURL
+  delete parsed.apiBaseUrl
+  delete parsed.permissionPolicy
+  delete parsed.theme
+  delete parsed.website
+  delete parsed.note
+  if (mindCraftAppLocales.includes(parsed.language)) delete parsed.language
+  delete parsed.ANTHROPIC_AUTH_TOKEN
+  delete parsed.ANTHROPIC_BASE_URL
+  delete parsed.ANTHROPIC_MODEL
+  delete parsed.ANTHROPIC_DEFAULT_HAIKU_MODEL
+  delete parsed.ANTHROPIC_DEFAULT_SONNET_MODEL
+  delete parsed.ANTHROPIC_DEFAULT_OPUS_MODEL
+  delete parsed.ANTHROPIC_REASONING_MODEL
+  return parsed
+}
+
 function syncFormToJson() {
   try {
-    const parsed = JSON.parse(jsonText.value || '{}')
+    const parsed = sanitizeClaudeConfig(JSON.parse(jsonText.value || '{}'))
     const env = ensureEnvObject(parsed)
 
     const keyTrim = form.key.trim()
@@ -279,10 +320,6 @@ function syncFormToJson() {
 
     if (tierKey.value) parsed.model = tierKey.value
     else delete parsed.model
-    if (policy.value) parsed.permissionPolicy = policy.value
-    else delete parsed.permissionPolicy
-    if (lang.value) parsed.language = lang.value
-    else delete parsed.language
     if (effort.value) parsed.effortLevel = effort.value
     else delete parsed.effortLevel
 
@@ -292,32 +329,36 @@ function syncFormToJson() {
 
 function applyJsonToForm() {
   try {
-    const parsed = JSON.parse(jsonText.value || '{}')
+    const raw = JSON.parse(jsonText.value || '{}')
+    const parsed = sanitizeClaudeConfig(raw)
     const env = readEnvObject(parsed)
 
-    const k = (env.ANTHROPIC_AUTH_TOKEN || parsed.ANTHROPIC_AUTH_TOKEN || parsed.primaryApiKey || parsed.apiKey || '').toString()
-    const u = (env.ANTHROPIC_BASE_URL || parsed.ANTHROPIC_BASE_URL || parsed.baseURL || parsed.apiBaseUrl || '').toString()
+    const k = (env.ANTHROPIC_AUTH_TOKEN || raw.ANTHROPIC_AUTH_TOKEN || raw.primaryApiKey || raw.apiKey || raw.key || '').toString()
+    const u = (env.ANTHROPIC_BASE_URL || raw.ANTHROPIC_BASE_URL || raw.baseURL || raw.apiBaseUrl || raw.url || '').toString()
     if (k) form.key = k
     if (u) form.url = u
 
-    const t = (parsed.model || '').toString()
-    if (['haiku', 'sonnet', 'opus', 'reasoning'].includes(t)) tierKey.value = t
+    const t = (parsed.model || '').toString().trim()
+    if (tierKeys.includes(t)) tierKey.value = t
 
     const tm = {
-      haiku: (env.ANTHROPIC_DEFAULT_HAIKU_MODEL || parsed.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').toString().trim(),
-      sonnet: (env.ANTHROPIC_DEFAULT_SONNET_MODEL || parsed.ANTHROPIC_DEFAULT_SONNET_MODEL || '').toString().trim(),
-      opus: (env.ANTHROPIC_DEFAULT_OPUS_MODEL || parsed.ANTHROPIC_DEFAULT_OPUS_MODEL || '').toString().trim(),
-      reasoning: (env.ANTHROPIC_REASONING_MODEL || parsed.ANTHROPIC_REASONING_MODEL || '').toString().trim(),
+      haiku: (env.ANTHROPIC_DEFAULT_HAIKU_MODEL || raw.ANTHROPIC_DEFAULT_HAIKU_MODEL || '').toString().trim(),
+      sonnet: (env.ANTHROPIC_DEFAULT_SONNET_MODEL || raw.ANTHROPIC_DEFAULT_SONNET_MODEL || '').toString().trim(),
+      opus: (env.ANTHROPIC_DEFAULT_OPUS_MODEL || raw.ANTHROPIC_DEFAULT_OPUS_MODEL || '').toString().trim(),
+      reasoning: (env.ANTHROPIC_REASONING_MODEL || raw.ANTHROPIC_REASONING_MODEL || '').toString().trim(),
     }
     if (tm.haiku) tier.haiku = tm.haiku
     if (tm.sonnet) tier.sonnet = tm.sonnet
     if (tm.opus) tier.opus = tm.opus
     if (tm.reasoning) tier.reasoning = tm.reasoning
+    if (t && !tierKeys.includes(t) && !tier[tierKey.value]) {
+      tier[tierKey.value] = t
+    }
 
-    const po = (parsed.permissionPolicy || '').toString()
+    const po = (raw.permissionPolicy || '').toString()
     if (['ask', 'allow_all', 'read_only'].includes(po)) policy.value = po
-    const la = (parsed.language || '').toString()
-    if (['zh-CN', 'en-US'].includes(la)) lang.value = la
+    const la = (raw.language || '').toString()
+    if (mindCraftAppLocales.includes(la)) lang.value = la
     const ef = (parsed.effortLevel || '').toString()
     if (['low', 'medium', 'high', 'xhigh'].includes(ef)) effort.value = ef
   } catch (e) { console.warn('[applyJsonToForm]', e) }
@@ -328,6 +369,7 @@ function formatJson() {
     const parsed = JSON.parse(jsonText.value)
     jsonText.value = JSON.stringify(parsed, null, 2)
     applyJsonToForm()
+    syncFormToJson()
   } catch (_) {
     ElMessage.error(t('settings.jsonFormatError'))
   }
@@ -363,7 +405,8 @@ const toggleDisableAutoUpgrade = computed(() => {
 
 function handleToggle(key, checked) {
   try {
-    const config = JSON.parse(jsonText.value || '{}')
+    applyJsonToForm()
+    const config = sanitizeClaudeConfig(JSON.parse(jsonText.value || '{}'))
     switch (key) {
       case 'hideAttribution':
         if (checked) config.attribution = { commit: '', pr: '' }
@@ -392,6 +435,7 @@ function handleToggle(key, checked) {
       }
     }
     jsonText.value = JSON.stringify(config, null, 2)
+    syncFormToJson()
   } catch (e) { console.warn('[handleToggle]', e) }
 }
 
@@ -403,6 +447,7 @@ function isOfficialKey(key) {
 
 function onSave() {
   applyJsonToForm()
+  syncFormToJson()
   const keyTrim = form.key.trim()
   const urlTrim = form.url.trim()
   const nameTrim = form.name.trim()
@@ -425,7 +470,8 @@ function onSave() {
 
   let configObj = null
   try {
-    configObj = JSON.parse(jsonText.value || '{}')
+    configObj = sanitizeClaudeConfig(JSON.parse(jsonText.value || '{}'))
+    jsonText.value = JSON.stringify(configObj, null, 2)
   } catch (e) {
     ElMessage.error(t('settings.configJsonFormatError') + (e?.message || ''))
     return

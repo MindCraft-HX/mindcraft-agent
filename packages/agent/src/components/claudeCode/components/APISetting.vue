@@ -547,11 +547,9 @@ async function applyAndActivate(activeIdx, opts = {}) {
     await window.electronAPI?.claudeSetLanguage?.(settingsLanguage.value)
     await window.electronAPI?.claudeSetEffortLevel?.(settingsEffortLevel.value)
     if (writeSettings && activeP?.config) {
-      // 合并写入：只替换 API 相关字段（env / primaryApiKey / model），
-      // 保留 settings.json 中其余内容（plugins / MCP servers / 自定义字段等）
+      // Only patch official runtime fields; provider key/url stay in MindCraft storage.
       const patch = { model: settingsSelectedTierKey.value }
       if (activeP.config.env) patch.env = JSON.parse(JSON.stringify(activeP.config.env))
-      if (activeP.config.primaryApiKey) patch.primaryApiKey = activeP.config.primaryApiKey
       await window.electronAPI?.claudePatchSettingsJson?.(patch)
       fullSettingsJson.value = { ...fullSettingsJson.value, ...patch }
     }
@@ -592,7 +590,9 @@ function buildClaudeSettingsFromProvider(provider) {
   base.model = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(settingsSelectedTierKey.value)
     ? settingsSelectedTierKey.value
     : 'sonnet'
-  if (key) base.primaryApiKey = key
+  delete base.key
+  delete base.url
+  delete base.primaryApiKey
   delete base.apiKey
   delete base.baseURL
   delete base.apiBaseUrl
@@ -934,6 +934,17 @@ async function importFromFile(i) {
 
 async function removeProvider(i) {
   if (i < 0 || i >= settingsForm.value.providers.length) return
+  const name = settingsForm.value.providers[i]?.name || t('settings.unnamed')
+  const ok = await confirmDialogRef.value?.open({
+    message: tr(
+      'settings.confirmDeleteProvider',
+      `确定删除配置 "${name}" 吗？`,
+      `Delete provider "${name}"?`,
+    ),
+    okText: t('common.delete'),
+    cancelText: t('common.cancel'),
+  })
+  if (!ok) return
   const removedWasActive = settingsForm.value.activeIdx === i
   settingsForm.value.providers.splice(i, 1)
   const last = settingsForm.value.providers.length - 1

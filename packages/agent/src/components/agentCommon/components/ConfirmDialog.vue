@@ -54,7 +54,7 @@ defineExpose({ open })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--cc-bg-overlay);
+  background: var(--cc-overlay-bg, var(--cc-bg-overlay));
 }
 .cc-confirm-panel {
   background: var(--cc-dialog-bg);

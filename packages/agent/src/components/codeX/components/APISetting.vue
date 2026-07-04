@@ -175,10 +175,14 @@ import {
   normalizeCodexReasoningEffort,
 } from '../utils/providerToml.mjs'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const confirmDialogRef = ref(null)
 const codexConfigStore = useCodexConfigStore()
+
+function localText(zh, en) {
+  return String(locale.value || '').toLowerCase().startsWith('zh') ? zh : en
+}
 
 const showSettings = ref(false)
 const showProviderForm = ref(false)
@@ -610,6 +614,13 @@ async function importFromFile(i) {
 
 async function removeProvider(i) {
   if (i < 0 || i >= settingsForm.value.providers.length) return
+  const name = settingsForm.value.providers[i]?.name || t('settings.unnamed')
+  const ok = await confirmDialogRef.value?.open({
+    message: localText(`确定删除配置 "${name}" 吗？`, `Delete provider "${name}"?`),
+    okText: t('common.delete'),
+    cancelText: t('common.cancel'),
+  })
+  if (!ok) return
   settingsForm.value.providers.splice(i, 1)
   const last = settingsForm.value.providers.length - 1
   if (!settingsForm.value.providers.length) {
