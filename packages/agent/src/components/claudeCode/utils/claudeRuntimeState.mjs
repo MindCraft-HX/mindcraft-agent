@@ -133,6 +133,8 @@ export function applyClaudeMetrics(tab, data = {}) {
 export function buildPersistableClaudeChat(chat = {}) {
   const c = { ...chat }
   delete c[RUNTIME_FIELD]
+  delete c._chunk
+  delete c._messagesLoaded
   c.thinking = false
   c._thinkingStart = null
   c.currentAssistantId = null

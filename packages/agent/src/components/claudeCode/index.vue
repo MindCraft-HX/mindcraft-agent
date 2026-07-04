@@ -357,6 +357,7 @@ import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/pro
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { useChatScrollState } from '../agentCommon/composables/useChatScrollState.js'
 import { useScheduledSessionRefresh } from '../agentCommon/composables/useScheduledSessionRefresh.js'
+import { useChunkedHistoryMount } from '../agentCommon/composables/useChunkedHistoryMount.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { playAskSound } from '../agentCommon/utils/playAskSound.js'
 import { countVisibleClaudeUserMessages, isClaudeMetaUserEntry } from './utils/internalPromptFilter.mjs'
@@ -439,6 +440,12 @@ const {
 // Phase 3: 跨 chat 滚动状态保存/恢复
 const { saveScroll: saveChatScroll, restoreScroll: restoreChatScroll, clearScroll: clearChatScroll } =
   useChatScrollState({ getScrollEl: (chatKey) => msgRefs[chatKey], syncLayout })
+
+// T177-P2 Phase 1: 分片挂载历史消息（首屏 10 条 + idle 分批补齐）
+const { mountStaged, pauseMount, resumeMount, hasPendingMount, discardMount } = useChunkedHistoryMount({
+  getScrollEl: (chatId) => msgRefs[chatId],
+  getActiveChatId: () => activeChatId.value,
+})
 
 // Phase 2: 共享 session 刷新调度（按 project cooldown + 延迟去重）
 const sidebarLoading = ref(false)
@@ -2225,7 +2232,12 @@ function newChat() {
 function switchChat(id) {
   const stop = perfStart('claude.switchChat')
   // Phase 3: 保存当前 chat 滚动位置，切回来后恢复
-  if (activeChatId.value) saveChatScroll(activeChatId.value)
+  if (activeChatId.value) {
+    saveChatScroll(activeChatId.value)
+    // T177-P2: 暂停旧 chat 的分片挂载（保留 pending，切回后 resume）
+    const oldChat = activeProject.value?.chats?.find(c => c.id === activeChatId.value)
+    if (oldChat) pauseMount(oldChat)
+  }
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   // 实时更新斜杠面板的模型/effort显示
@@ -2243,6 +2255,11 @@ function switchChat(id) {
     chat._loadingMessages = true
     void ensureChatMessagesLoaded(chat).finally(() => {
       chat._loadingMessages = false
+      requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
+    })
+  } else if (chat?.filePath && chat._messagesLoaded && hasPendingMount(chat)) {
+    // T177-P2: 磁盘已加载但有未补齐的 pending → resume
+    void resumeMount(chat).then(() => {
       requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
     })
   } else {
@@ -2279,8 +2296,7 @@ async function ensureChatMessagesLoaded(chat) {
       : normalizeSessionEventsToUiMessages(rawData.messages, { recoverDanglingTools: true })
         .filter(msg => msg && (msg.role || msg.specialItems?.length > 0))
 
-    const n = Math.min(MAX_MESSAGES, allMessages.length)
-    chat.messages = allMessages.slice(-n)
+    // T177-P2: _messagesLoaded 表示"磁盘已加载"，不等 DOM batch 完成
     chat.hasMoreHistory = rawData.hasMore
     chat.currentPage = 0
     chat.pageSize = 60
@@ -2291,6 +2307,7 @@ async function ensureChatMessagesLoaded(chat) {
       chat._pendingSessionBinding = false
     }
     chat._messagesLoaded = true
+    await mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
     if (stopProc) { stopProc(); stopProc = null }
   } catch (e) {
     console.warn('[ensureChatMessagesLoaded] failed:', e?.message || e)
@@ -2317,6 +2334,7 @@ async function requestDeleteChat(chat) {
   if (chat.filePath) {
     await window.electronAPI.claudeDeleteSessionFile?.(chat.filePath)
   }
+  discardMount(chat)
   p.chats = p.chats.filter(c => c.id !== chat.id)
   clearChatScroll(chat.id)
   if (activeChatId.value === chat.id) {

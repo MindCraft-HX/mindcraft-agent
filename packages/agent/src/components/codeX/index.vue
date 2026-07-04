@@ -305,6 +305,7 @@ import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/pro
 import { useTextareaAutosize } from '../agentCommon/composables/useTextareaAutosize.js'
 import { useChatScrollState } from '../agentCommon/composables/useChatScrollState.js'
 import { useScheduledSessionRefresh } from '../agentCommon/composables/useScheduledSessionRefresh.js'
+import { useChunkedHistoryMount } from '../agentCommon/composables/useChunkedHistoryMount.js'
 import { shouldPlayNotificationSound } from '../agentCommon/runtime/agentNotificationGate.mjs'
 import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sandboxHelpers.js'
 import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
@@ -1176,6 +1177,12 @@ const { show: showScrollBottomBtn, newMsgCount, onScroll: onScrollHook, scrollTo
 const { saveScroll: saveChatScroll, restoreScroll: restoreChatScroll, clearScroll: clearChatScroll } =
   useChatScrollState({ getScrollEl: (chatKey) => msgRefs[chatKey], syncLayout })
 
+// T177-P2 Phase 1: 分片挂载历史消息（首屏 10 条 + idle 分批补齐）
+const { mountStaged, pauseMount, resumeMount, hasPendingMount, discardMount } = useChunkedHistoryMount({
+  getScrollEl: (chatId) => msgRefs[chatId],
+  getActiveChatId: () => activeChatId.value,
+})
+
 // Phase 2: 共享 session 刷新调度（按 project cooldown + 延迟去重）
 const sidebarLoading = ref(false)
 const sidebarRefreshing = ref(false)
@@ -1896,7 +1903,12 @@ function reorderProjects({ fromIndex, toIndex }) {
 function switchChat(id) {
   const stop = perfStart('codex.switchChat')
   // Phase 3: 保存当前 chat 滚动位置，切回来后恢复
-  if (activeChatId.value) saveChatScroll(activeChatId.value)
+  if (activeChatId.value) {
+    saveChatScroll(activeChatId.value)
+    // T177-P2: 暂停旧 chat 的分片挂载（保留 pending，切回后 resume）
+    const oldChat = activeProject.value?.chats?.find(c => c.id === activeChatId.value)
+    if (oldChat) pauseMount(oldChat)
+  }
   activeChatId.value = id
   const chat = activeProject.value?.chats?.find(c => c.id === id) || null
   if (chat) trimMessages(chat)
@@ -1909,15 +1921,34 @@ function switchChat(id) {
       inputEl.value?.blur?.()
     })
   } else if (chat?.filePath && shouldHydrateHistoryFromDisk(chat) && canHydrateChatFromDisk(chat)) {
-    chat._loadingMessages = true
-    void ensureChatMessagesLoaded(chat).finally(() => {
-      chat._loadingMessages = false
+    if (!chat._messagesLoaded) {
+      // T177-P2: 磁盘未加载 → 首次 IPC + mountStaged
+      chat._loadingMessages = true
+      void ensureChatMessagesLoaded(chat).finally(() => {
+        chat._loadingMessages = false
+        requestAnimationFrame(() => {
+          activeMsgContainer.value = msgRefs[id] || null
+          restoreChatScroll(id)
+          inputEl.value?.focus()
+        })
+      })
+    } else if (hasPendingMount(chat)) {
+      // T177-P2: 磁盘已加载但有未补齐的 pending → resume
+      void resumeMount(chat).then(() => {
+        requestAnimationFrame(() => {
+          activeMsgContainer.value = msgRefs[id] || null
+          restoreChatScroll(id)
+          inputEl.value?.focus()
+        })
+      })
+    } else {
+      // 磁盘已加载且 DOM 完整
       requestAnimationFrame(() => {
         activeMsgContainer.value = msgRefs[id] || null
         restoreChatScroll(id)
         inputEl.value?.focus()
       })
-    })
+    }
   } else {
     requestAnimationFrame(() => {
       activeMsgContainer.value = msgRefs[id] || null
@@ -1962,6 +1993,7 @@ async function requestDeleteChat(chat) {
   })
   const p = activeProject.value
   if (!p) return
+  discardMount(chat)
   const idx = p.chats.findIndex(c => c.id === chat.id)
   p.chats.splice(idx, 1)
   clearChatScroll(chat.id)
@@ -2973,13 +3005,15 @@ async function ensureChatMessagesLoaded(chat) {
     if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
     stopProc = perfStart('codex.ensureChatMessagesLoaded.proc')
     const allMessages = filterCodexSystemMessages(rawData.messages)
-    const n = Math.min(MAX_MESSAGES, allMessages.length)
-    chat.messages = allMessages.slice(-n)
-    normalizeFileChangeMessages(chat.messages)
+    // Apply normalization to the full array before splitting (mutates in place,
+    // so both initial batch and pending batch carry the normalized objects)
+    normalizeFileChangeMessages(allMessages)
+    // T177-P2: _messagesLoaded 表示"磁盘已加载"，不等 DOM batch 完成
     chat.hasMoreHistory = Boolean(rawData.hasMore)
     chat.currentPage = 0
     chat.pageSize = 60
     chat._messagesLoaded = true
+    await mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
     if (chat.id === activeChatId.value) void refreshMetricsForChat(chat, 'history-loaded')
     if (stopProc) { stopProc(); stopProc = null }
   } catch (_) {} finally {

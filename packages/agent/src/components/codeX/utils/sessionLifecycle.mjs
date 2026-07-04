@@ -233,6 +233,8 @@ export function buildPersistableCodexChat(chat = {}) {
   const c = { ...chat }
   delete c[RUNTIME_FIELD]
   delete c._restoredFromPanelState
+  delete c._chunk
+  delete c._messagesLoaded
   c._thinkingStart = c.filePath ? null : (c._thinkingStart || null)
   c._awaitingDone = c.filePath ? false : Boolean(c._awaitingDone)
   c.thinking = false
