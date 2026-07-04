@@ -138,23 +138,23 @@ function runClaudeAgentLiveUsageEmitsContextEstimateTest() {
   })
 }
 
-function runClaudeAgentFinalResultUsageEmitsContextEstimateTest() {
-  const metrics = claudeAgentTest.buildClaudeFinalUsageMetricsFromResultUsage({
-    input_tokens: 364,
-    cache_read_input_tokens: 136320,
+function runClaudeAgentFinalResultUsageDoesNotEmitContextEstimateTest() {
+  const metrics = claudeAgentTest.buildClaudeFinalTurnMetricsFromResultUsage({
+    input_tokens: 43900,
+    cache_read_input_tokens: 1422500,
     cache_creation_input_tokens: 0,
-    output_tokens: 240,
+    output_tokens: 15200,
   }, 'deepseek-v4-pro')
 
   assert.deepEqual(metrics, {
     hasResultUsage: true,
-    inputTokens: 364,
-    outputTokens: 240,
-    cacheReadTokens: 136320,
+    inputTokens: 43900,
+    outputTokens: 15200,
+    cacheReadTokens: 1422500,
     cacheCreationTokens: 0,
-    contextUsage: 136924,
-    contextWindow: 200000,
   })
+  assert.equal(metrics.contextUsage, undefined)
+  assert.equal(metrics.contextWindow, undefined)
 }
 
 function runCompactBoundaryProvidesContextTest() {
@@ -423,7 +423,7 @@ function run() {
   runClaudeContextWindowMappingTest()
   runAssistantUsageUpdatesContextEstimateTest()
   runClaudeAgentLiveUsageEmitsContextEstimateTest()
-  runClaudeAgentFinalResultUsageEmitsContextEstimateTest()
+  runClaudeAgentFinalResultUsageDoesNotEmitContextEstimateTest()
   runCompactBoundaryProvidesContextTest()
   runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest()
   runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest()

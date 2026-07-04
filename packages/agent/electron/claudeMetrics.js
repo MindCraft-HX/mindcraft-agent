@@ -779,7 +779,6 @@ module.exports = {
   resetSession,
   getContextWindowForModel,
   normalizeClaudeUsageForUi,
-  getClaudeContextEstimateFromNormalizedUsage,
   __test__: {
     getClaudeSystemContextUsageFromData,
     normalizeClaudeUsageForUi,

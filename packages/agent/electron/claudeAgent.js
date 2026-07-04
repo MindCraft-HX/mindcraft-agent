@@ -230,23 +230,15 @@ function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
   }
 }
 
-function buildClaudeFinalUsageMetricsFromResultUsage(usage, model = '') {
+function buildClaudeFinalTurnMetricsFromResultUsage(usage, model = '') {
   const normalized = claudeMetrics.normalizeClaudeUsageForUi(usage || {}, model || '')
   const hasResultUsage = hasClaudeUsageTokenFields(usage)
-  const contextUsage = hasResultUsage
-    ? claudeMetrics.getClaudeContextEstimateFromNormalizedUsage(normalized)
-    : 0
-  const contextWindow = contextUsage > 0
-    ? claudeMetrics.getContextWindowForModel(model || '')
-    : 0
   return {
     hasResultUsage,
     inputTokens: hasResultUsage ? (normalized.inputTokens || 0) : undefined,
     outputTokens: hasResultUsage ? (normalized.outputTokens || 0) : undefined,
     cacheReadTokens: hasResultUsage ? (normalized.cacheReadTokens || 0) : undefined,
     cacheCreationTokens: hasResultUsage ? (normalized.cacheCreationTokens || 0) : undefined,
-    contextUsage: contextUsage || undefined,
-    contextWindow: contextWindow || undefined,
   }
 }
 
@@ -3002,17 +2994,15 @@ function setupClaudeHandlers() {
             if (msg.type === 'result') {
               liveSampleCounts.sdkResultCount += 1
               const usage = msg.usage || {}
-              const finalUsageMetrics = buildClaudeFinalUsageMetricsFromResultUsage(usage, model || msg.model || '')
+              const finalTurnMetrics = buildClaudeFinalTurnMetricsFromResultUsage(usage, model || msg.model || '')
               const snapshot = emitClaudeMetricsViaStore(sender, {
                 source: 'sdk-result',
                 scope: 'turn-final',
                 providerSessionId: msg.session_id || '',
-                inputTokens: finalUsageMetrics.inputTokens,
-                outputTokens: finalUsageMetrics.outputTokens,
-                cacheReadTokens: finalUsageMetrics.cacheReadTokens,
-                cacheCreationTokens: finalUsageMetrics.cacheCreationTokens,
-                contextUsage: finalUsageMetrics.contextUsage,
-                contextWindow: finalUsageMetrics.contextWindow,
+                inputTokens: finalTurnMetrics.inputTokens,
+                outputTokens: finalTurnMetrics.outputTokens,
+                cacheReadTokens: finalTurnMetrics.cacheReadTokens,
+                cacheCreationTokens: finalTurnMetrics.cacheCreationTokens,
                 durationMs: Number.isFinite(Number(msg.duration_ms)) && Number(msg.duration_ms) > 0 ? Number(msg.duration_ms) : undefined,
                 costUsd: msg.total_cost_usd || 0,
                 rawUsage: usage || null,
@@ -3845,7 +3835,7 @@ module.exports = {
     buildClaudeAgentDonePayload,
     deleteClaudeSessionArtifacts,
     finalizeClaudeDoneReason,
-    buildClaudeFinalUsageMetricsFromResultUsage,
+    buildClaudeFinalTurnMetricsFromResultUsage,
     extractClaudeLiveUsageMetricsFromSdkMessage,
     getClaudeProjectsRootDir,
     readClaudeSessionMeta,
