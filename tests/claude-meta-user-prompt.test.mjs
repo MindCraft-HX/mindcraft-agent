@@ -70,3 +70,38 @@ test('visible Claude user message helpers ignore meta prompts', () => {
   assert.equal(countVisibleClaudeUserMessages([reviewPrompt, realUser]), 1)
   assert.deepEqual(findFirstVisibleClaudeUserMessage([reviewPrompt, realUser]), realUser)
 })
+
+test('filters flattened Claude meta user messages that only preserve _isMeta', () => {
+  const flattened = {
+    role: 'user',
+    _source_type: 'user',
+    _isMeta: true,
+    text: 'Review target: `--effort high`\n\n## Phase 0 — Gather the diff',
+    content: [{ type: 'text', text: 'Review target: `--effort high`\n\n## Phase 0 — Gather the diff' }],
+  }
+
+  assert.equal(isClaudeMetaUserEntry(flattened), true)
+  assert.equal(isClaudeMetaUserPromptMessage(flattened), true)
+})
+
+test('filters Claude invoked_skills attachment prompts', () => {
+  const attachmentEntry = {
+    type: 'attachment',
+    role: 'attachment',
+    attachment: {
+      type: 'invoked_skills',
+      skills: [{
+        name: 'code-review',
+        content: 'Review target: `--effort high`\n\n## Phase 0 — Gather the diff\n\nRun `git diff @{upstream}...HEAD`',
+      }],
+    },
+  }
+
+  assert.equal(isClaudeMetaUserEntry(attachmentEntry), true)
+  assert.equal(isClaudeMetaUserPromptMessage({
+    role: 'user',
+    _attachment: attachmentEntry.attachment,
+    text: '',
+    content: [],
+  }), true)
+})

@@ -965,6 +965,8 @@ function setupClaudeHandlers() {
               ? 'assistant'
               : entry.type
             msgData._source_type = sourceType
+            if (entry.isMeta === true) msgData._isMeta = true
+            if (entry.attachment) msgData._attachment = entry.attachment
 
             if (entry.type === 'user' && entry.message) {
               msgData._is_user_wrapper = true
@@ -1045,6 +1047,8 @@ function setupClaudeHandlers() {
               ? 'assistant'
               : entry.type
             msgData._source_type = sourceType
+            if (entry.isMeta === true) msgData._isMeta = true
+            if (entry.attachment) msgData._attachment = entry.attachment
             if (entry.type === 'user' && entry.message) msgData._is_user_wrapper = true
             else if (sourceType === 'assistant') {
               msgData._is_assistant_wrapper = true

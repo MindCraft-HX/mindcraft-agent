@@ -11,6 +11,14 @@ function extractTextFromContent(content) {
     .join('\n\n')
 }
 
+function extractTextFromInvokedSkills(attachment) {
+  const skills = Array.isArray(attachment?.skills) ? attachment.skills : []
+  return skills
+    .map(skill => typeof skill?.content === 'string' ? skill.content : '')
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 export function isClaudeInternalPromptText(text) {
   const normalized = normalizeText(text)
   if (!normalized) return false
@@ -29,14 +37,24 @@ export function isClaudeInternalPromptText(text) {
 }
 
 export function isClaudeMetaUserEntry(entry) {
-  if (!entry || entry.isMeta !== true) return false
+  if (!entry) return false
+  const isMeta = entry.isMeta === true || entry._isMeta === true
   const role = entry.message?.role || entry.role || entry._source_type || entry.type || ''
-  return role === 'user'
+  if (isMeta && role === 'user') return true
+
+  if (role === 'attachment' && entry.attachment?.type === 'invoked_skills') {
+    return isClaudeInternalPromptText(extractTextFromInvokedSkills(entry.attachment))
+  }
+
+  return false
 }
 
 export function isClaudeMetaUserPromptMessage(message) {
   if (!message || message.role !== 'user') return false
   if (message._isMeta === true) return true
+  if (message._attachment?.type === 'invoked_skills') {
+    return isClaudeInternalPromptText(extractTextFromInvokedSkills(message._attachment))
+  }
   return isClaudeInternalPromptText(
     normalizeText(message.text) || extractTextFromContent(message.content),
   )
