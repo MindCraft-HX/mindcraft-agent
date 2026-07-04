@@ -607,6 +607,14 @@ test('Claude full shape round-trip preserves all fields (language, permissionPol
   };
 
   const dao = legacyToDaoProvider(legacy, 'claude');
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'permissionPolicy'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'language'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'website'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'note'), false);
+  assert.equal(dao.metadata.appLanguage, 'en');
+  assert.equal(dao.metadata.permissionPolicy, 'allow');
+  assert.equal(dao.metadata.website, 'https://docs.anthropic.com');
+  assert.equal(dao.metadata.note, 'Production account');
   const result = daoToLegacyProvider({ ...dao, agentType: 'claude', id: 'test-id', metadata: dao.metadata || {}, isActive: false });
 
   assert.equal(result.name, 'FullClaude');
@@ -641,6 +649,81 @@ test('Claude legacy with missing fields gets safe defaults', () => {
   assert.equal(result.note, '', 'note should default to empty');
   assert.equal(result.selectedTier, 'sonnet', 'selectedTier should default to sonnet');
   assert.deepEqual(result.tierModels, { haiku: '', sonnet: '', opus: '', reasoning: '' }, 'tierModels should default to empty tiers');
+});
+
+test('Claude legacy concrete config.model backfills selected tier slot and drops CodeX-only fields', () => {
+  const { legacyToDaoProvider, daoToLegacyProvider } = require('./index');
+  const legacy = {
+    name: 'ClaudeCompat',
+    key: 'sk-ant-compat',
+    url: 'https://api.mindcraft.com.cn',
+    config: {
+      key: 'sk-ant-compat',
+      url: 'https://api.mindcraft.com.cn',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: '',
+      apiFormat: 'anthropic',
+    },
+  };
+
+  const dao = legacyToDaoProvider(legacy, 'claude');
+  const result = daoToLegacyProvider({ ...dao, agentType: 'claude', id: 'compat-id', metadata: dao.metadata || {}, isActive: false });
+
+  assert.equal(result.selectedTier, 'sonnet');
+  assert.equal(result.tierModels.sonnet, 'deepseek-v4-pro');
+  assert.equal(result.config.model, 'sonnet');
+  assert.equal(result.config.env.ANTHROPIC_MODEL, 'deepseek-v4-pro');
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'reasoningEffort'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'apiFormat'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'permissionPolicy'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'language'), false);
+});
+
+test('Claude stored config strips MindCraft-only display fields at write boundary', () => {
+  const { legacyToDaoProvider, daoToLegacyProvider } = require('./index');
+  const legacy = {
+    name: 'ClaudePolluted',
+    key: 'sk-ant-polluted',
+    url: 'https://api.anthropic.com',
+    website: 'https://provider.example.com',
+    note: 'Provider note',
+    config: {
+      env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-polluted' },
+      theme: 'dark-daltonized',
+      website: 'https://legacy-config.example.com',
+      note: 'Legacy config note',
+      language: 'zh-CN',
+    },
+  };
+
+  const dao = legacyToDaoProvider(legacy, 'claude');
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'theme'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'website'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'note'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(dao.config, 'language'), false);
+  assert.equal(dao.metadata.website, 'https://provider.example.com');
+  assert.equal(dao.metadata.note, 'Provider note');
+
+  const result = daoToLegacyProvider({ ...dao, agentType: 'claude', id: 'polluted-id', metadata: dao.metadata || {}, isActive: false });
+  assert.equal(result.website, 'https://provider.example.com');
+  assert.equal(result.note, 'Provider note');
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'theme'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'website'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.config, 'note'), false);
+
+  const cleanDbRow = daoToLegacyProvider({
+    id: 'clean-row',
+    agentType: 'claude',
+    name: 'CleanRow',
+    config: { key: 'sk-ant-row' },
+    metadata: {
+      website: 'https://metadata.example.com',
+      note: 'Metadata note',
+    },
+    isActive: false,
+  });
+  assert.equal(cleanDbRow.website, 'https://metadata.example.com');
+  assert.equal(cleanDbRow.note, 'Metadata note');
 });
 
 test('Claude sql.js persistence: write -> persist -> reopen -> all fields survive', async () => {

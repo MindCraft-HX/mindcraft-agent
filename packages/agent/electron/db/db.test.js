@@ -89,17 +89,17 @@ test('getDbVersion returns 0 on fresh un-migrated db', async () => {
 // A2. V2 Migration (sort_index, projection_status, last_projected_at)
 // ---------------------------------------------------------------------------
 
-test('runMigrations on fresh db creates v2 schema', async () => {
+test('runMigrations on fresh db creates latest schema', async () => {
   const { runMigrations, getDbVersion } = require('./migrations/v1_initial');
   const sql = await getSql();
   const db = new sql.Database();
 
   const result = runMigrations(db);
   assert.equal(result.ok, true);
-  assert.equal(result.version, 2);
+  assert.equal(result.version, 3);
 
   const version = getDbVersion(db);
-  assert.equal(version, 2);
+  assert.equal(version, 3);
 
   // Verify v2 columns exist
   const cols = db.exec('PRAGMA table_info(providers)');
@@ -187,6 +187,70 @@ test('migrateV2 refuses to run without migrateV1', async () => {
   const result = migrateV2(db);
   assert.equal(result.ok, false);
   assert.ok(result.message.includes('Must run migrateV1'), 'Should refuse without v1');
+
+  db.close();
+});
+
+test('migrateV3 cleans historical Claude provider config pollution once', async () => {
+  const { migrateV1, migrateV2, migrateV3, getDbVersion } = require('./migrations/v1_initial');
+  const sql = await getSql();
+  const db = new sql.Database();
+
+  migrateV1(db);
+  migrateV2(db);
+  assert.equal(getDbVersion(db), 2);
+
+  db.run(
+    "INSERT INTO providers (id, agent_type, name, config_json, metadata_json, is_active, source, created_at, updated_at, sort_index, projection_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      'claude-dirty',
+      'claude',
+      'DirtyClaude',
+      JSON.stringify({
+        key: 'sk-ant-dirty',
+        url: 'https://api.anthropic.com',
+        theme: 'dark-daltonized',
+        website: 'https://legacy-config.example.com',
+        note: 'Legacy config note',
+        permissionPolicy: 'allow_all',
+        language: 'zh-CN',
+        env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-dirty' },
+      }),
+      '{}',
+      0,
+      'mindcraft',
+      1000,
+      1000,
+      0,
+      'synced',
+    ],
+  );
+
+  const result = migrateV3(db);
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.version, 3);
+  assert.equal(result.changed, 1);
+  assert.equal(getDbVersion(db), 3);
+
+  const rows = db.exec('SELECT config_json, metadata_json FROM providers WHERE id = ?', ['claude-dirty']);
+  const config = JSON.parse(rows[0].values[0][0]);
+  const metadata = JSON.parse(rows[0].values[0][1]);
+
+  assert.equal(config.theme, undefined);
+  assert.equal(config.website, undefined);
+  assert.equal(config.note, undefined);
+  assert.equal(config.permissionPolicy, undefined);
+  assert.equal(config.language, undefined);
+  assert.equal(config.key, 'sk-ant-dirty');
+  assert.equal(config.url, 'https://api.anthropic.com');
+  assert.equal(metadata.website, 'https://legacy-config.example.com');
+  assert.equal(metadata.note, 'Legacy config note');
+  assert.equal(metadata.appLanguage, 'zh-CN');
+  assert.equal(metadata.permissionPolicy, 'allow_all');
+
+  const result2 = migrateV3(db);
+  assert.equal(result2.ok, true);
+  assert.equal(result2.changed, 0);
 
   db.close();
 });
@@ -877,7 +941,130 @@ VALUES ('api-key-1', 'claude', 'MindCraft', '{"env":{"ANTHROPIC_API_KEY":"mc-tes
   assert.equal(p.name, 'MindCraft');
   assert.equal(p.config.key, 'mc-test-key');
   assert.equal(p.config.url, 'https://api.mindcraft.com.cn');
-  assert.equal(p.config.model, 'claude-sonnet-cc');
+  assert.equal(p.config.model, 'sonnet');
+  assert.equal(p.config.env.ANTHROPIC_MODEL, 'claude-sonnet-cc');
+  assert.equal(p.tierModels.sonnet, 'claude-sonnet-cc');
+  assert.equal(p.selectedTier, 'sonnet');
+  assert.equal(Object.prototype.hasOwnProperty.call(p.config, 'reasoningEffort'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(p.config, 'apiFormat'), false);
+});
+
+test('T174 Claude import separates app locale from official response language', () => {
+  const { parseCcSwitchExport } = require('./import/ccSwitch');
+  const sql = String.raw`
+INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
+VALUES ('locale-app', 'claude', 'AppLocale', '{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-app"},"model":"sonnet","language":"zh-CN","permissionPolicy":"allow_all","effortLevel":"high"}', '{}', 0);
+INSERT INTO "providers" ("id", "app_type", "name", "settings_config", "meta", "is_current")
+VALUES ('locale-official', 'claude', 'OfficialLanguage', '{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-official"},"model":"sonnet","language":"Japanese"}', '{}', 0);
+`;
+  const result = parseCcSwitchExport(sql);
+  assert.equal(result.providers.length, 2);
+
+  const appLocale = result.providers.find((p) => p.name === 'AppLocale');
+  assert.equal(appLocale.language, 'zh-CN');
+  assert.equal(appLocale.permissionPolicy, 'allow_all');
+  assert.equal(Object.prototype.hasOwnProperty.call(appLocale.config, 'language'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(appLocale.config, 'permissionPolicy'), false);
+
+  const official = result.providers.find((p) => p.name === 'OfficialLanguage');
+  assert.equal(official.language, '');
+  assert.equal(official.config.language, 'Japanese');
+  assert.equal(Object.prototype.hasOwnProperty.call(official.config, 'permissionPolicy'), false);
+});
+
+test('T174 Claude SQL export omits MindCraft app language and permission policy from settings_config', () => {
+  const { buildProviderSqlExport } = require('./export/providerSql');
+  const sql = buildProviderSqlExport({
+    claudeProviders: [{
+      name: 'ClaudeExport',
+      key: 'sk-export',
+      url: 'https://api.anthropic.com',
+      language: 'zh-CN',
+      permissionPolicy: 'allow_all',
+      effortLevel: 'high',
+      selectedTier: 'sonnet',
+      tierModels: { sonnet: 'claude-sonnet-export' },
+      config: {
+        language: 'zh-CN',
+        permissionPolicy: 'allow_all',
+        env: { ANTHROPIC_AUTH_TOKEN: 'old-key' },
+      },
+    }],
+    includeSecrets: true,
+  });
+
+  const insert = sql.split('\n').find((line) => line.startsWith('INSERT INTO "providers"'));
+  assert.ok(insert, 'expected INSERT row');
+  const { parseInsertLine, unescapeSqlValue } = require('./import/ccSwitch');
+  const row = parseInsertLine(insert);
+  const settingsIdx = row.columns.indexOf('settings_config');
+  const settings = JSON.parse(unescapeSqlValue(row.rawValues[settingsIdx]));
+
+  assert.equal(settings.env.ANTHROPIC_AUTH_TOKEN, 'sk-export');
+  assert.equal(settings.env.ANTHROPIC_MODEL, 'claude-sonnet-export');
+  assert.equal(settings.model, 'sonnet');
+  assert.equal(settings.effortLevel, 'high');
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'permissionPolicy'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'language'), false);
+});
+
+test('T174 Claude SQL export preserves explicit official response language', () => {
+  const { buildProviderSqlExport } = require('./export/providerSql');
+  const sql = buildProviderSqlExport({
+    claudeProviders: [{
+      name: 'ClaudeExportOfficialLanguage',
+      key: 'sk-export',
+      selectedTier: 'sonnet',
+      config: {
+        language: 'Japanese',
+        env: { ANTHROPIC_AUTH_TOKEN: 'old-key' },
+      },
+    }],
+    includeSecrets: true,
+  });
+
+  const insert = sql.split('\n').find((line) => line.startsWith('INSERT INTO "providers"'));
+  assert.ok(insert, 'expected INSERT row');
+  const { parseInsertLine, unescapeSqlValue } = require('./import/ccSwitch');
+  const row = parseInsertLine(insert);
+  const settingsIdx = row.columns.indexOf('settings_config');
+  const settings = JSON.parse(unescapeSqlValue(row.rawValues[settingsIdx]));
+
+  assert.equal(settings.language, 'Japanese');
+});
+
+test('T174 previewLocalCliConfig reads CodeX selected model provider section', () => {
+  const { previewLocalCliConfig } = require('./import/index');
+
+  const result = previewLocalCliConfig({
+    agentType: 'codex',
+    cliConfig: {
+      model: 'gpt-5-codex',
+      model_provider: 'mindcraft',
+      model_reasoning_effort: 'high',
+      wire_api: 'responses',
+      model_providers: {
+        mindcraft: {
+          name: 'MindCraft',
+          base_url: 'https://api.mindcraft.com.cn/codex',
+          experimental_bearer_token: 'sk-local',
+          api_format: 'chat',
+        },
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.providers.length, 1);
+  const provider = result.providers[0];
+  assert.equal(provider.name, 'MindCraft');
+  assert.equal(provider.config.key, 'sk-local');
+  assert.equal(provider.config.url, 'https://api.mindcraft.com.cn/codex');
+  assert.equal(provider.config.model, 'gpt-5-codex');
+  assert.equal(provider.config.reasoningEffort, 'high');
+  assert.equal(provider.config.apiFormat, 'chat');
+  assert.deepEqual(provider.config.authJson, { OPENAI_API_KEY: 'sk-local' });
+  assert.deepEqual(provider.config.alternativeModels, []);
 });
 
 test('T163 commitImport overwrites by name without targetProviderId', async () => {
@@ -925,6 +1112,73 @@ test('T163 commitImport overwrites by name without targetProviderId', async () =
   const openai = result.providers.find((p) => p.name === 'OpenAI');
   assert.ok(openai);
   assert.equal(openai.config.key, 'old-oai-key');
+
+  db.close();
+});
+
+test('T174 commitImport preserves CodeX app-only fields on local CLI overwrite', async () => {
+  const { commitImport } = require('./import/index');
+  const { getProvider } = require('./dao/providers');
+  const db = await createFreshDb();
+
+  const existing = [{
+    id: 'existing-codex',
+    name: 'MindCraft',
+    config: {
+      key: 'old-key',
+      url: 'https://old.example.com',
+      model: 'old-model',
+      reasoningEffort: 'low',
+      apiFormat: 'responses',
+      authJson: { OPENAI_API_KEY: 'old-key', CUSTOM_ENV: 'keep-me' },
+      alternativeModels: ['gpt-alt-1', 'gpt-alt-2'],
+      tomlText: 'existing toml',
+    },
+    isActive: true,
+  }];
+
+  const preview = [{
+    tempId: 'local-0',
+    agentType: 'codex',
+    name: 'MindCraft',
+    config: {
+      key: 'new-key',
+      url: 'https://new.example.com',
+      model: 'new-model',
+      reasoningEffort: 'high',
+      apiFormat: 'chat',
+      authJson: { OPENAI_API_KEY: 'new-key' },
+    },
+    metadata: { source: 'local-cli' },
+    isActive: false,
+  }];
+
+  const result = commitImport(db, {
+    providers: [{ tempId: 'local-0', action: 'overwrite' }],
+    previewProviders: preview,
+    existingProviders: existing,
+    agentType: 'codex',
+    source: 'local-cli',
+    sourcePath: null,
+    userDataDir: undefined,
+  });
+
+  assert.equal(result.ok, true);
+  const merged = result.providers.find((p) => p.id === 'existing-codex');
+  assert.ok(merged);
+  assert.equal(merged.config.key, 'new-key');
+  assert.equal(merged.config.url, 'https://new.example.com');
+  assert.equal(merged.config.model, 'new-model');
+  assert.equal(merged.config.reasoningEffort, 'high');
+  assert.equal(merged.config.apiFormat, 'chat');
+  assert.deepEqual(merged.config.authJson, { OPENAI_API_KEY: 'new-key', CUSTOM_ENV: 'keep-me' });
+  assert.deepEqual(merged.config.alternativeModels, ['gpt-alt-1', 'gpt-alt-2']);
+  assert.equal(merged.config.tomlText, 'existing toml');
+
+  const stored = getProvider(db, 'existing-codex');
+  assert.equal(stored.config.key, 'new-key');
+  assert.deepEqual(stored.config.alternativeModels, ['gpt-alt-1', 'gpt-alt-2']);
+  assert.equal(stored.config.tomlText, 'existing toml');
 
   db.close();
 });
