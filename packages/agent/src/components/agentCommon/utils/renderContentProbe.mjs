@@ -86,9 +86,8 @@ export function getRenderContentStats() {
   }
 }
 
-// 挂到 window 方便 console 手动查看 — 延迟挂载避免 Vite tree-shaking
-function ensureWindowApi() {
-  if (typeof window === 'undefined') return
+// 挂到 window 方便 console 手动查看
+if (typeof window !== 'undefined') {
   window.__MCPF_RC_STATS__ = () => {
     const stats = getRenderContentStats()
     console.table(
@@ -107,5 +106,5 @@ function ensureWindowApi() {
   window.__MCPF_RC_RESET__ = () => resetRenderContentCalls()
 }
 
-// 首次 import 时挂载（Electron renderer 中 window 始终可用）
-ensureWindowApi()
+// 确保 esbuild/rollup 不 tree-shake 上面的副作用赋值
+export const _rcProbeWindowApi = typeof window !== 'undefined' ? 1 : 0
