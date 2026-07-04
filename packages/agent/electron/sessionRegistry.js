@@ -1056,42 +1056,43 @@ function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, op
 
 // T179-P1: 只读 lookup — 从 registry 中查找与 provider scan 匹配的已有 record。
 // 复用 buildProviderScanRecord 的解析逻辑，但不构造完整 record，不写文件。
+// 性能：先走 index 快路径 (resolveSessionByProvider, ~1ms)；未命中才 fallback 到
+// detached provider 扫描 (listSessionRecords 读全部 record)。
 function findRegistryRecordForProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
   const normalizedAgent = normalizeAgent(agent)
   const providerSessionId = normalizeString(
     scanSummary.providerSessionId || scanSummary.cliSessionId || scanSummary.id
   )
-  const detachedRecord = findSessionRecordByDetachedProvider({
-    agent: normalizedAgent,
-    cliSessionId: providerSessionId,
-    filePath: scanSummary.filePath,
-  }, options)
+
+  // Fast path: index lookup → 一次 readIndex + 一次 readJson
   const resolved = resolveSessionByProvider({
     agent: normalizedAgent,
     cliSessionId: providerSessionId,
     filePath: scanSummary.filePath,
   }, options)
+  if (resolved) return resolved
+
+  // Slow path: scan all records for detached provider bindings
+  const detachedRecord = findSessionRecordByDetachedProvider({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)
+  if (!detachedRecord) return null
+
   const detachedRecordProvider = detachedRecord?.provider || {}
   const detachedRecordHasProvider = Boolean(
     normalizeString(detachedRecordProvider.cliSessionId)
     || normalizeString(detachedRecordProvider.filePath)
   )
   const detachedMatchesCurrentProvider = Boolean(
-    detachedRecord
-    && (
-      !detachedRecordHasProvider
-      || isDetachedProviderBinding({
-        cliSessionId: detachedRecordProvider.cliSessionId,
-        filePath: detachedRecordProvider.filePath,
-      }, detachedRecord.metadata?.detachedProviderBinding)
-    )
+    !detachedRecordHasProvider
+    || isDetachedProviderBinding({
+      cliSessionId: detachedRecordProvider.cliSessionId,
+      filePath: detachedRecordProvider.filePath,
+    }, detachedRecord.metadata?.detachedProviderBinding)
   )
-  const existing = resolved || (detachedMatchesCurrentProvider ? detachedRecord : null)
-  if (!existing) return null
-  const chatKey = existing.chatKey
-  if (!chatKey) return null
-  // 从文件读回完整 record，确保合并时有最新的 registry 字段
-  return readJson(getSessionRecordPath(chatKey, options), null) || existing
+  return detachedMatchesCurrentProvider ? detachedRecord : null
 }
 
 // T179-P1: 纯合并 — 将 registry record 的字段合并到 scanSummary，不写文件。
