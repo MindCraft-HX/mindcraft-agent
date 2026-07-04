@@ -676,8 +676,35 @@ function readJsonlLines(filePath, maxLines = Infinity) {
     if (cached && cached.mtimeMs === stat.mtimeMs) {
       return maxLines === Infinity ? cached.lines : cached.lines.slice(0, maxLines)
     }
+    // ⚠️ 此函数仅被 async 调用方使用；调用方已改为流式异步读取
+    // 保留此同步路径用于向后兼容，但新代码应使用 readJsonlLinesAsync
     const content = fs.readFileSync(filePath, 'utf8')
     const lines = content.split(/\r?\n/).filter(Boolean)
+    jsonlLineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
+    return maxLines === Infinity ? lines : lines.slice(0, maxLines)
+  } catch (_) { return [] }
+}
+
+/** T177: 流式读取 JSONL 行，避免 fs.readFileSync 阻塞主进程 event loop */
+async function readJsonlLinesAsync(filePath, maxLines = Infinity) {
+  try {
+    const stat = fs.statSync(filePath)
+    const cached = jsonlLineCache.get(filePath)
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return maxLines === Infinity ? cached.lines : cached.lines.slice(0, maxLines)
+    }
+    const lines = []
+    const stream = fs.createReadStream(filePath, { encoding: 'utf8', highWaterMark: 64 * 1024 })
+    let remainder = ''
+    for await (const chunk of stream) {
+      remainder += chunk
+      const parts = remainder.split('\n')
+      remainder = parts.pop() || ''
+      for (const part of parts) {
+        if (part.trim()) lines.push(part)
+      }
+    }
+    if (remainder.trim()) lines.push(remainder)
     jsonlLineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
     return maxLines === Infinity ? lines : lines.slice(0, maxLines)
   } catch (_) { return [] }
@@ -1111,10 +1138,10 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
     const cachedAggregate = getCachedMetricsAggregate(filePath)
     if (cachedAggregate !== null) {
       perfCount('codex-metrics.aggregate-cache-hit')
-      return cachedAggregate
+      return { ...cachedAggregate }
     }
     perfCount('codex-metrics.aggregate-cache-miss')
-    const lines = readJsonlLines(filePath, Infinity)
+    const lines = await readJsonlLinesAsync(filePath, Infinity)
     if (!lines.length) return null
 
     let inputTokens = 0
@@ -1267,10 +1294,10 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
       gitChanges: gitInfo?.changes || 0,
     }
 
-    // T177: 缓存聚合结果 — 文件未变时下次直接命中
+    // T177: 缓存聚合结果（存拷贝防止外部 mutate 污染缓存）
     try {
       const resultStat = fs.statSync(filePath)
-      _metricsAggregateCache.set(filePath, { mtimeMs: resultStat.mtimeMs, size: resultStat.size, result })
+      _metricsAggregateCache.set(filePath, { mtimeMs: resultStat.mtimeMs, size: resultStat.size, result: { ...result } })
     } catch (_) { /* stat 失败不阻塞返回 */ }
 
     return result
