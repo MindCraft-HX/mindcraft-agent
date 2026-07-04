@@ -138,6 +138,25 @@ function runClaudeAgentLiveUsageEmitsContextEstimateTest() {
   })
 }
 
+function runClaudeAgentFinalResultUsageEmitsContextEstimateTest() {
+  const metrics = claudeAgentTest.buildClaudeFinalUsageMetricsFromResultUsage({
+    input_tokens: 364,
+    cache_read_input_tokens: 136320,
+    cache_creation_input_tokens: 0,
+    output_tokens: 240,
+  }, 'deepseek-v4-pro')
+
+  assert.deepEqual(metrics, {
+    hasResultUsage: true,
+    inputTokens: 364,
+    outputTokens: 240,
+    cacheReadTokens: 136320,
+    cacheCreationTokens: 0,
+    contextUsage: 136924,
+    contextWindow: 200000,
+  })
+}
+
 function runCompactBoundaryProvidesContextTest() {
   const metrics = __test__.collectClaudeTokenMetricsFromLines([
     JSON.stringify({
@@ -404,6 +423,7 @@ function run() {
   runClaudeContextWindowMappingTest()
   runAssistantUsageUpdatesContextEstimateTest()
   runClaudeAgentLiveUsageEmitsContextEstimateTest()
+  runClaudeAgentFinalResultUsageEmitsContextEstimateTest()
   runCompactBoundaryProvidesContextTest()
   runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest()
   runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest()
