@@ -606,6 +606,7 @@ function listCodexJsonlFilesCached() {
 
 function clearCodexJsonlCaches() {
   jsonlLineCache.clear()
+  _metricsAggregateCache.clear()
   codexSessionSummaryCache.clear()
   codexJsonlScanCache.root = ''
   codexJsonlScanCache.signature = ''
@@ -2592,8 +2593,6 @@ function setupCodexSdkHandlers() {
             const metrics = await getCodexSessionMetricsByFile(filePath, model || '', s.cwd || '')
             if (metrics) {
               sawJsonlPollSample = true
-              metrics.sessionId = sessionId
-              metrics.thinking = true
               emitCodexMetricsViaStore(s.event?.sender, {
                 source: 'jsonl-poll',
                 scope: 'session-context',
