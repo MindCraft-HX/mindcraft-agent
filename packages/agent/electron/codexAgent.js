@@ -1497,11 +1497,16 @@ function buildFunctionCallPreviewState(toolName, args = {}) {
 /** 分页读取 Codex session JSONL 文件，用于历史恢复 */
 function readSessionFileRange(filePath, page = 0, pageSize = 60) {
   try {
-    if (!fs.existsSync(filePath)) return { messages: [], hasMore: false, totalPages: 0 }
+    const stopStat = perfStartIpc('codex.readRange.stat')
+    if (!fs.existsSync(filePath)) {
+      stopStat({ found: 0 })
+      return { messages: [], hasMore: false, totalPages: 0 }
+    }
 
     const safePage = Math.max(0, Number(page) || 0)
     const safePageSize = Math.max(1, Number(pageSize) || 60)
     const fileSize = fs.statSync(filePath).size
+    stopStat({ found: 1, fileSizeKB: Math.round(fileSize / 1024) })
     if (safePage === 0) {
       const risk = collectSessionTailRiskSummary(filePath, 80)
       appendSessionLoadDiagnostic({
@@ -1707,7 +1712,10 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         delete pendingCalls[callId]
       }
 
+      const stopTail = perfStartIpc('codex.readRange.tailRead')
+      let actualScans = 0
       for (let scanPage = 0; scanPage < maxFirstPageScans; scanPage += 1) {
+        actualScans = scanPage + 1
         pageData = readJsonlPageLinesFromTail(filePath, scanPage, firstPageLineBudget)
         if (pageData.lines.length) lines.unshift(...pageData.lines)
         messages.length = 0
@@ -1721,6 +1729,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         if (messages.length >= safePageSize || !pageData.hasMore) break
       }
       flushActiveTurnTokens()
+      stopTail({ scanPages: actualScans, linesRead: lines.length, messagesCollected: messages.length })
 
       // Flush remaining calls without output (timeout/cancelled)
       // NOTE: page=0 uses tail-read; tail may start mid-session. Do not synthesize
@@ -1764,12 +1773,15 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         })
       }
 
+      const stopProcess = perfStartIpc('codex.readRange.process')
       const sliced = messages.slice(-safePageSize)
-      return {
+      const result = {
         messages: sliced.map((message, index) => ({ id: index + 1, ...message })),
         hasMore: pageData.hasMore || messages.length > sliced.length,
         totalPages: Math.max(1, pageData.totalPages || Math.ceil(messages.length / safePageSize)),
       }
+      stopProcess({ resultMessages: result.messages.length, resultHasMore: result.hasMore ? 1 : 0 })
+      return result
     }
 
     const pageData = readJsonlPageLinesFromTail(filePath, safePage, safePageSize)

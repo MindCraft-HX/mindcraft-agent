@@ -1,3 +1,5 @@
+import { perfStart } from '../utils/rendererPerfProbe.mjs'
+
 const DEFAULT_DRAFT_SAVE_DEBOUNCE_MS = 750
 
 function getChatKey(chat) {
@@ -33,15 +35,18 @@ export function useSessionDraft({
   }
 
   async function loadDraftForChat(chat) {
+    const stop = perfStart('sessionDraft.loadDraftForChat')
     clearTimer()
     const chatKey = getChatKey(chat)
     const seq = ++loadSeq
     if (!chatKey) {
       setLocalDraft('')
+      stop()
       return ''
     }
     const cached = _draftCache.get(chatKey)
     if (cached) {
+      stop({ cacheHit: 1 })
       const currentChatKey = getChatKey(typeof getActiveChat === 'function' ? getActiveChat() : null)
       if (seq !== loadSeq || currentChatKey !== chatKey) return cached.text
       let text = cached.text
@@ -51,20 +56,31 @@ export function useSessionDraft({
       applyingRemote = false
       return text
     }
+    // 缓存未命中，走 IPC
     let text = ''
+    let stopWall, stopApply
     try {
+      stopWall = perfStart('sessionDraft.getSessionDraft.wall')
       const draft = await window.electronAPI?.getSessionDraft?.(chatKey)
+      if (stopWall) { stopWall(); stopWall = null }
       text = typeof draft?.text === 'string' ? draft.text : ''
       _draftCache.set(chatKey, { text, updatedAt: draft?.updatedAt || 0 })
     } catch (_) {
       text = ''
     }
     const currentChatKey = getChatKey(typeof getActiveChat === 'function' ? getActiveChat() : null)
-    if (seq !== loadSeq || currentChatKey !== chatKey) return text
+    if (seq !== loadSeq || currentChatKey !== chatKey) {
+      if (stopWall) stopWall()
+      stop({ cacheHit: 0 })
+      return text
+    }
     if (!text) text = getLegacyDraft(chat)
+    stopApply = perfStart('sessionDraft.getSessionDraft.apply')
     applyingRemote = true
     setLocalDraft(text)
     applyingRemote = false
+    if (stopApply) { stopApply(); stopApply = null }
+    stop({ cacheHit: 0 })
     return text
   }
 

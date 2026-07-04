@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { isMeaningfulCodexLocalDraft } = require('../src/components/agentCommon/utils/codexEmptyDraft.cjs')
+const { perfStartIpc } = require('./shared/mainPerfProbe')
 
 const REGISTRY_DIR_NAME = 'session-registry'
 const SCHEMA_VERSION = 1
@@ -734,6 +735,7 @@ function readInstructionRecord(instructionId, options = {}) {
 }
 
 function getSessionInstruction(chatKey, options = {}) {
+  const stop = perfStartIpc('sessionRegistry.getInstruction')
   const recordPath = getSessionRecordPath(chatKey, options)
   const session = readJson(recordPath, null)
   const instructionId = normalizeString(session?.instruction?.instructionId)
@@ -751,6 +753,7 @@ function getSessionInstruction(chatKey, options = {}) {
   const attachments = sessionAttachments && (sessionAttachments.length || !instructionId)
     ? sessionAttachments
     : (legacyInstruction?.attachments || [])
+  stop({ hasLegacy: instructionId ? 1 : 0 })
   return {
     enabled: Boolean(sessionInstruction.enabled),
     instructionId,
@@ -765,7 +768,11 @@ function getSessionDraft(chatKey, options = {}) {
   if (!resolvedChatKey) return { text: '', updatedAt: 0 }
   const cacheKey = _draftCacheKey(chatKey, options)
   const cached = _draftCache.get(cacheKey)
-  if (cached) return { text: cached.text, updatedAt: cached.updatedAt }
+  if (cached) {
+    perfStartIpc('sessionRegistry.getDraft')({ cacheHit: 1 })
+    return { text: cached.text, updatedAt: cached.updatedAt }
+  }
+  const stop = perfStartIpc('sessionRegistry.getDraft')
   const session = readJson(getSessionRecordPath(resolvedChatKey, options), null)
   const draft = session?.draft && typeof session.draft === 'object' ? session.draft : {}
   const result = {
@@ -773,6 +780,7 @@ function getSessionDraft(chatKey, options = {}) {
     updatedAt: normalizeTimestamp(draft.updatedAt),
   }
   _draftCache.set(cacheKey, { text: result.text, updatedAt: result.updatedAt })
+  stop({ cacheHit: 0 })
   return result
 }
 

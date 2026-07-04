@@ -2071,12 +2071,21 @@ async function refreshActiveSessionInstructionState() {
     stop()
     return
   }
+  let stopWall, stopApply
   try {
+    stopWall = perfStart('codex.ipc.getSessionInstruction.wall')
     const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
+    if (stopWall) { stopWall(); stopWall = null }
     debugLog('sessionInstruction', 'refreshActiveSessionInstructionState', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
+    stopApply = perfStart('codex.ipc.getSessionInstruction.apply')
     activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
+    if (stopApply) { stopApply(); stopApply = null }
   } catch (_) {
     activeSessionInstructionEnabled.value = false
+  } finally {
+    if (stopWall) stopWall()
+    if (stopApply) stopApply()
+    stop()
   }
 }
 
@@ -2533,6 +2542,9 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
   const hasSnapshot = !chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})
 
+  // T177: 记录 metrics 调用来源分布
+  perfCount(`metrics.reason.${reason}`)
+
   // 缓存优先：有快照就先显示已有数据（所有 reason 统一，在去重之前）
   if (hasSnapshot) {
     onMetricsUpdate({ ...chat.metrics, sessionId: chat.sessionId, thinking: false })
@@ -2549,6 +2561,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   const requestSessionId = chat.sessionId
   const requestThinking = Boolean(chat.thinking)
 
+  const queryWallStop = perfStart('codex.ipc.queryMetrics.wall')
   const ipcPromise = window.electronAPI.codexAgentQueryMetrics({
     sessionId: chat.sessionId,
     cliSessionId: chat.cliSessionId,
@@ -2563,6 +2576,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   // T172: 互动路径（切 tab / 点 session）不 await IPC，后台异步刷新
   if (isInteraction) {
     ipcPromise.then(result => {
+      if (queryWallStop) queryWallStop()
       if (!result) return
       // resolve 时重新查找当前 tab，不依赖闭包中的旧 chat 对象
       const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === requestSessionId)
@@ -2577,6 +2591,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
         sameCycle: sameThinkingCycle,
         result,
       })
+      const applyStop = perfStart('codex.ipc.queryMetrics.apply')
       if (!tab.thinking && sameThinkingCycle) {
         syncCodexFooterTurnTokens(tab, result, { replace: true })
       }
@@ -2588,7 +2603,10 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
           thinking: Boolean(tab.thinking),
         })
       }
-    }).catch(() => {})
+      if (applyStop) applyStop()
+    }).catch(() => {
+      if (queryWallStop) queryWallStop()
+    })
     stop()
     return
   }
@@ -2596,6 +2614,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   // 非互动路径（session-scan / history-loaded / done-retry 等）：保持 await
   try {
     const result = await ipcPromise
+    if (queryWallStop) { queryWallStop(); /* queryWallStop = null */ }
     debugLog('metrics', 'refreshMetricsForChat result', {
       reason,
       sessionId: chat.sessionId,
@@ -2605,6 +2624,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       result,
     })
     if (!result) return
+    const applyStop = perfStart('codex.ipc.queryMetrics.apply')
     if (!chat.thinking) {
       syncCodexFooterTurnTokens(chat, result, { replace: true })
     }
@@ -2613,6 +2633,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       sessionId: chat.sessionId,
       thinking: Boolean(chat.thinking),
     })
+    if (applyStop) applyStop()
   } catch (_) {} finally { stop() }
 }
 
@@ -2919,7 +2940,18 @@ async function ensureChatMessagesLoaded(chat) {
       page: 0,
       pageSize: 60,
     })
-    if (stopIpc) { stopIpc(); stopIpc = null }
+    // T177: 仅在 perf 实际开启时记录 meta（避免关闭时 JSON.stringify + filter 开销）
+    if (stopIpc) {
+      if (typeof window !== 'undefined' && window.__MCPF_PERF__) {
+        const msgCount = rawData?.messages?.length || 0
+        const toolCount = rawData?.messages ? rawData.messages.filter(m => m.role === 'tool' || m.type === 'tool_use' || m.toolCallId).length : 0
+        const charCount = rawData?.messages ? JSON.stringify(rawData.messages).length : 0
+        stopIpc({ messages: msgCount, tools: toolCount, chars: charCount, hasMore: rawData?.hasMore ? 1 : 0 })
+      } else {
+        stopIpc()
+      }
+      stopIpc = null
+    }
     if (CODEX_DEBUG) console.log(rawData,'rawData--------------------------')
     if (!rawData?.messages?.length) return
     if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
