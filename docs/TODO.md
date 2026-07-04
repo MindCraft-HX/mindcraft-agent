@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-07-03
+> 最后更新：2026-07-04
 > 历史归档：`docs/archive/todo-history.md`
 > 知识库入口：`docs/index.md`
 
@@ -207,10 +207,20 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 ---
 
+## 待开工
+
+| 编号 | 说明 | 方案入口 |
+|------|------|------|
+| T178 | **Session 扫描缓存化**：切换 CodeHub Tab 后 `handleRefreshSessions` 仍 avg 510ms（max 1019ms），导致 sidebar 可见的"刷新"重渲染。方案：两级缓存 + 目录签名比对，无变化时完全跳过扫描 → `shallowArraySameIds` 守卫避免 Vue 响应式抖动。开工前需将方案写入 `docs/plan/`。 | 方案已草拟，待落 doc |
+| T176-P2 | **renderContent 缓存 / 大消息折叠**：T176 Phase 2a-0 探针已落地，方向待确认。 | `docs/plan/2026-07-04-large-session-rendering-performance.md` |
+| T177-P2 | **Renderer DOM layout 优化**：`ensureChatMessagesLoaded.proc` 仅 0.4-2ms，但 `chat.messages = [...]` 触发的 Vue 响应式 + DOM layout 在混切场景可达 1660ms。 | `docs/plan/2026-07-04-session-switch-background-task-latency.md` §9.6 |
+
 ## 最近完成
 
 | 日期 | 分类 | 说明 |
 |------|------|------|
+| 2026-07-04 | perf | **T176 Phase 1 完成**：CodeX history tool 默认折叠 + 大 bash output 懒挂载，expanded tools 从 29-43 → 0-3；`renderContent` 探针证伪 markdown 渲染为瓶颈方向；Phase 2a-0 量化探针落地。 |
+| 2026-07-04 | perf | **T177 主线验收完成**：主进程 event loop 阻塞根因修复。CodeX + Claude 双端 metrics 聚合缓存 + 冷路径后台聚合，draft/instruction/messages 的 renderer wall 从 700ms-2s → 35-61ms。方案文档：`docs/plan/2026-07-04-session-switch-background-task-latency.md` §9 验收数据。 |
 | 2026-07-02 | perf/metrics | **T169-T173 性能与 Metrics 收口完成**：renderer 热路径瘦身、session/tab 切换后台刷新、metrics dedup/cache-first、CodeX metrics 后台化、session draft 两级内存缓存均已落地；Claude metrics Phase 2 因收益过低跳过；追加修复 CodeX turn token aggregation。后续性能改造需先补 Electron E2E 或明确探针证据。 |
 | 2026-06-30 | feature | **T163 系统设置全局 CC Switch 导入**：创建 `systemImportIpc.js`（3 个 IPC handler：pick-file / preview / commit）；SystemSettings.vue 增加导入配置分区预览对话框（CodeX/ClaudeCode 分流 + 冲突标注 + 动作选择 + 重命名输入 + active 切换开关）；CodeX/ClaudeCode APISetting.vue 简化为确认弹窗后直导本地 CLI；新增 6 个 T163 单元测试（mixed SQL / overwrite / active 分组 / 防污染）；6 个 IPC 通道全部注册到 `ipcChannels.js`；构建通过、全量 38 DB 测试 + 5 合同测试 0 fail。 |
 | 2026-06-29 | refactor/docs | **架构重构 Batch 0-5 冻结验收完成**：`test:contract`、`npm test`、`npm run build` 通过；人工 smoke 覆盖 ClaudeCode/CodeX 发消息、中断、历史恢复、插件/skills 列表、配置保存，当前进入稳定观察期。 |
