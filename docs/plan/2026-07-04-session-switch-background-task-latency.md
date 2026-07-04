@@ -3,7 +3,7 @@
 > 日期：2026-07-04
 > Task: T177
 > 相关：CodeX / ClaudeCode session switch、IPC、session registry、draft、metrics、instruction state
-> 状态：Phase 0 ✅ 根因确认 → Phase 1 首版已审查，缓存+去重方向正确但未验收；下一步先修当前实现阻断，再做 metrics 冷路径根治。范围收紧：只修 metrics，不碰 renderContent/虚拟列表/draft
+> 状态：✅ **T177 主线已验收** — CodeX + Claude 主进程 event loop 阻塞已消除。剩余体感卡顿在 renderer 侧消息挂载（Vue 响应式 + DOM layout），不在本期范围。
 
 ## 1. 背景
 
@@ -488,3 +488,58 @@ Phase 1 交付：
   - 是否影响 Token Metrics 红线。
   - 是否影响官方 JSONL 只读边界。
   - 是否会引入默认 dev console 噪音。
+
+## 9. 验收数据（2026-07-04 23:35）
+
+### 9.1 CodeX 主进程
+
+| IPC handler | Phase 0 (修复前) | Phase 1 (修复后) | 改善 |
+|-----|:---:|:---:|:---:|
+| `getSessionDraft` handler | 1-3ms | 0-1ms | — |
+| `getSessionInstruction` handler | 1ms | 0-1ms | — |
+| `readSessionRange` handler | 49ms | 18-28ms | — (tailRead=15-24ms) |
+| `queryMetrics` handler (cache hit) | 2384ms | **2-8ms** | **~300x** |
+| `queryMetrics` handler (cache miss) | 5697ms | **2-8ms** `backgroundAggregate=1` | **不阻塞** |
+
+### 9.2 Claude 主进程
+
+| IPC handler | Phase 0 (修复前) | Phase 1 (修复后) | 改善 |
+|-----|:---:|:---:|:---:|
+| `queryMetrics` handler (cache hit) | 146ms | **1ms** | **146x** |
+| `queryMetrics` handler (cache miss) | 246ms | **8-12ms** `backgroundAggregate=1` | **不阻塞** |
+| `readSessionRange` handler | 2-7ms | 1-6ms | — |
+
+### 9.3 CodeX Renderer wall（纯 CodeX 切换，无 Claude 串扰）
+
+| IPC | Phase 0 (修复前) | Phase 1 (修复后) | 验收标准 |
+|-----|:---:|:---:|:---:|
+| `getSessionDraft.wall` | 831ms | **35ms** | < 50ms ✅ |
+| `getSessionInstruction.wall` | 831ms | **61ms** | < 100ms ✅ |
+| `readSessionRange.wall` | 733ms | **40ms** | < 100ms ✅ |
+| `queryMetrics.wall` | 1738ms | **27ms** | < 50ms ✅ |
+
+### 9.4 Claude Renderer wall（修复后）
+
+| IPC | 修复前 | 修复后 |
+|-----|:---:|:---:|
+| `getSessionDraft.wall` | 200-696ms | **44ms** |
+| `ensureMessagesLoaded.wall` | 894-1660ms | **16ms** |
+| `queryMetrics.wall` | 248-944ms | **39ms** |
+
+### 9.5 已验证的修复项
+
+- [x] 同一 session 切 tab 三次 reason 触发 → 1 次（300ms TTL 去重，`_metricsJustSent`）
+- [x] 文件未变时第二次 metrics query 走缓存（CodeX `aggregate-cache-hit`、Claude `cacheHit=1`）
+- [x] 文件变化后后台重新聚合，IPC handler 不阻塞（`backgroundAggregate=1`）
+- [x] cache hit 返回浅拷贝，poller 不 mutate 缓存对象
+- [x] git 状态拆分出 aggregate cache，独立 30s TTL
+- [x] StatusBar 当前回合 token 仍来自 TurnStore snapshot
+- [x] perf 输出 flag-gated
+- [x] `npm test` 全量通过（359 pass）
+- [x] `npm run build` 通过
+
+### 9.6 已知剩余瓶颈（不在 T177 范围）
+
+Render 侧 `ensureChatMessagesLoaded.proc` 仅占 0.4-2ms，但 wall time 在混切场景可达 1000-1660ms。
+延迟来自 Vue 响应式 `chat.messages = [...]` 触发的 DOM layout。这是 T176/T177 Phase 2 范畴，
+不在本期主进程 event loop 阻塞修复范围内。
