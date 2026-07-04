@@ -1,7 +1,7 @@
 <template>
   <div class="user-msg">
     <div v-if="hasExtras" class="user-extras">
-      <div v-for="(code, i) in codeBlocks" :key="'code-'+i" class="extra-card code-card" v-html="renderContent(code)"></div>
+      <div v-for="(code, i) in codeBlocks" :key="'code-'+i" class="extra-card code-card" v-html="renderContent(code, 'CodeX:UserBubble:code')"></div>
 
       <div v-for="(ide, i) in ideBlocks" :key="'ide-'+i" class="extra-card ide-card">
         <div class="ide-title">IDE</div>
@@ -24,7 +24,7 @@
     </div>
 
     <div v-if="plainText && plainText.trim()" class="user-bubble">
-      <div class="msg-text" v-html="renderContent(plainText)"></div>
+      <div class="msg-text" v-html="renderContent(plainText, 'CodeX:UserBubble:text')"></div>
     </div>
   </div>
 </template>

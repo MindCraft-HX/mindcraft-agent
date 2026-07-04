@@ -2,7 +2,7 @@
   <div class="user-msg">
     <!-- 代码/图片/文件：放在气泡上方（中性底色） -->
     <div v-if="hasExtras" class="user-extras">
-      <div v-for="(code, i) in codeBlocks" :key="'code-'+i" class="extra-card code-card" v-html="renderContent(code)"></div>
+      <div v-for="(code, i) in codeBlocks" :key="'code-'+i" class="extra-card code-card" v-html="renderContent(code, 'ClaudeCode:UserBubble:code')"></div>
 
       <div v-for="(ide, i) in ideBlocks" :key="'ide-'+i" class="extra-card ide-card">
         <div class="ide-title">IDE</div>
@@ -26,7 +26,7 @@
 
     <!-- 普通文本：只在橙色气泡内展示 -->
     <div v-if="plainText && plainText.trim()" class="user-bubble">
-      <div class="msg-text" v-html="renderContent(plainText)"></div>
+      <div class="msg-text" v-html="renderContent(plainText, 'ClaudeCode:UserBubble:text')"></div>
     </div>
   </div>
 </template>

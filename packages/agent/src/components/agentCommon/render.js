@@ -1,4 +1,5 @@
 import hljs from 'highlight.js/lib/common'
+import { rcProbeStart } from './utils/renderContentProbe.mjs'
 import {
   isAbsoluteFilePath,
   isStrongLocalPathCandidate,
@@ -594,8 +595,14 @@ function renderNestedList(lines, startIdx) {
   return { html: renderList(items, ordered), nextIdx: i }
 }
 
-export function renderContent(text) {
+/**
+ * 渲染 Markdown 文本为 HTML。
+ * @param {string} text   - Markdown 原文
+ * @param {string} [label] - 探针标签（可选），用于 T176 renderContent 性能分析
+ */
+export function renderContent(text, label) {
   if (!text) return ''
+  const stopProbe = label ? rcProbeStart(label, text.length) : null
   const source = String(text).replace(/\r\n/g, '\n')
   const lines = source.split('\n')
   const out = []
@@ -710,7 +717,9 @@ export function renderContent(text) {
     i = j - 1
   }
 
-  return `<div class="agent-markdown">${out.join('')}</div>`
+  const result = `<div class="agent-markdown">${out.join('')}</div>`
+  if (stopProbe) stopProbe()
+  return result
 }
 
 export { escapeHtml }

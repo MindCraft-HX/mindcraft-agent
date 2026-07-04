@@ -3,7 +3,7 @@
 > 日期：2026-07-04
 > 相关：ClaudeCode / CodeX 消息列表、输入框、后台扫描
 > Task: T176
-> 状态：诊断完成，待实现
+> 状态：Phase 1 已完成 → Phase 2a-0 探针先行
 
 ## 0. 执行结论
 
@@ -531,9 +531,52 @@ buildBashOutputPreview(output, { maxChars, maxLines })
 
 这些不是 Phase 1 阻塞项。Phase 1 只需要解决“默认挂载大量历史 tool detail”。
 
-## 十三、建议下一步
+## 十三、Phase 1 执行结果
 
-1. 执行 Phase 1：CodeX history tool 默认折叠 + ToolBash 大输出懒挂载。
-2. 跑测试：mapper/history contract/preview helper。
-3. 人工验收大 session。
-4. 如果仍卡，再用 profiler 判断 Phase 2 是 `renderContent` 缓存还是普通大消息折叠。
+Phase 1 已完成（commit `d6e1c1c` + `b47a56f`）：
+
+- CodeX history tool 默认折叠（`shouldExpandToolByDefault` + `historyRestore` 上下文）
+- ToolBash 大输出懒挂载（threshold: 12000 chars / 200 lines, preview → v-if 完整挂载）
+- 8 项 code review 修复（含 resultStatus guard 回归、split 尾部换行 off-by-one、i18n）
+- 测试：68 pass / 0 fail，真实大 session 采样验证 expanded tools 从 29-43 → 0-3
+
+人工验收反馈：有优化效果但未完全解决。冷渲染期间打字仍卡。
+
+## 十四、Phase 2 方案：renderContent 探针先行，数据驱动选方案
+
+### 核心判断
+
+- 不要猜"computed 缓存能否解决"或"打字是否触发重渲染" — 用探针测。
+- 先量化 `renderContent` 在三种场景下的行为：冷挂载、输入打字、增量 append。
+- 根据数据决定做 computed 缓存、大消息折叠、两者都做、或转查其他方向。
+
+### Phase 2a-0：renderContent 量化探针（本轮）
+
+只加统计，不改渲染行为：
+
+1. 每次 `renderContent()` 记录：来源组件、`msg.id`、文本长度、代码块数、耗时 `performance.now()`
+2. 区分场景：冷挂载、输入打字、增量 append、切 session
+3. 输出聚合：calls、total ms、max ms、重复调用次数、按消息类型分桶
+4. 仅在 debug/perf flag 开启时激活
+
+验收标准：
+- 切入大 session 时 `renderContent` 总耗时？
+- 打字期间旧 `msg.id` 有没有重复调用？
+- append 新消息时旧 `msg.id` 有没有重复调用？
+- 最大耗时来自 assistant/user/system 哪类消息？
+- 是否有 >80KB 或 >15 code blocks 的单条消息？
+
+### 决策分支
+
+| 数据结论 | 对应方案 |
+|---------|---------|
+| 重复调用高（打字/append 触发旧消息重跑） | Phase 2b: computed 缓存 |
+| 冷渲染高且集中在大消息 | Phase 2c: 大消息折叠（>80KB 或 >15 code blocks） |
+| 两者都高 | 两个都做 |
+| 都不高 | 转查 layout/DOM/style 或分帧渲染 |
+
+### 不做
+
+- 虚拟列表
+- Worker/off-main-thread 渲染
+- 修改 storage / metrics / draft / session registry

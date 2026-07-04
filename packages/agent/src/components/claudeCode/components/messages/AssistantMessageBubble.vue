@@ -2,7 +2,7 @@
   <div class="msg-assistant">
     <div class="assistant-avatar mindcraft-flow-win-iconfont  icon-mindcraft-claude1"></div>
     <div class="assistant-content">
-      <div v-html="renderContent(msg.text)"></div>
+      <div v-html="renderContent(msg.text, 'ClaudeCode:AssistantBubble')"></div>
       <TokenMetaRow v-if="msg._turnTokens" v-bind="msg._turnTokens" />
     </div>
   </div>

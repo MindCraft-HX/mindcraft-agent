@@ -47,7 +47,7 @@ const fbText = ref('')
 const planText = computed(() => {
   const p = props.plan
   if (!p || typeof p !== 'string') return ''
-  try { return renderContent(p) } catch (_) { return p.replace(/</g, '&lt;') }
+  try { return renderContent(p, 'ClaudeCode:PlanReview') } catch (_) { return p.replace(/</g, '&lt;') }
 })
 
 function submitFeedback() {

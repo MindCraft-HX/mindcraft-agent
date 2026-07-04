@@ -2,7 +2,7 @@
   <div class="msg-assistant">
     <div :class="['assistant-avatar', 'icon', 'iconfont', iconClass]" :style="iconStyle"></div>
     <div class="assistant-main">
-      <div class="assistant-content" v-html="renderContent(msg.text)"></div>
+      <div class="assistant-content" v-html="renderContent(msg.text, 'CodeX:AssistantBubble')"></div>
       <TokenMetaRow v-if="msg._turnTokens" v-bind="msg._turnTokens" />
     </div>
   </div>

@@ -3,7 +3,7 @@
     <div class="exit-plan-status" :class="{ 'plan-enter': isEnter }">
       {{ isEnter ? '已进入计划模式' : '已退出计划模式' }}
     </div>
-    <div v-if="data.plan" class="exit-plan-markdown" v-html="renderContent(data.plan)"></div>
+    <div v-if="data.plan" class="exit-plan-markdown" v-html="renderContent(data.plan, 'ClaudeCode:ToolPlan')"></div>
     <div v-if="data.planFilePath" class="exit-plan-path-wrap">
       <span class="exit-plan-path-label">{{ $t('agent.planFile') }}</span>
       <span class="exit-plan-path">{{ data.planFilePath }}</span>
