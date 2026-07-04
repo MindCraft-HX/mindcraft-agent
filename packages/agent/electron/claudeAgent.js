@@ -15,6 +15,9 @@ const {
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
   attachRegistrySessionToScanSummary,
+  findRegistryRecordForProviderScan,
+  mergeRegistryFieldsIntoScanSummary,
+  ensureRegistryFromProviderScan,
   repairSessionRegistry,
   setSessionTitle,
   syncPanelStateSessions,
@@ -515,6 +518,7 @@ function scanCliSessionsForProject(cwd) {
     if (!fs.existsSync(projectDir)) { stop({ empty: 1 }); return result }
 
     // 构建复合签名：目录签名 + 各文件 mtimeMs:size（T178 scan cache）
+    const sigStop = perfStartIpc('claude-scan-signature')
     const files = listClaudeTopLevelJsonlPaths(projectDir)
     const sigParts = [`dir:${getDirectorySignature(projectDir)}`]
     for (const fp of files) {
@@ -526,19 +530,28 @@ function scanCliSessionsForProject(cwd) {
       }
     }
     const signature = sigParts.join('|')
+    sigStop({ files: files.length })
 
     const cached = _claudeScanCache.get(cwd)
     if (cached?.signature === signature) {
-      // T178: cache hit 时重新 attach registry，避免 registry title/model/runtime 过期
+      // T179-P1: cache hit — lookup registry record, merge-only (不写文件)
+      const attachStop = perfStartIpc('claude-scan-attach')
       for (const raw of cached.rawSummaries) {
-        const summary = attachRegistrySessionToScanSummary('claude', raw, { cwd })
+        let record = findRegistryRecordForProviderScan('claude', raw, { cwd })
+        if (!record) {
+          // 合法异常：registry record 缺失，允许一次 repair 写
+          record = ensureRegistryFromProviderScan('claude', raw, { cwd })
+        }
+        const summary = mergeRegistryFieldsIntoScanSummary('claude', raw, record)
         if (summary) result.push(summary)
       }
+      attachStop({ sessions: result.length, cacheHit: 1 })
       stop({ cacheHit: 1, sessions: result.length })
       return result
     }
 
     // 只扫描顶层 .jsonl（不递归，避免把 subagents 的 jsonl 当作独立对话）
+    const rawStop = perfStartIpc('claude-scan-raw')
     const jsonlFiles = []
     for (const fullPath of files) {
       const cliSessionId = path.basename(fullPath, '.jsonl')
@@ -564,6 +577,8 @@ function scanCliSessionsForProject(cwd) {
     })
 
     // T178: cache raw summaries (before registry attachment)，避免 registry 变更后缓存过期
+    rawStop({ files: jsonlFiles.length })
+    const attachStop = perfStartIpc('claude-scan-attach')
     const rawSummaries = []
     for (const file of jsonlFiles) {
       const titleResult = getCachedClaudeSessionTitle(file.filePath, file.fileSize, file.updatedAt)
@@ -591,6 +606,7 @@ function scanCliSessionsForProject(cwd) {
       const summary = attachRegistrySessionToScanSummary('claude', raw, { cwd })
       if (summary) result.push(summary)
     }
+    attachStop({ sessions: result.length, cacheHit: 0 })
 
     _claudeScanCache.set(cwd, { signature, rawSummaries })
     stop({ cacheHit: 0, sessions: result.length })

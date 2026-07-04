@@ -576,13 +576,24 @@ function upsertSessionRecord(record, options = {}) {
       ? Math.max(Date.now(), existingUpdatedAt + 1, incomingUpdatedAt)
       : (Math.max(existingUpdatedAt, incomingUpdatedAt) || Date.now()),
   }
-  writeJsonAtomic(filePath, next)
 
-  removeIndexReferences(index, next.chatKey)
+  // T179-P1: 提前计算 orphanChatKeys，用于 no-op 判断
   const orphanChatKeys = new Set(ownerRecords
     .map(owner => normalizeString(owner.chatKey))
     .filter(chatKey => chatKey && chatKey !== next.chatKey))
   if (record.chatKey && record.chatKey !== next.chatKey) orphanChatKeys.add(record.chatKey)
+
+  // T179-P1: no-op 快速返回 — 内容无变化且无需处理 orphan 时跳过文件写入
+  if (!contentChanged && orphanChatKeys.size === 0 && index.sessions[next.chatKey]) {
+    const providerKeysOk = getProviderKeysFromRecord(next).every(k => index.providers[k] === next.chatKey)
+    if (providerKeysOk) {
+      return true
+    }
+  }
+
+  writeJsonAtomic(filePath, next)
+
+  removeIndexReferences(index, next.chatKey)
   for (const orphanChatKey of orphanChatKeys) {
     removeIndexReferences(index, orphanChatKey)
     // 合并到 canonical 记录后，删除旧的孤立会话文件，
@@ -1021,18 +1032,63 @@ function isProviderScanDetached({ agent, cliSessionId, filePath } = {}, options 
 }
 
 function upsertSessionFromProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
+  const stop = perfStartIpc('registry-scan-upsert')
   const record = buildProviderScanRecord(agent, scanSummary, project, options)
-  if (!record) return null
+  if (!record) { stop(); return null }
   try {
-    if (!upsertSessionRecord(record, options)) return null
-    return readJson(getSessionRecordPath(record.chatKey, options), null)
+    if (!upsertSessionRecord(record, options)) { stop(); return null }
+    const result = readJson(getSessionRecordPath(record.chatKey, options), null)
+    stop()
+    return result
   } catch (_) {
+    stop()
     return null
   }
 }
 
-function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
-  const record = upsertSessionFromProviderScan(agent, scanSummary, project, options)
+// T179-P1: 只读 lookup — 从 registry 中查找与 provider scan 匹配的已有 record。
+// 复用 buildProviderScanRecord 的解析逻辑，但不构造完整 record，不写文件。
+function findRegistryRecordForProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
+  const normalizedAgent = normalizeAgent(agent)
+  const providerSessionId = normalizeString(
+    scanSummary.providerSessionId || scanSummary.cliSessionId || scanSummary.id
+  )
+  const detachedRecord = findSessionRecordByDetachedProvider({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)
+  const resolved = resolveSessionByProvider({
+    agent: normalizedAgent,
+    cliSessionId: providerSessionId,
+    filePath: scanSummary.filePath,
+  }, options)
+  const detachedRecordProvider = detachedRecord?.provider || {}
+  const detachedRecordHasProvider = Boolean(
+    normalizeString(detachedRecordProvider.cliSessionId)
+    || normalizeString(detachedRecordProvider.filePath)
+  )
+  const detachedMatchesCurrentProvider = Boolean(
+    detachedRecord
+    && (
+      !detachedRecordHasProvider
+      || isDetachedProviderBinding({
+        cliSessionId: detachedRecordProvider.cliSessionId,
+        filePath: detachedRecordProvider.filePath,
+      }, detachedRecord.metadata?.detachedProviderBinding)
+    )
+  )
+  const existing = resolved || (detachedMatchesCurrentProvider ? detachedRecord : null)
+  if (!existing) return null
+  const chatKey = existing.chatKey
+  if (!chatKey) return null
+  // 从文件读回完整 record，确保合并时有最新的 registry 字段
+  return readJson(getSessionRecordPath(chatKey, options), null) || existing
+}
+
+// T179-P1: 纯合并 — 将 registry record 的字段合并到 scanSummary，不写文件。
+// cache hit 热路径专用。record 为 null 时返回 scanSummary 原样。
+function mergeRegistryFieldsIntoScanSummary(agent, scanSummary = {}, record = null, options = {}) {
   if (!record) return scanSummary
   const scanFilePath = normalizeString(scanSummary.filePath)
   return {
@@ -1050,6 +1106,19 @@ function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {
     modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',
     reasoningEffort: record.runtime?.reasoningEffort || scanSummary.reasoningEffort || '',
   }
+}
+
+// T179-P1: 确保 registry 有对应 record（允许写）。只在 cache miss、新 transcript、repair、record 缺失时调用。
+// 等价于原 upsertSessionFromProviderScan，语义更明确。
+function ensureRegistryFromProviderScan(agent, scanSummary = {}, project = {}, options = {}) {
+  return upsertSessionFromProviderScan(agent, scanSummary, project, options)
+}
+
+// T179-P1: 重构 — 委派到 ensureRegistryFromProviderScan + mergeRegistryFieldsIntoScanSummary。
+// 保持对外行为不变；cache hit 路径应改用 findRegistryRecordForProviderScan + mergeRegistryFieldsIntoScanSummary。
+function attachRegistrySessionToScanSummary(agent, scanSummary = {}, project = {}, options = {}) {
+  const record = ensureRegistryFromProviderScan(agent, scanSummary, project, options)
+  return mergeRegistryFieldsIntoScanSummary(agent, scanSummary, record, options)
 }
 
 function syncPanelStateSessions(agent, panelState = {}, options = {}) {
@@ -1564,6 +1633,9 @@ module.exports = {
   syncPanelStateSessions,
   normalizeSessionInstructionInput,
   attachRegistrySessionToScanSummary,
+  findRegistryRecordForProviderScan,
+  mergeRegistryFieldsIntoScanSummary,
+  ensureRegistryFromProviderScan,
   upsertRuntimeByProvider,
   upsertSessionFromProviderScan,
   upsertSessionRecord,

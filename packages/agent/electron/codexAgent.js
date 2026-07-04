@@ -12,7 +12,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, restorePanelStateFromSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
+const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, findRegistryRecordForProviderScan, mergeRegistryFieldsIntoScanSummary, ensureRegistryFromProviderScan, repairSessionRegistry, restorePanelStateFromSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -2113,21 +2113,33 @@ function listSessionsByCwd(targetCwd) {
   const normalizedTarget = normalizeFsPath(targetCwd)
 
   // T178: scan cache — 用 tree signature 检测文件变更
+  const sigStop = perfStartIpc('codex-scan-signature')
   const treeSignature = getCodexSessionsTreeSignature(SESSIONS_DIR)
+  sigStop()
   const cached = _codexScanByCwdCache.get(normalizedTarget)
   if (cached?.treeSignature === treeSignature) {
-    // T178: cache hit 时重新 attach registry，避免 registry title/model/runtime 过期
+    // T179-P1: cache hit — lookup registry record, merge-only (不写文件)
+    const attachStop = perfStartIpc('codex-scan-attach')
     const sessions = []
     for (const raw of cached.rawSummaries) {
-      const attached = attachRegistrySessionToScanSummary('codex', raw, { cwd: targetCwd })
+      let record = findRegistryRecordForProviderScan('codex', raw, { cwd: targetCwd })
+      if (!record) {
+        // 合法异常：registry record 缺失，允许一次 repair 写
+        record = ensureRegistryFromProviderScan('codex', raw, { cwd: targetCwd })
+      }
+      const attached = mergeRegistryFieldsIntoScanSummary('codex', raw, record)
       if (attached) sessions.push(attached)
     }
     const result = sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+    attachStop({ sessions: result.length, cacheHit: 1 })
     stop({ cacheHit: 1, sessions: result.length })
     return result
   }
 
+  const rawStop = perfStartIpc('codex-scan-raw')
   const files = listCodexJsonlFilesCached()
+  rawStop({ files: files.length })
+  const attachStop = perfStartIpc('codex-scan-attach')
   const rawSummaries = []
   const sessions = []
 
@@ -2142,6 +2154,7 @@ function listSessionsByCwd(targetCwd) {
   }
 
   const result = sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+  attachStop({ sessions: result.length, cacheHit: 0 })
   _codexScanByCwdCache.set(normalizedTarget, { treeSignature, rawSummaries })
   stop({ cacheHit: 0, sessions: result.length })
   return result

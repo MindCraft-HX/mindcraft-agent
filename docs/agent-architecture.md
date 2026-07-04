@@ -1,6 +1,6 @@
 # MindCraft Agent 架构契约
 
-> 最后更新：2026-07-02
+> 最后更新：2026-07-05
 > 目的：给后续开发和排障提供稳定的项目架构入口。历史任务、SDK 字段表、Token 细节不再堆在本文，按文档路由进入专题文档。
 
 ## 1. 项目定位
@@ -149,12 +149,16 @@ MindCraft 自有数据包括：
 - session/tab 激活后使用 scheduled refresh 和 per-project cooldown；不要在每次 tab activation 上直接触发全量 session scan。
 - textarea autosize、scroll restore、metrics refresh 等高频操作应合并到 rAF / scheduled task；不要在输入或切换路径做同步 layout + 磁盘 I/O。
 - 性能探针和 debug 日志必须通过显式 flag 打开，禁止默认 dev console 噪音回潮。
+- project/session activation 同步段只能更新 active id、显示已有内存状态、启动当前 session 首屏加载、focus/scroll；不得等待完整 metrics、完整 project scan、registry 批量写入或非当前 session 后台任务。
+- 缓存命中路径必须保持轻量。provider scan cache 只能缓存 provider raw summary；registry 派生字段应在独立读/merge 阶段处理，避免 cache hit 继续隐式 upsert 大量 session record。
+- 新增缓存必须登记 owner/key/value/invalidation/limit/stale policy/mutation policy。禁止未登记的临时 Map 进入切换热路径。
 
 相关计划与验收：
 
 - `docs/plan/2026-07-02-renderer-hot-path-performance.md`
 - `docs/plan/2026-07-02-session-tab-switch-performance.md`
 - `docs/plan/2026-07-02-T172-session-switch-performance.md`
+- `docs/plan/2026-07-05-project-session-activation-work-graph.md`
 
 ## 6. 消息来源与持久化
 

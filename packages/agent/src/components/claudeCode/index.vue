@@ -351,6 +351,7 @@ import { useScrollBottom } from './composables/useScrollBottom.js'
 import { applyToolResult, safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { getActivationId } from '../agentCommon/utils/activationContext.js'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { createMetricsDedupTracker } from '../agentCommon/utils/metricsDedupHelper.js'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
@@ -680,7 +681,7 @@ function persistClaudeTabMeta(tab, project = activeProject.value) {
 async function refreshMetricsForChat(chat, reason = 'unknown') {
   const stop = perfStart('claude.refreshMetricsForChat')
   stopMetricsLiveTimer()
-  if (!chat?.cliSessionId) { resetMetrics(); stop(); return }
+  if (!chat?.cliSessionId) { resetMetrics(); stop({ activationId: getActivationId() }); return }
 
   const dedupKey = chat.cliSessionId
   const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
@@ -688,15 +689,15 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   // T178: 切 session 后 300ms TTL — 跳过后续 reason 的重复 metrics 查询
   if (reason !== 'switch-chat' && dedupKey) {
     const sent = _claudeMetricsJustSent.get(dedupKey)
-    if (sent && Date.now() - sent < METRICS_DEDUP_TTL_MS) { stop(); return }
+    if (sent && Date.now() - sent < METRICS_DEDUP_TTL_MS) { stop({ activationId: getActivationId() }); return }
   }
   if (dedupKey) _claudeMetricsJustSent.set(dedupKey, Date.now())
 
   // 去重：同一 cliSessionId 已有在飞请求 → 跳过
-  if (_metricsTracker.has(chat.cliSessionId)) { stop(); return }
+  if (_metricsTracker.has(chat.cliSessionId)) { stop({ activationId: getActivationId() }); return }
 
   // guard: preload 缺失或测试环境无 API
-  if (!window.electronAPI?.claudeAgentQueryMetrics) { stop(); return }
+  if (!window.electronAPI?.claudeAgentQueryMetrics) { stop({ activationId: getActivationId() }); return }
 
   // 缓存优先：已有缓存的 metrics 且非 thinking，先显示
   if (!chat.thinking && chat.metrics && chat.metrics.durationMs != null) {
@@ -728,7 +729,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
         syncMetricsTimerForClaudeTab(tab, result.durationMs || 0)
       }
     }).catch(() => { _refreshingMetrics = false })
-    stop()
+    stop({ activationId: getActivationId() })
     return
   }
 
@@ -754,7 +755,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
     // IPC 失败不清除已有显示
   } finally {
     _refreshingMetrics = false
-    stop()
+    stop({ activationId: getActivationId() })
   }
 }
 
@@ -854,7 +855,7 @@ watch(activeChatId, (id, oldId) => {
   const stopDraft = perfStart('claude.sessionDraft.loadDraftForChat')
   void sessionDraft.loadDraftForChat(chat).finally(() => {
     nextTick(() => textareaAutosize.resizeNow())
-    stopDraft()
+    stopDraft({ activationId: getActivationId() })
   })
   resetHistory()
   refreshMetricsForChat(chat, 'switch-chat')
@@ -1827,7 +1828,7 @@ async function refreshActiveSessionInstructionState() {
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) {
     activeSessionInstructionEnabled.value = false
-    stop()
+    stop({ activationId: getActivationId() })
     return
   }
   try {
@@ -1837,7 +1838,7 @@ async function refreshActiveSessionInstructionState() {
   } catch (_) {
     activeSessionInstructionEnabled.value = false
   }
-  stop()
+  stop({ activationId: getActivationId() })
 }
 
 async function setActiveSessionInstructionEnabled(enabled) {
@@ -2021,18 +2022,18 @@ async function switchProject(id, preferredChat = null) {
     if (firstChatId) switchChat(firstChatId)
     nextTick(() => inputEl.value?.focus())
   }
-  } finally { stop() }
+  } finally { stop({ activationId: getActivationId() }) }
 }
 
 async function refreshProjectSessionsInBackground(p) {
   const stop = perfStart('claude.refreshProjectSessionsInBackground')
-  if (!p?.cwd || !window.electronAPI?.claudeScanProjectsSessions) { stop(); return null }
+  if (!p?.cwd || !window.electronAPI?.claudeScanProjectsSessions) { stop({ activationId: getActivationId() }); return null }
   let newCount = 0
   let changedCount = 0
   try {
     const scanStop = perfStart('claude.scan.wall')
     const scanned = await window.electronAPI.claudeScanProjectsSessions(p.cwd)
-    scanStop()
+    scanStop({ activationId: getActivationId() })
     if (!Array.isArray(scanned) || !scanned.length) {
       if (!p.chats?.length) {
         const c = createChat()
@@ -2063,7 +2064,7 @@ async function refreshProjectSessionsInBackground(p) {
     let hasPendingNewChat = hasUnboundClaudeSessionPendingAdoption(p.chats || [])
     const applyStop = perfStart('claude.scan.apply')
     for (const s of scanned) {
-      if (p.id !== activeProjectId.value) { applyStop(); return }
+      if (p.id !== activeProjectId.value) { applyStop({ activationId: getActivationId() }); return }
       const scannedCliSessionId = s.cliSessionId || s.id || ''
       const normalizedPath = (s.filePath || '').replace(/\\/g, '/')
       const cached = cacheByPath[normalizedPath] || cacheBySid[scannedCliSessionId] || null
@@ -2177,7 +2178,7 @@ async function refreshProjectSessionsInBackground(p) {
         }
       }
     }
-    applyStop()
+    applyStop({ activationId: getActivationId() })
 
     // 如果有当前活跃对话的消息被清空了，主动触发重新加载
     const needReload = scanned.find(s => s._needReloadActiveChat)
@@ -2287,7 +2288,7 @@ function switchChat(id) {
   resetScrollPrev()
   refreshMetricsForChat(chat, 'switch-chat')
   const stopSync = perfStart('claude.switchChat.sync')  // 同步路径结束标记
-  stopSync()
+  stopSync({ activationId: getActivationId() })
   // 有 filePath 且未从磁盘加载过时，从文件加载
   // 注意：不用 messages.length 判断——中断恢复后内存中可能有部分消息，也需覆盖
   if (chat?.filePath && !chat._messagesLoaded && canHydrateChatFromDisk(chat)) {
@@ -2303,12 +2304,12 @@ function switchChat(id) {
   } else {
     requestAnimationFrame(() => { setupHistoryTopObserver(); restoreChatScroll(id); inputEl.value?.focus() })
   }
-  stop()
+  stop({ activationId: getActivationId() })
 }
 
 async function ensureChatMessagesLoaded(chat) {
   const stop = perfStart('claude.ensureChatMessagesLoaded')
-  if (!chat?.filePath || !window.electronAPI?.claudeReadSessionFileRange) { stop(); return }
+  if (!chat?.filePath || !window.electronAPI?.claudeReadSessionFileRange) { stop({ activationId: getActivationId() }); return }
 
   let stopIpc, stopProc
   try {
@@ -2319,7 +2320,7 @@ async function ensureChatMessagesLoaded(chat) {
       page: 0,  // 最近的页面
       pageSize: 60
     })
-    if (stopIpc) { stopIpc(); stopIpc = null }
+    if (stopIpc) { stopIpc({ activationId: getActivationId() }); stopIpc = null }
     if (!rawData?.messages?.length) return
     if (!canHydrateChatFromDisk(chat, { hasIncomingDiskMessages: true })) return
     stopProc = perfStart('claude.ensureChatMessagesLoaded.proc')
@@ -2347,13 +2348,13 @@ async function ensureChatMessagesLoaded(chat) {
     chat._messagesLoaded = true
     // 同步挂首批 10 条后立即返回，剩余 batch 后台补齐（不阻塞 scroll/focus 恢复）
     void mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
-    if (stopProc) { stopProc(); stopProc = null }
+    if (stopProc) { stopProc({ activationId: getActivationId() }); stopProc = null }
   } catch (e) {
     console.warn('[ensureChatMessagesLoaded] failed:', e?.message || e)
   } finally {
-    if (stopIpc) stopIpc()
-    if (stopProc) stopProc()
-    stop()
+    if (stopIpc) stopIpc({ activationId: getActivationId() })
+    if (stopProc) stopProc({ activationId: getActivationId() })
+    stop({ activationId: getActivationId() })
   }
 }
 

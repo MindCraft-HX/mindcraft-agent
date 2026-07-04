@@ -89,10 +89,12 @@ function record(label, elapsedMs, meta = {}) {
   entry.total += elapsedMs
   if (elapsedMs < entry.min) entry.min = elapsedMs
   if (elapsedMs > entry.max) entry.max = elapsedMs
-  // 合并 meta：只记录 max（不存内容）
+  // 合并 meta：number 取 max，string 保留最新
   for (const [k, v] of Object.entries(meta)) {
     if (typeof v === 'number') {
       entry.meta[k] = Math.max(entry.meta[k] || 0, v)
+    } else if (typeof v === 'string') {
+      entry.meta[k] = v
     }
   }
   timers.set(label, entry)

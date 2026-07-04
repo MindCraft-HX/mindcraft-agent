@@ -299,6 +299,7 @@ import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentC
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
 import { perfStart, perfCount, isPerfEnabled } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { getActivationId } from '../agentCommon/utils/activationContext.js'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { createMetricsDedupTracker } from '../agentCommon/utils/metricsDedupHelper.js'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
@@ -1495,7 +1496,7 @@ async function refreshProjectSessionsInBackground(project) {
   try {
     const scanStop = perfStart('codex.scan.wall')
     const scanned = await window.electronAPI.codexListSessionsByCwd(project.cwd) || []
-    scanStop()
+    scanStop({ activationId: getActivationId() })
     if (!Array.isArray(scanned)) return null
     if (project.id !== activeProjectId.value) return null
 
@@ -1532,7 +1533,7 @@ async function refreshProjectSessionsInBackground(project) {
     const applyStop = perfStart('codex.scan.apply')
     const nextChats = []
     for (const summary of scanned) {
-      if (project.id !== activeProjectId.value) { applyStop(); return }
+      if (project.id !== activeProjectId.value) { applyStop({ activationId: getActivationId() }); return }
       const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
       const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
       const cached = cacheByPath[normalizedPath] || cacheBySid[summary.chatKey] || cacheBySid[providerSessionId] || null
@@ -1587,7 +1588,7 @@ async function refreshProjectSessionsInBackground(project) {
       const chat = await buildChatFromSessionSummary(summary)
       nextChats.push(chat)
     }
-    applyStop()
+    applyStop({ activationId: getActivationId() })
 
     const mergedChats = mergeScannedChatsPreservingRuntime(project.chats, nextChats, {
       activeChatId: activeChatId.value,
@@ -1857,7 +1858,7 @@ function switchProject(id, preferredChat = null) {
       void refreshProjectSessionsInBackground(p)
     }
   }
-  stop()
+  stop({ activationId: getActivationId() })
 }
 
 async function requestDeleteProject(project) {
@@ -1959,7 +1960,7 @@ function switchChat(id) {
       inputEl.value?.focus()
     })
   }
-  stop()
+  stop({ activationId: getActivationId() })
 }
 
 function newChat() {
@@ -2107,24 +2108,24 @@ async function refreshActiveSessionInstructionState() {
   const chatKey = activeTab.value?.sessionId
   if (!chatKey) {
     activeSessionInstructionEnabled.value = false
-    stop()
+    stop({ activationId: getActivationId() })
     return
   }
   let stopWall, stopApply
   try {
     stopWall = perfStart('codex.ipc.getSessionInstruction.wall')
     const instruction = await window.electronAPI?.getSessionInstruction?.(chatKey)
-    if (stopWall) { stopWall(); stopWall = null }
+    if (stopWall) { stopWall({ activationId: getActivationId() }); stopWall = null }
     debugLog('sessionInstruction', 'refreshActiveSessionInstructionState', { chatKey, enabled: instruction?.enabled, contentLen: String(instruction?.content || '').length })
     stopApply = perfStart('codex.ipc.getSessionInstruction.apply')
     activeSessionInstructionEnabled.value = Boolean(instruction?.enabled)
-    if (stopApply) { stopApply(); stopApply = null }
+    if (stopApply) { stopApply({ activationId: getActivationId() }); stopApply = null }
   } catch (_) {
     activeSessionInstructionEnabled.value = false
   } finally {
-    if (stopWall) stopWall()
-    if (stopApply) stopApply()
-    stop()
+    if (stopWall) stopWall({ activationId: getActivationId() })
+    if (stopApply) stopApply({ activationId: getActivationId() })
+    stop({ activationId: getActivationId() })
   }
 }
 
@@ -2571,7 +2572,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   const stop = perfStart('codex.refreshMetricsForChat')
   if (!chat) {
     stopMetricsTimer()
-    stop()
+    stop({ activationId: getActivationId() })
     return
   }
   if (chat.thinking && chat._thinkingStart) startMetricsTimer(chat._thinkingStart)
@@ -2652,11 +2653,11 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
           thinking: Boolean(tab.thinking),
         })
       }
-      if (applyStop) applyStop()
+      if (applyStop) applyStop({ activationId: getActivationId() })
     }).catch(() => {
       if (queryWallStop) { queryWallStop(); queryWallStop = null }
     })
-    stop()
+    stop({ activationId: getActivationId() })
     return
   }
 
@@ -2682,10 +2683,10 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       sessionId: chat.sessionId,
       thinking: Boolean(chat.thinking),
     })
-    if (applyStop) applyStop()
+    if (applyStop) applyStop({ activationId: getActivationId() })
   } catch (_) {
     if (queryWallStop) { queryWallStop(); queryWallStop = null }
-  } finally { stop() }
+  } finally { stop({ activationId: getActivationId() }) }
 }
 
 function clearCodexDoneMetricsRetry(sessionId = '') {
@@ -2764,7 +2765,7 @@ watch(
     const stopDraft = perfStart('codex.sessionDraft.loadDraftForChat')
     void sessionDraft.loadDraftForChat(tab).finally(() => {
       nextTick(() => textareaAutosize.resizeNow())
-      stopDraft()
+      stopDraft({ activationId: getActivationId() })
     })
     resetHistory()
   },
@@ -2981,7 +2982,7 @@ function filterCodexSystemMessages(messages) {
 async function ensureChatMessagesLoaded(chat) {
   const stop = perfStart('codex.ensureChatMessagesLoaded')
   if (CODEX_DEBUG) console.log('ensureChatMessagesLoaded', chat)
-  if (!chat?.filePath || !window.electronAPI?.codexReadSessionFileRange) { stop(); return }
+  if (!chat?.filePath || !window.electronAPI?.codexReadSessionFileRange) { stop({ activationId: getActivationId() }); return }
 
   let stopIpc, stopProc
   try {
@@ -2997,7 +2998,7 @@ async function ensureChatMessagesLoaded(chat) {
         const msgCount = rawData?.messages?.length || 0
         const toolCount = rawData?.messages ? rawData.messages.filter(m => m.role === 'tool' || m.type === 'tool_use' || m.toolCallId).length : 0
         const charCount = rawData?.messages ? JSON.stringify(rawData.messages).length : 0
-        stopIpc({ messages: msgCount, tools: toolCount, chars: charCount, hasMore: rawData?.hasMore ? 1 : 0 })
+        stopIpc({ messages: msgCount, tools: toolCount, chars: charCount, hasMore: rawData?.hasMore ? 1 : 0, activationId: getActivationId() })
       } else {
         stopIpc()
       }
@@ -3019,11 +3020,11 @@ async function ensureChatMessagesLoaded(chat) {
     // 同步挂首批 10 条后立即返回，剩余 batch 后台补齐（不阻塞 scroll/focus 恢复）
     void mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
     if (chat.id === activeChatId.value) void refreshMetricsForChat(chat, 'history-loaded')
-    if (stopProc) { stopProc(); stopProc = null }
+    if (stopProc) { stopProc({ activationId: getActivationId() }); stopProc = null }
   } catch (_) {} finally {
-    if (stopIpc) stopIpc()
-    if (stopProc) stopProc()
-    stop()
+    if (stopIpc) stopIpc({ activationId: getActivationId() })
+    if (stopProc) stopProc({ activationId: getActivationId() })
+    stop({ activationId: getActivationId() })
   }
 }
 

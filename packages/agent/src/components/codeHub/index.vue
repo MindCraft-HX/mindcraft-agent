@@ -123,6 +123,7 @@ import { shouldAutoShowAgentPicker } from './agentPickerPrompt.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { startActivation, getActivationId } from '../agentCommon/utils/activationContext.js'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
@@ -320,7 +321,12 @@ const showEmptyOverlay = computed(() => {
 let _tabActivationInit = true  // 首次恢复时不刷，避免初始 toast
 function activateTab(tab, preferredChat = null) {
   const stop = perfStart('codehub.activateTab')
-  debugCodeHubTabs('activateTab:start', { tabId: tab?.id, preferredChat }, { force: true })
+  const activationId = startActivation(
+    tab?.agentType || '?',
+    tab?.projectId || '?',
+    preferredChat?.id ?? preferredChat?.chatId ?? ''
+  )
+  debugCodeHubTabs('activateTab:start', { tabId: tab?.id, preferredChat, activationId }, { force: true })
 
   // Phase 2: 取消上一 panel 的 scheduled refresh（跨 agent 快速切换）
   const prevAgent = activeAgent.value
@@ -334,19 +340,20 @@ function activateTab(tab, preferredChat = null) {
   // 如果 Agent 尚未挂载，先挂载，下一帧再切换
   if (!mountedMap[tab.agentType]) {
     mountedMap[tab.agentType] = true
-    nextTick(() => { doSwitchProject(tab, preferredChat); stop() })
+    nextTick(() => { doSwitchProject(tab, preferredChat); stop({ activationId }) })
     return
   }
   doSwitchProject(tab, preferredChat)
-  stop()
+  stop({ activationId })
 }
 
 function doSwitchProject(tab, preferredChat = null) {
   const stop = perfStart('codehub.doSwitchProject')
+  const activationId = getActivationId()
   const panel = getPanel(tab.agentType)
   if (!panel) {
     debugCodeHubTabs('switchProject:missing-panel', { tabId: tab?.id, agentType: tab?.agentType }, { force: true })
-    stop()
+    stop({ activationId })
     return
   }
   debugCodeHubTabs('switchProject:start', {
@@ -354,6 +361,7 @@ function doSwitchProject(tab, preferredChat = null) {
     projectId: tab?.projectId,
     agentType: tab?.agentType,
     preferredChat,
+    activationId,
   }, { force: true })
   panel.switchProject(tab.projectId, preferredChat)
   if (!_tabActivationInit) {
@@ -361,7 +369,7 @@ function doSwitchProject(tab, preferredChat = null) {
     // 同一 panel 快速连续切换时，handleRefreshSessions 内部取消旧 timer
     panel.refreshSessions?.({ reason: 'tab-activate', silent: true, ifStaleMs: 15000, deferMs: 150 })
   }
-  stop()
+  stop({ activationId })
   _tabActivationInit = false
 }
 
