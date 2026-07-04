@@ -13,21 +13,26 @@
  *  - 禁止 flushAll 一次性补齐
  *
  * 用法：
- *   const { mountStaged, pauseMount, resumeMount, hasPendingMount } =
+ *   const { mountStaged, pauseMount, resumeMount, hasPendingMount, discardMount } =
  *     useChunkedHistoryMount({ getScrollEl, getActiveChatId })
  *
  *   // 首次加载（ensureChatMessagesLoaded 中）：
- *   await mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
- *   // Promise resolve 表示全部 DOM 补齐完成
+ *   //   同步挂首批 10 条后立即返回，剩余 batch 后台补齐。
+ *   //   不 await — scroll/focus 恢复不应等全量 DOM。
+ *   void mountStaged(chat, allMessages, { maxMessages: MAX_MESSAGES })
  *
  *   // 切走（switchChat 中）：
  *   pauseMount(oldChat)  // 保留 pending，切回后 resume
  *
  *   // 切回时：
+ *   //   立即恢复 scroll/focus，后台 resume batch 并做 scroll compensation
  *   if (hasPendingMount(chat)) {
- *     await resumeMount(chat)
+ *     void resumeMount(chat)
  *   }
- *   // 之后再做 restoreChatScroll
+ *   requestAnimationFrame(() => { restoreChatScroll(id); inputEl.focus() })
+ *
+ *   // loadMoreHistory 入口需检查，pending 未完时禁止翻页
+ *   if (hasPendingMount(chat)) return
  */
 
 import { nextTick } from 'vue'
@@ -53,8 +58,8 @@ export function useChunkedHistoryMount({ getScrollEl, getActiveChatId } = {}) {
     const initial = Math.min(INITIAL_BATCH, n)
     chat.messages = allMessages.slice(-initial)
 
-    // 剩余待补齐
-    const pending = allMessages.slice(0, n - initial)
+    // 剩余待补齐：窗口内初始 batch 前面的消息
+    const pending = allMessages.slice(-n, -initial)
     if (pending.length === 0) return Promise.resolve()
 
     // pending 存到 chat 上
