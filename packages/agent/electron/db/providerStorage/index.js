@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * Provider Repository — single authority for provider CRUD.
+ * Provider Repository: single authority for provider CRUD.
  *
  * All provider reads and writes go through SQLite. Legacy projection
  * (back-writing to providers.json / electron-conf) is managed by
  * `projection_status` markers and the `projectToLegacy()` function.
  *
  * Shape conversion:
- * - DAO rows (flat, with config_json/metadata_json parsed) ↔
+ * - DAO rows (flat, with config_json/metadata_json parsed) <->
  * - Legacy payload { providers: [{name, key, url, ...}], activeIdx }
  *
  * Business code should use this repository, not call DAO functions directly.
@@ -16,6 +16,22 @@
 
 const providerDao = require('../dao/providers');
 const { PROJECTION_STATUS } = require('../schema');
+const {
+  normalizeClaudeProviderStorageShape,
+  normalizeClaudeStoredConfig,
+  normalizeClaudeTierData,
+} = require('./claudeShape');
+
+/**
+ * Claude provider shape boundary:
+ * - `config` is the repository storage shape. It keeps provider credentials
+ *   (`key`/`url`) plus the Claude settings-compatible config used by the editor.
+ * - MindCraft UI/runtime fields (`language` as app locale, `permissionPolicy`,
+ *   `website`, `note`) live in metadata and are projected back to the legacy
+ *   provider shape.
+ * - Claude's official `config.language` is preserved when it is a response
+ *   language such as "Japanese"; MindCraft app locales are stripped from config.
+ */
 
 // ---------------------------------------------------------------------------
 // Shape conversion helpers
@@ -26,11 +42,14 @@ const { PROJECTION_STATUS } = require('../schema');
  * CodeX and Claude have different legacy shapes.
  */
 function daoToLegacyProvider(row) {
+  const env = row.agentType === 'claude' && row.config && typeof row.config.env === 'object'
+    ? row.config.env
+    : {};
   const base = {
     id: row.id,
     name: row.name,
-    key: row.config?.key || '',
-    url: row.config?.url || '',
+    key: row.config?.key || env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '',
+    url: row.config?.url || env.ANTHROPIC_BASE_URL || '',
   };
 
   if (row.agentType === 'codex') {
@@ -48,16 +67,17 @@ function daoToLegacyProvider(row) {
   }
 
   // Claude
+  const tierData = normalizeClaudeTierData(row.config || {}, row.metadata || {});
   return {
     ...base,
     config: row.config || { env: {} },
-    website: row.config?.website || '',
-    note: row.config?.note || '',
-    language: row.config?.language || 'zh-CN',
-    permissionPolicy: row.config?.permissionPolicy || 'ask',
+    website: row.metadata?.website || '',
+    note: row.metadata?.note || '',
+    language: row.metadata?.appLanguage || 'zh-CN',
+    permissionPolicy: row.metadata?.permissionPolicy || 'ask',
     effortLevel: row.config?.effortLevel !== undefined ? row.config.effortLevel : 'medium',
-    tierModels: row.metadata?.tierModels || { haiku: '', sonnet: '', opus: '', reasoning: '' },
-    selectedTier: row.metadata?.selectedTier || row.config?.model || 'sonnet',
+    tierModels: tierData.tierModels,
+    selectedTier: tierData.selectedTier,
   };
 }
 
@@ -85,22 +105,16 @@ function legacyToDaoProvider(legacyProvider, agentType) {
   }
 
   // Claude
+  const { config: storedConfig, metadata } = normalizeClaudeProviderStorageShape({
+    config: legacyProvider.config || {},
+    metadata: {},
+    provider: legacyProvider,
+  });
+
   return {
     name: legacyProvider.name,
-    config: {
-      ...(legacyProvider.config || {}),
-      key: legacyProvider.key || legacyProvider.config?.key || '',
-      url: legacyProvider.url || legacyProvider.config?.url || '',
-      website: legacyProvider.website || '',
-      note: legacyProvider.note || '',
-      language: legacyProvider.language || 'zh-CN',
-      permissionPolicy: legacyProvider.permissionPolicy || 'ask',
-      effortLevel: legacyProvider.effortLevel !== undefined ? legacyProvider.effortLevel : 'medium',
-    },
-    metadata: {
-      tierModels: legacyProvider.tierModels || { haiku: '', sonnet: '', opus: '', reasoning: '' },
-      selectedTier: legacyProvider.selectedTier || 'sonnet',
-    },
+    config: storedConfig,
+    metadata,
   };
 }
 
@@ -160,7 +174,7 @@ function getProviders(db, agentType, legacyReader) {
  */
 function setProviders(db, agentType, { providers = [], activeIdx = 0 }) {
   if (!Array.isArray(providers) || providers.length === 0) {
-    // Empty list → clear all providers for this agent type
+    // Empty list: clear all providers for this agent type.
     const existing = providerDao.listProviders(db, agentType);
     let deleted = 0;
     for (const p of existing) {
@@ -172,7 +186,7 @@ function setProviders(db, agentType, { providers = [], activeIdx = 0 }) {
 
   // setProviders is a full-replacement interface. Providers without an
   // explicit `id` are treated as new inserts (assigned a fresh UUID by the
-  // DAO).  Do NOT match by name — that would let an ID-less incoming
+  // DAO). Do NOT match by name: that would let an ID-less incoming
   // provider silently overwrite an existing provider's key, url, and
   // extended fields via the upsert ON CONFLICT path.
   const daoProviders = providers.map((p) => ({
@@ -337,7 +351,7 @@ function projectToLegacy(db, agentType, legacyWriteFn, { retryFailed = true } = 
     }
     result.ok = result.failed === 0;
   } catch (e) {
-    // Write failed — mark all as failed
+    // Write failed: mark all as failed.
     for (const p of toProject) {
       providerDao.setProjectionStatus(db, p.id, PROJECTION_STATUS.FAILED);
     }

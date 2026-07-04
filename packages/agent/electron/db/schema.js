@@ -70,7 +70,7 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_providers_agent_sort ON providers(agent_type, sort_index, updated_at)',
 ];
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 module.exports = {
   TABLES,

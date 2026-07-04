@@ -5,6 +5,7 @@
  *
  * - migrateV1: initial schema (providers + import_runs tables)
  * - migrateV2: add sort_index, projection_status, last_projected_at to providers
+ * - migrateV3: one-time cleanup for historical Claude provider config pollution
  * - runMigrations: run all migrations sequentially
  *
  * Each migration is idempotent — checks PRAGMA user_version before applying.
@@ -16,6 +17,7 @@ const {
   INDEXES,
   SCHEMA_VERSION,
 } = require('../schema');
+const { normalizeClaudeProviderStorageShape } = require('../providerStorage/claudeShape');
 
 /**
  * Apply the initial migration.
@@ -97,6 +99,69 @@ function migrateV2(db) {
 }
 
 /**
+ * v3 migration: move historical MindCraft-only Claude provider fields out of
+ * config_json and into metadata_json.
+ *
+ * This is a data cleanup, not a schema change. It removes old pollution such as
+ * theme/website/note/permissionPolicy/app language from provider config JSON
+ * while preserving website/note/language/permissionPolicy through metadata.
+ *
+ * @param {import('sql.js').Database} db
+ * @returns {{ ok: boolean, version: number, message: string, changed?: number }}
+ */
+function migrateV3(db) {
+  if (!db || typeof db.run !== 'function' || typeof db.exec !== 'function') {
+    return { ok: false, version: 0, message: 'Invalid db instance' };
+  }
+
+  const currentVersion = getDbVersion(db);
+
+  try {
+    if (currentVersion >= 3) {
+      return { ok: true, version: currentVersion, message: `Already at v${currentVersion}, no v3 migration needed`, changed: 0 };
+    }
+    if (currentVersion < 2) {
+      return { ok: false, version: currentVersion, message: 'Must run migrateV2 before migrateV3' };
+    }
+
+    const result = db.exec("SELECT id, config_json, metadata_json FROM providers WHERE agent_type = 'claude'");
+    const rows = result && result.length > 0 ? result[0].values : [];
+    let changed = 0;
+
+    db.run('BEGIN');
+    const stmt = db.prepare('UPDATE providers SET config_json = ?, metadata_json = ?, updated_at = ? WHERE id = ?');
+    const now = Math.floor(Date.now() / 1000);
+
+    try {
+      for (const [id, configJson, metadataJson] of rows) {
+        const config = parseJsonObject(configJson);
+        const metadata = parseJsonObject(metadataJson);
+        const normalized = normalizeClaudeProviderStorageShape({ config, metadata });
+        const nextConfigJson = JSON.stringify(normalized.config || {});
+        const nextMetadataJson = JSON.stringify(normalized.metadata || {});
+
+        if (nextConfigJson !== JSON.stringify(config) || nextMetadataJson !== JSON.stringify(metadata)) {
+          stmt.bind([nextConfigJson, nextMetadataJson, now, id]);
+          stmt.step();
+          stmt.reset();
+          changed++;
+        }
+      }
+    } finally {
+      stmt.free();
+    }
+
+    db.run('PRAGMA user_version = 3');
+    db.run('COMMIT');
+
+    return { ok: true, version: 3, message: `Migrated to v3; cleaned ${changed} Claude providers`, changed };
+  } catch (e) {
+    try { db.run('ROLLBACK'); } catch (_) {}
+    return { ok: false, version: currentVersion, message: `Migration v3 failed: ${e.message}` };
+  }
+}
+
+/**
  * Run all migrations in order to bring the DB to the latest version.
  *
  * @param {import('sql.js').Database} db
@@ -107,7 +172,10 @@ function runMigrations(db) {
   if (!v1.ok) return v1;
 
   // v1 already ran (or was already at v1+), now v2
-  return migrateV2(db);
+  const v2 = migrateV2(db);
+  if (!v2.ok) return v2;
+
+  return migrateV3(db);
 }
 
 /**
@@ -127,4 +195,13 @@ function getDbVersion(db) {
   return 0;
 }
 
-module.exports = { migrateV1, migrateV2, runMigrations, getDbVersion };
+function parseJsonObject(str) {
+  try {
+    const parsed = JSON.parse(str || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+module.exports = { migrateV1, migrateV2, migrateV3, runMigrations, getDbVersion };
