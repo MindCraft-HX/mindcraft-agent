@@ -543,3 +543,9 @@ Phase 1 交付：
 Render 侧 `ensureChatMessagesLoaded.proc` 仅占 0.4-2ms，但 wall time 在混切场景可达 1000-1660ms。
 延迟来自 Vue 响应式 `chat.messages = [...]` 触发的 DOM layout。这是 T176/T177 Phase 2 范畴，
 不在本期主进程 event loop 阻塞修复范围内。
+
+后续不再在本文件继续追加 metrics / draft / instruction 优化。剩余卡顿统一转入：
+
+- `docs/plan/2026-07-04-renderer-dom-layout-and-cache-governance.md`
+
+下一阶段只做 Performance trace 归因，确认卡顿来自 Scripting、Layout/Paint、DOM node 数、IPC queue 还是 dev 模式放大；证据明确前不直接上虚拟列表、renderContent 缓存或新的 session scan cache。
