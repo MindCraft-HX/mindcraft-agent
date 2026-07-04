@@ -661,7 +661,7 @@ function getCachedMetricsAggregate(filePath) {
   try {
     const stat = fs.statSync(filePath)
     if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
-      return cached.result
+      return { result: cached.result, cwd: cached.cwd || '' }
     }
   } catch (_) { /* file deleted */ }
   _metricsAggregateCache.delete(filePath)
@@ -1138,7 +1138,12 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
     const cachedAggregate = getCachedMetricsAggregate(filePath)
     if (cachedAggregate !== null) {
       perfCount('codex-metrics.aggregate-cache-hit')
-      return { ...cachedAggregate }
+      const gitInfo = await getGitInfo(cachedAggregate.cwd || fallbackCwd || '')
+      return {
+        ...cachedAggregate.result,
+        gitBranch: gitInfo?.branch || '',
+        gitChanges: gitInfo?.changes || 0,
+      }
     }
     perfCount('codex-metrics.aggregate-cache-miss')
     const lines = await readJsonlLinesAsync(filePath, Infinity)
@@ -1275,9 +1280,6 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
     const speedSec = totalSpeedDurationMs / 1000
 
     if (!contextWindow) contextWindow = getCodexContextWindowForModel(model)
-    const gitInfo = await getGitInfo(cwd)
-
-    if (CODEX_DEBUG) console.log('[codex metrics] contextUsage:', contextUsage, 'contextWindow:', contextWindow, 'contextPct:', contextWindow ? Math.round((contextUsage / contextWindow) * 100) : 0, 'model:', model)
 
     const result = {
       model: model || '',
@@ -1290,17 +1292,27 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
       contextWindow,
       durationMs: lastTurnDurationMs,
       speedOutputPerSec: speedSec > 0 ? Math.round(totalSpeedOutputTokens / speedSec) : 0,
+    }
+
+    // T177: 缓存聚合结果（不含 git，存拷贝防止外部 mutate 污染缓存）
+    try {
+      const resultStat = fs.statSync(filePath)
+      _metricsAggregateCache.set(filePath, {
+        mtimeMs: resultStat.mtimeMs,
+        size: resultStat.size,
+        cwd,
+        result: { ...result },
+      })
+    } catch (_) { /* stat 失败不阻塞返回 */ }
+
+    // git 状态独立获取（getGitInfo 自带 30s TTL cache，不与 JSONL aggregate 混用）
+    const gitInfo = await getGitInfo(cwd)
+
+    return {
+      ...result,
       gitBranch: gitInfo?.branch || '',
       gitChanges: gitInfo?.changes || 0,
     }
-
-    // T177: 缓存聚合结果（存拷贝防止外部 mutate 污染缓存）
-    try {
-      const resultStat = fs.statSync(filePath)
-      _metricsAggregateCache.set(filePath, { mtimeMs: resultStat.mtimeMs, size: resultStat.size, result: { ...result } })
-    } catch (_) { /* stat 失败不阻塞返回 */ }
-
-    return result
   } catch (_) {
     return null
   }

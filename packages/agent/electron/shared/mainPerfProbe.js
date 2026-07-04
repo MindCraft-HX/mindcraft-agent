@@ -52,7 +52,14 @@ function perfCount(label, inc = 1) {
   // 使用 Object.create(null) 避免 __proto__/toString 等原型属性污染计数
   perfCount._counters = perfCount._counters || Object.create(null)
   perfCount._counters[label] = (perfCount._counters[label] || 0) + inc
-  console.info(`[perf:count] ${label}=${perfCount._counters[label]}`)
+
+  // 降噪：同 label 1s 冷却，避免高频调用刷屏
+  const now = Date.now()
+  perfCount._lastLog = perfCount._lastLog || Object.create(null)
+  if (!perfCount._lastLog[label] || now - perfCount._lastLog[label] >= 1000) {
+    perfCount._lastLog[label] = now
+    console.info(`[perf:count] ${label}=${perfCount._counters[label]}`)
+  }
 }
 
 module.exports = { perfStartIpc, perfCount, setPerfEnabled }
