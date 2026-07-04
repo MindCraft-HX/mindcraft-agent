@@ -736,10 +736,14 @@ function readInstructionRecord(instructionId, options = {}) {
 
 function getSessionInstruction(chatKey, options = {}) {
   const stop = perfStartIpc('sessionRegistry.getInstruction')
+  const tRecord = Date.now()
   const recordPath = getSessionRecordPath(chatKey, options)
   const session = readJson(recordPath, null)
+  const recordReadMs = Date.now() - tRecord
   const instructionId = normalizeString(session?.instruction?.instructionId)
+  const tInstr = Date.now()
   const legacyInstruction = instructionId ? readInstructionRecord(instructionId, options) : null
+  const instructionReadMs = Date.now() - tInstr
   const sessionInstruction = session?.instruction || {}
   const legacyDescription = normalizeString(sessionInstruction.description)
     || normalizeString(sessionInstruction.title)
@@ -753,7 +757,7 @@ function getSessionInstruction(chatKey, options = {}) {
   const attachments = sessionAttachments && (sessionAttachments.length || !instructionId)
     ? sessionAttachments
     : (legacyInstruction?.attachments || [])
-  stop({ hasInstructionId: instructionId ? 1 : 0 })
+  stop({ hasInstructionId: instructionId ? 1 : 0, recordReadMs, instructionReadMs })
   return {
     enabled: Boolean(sessionInstruction.enabled),
     instructionId,

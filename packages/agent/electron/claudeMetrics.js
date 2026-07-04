@@ -5,28 +5,36 @@ const { execFile } = require('child_process')
 const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
 const https = require('https')
+const { perfStartIpc } = require('./shared/mainPerfProbe')
 
 // ==================== JSONL 文件定位 ====================
 
 const sessionJsonlCache = new Map() // cliSessionId -> filePath
 
 function resolveJsonlPath(cliSessionId) {
+  const stop = perfStartIpc('claude-metrics.resolveJsonlPath')
   if (sessionJsonlCache.has(cliSessionId)) {
     const cached = sessionJsonlCache.get(cliSessionId)
-    if (cached && fs.existsSync(cached)) return cached
+    if (cached && fs.existsSync(cached)) {
+      stop({ cacheHit: 1 })
+      return cached
+    }
   }
 
   const claudeProjectsDir = path.join(os.homedir(), '.claude', 'projects')
   if (!fs.existsSync(claudeProjectsDir)) {
+    stop({ cacheHit: 0, found: 0 })
     return null
   }
 
   const target = `${cliSessionId}.jsonl`
 
+  let dirsScanned = 0
   // 递归扫描所有子目录
   function scanDir(dir) {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true })
+      dirsScanned++
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name)
         if (entry.isDirectory()) {
@@ -45,6 +53,7 @@ function resolveJsonlPath(cliSessionId) {
   const found = scanDir(claudeProjectsDir)
   if (found) {
     sessionJsonlCache.set(cliSessionId, found)
+    stop({ cacheHit: 0, found: 1, dirsScanned })
     return found
   }
 
@@ -53,6 +62,7 @@ function resolveJsonlPath(cliSessionId) {
     entries.forEach(e => console.log('  ', e.name, e.isDirectory() ? '[dir]' : '[file]'))
   } catch (_) {}
 
+  stop({ cacheHit: 0, found: 0, dirsScanned })
   return null
 }
 
@@ -126,16 +136,21 @@ function addNormalizedUsageToTotals(totals, normalized) {
 }
 
 function readJsonlLines(filePath) {
+  const stop = perfStartIpc('claude-metrics.readJsonlLines')
   try {
     const stat = fs.statSync(filePath)
     const cached = jsonlLineCache.get(filePath)
-    // 文件未修改，直接返回缓存
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.lines
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      stop({ cacheHit: 1, lines: cached.lines.length })
+      return cached.lines
+    }
     const raw = fs.readFileSync(filePath, 'utf8')
     const lines = raw.split('\n').filter(line => line.trim())
     jsonlLineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
+    stop({ cacheHit: 0, lines: lines.length, fileSizeKB: Math.round(stat.size / 1024) })
     return lines
   } catch (_) {
+    stop()
     return []
   }
 }
@@ -148,11 +163,14 @@ function pickClaudeTurnDurationMs(turnStartTs, turnEndTs, fallbackDurationMs = n
 }
 
 function getTokenMetrics(cliSessionId, options = {}) {
+  const stop = perfStartIpc('claude-metrics.getTokenMetrics')
   const filePath = resolveJsonlPath(cliSessionId)
-  if (!filePath) return null
+  if (!filePath) { stop({ found: 0 }); return null }
 
   const lines = readJsonlLines(filePath)
-  return collectClaudeTokenMetricsFromLines(lines, options)
+  const result = collectClaudeTokenMetricsFromLines(lines, options)
+  stop({ found: 1, lines: lines.length, hasResult: result ? 1 : 0 })
+  return result
 }
 
 function collectClaudeTokenMetricsFromLines(lines, options = {}) {
@@ -355,11 +373,12 @@ function getLatestSessionCwd(cliSessionId) {
 }
 
 function getSpeedMetrics(cliSessionId) {
+  const stop = perfStartIpc('claude-metrics.getSpeedMetrics')
   const filePath = resolveJsonlPath(cliSessionId)
-  if (!filePath) return null
+  if (!filePath) { stop({ found: 0 }); return null }
 
   const lines = readJsonlLines(filePath)
-  if (lines.length === 0) return null
+  if (lines.length === 0) { stop({ found: 1, lines: 0 }); return null }
 
   let totalInputTokens = 0
   let totalOutputTokens = 0
@@ -396,9 +415,13 @@ function getSpeedMetrics(cliSessionId) {
     } catch (_) {}
   }
 
-  if (totalDurationMs <= 0) return null
+  if (totalDurationMs <= 0) {
+    stop({ found: 1, lines: lines.length, requestCount: 0 })
+    return null
+  }
 
   const totalDurationSec = totalDurationMs / 1000
+  stop({ found: 1, lines: lines.length, requestCount })
   return {
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
@@ -593,6 +616,7 @@ const sessionPollInfo = new Map() // cliSessionId -> { inputTokens, outputTokens
 async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
   if (!cliSessionId) return null
 
+  const stop = perfStartIpc('claude-metrics.pollMetrics')
   const tokenMetrics = getTokenMetrics(cliSessionId, options) || {}
   const speedMetrics = getSpeedMetrics(cliSessionId) || {}
   const gitInfo = await getGitInfo(cwd)
@@ -632,7 +656,7 @@ async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
     tokenMetrics.cacheCreationTokens || 0
   )
 
-  return {
+  const result = {
     model: model || '',
     costUsd,
     inputTokens: tokenMetrics.inputTokens || 0,
@@ -651,6 +675,8 @@ async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
     usageApiWeeklyReset: usageData?.weeklyResetAt,
     thinking,
   }
+  stop({ hasResult: 1 })
+  return result
 }
 
 function resetSession(cliSessionId) {

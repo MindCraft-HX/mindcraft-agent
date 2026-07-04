@@ -17,6 +17,7 @@
  */
 
 const fs = require('fs')
+const { perfStartIpc } = require('../shared/mainPerfProbe')
 const { normalizeClaudeUsage } = require('../tokenMetrics/normalizer')
 
 function parseTimestampMs(value) {
@@ -199,6 +200,7 @@ function annotateClaudeHistoryMessagesWithTurnTokens(messages, entries) {
  * @returns {{lines:string[], hasMore:boolean, totalPages:number, fileSize:number, bytesScanned:number, linesScanned:number}}
  */
 function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
+  const stop = perfStartIpc('claude.readJsonlPageLinesFromTail', { page, pageSize })
   const safePage = Math.max(0, Number(page) || 0)
   const safePageSize = Math.max(1, Math.min(200, Number(pageSize) || 60))
   const newestToSkip = safePage * safePageSize
@@ -209,10 +211,14 @@ function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
   let fd = null
   let fileSize = 0
   let bytesScanned = 0
+  let chunksRead = 0
 
   try {
+    const tOpen = Date.now()
     fd = fs.openSync(filePath, 'r')
     fileSize = fs.fstatSync(fd).size
+    const openMs = Date.now() - tOpen
+
     let pos = fileSize
     let carry = Buffer.alloc(0)
 
@@ -223,6 +229,7 @@ function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
       const bytesRead = fs.readSync(fd, buf, 0, toRead, pos)
       if (bytesRead <= 0) break
       bytesScanned += bytesRead
+      chunksRead++
 
       let end = bytesRead
       for (let i = bytesRead - 1; i >= 0; i--) {
@@ -247,9 +254,20 @@ function readJsonlPageLinesFromTail(filePath, page = 0, pageSize = 60) {
     }
 
     const pageLinesNewestFirst = linesNewestFirst.slice(newestToSkip, newestToSkip + safePageSize)
+    const parsedLines = pageLinesNewestFirst.reverse().map(line => line.toString('utf8'))
     const hasMore = linesNewestFirst.length > newestToSkip + safePageSize
+
+    stop({
+      fileSizeKB: Math.round(fileSize / 1024),
+      openMs,
+      chunksRead,
+      bytesScannedKB: Math.round(bytesScanned / 1024),
+      linesTotal: linesNewestFirst.length,
+      pageLines: parsedLines.length,
+      hasMore: hasMore ? 1 : 0,
+    })
     return {
-      lines: pageLinesNewestFirst.reverse().map(line => line.toString('utf8')),
+      lines: parsedLines,
       hasMore,
       totalPages: hasMore ? safePage + 2 : safePage + 1,
       fileSize,
