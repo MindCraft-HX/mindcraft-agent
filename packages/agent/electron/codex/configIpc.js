@@ -278,7 +278,16 @@ function registerConfigIpc(ipcMain, {
         existingProviders: existing.map((p, i) => ({
           id: p.id,  // real UUID from repository
           name: p.name,
-          config: { key: p.key || '', url: p.url || '', model: p.model || '', reasoningEffort: p.reasoningEffort || '', apiFormat: p.apiFormat || '' },
+          config: {
+            key: p.key || '',
+            url: p.url || '',
+            model: p.model || '',
+            reasoningEffort: p.reasoningEffort || '',
+            apiFormat: p.apiFormat || '',
+            authJson: p.authJson || {},
+            alternativeModels: Array.isArray(p.alternativeModels) ? p.alternativeModels : [],
+            tomlText: p.tomlText || '',
+          },
           isActive: i === activeIdx,
         })),
         agentType: 'codex',
@@ -288,6 +297,8 @@ function registerConfigIpc(ipcMain, {
       });
 
       if (result.ok && writeProviders) {
+        const existingById = new Map(existing.map((p) => [p.id, p]));
+        const existingByName = new Map(existing.map((p) => [String(p.name || '').toLowerCase(), p]));
         const newProviderList = result.providers.map((p) => ({
           id: p.id,  // preserve stable UUID from commitImport
           name: p.name,
@@ -295,8 +306,16 @@ function registerConfigIpc(ipcMain, {
           url: p.url || p.config?.url || '',
           model: p.model || p.config?.model || '',
           reasoningEffort: p.reasoningEffort || p.config?.reasoningEffort || '',
-          apiFormat: p.apiFormat || p.config?.apiFormat || '',
-          tomlText: existing.find((ep) => ep.name === p.name)?.tomlText || '',
+          apiFormat: p.apiFormat || p.config?.apiFormat || 'responses',
+          authJson: p.config?.authJson || p.authJson || {},
+          alternativeModels: Array.isArray(p.config?.alternativeModels)
+            ? p.config.alternativeModels
+            : (Array.isArray(p.alternativeModels) ? p.alternativeModels : []),
+          tomlText: p.config?.tomlText
+            || p.tomlText
+            || existingById.get(p.id)?.tomlText
+            || existingByName.get(String(p.name || '').toLowerCase())?.tomlText
+            || '',
         }));
 
         await writeProviders({
