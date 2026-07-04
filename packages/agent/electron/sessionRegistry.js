@@ -583,10 +583,18 @@ function upsertSessionRecord(record, options = {}) {
     .filter(chatKey => chatKey && chatKey !== next.chatKey))
   if (record.chatKey && record.chatKey !== next.chatKey) orphanChatKeys.add(record.chatKey)
 
-  // T179-P1: no-op 快速返回 — 内容无变化且无需处理 orphan 时跳过文件写入
+  // T179-P1: no-op 快速返回 — 内容无变化且无需处理 orphan 时跳过文件写入。
+  // 额外校验 index 摘要一致性，避免 index 损坏或过期时跳过修复。
   if (!contentChanged && orphanChatKeys.size === 0 && index.sessions[next.chatKey]) {
+    const idx = index.sessions[next.chatKey]
+    const idxConsistent =
+      normalizeString(idx.title) === normalizeString(next.title) &&
+      normalizeString(idx.filePath) === normalizeString(next.provider?.filePath) &&
+      normalizeString(idx.cliSessionId) === normalizeString(next.provider?.cliSessionId) &&
+      idx.updatedAt === next.updatedAt &&
+      normalizeString(idx.path) === normalizeString(path.relative(getSessionRegistryRoot(options), filePath).split(path.sep).join('/'))
     const providerKeysOk = getProviderKeysFromRecord(next).every(k => index.providers[k] === next.chatKey)
-    if (providerKeysOk) {
+    if (idxConsistent && providerKeysOk) {
       return true
     }
   }

@@ -7,8 +7,10 @@
  *   import { startActivation, getActivationId } from './activationContext.js'
  *   // 在 codeHub.doSwitchProject 入口：
  *   const aid = startActivation(agentType, projectId, preferredChat?.id || '')
- *   // 在任意 perf 探针中：
- *   const stop = perfStart('codex.switchChat', { activationId: getActivationId() })
+ *   // 在任意 perf 探针中（meta 传给 stop，不是 perfStart）：
+ *   const stop = perfStart('codex.switchChat')
+ *   // ... do work ...
+ *   stop({ activationId: getActivationId() })
  */
 
 let _currentActivationId = null
