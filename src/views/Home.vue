@@ -265,10 +265,13 @@
           <div class="footer-progress-bar">
             <div
               class="footer-progress-fill"
-              :style="{ width: Math.max(downloadProgress, 2) + '%' }"
+              :class="{ 'footer-progress-indeterminate': downloadProgress === 0 }"
+              :style="{ width: downloadProgress > 0 ? Math.round(downloadProgress) + '%' : '30%' }"
             ></div>
           </div>
-          <span class="footer-progress-text">{{ Math.round(downloadProgress) }}%</span>
+          <span class="footer-progress-text">
+            {{ downloadProgress > 0 ? Math.round(downloadProgress) + '%' : $t('settings.downloading') }}
+          </span>
         </div>
 
         <!-- downloaded：重启安装按钮 -->
@@ -977,18 +980,25 @@ function dirPath(filePath) {
   background: var(--cc-primary, #4a9eff);
   border-radius: 2px;
   transition: width 0.3s ease;
-  min-width: 2px;
+}
+
+.home-footer .footer-progress-indeterminate {
+  animation: footer-progress-pulse 1.2s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+@keyframes footer-progress-pulse {
+  0%   { opacity: 0.3; }
+  50%  { opacity: 0.8; }
+  100% { opacity: 0.3; }
 }
 
 .home-footer .footer-progress-text {
   font-size: 10px;
   color: var(--cc-text-dim, #888);
   font-variant-numeric: tabular-nums;
-  min-width: 28px;
-}
-@keyframes footer-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  min-width: 36px;
+  white-space: nowrap;
 }
 
 .skeleton-line {
