@@ -93,6 +93,77 @@ function classifyItemKind(item) {
 }
 
 // ---------------------------------------------------------------------------
+// Expand/collapse strategy — live vs history restore
+// ---------------------------------------------------------------------------
+
+/**
+ * 决定 tool card 的默认展开/折叠状态。
+ *
+ * 规则（按优先级）：
+ *   - reasoning → 始终折叠
+ *   - error/pending → 始终展开
+ *   - historyRestore → 默认折叠（已完成 tool）
+ *   - live stream → 默认展开
+ *
+ * @param {Object} item   - SDK item（需有 type）
+ * @param {Object} ctx    - { historyRestore?, ... }
+ * @param {string} status - 'running'|'done'|'error'|'pending'
+ * @returns {boolean}
+ */
+function shouldExpandToolByDefault(item, ctx, status) {
+  // reasoning: 始终折叠（无论 live 还是 history）
+  if (item.type === 'reasoning') return false
+  // error/pending: 始终展开（无论 live 还是 history）
+  if (status === 'error') return true
+  // pending 当前不出现在 normalizeStatus 的输出中，作为前瞻守卫保留
+  if (status === 'pending') return true
+  // history restore: 已完成 tool 默认折叠
+  if (ctx && ctx.historyRestore) return false
+  // live stream: 默认展开
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// Bash output preview — 大输出摘要
+// ---------------------------------------------------------------------------
+
+var LARGE_BASH_OUTPUT_CHARS = 12000
+var LARGE_BASH_OUTPUT_LINES = 200
+var PREVIEW_MAX_CHARS = 8000
+var PREVIEW_MAX_LINES = 120
+
+/**
+ * 为大 bash 输出生成 preview 字符串。
+ * 纯函数，方便单元测试。
+ *
+ * @param {string} output - 完整 bash 输出
+ * @param {Object} opts   - { maxChars?, maxLines? }
+ * @returns {{ preview: string, totalChars: number, totalLines: number }}
+ */
+function buildBashOutputPreview(output, opts) {
+  opts = opts || {}
+  var maxChars = opts.maxChars || PREVIEW_MAX_CHARS
+  var maxLines = opts.maxLines || PREVIEW_MAX_LINES
+  var totalChars = output.length
+  var lines = output.split('\n')
+  // Avoid overcount: split leaves a trailing "" when output ends with \n
+  var totalLines = lines.length - (lines.length > 1 && lines[lines.length - 1] === '' ? 1 : 0)
+  var preview = ''
+  var charCount = 0
+  for (var i = 0; i < lines.length && i < maxLines && charCount < maxChars; i++) {
+    var line = lines[i]
+    var suffix = i < lines.length - 1 ? '\n' : ''
+    if (charCount + line.length + suffix.length > maxChars) {
+      preview += line.slice(0, maxChars - charCount)
+      break
+    }
+    preview += line + suffix
+    charCount += line.length + suffix.length
+  }
+  return { preview: preview, totalChars: totalChars, totalLines: totalLines }
+}
+
+// ---------------------------------------------------------------------------
 // Tool message construction
 // ---------------------------------------------------------------------------
 
@@ -119,7 +190,6 @@ function buildToolMessageParts(item, ctx) {
 
   switch (item.type) {
     case 'reasoning':
-      base.expanded = false
       merge.text = item.text || ''
       status = isFinal ? 'done' : 'running'
       break
@@ -191,7 +261,6 @@ function buildToolMessageParts(item, ctx) {
       break
 
     case 'error':
-      base.expanded = true
       merge.text = item.message || ''
       status = 'error'
       break
@@ -201,9 +270,7 @@ function buildToolMessageParts(item, ctx) {
         const name = item.name || 'tool'
         const input = String(item.input || '')
         merge.text = JSON.stringify({ name: name, input: input.slice(0, 2000) }, null, 2)
-        if (name === 'apply_patch' && input) {
-          base.expanded = true
-        }
+        // apply_patch: expand/collapse controlled by shouldExpandToolByDefault
         status = normalizeStatus(item.status, isFinal)
       }
       break
@@ -232,6 +299,8 @@ function buildToolMessageParts(item, ctx) {
       break
   }
 
+  base.expanded = shouldExpandToolByDefault(item, ctx, status)
+
   return { base: base, merge: merge, status: status }
 }
 
@@ -254,15 +323,16 @@ function buildHistoryToolMessage(call, output, patchEnd, ctx) {
         unified_diff: info.unified_diff || '',
       })
     }
+    const fusionStatus = patchEnd.success !== false ? 'done' : 'error'
     return {
       role: 'tool',
       toolName: 'file_change',
       rawType: 'file_change',
       activityLabel: getToolActivityLabel('file_change'),
       toolUseId: parts.base.toolUseId,
-      status: patchEnd.success !== false ? 'done' : 'error',
+      status: fusionStatus,
       filePath: changes.map(function (c) { return c.path }).filter(Boolean).join('\n'),
-      expanded: true,
+      expanded: shouldExpandToolByDefault({ type: 'file_change' }, ctx, fusionStatus),
       newContent: '',
       diffLines: [],
       text: JSON.stringify({ changes: changes, status: patchEnd.status }, null, 2),
@@ -279,6 +349,10 @@ function buildHistoryToolMessage(call, output, patchEnd, ctx) {
     parts.merge,
     { status: resultStatus, toolResultContent: output || '' }
   )
+  // Always re-evaluate expanded with final status — buildToolMessageParts
+  // used the switch-case status, but buildHistoryToolMessage may infer a
+  // different status from output content (e.g., short error string).
+  message.expanded = shouldExpandToolByDefault(call, ctx, resultStatus)
   if (call.type === 'function_call' && String(call.name || '').toLowerCase() === 'shell_command') {
     message.bashOutput = output || message.bashOutput || ''
     message.newContent = output || message.newContent || ''
@@ -314,4 +388,8 @@ module.exports = {
   classifyItemKind,
   buildToolMessageParts,
   buildHistoryToolMessage,
+  shouldExpandToolByDefault,
+  buildBashOutputPreview,
+  LARGE_BASH_OUTPUT_CHARS,
+  LARGE_BASH_OUTPUT_LINES,
 }

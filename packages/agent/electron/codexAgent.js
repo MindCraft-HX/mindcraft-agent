@@ -1693,7 +1693,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         if (patchCalls.has(callId) && !patchEnd) return
 
         // Use shared mapper for tool message construction (live/history parity)
-        const msg = buildHistoryToolMessage(call, output, patchEnd, {})
+        const msg = buildHistoryToolMessage(call, output, patchEnd, { historyRestore: true })
         if (!msg) return
 
         // Enrich function_call (non-shell) with file preview state
@@ -1942,7 +1942,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       if (patchCalls.has(callId) && !patchEnd) return
 
       // Use shared mapper (live/history parity)
-      const msg = buildHistoryToolMessage(call, output, patchEnd, {})
+      const msg = buildHistoryToolMessage(call, output, patchEnd, { historyRestore: true })
       if (!msg) return
 
       // Enrich function_call (non-shell) with file preview state

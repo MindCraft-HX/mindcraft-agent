@@ -18,6 +18,10 @@ import {
   classifyItemKind,
   buildToolMessageParts,
   buildHistoryToolMessage,
+  shouldExpandToolByDefault,
+  buildBashOutputPreview,
+  LARGE_BASH_OUTPUT_CHARS,
+  LARGE_BASH_OUTPUT_LINES,
 } from '../packages/agent/src/components/codeX/utils/codexUiEventMapper.mjs'
 
 // CJS version
@@ -391,6 +395,222 @@ test('buildHistoryToolMessage: unknown call type returns null', () => {
 })
 
 // ---------------------------------------------------------------------------
+// shouldExpandToolByDefault — T176 live vs history expand strategy
+// ---------------------------------------------------------------------------
+
+test('shouldExpandToolByDefault: reasoning always collapsed', () => {
+  assert.equal(shouldExpandToolByDefault({ type: 'reasoning' }, {}, 'running'), false)
+  assert.equal(shouldExpandToolByDefault({ type: 'reasoning' }, {}, 'done'), false)
+  assert.equal(shouldExpandToolByDefault({ type: 'reasoning' }, { historyRestore: true }, 'done'), false)
+})
+
+test('shouldExpandToolByDefault: error always expanded', () => {
+  assert.equal(shouldExpandToolByDefault({ type: 'error' }, {}, 'error'), true)
+  assert.equal(shouldExpandToolByDefault({ type: 'error' }, { historyRestore: true }, 'error'), true)
+})
+
+test('shouldExpandToolByDefault: pending always expanded', () => {
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, {}, 'pending'), true)
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, { historyRestore: true }, 'pending'), true)
+})
+
+test('shouldExpandToolByDefault: history restore defaults collapsed', () => {
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, { historyRestore: true }, 'done'), false)
+  assert.equal(shouldExpandToolByDefault({ type: 'file_change' }, { historyRestore: true }, 'done'), false)
+  assert.equal(shouldExpandToolByDefault({ type: 'mcp_tool_call' }, { historyRestore: true }, 'done'), false)
+})
+
+test('shouldExpandToolByDefault: live stream defaults expanded', () => {
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, {}, 'done'), true)
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, {}, 'running'), true)
+  assert.equal(shouldExpandToolByDefault({ type: 'file_change' }, {}, 'done'), true)
+})
+
+test('shouldExpandToolByDefault: no ctx defaults to live (expanded)', () => {
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, null, 'done'), true)
+  assert.equal(shouldExpandToolByDefault({ type: 'command_execution' }, undefined, 'done'), true)
+})
+
+// ---------------------------------------------------------------------------
+// buildToolMessageParts — T176 historyRestore expand strategy
+// ---------------------------------------------------------------------------
+
+test('buildToolMessageParts: history shell completed → expanded: false', () => {
+  const parts = buildToolMessageParts(
+    { type: 'command_execution', id: 'sh1', call_id: 'csh1', command: 'ls', status: 'completed', aggregated_output: 'a\nb', exit_code: 0 },
+    { cwd: '/tmp', historyRestore: true, isFinal: true }
+  )
+  assert.ok(parts)
+  assert.equal(parts.base.expanded, false)
+  assert.equal(parts.status, 'done')
+})
+
+test('buildToolMessageParts: live completed shell → expanded: true', () => {
+  const parts = buildToolMessageParts(
+    { type: 'command_execution', id: 'sh2', call_id: 'csh2', command: 'ls', status: 'completed', exit_code: 0 },
+    { cwd: '/tmp', isFinal: true }
+  )
+  assert.ok(parts)
+  assert.equal(parts.base.expanded, true)
+})
+
+test('buildToolMessageParts: history error → expanded: true', () => {
+  const parts = buildToolMessageParts(
+    { type: 'error', id: 'e2', call_id: 'ce2', message: 'failed' },
+    { historyRestore: true, isFinal: true }
+  )
+  assert.ok(parts)
+  assert.equal(parts.base.expanded, true)
+})
+
+test('buildToolMessageParts: history reasoning → expanded: false', () => {
+  const parts = buildToolMessageParts(
+    { type: 'reasoning', id: 'rh', call_id: 'crh', text: 'let me think' },
+    { historyRestore: true, isFinal: true }
+  )
+  assert.ok(parts)
+  assert.equal(parts.base.expanded, false)
+})
+
+test('buildToolMessageParts: history file_change → expanded: false', () => {
+  const parts = buildToolMessageParts(
+    { type: 'file_change', id: 'fc', call_id: 'cfc', changes: [{ path: 'a.ts' }], status: 'completed' },
+    { cwd: '/repo', historyRestore: true, isFinal: true }
+  )
+  assert.ok(parts)
+  assert.equal(parts.base.expanded, false)
+})
+
+test('buildToolMessageParts: history mcp_tool_call → expanded: false', () => {
+  const parts = buildToolMessageParts(
+    { type: 'mcp_tool_call', id: 'mcp', call_id: 'cmcp', server: 's', tool: 't', status: 'completed' },
+    { historyRestore: true, isFinal: true }
+  )
+  assert.ok(parts)
+  assert.equal(parts.base.expanded, false)
+})
+
+// ---------------------------------------------------------------------------
+// buildHistoryToolMessage — T176 historyRestore
+// ---------------------------------------------------------------------------
+
+test('buildHistoryToolMessage: completed shell in history → expanded: false', () => {
+  const msg = buildHistoryToolMessage(
+    { type: 'function_call', id: 'sh3', call_id: 'csh3', name: 'shell_command', arguments: JSON.stringify({ command: 'echo hi', workdir: '/tmp' }) },
+    'hi\n',
+    null,
+    { historyRestore: true }
+  )
+  assert.ok(msg)
+  assert.equal(msg.role, 'tool')
+  assert.equal(msg.expanded, false)
+  assert.equal(msg.bashOutput, 'hi\n')
+})
+
+test('buildHistoryToolMessage: apply_patch fusion in history → expanded: false', () => {
+  const msg = buildHistoryToolMessage(
+    { type: 'custom_tool_call', id: 'ap2', call_id: 'cap2', name: 'apply_patch', status: 'completed' },
+    '',
+    { success: true, status: 'applied', changes: { 'src/a.ts': { type: 'update', unified_diff: 'diff' } } },
+    { historyRestore: true }
+  )
+  assert.ok(msg)
+  assert.equal(msg.toolName, 'file_change')
+  assert.equal(msg.expanded, false)
+})
+
+test('buildHistoryToolMessage: apply_patch fusion error → expanded: true even in history', () => {
+  const msg = buildHistoryToolMessage(
+    { type: 'custom_tool_call', id: 'ap3', call_id: 'cap3', name: 'apply_patch', status: 'completed' },
+    '',
+    { success: false, status: 'failed', changes: {} },
+    { historyRestore: true }
+  )
+  assert.ok(msg)
+  assert.equal(msg.expanded, true)
+  assert.equal(msg.status, 'error')
+})
+
+test('buildHistoryToolMessage: short error output → status error, expanded true', () => {
+  const msg = buildHistoryToolMessage(
+    { type: 'command_execution', id: 'ce2', call_id: 'cce2', command: 'bad', status: 'failed' },
+    'Error: not found',
+    null,
+    { historyRestore: true }
+  )
+  assert.ok(msg)
+  assert.equal(msg.status, 'error')
+  assert.equal(msg.expanded, true)
+})
+
+test('buildHistoryToolMessage: error output ≥500 chars → expanded resolved with unconditional guard', () => {
+  // 构造 ≥500 字符的 error 输出（含 error 关键词）
+  const longError = 'Error: ' + 'x'.repeat(500)
+  const msg = buildHistoryToolMessage(
+    { type: 'command_execution', id: 'ce2-long', call_id: 'cce2-long', command: 'bad', status: 'failed' },
+    longError,
+    null,
+    { historyRestore: true }
+  )
+  assert.ok(msg)
+  // output.length ≥ 500 → resultStatus is 'done' (not 'error')
+  assert.equal(msg.status, 'done')
+  // Unconditional re-evaluation: history restore + done → collapsed
+  assert.equal(msg.expanded, false)
+})
+
+// ---------------------------------------------------------------------------
+// buildBashOutputPreview
+// ---------------------------------------------------------------------------
+
+test('buildBashOutputPreview: small output returns full content', () => {
+  const output = 'line1\nline2\nline3'
+  const result = buildBashOutputPreview(output)
+  assert.equal(result.preview, output)
+  assert.equal(result.totalChars, output.length)
+  assert.equal(result.totalLines, 3)
+})
+
+test('buildBashOutputPreview: truncates by maxChars', () => {
+  const lines = Array.from({ length: 100 }, (_, i) => 'x'.repeat(100))
+  const output = lines.join('\n')
+  const result = buildBashOutputPreview(output, { maxChars: 500, maxLines: 9999 })
+  assert.ok(result.preview.length <= 500)
+  assert.equal(result.totalChars, output.length)
+  assert.equal(result.totalLines, 100)
+})
+
+test('buildBashOutputPreview: truncates by maxLines', () => {
+  const lines = Array.from({ length: 100 }, (_, i) => `line${i}`)
+  const output = lines.join('\n')
+  const result = buildBashOutputPreview(output, { maxChars: 99999, maxLines: 5 })
+  assert.equal(result.preview.replace(/\n$/, '').split('\n').length, 5)
+  assert.equal(result.totalLines, 100)
+})
+
+test('buildBashOutputPreview: empty string', () => {
+  const result = buildBashOutputPreview('')
+  assert.equal(result.preview, '')
+  assert.equal(result.totalChars, 0)
+  assert.equal(result.totalLines, 1) // ''.split('\n') = ['']
+})
+
+test('buildBashOutputPreview: single line', () => {
+  const result = buildBashOutputPreview('hello world')
+  assert.equal(result.preview, 'hello world')
+  assert.equal(result.totalLines, 1)
+})
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+test('LARGE_BASH_OUTPUT_CHARS and LARGE_BASH_OUTPUT_LINES are positive', () => {
+  assert.ok(LARGE_BASH_OUTPUT_CHARS > 0)
+  assert.ok(LARGE_BASH_OUTPUT_LINES > 0)
+})
+
+// ---------------------------------------------------------------------------
 // CJS / ESM parity
 // ---------------------------------------------------------------------------
 
@@ -471,6 +691,47 @@ test('CJS/ESM parity: buildHistoryToolMessage matches', () => {
   assert.ok(esm)
   assert.ok(cjsResult)
   assert.deepEqual(cjsResult, esm, 'CJS/ESM history message mismatch')
+})
+
+test('CJS/ESM parity: shouldExpandToolByDefault matches', () => {
+  const cases = [
+    [{ type: 'reasoning' }, {}, 'done'],
+    [{ type: 'error' }, { historyRestore: true }, 'error'],
+    [{ type: 'command_execution' }, { historyRestore: true }, 'done'],
+    [{ type: 'command_execution' }, {}, 'running'],
+    [{ type: 'file_change' }, { historyRestore: true }, 'done'],
+  ]
+  for (const [item, ctx, status] of cases) {
+    assert.equal(
+      cjs.shouldExpandToolByDefault(item, ctx, status),
+      shouldExpandToolByDefault(item, ctx, status),
+      `CJS/ESM shouldExpandToolByDefault mismatch for ${item.type}/${status}`
+    )
+  }
+})
+
+test('CJS/ESM parity: buildBashOutputPreview matches', () => {
+  const output = Array.from({ length: 30 }, (_, i) => `line${i}`).join('\n')
+  const esm = buildBashOutputPreview(output, { maxChars: 200, maxLines: 10 })
+  const cjsResult = cjs.buildBashOutputPreview(output, { maxChars: 200, maxLines: 10 })
+  assert.deepEqual(cjsResult, esm, 'CJS/ESM buildBashOutputPreview mismatch')
+})
+
+test('CJS/ESM parity: constants match', () => {
+  assert.equal(cjs.LARGE_BASH_OUTPUT_CHARS, LARGE_BASH_OUTPUT_CHARS)
+  assert.equal(cjs.LARGE_BASH_OUTPUT_LINES, LARGE_BASH_OUTPUT_LINES)
+})
+
+test('CJS/ESM parity: buildToolMessageParts with historyRestore matches', () => {
+  const item = { type: 'command_execution', id: 'sh', call_id: 'csh', command: 'ls', status: 'completed', aggregated_output: 'a\nb', exit_code: 0 }
+  const ctx = { cwd: '/tmp', historyRestore: true, isFinal: true }
+  const esm = buildToolMessageParts(item, ctx)
+  const cjsResult = cjs.buildToolMessageParts(item, ctx)
+  assert.ok(esm)
+  assert.ok(cjsResult)
+  assert.deepEqual(cjsResult.base, esm.base, 'CJS/ESM base mismatch with historyRestore')
+  assert.deepEqual(cjsResult.merge, esm.merge, 'CJS/ESM merge mismatch with historyRestore')
+  assert.equal(cjsResult.status, esm.status)
 })
 
 // ---------------------------------------------------------------------------
