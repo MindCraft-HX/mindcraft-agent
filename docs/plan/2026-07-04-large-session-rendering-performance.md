@@ -3,9 +3,32 @@
 > 日期：2026-07-04
 > 相关：ClaudeCode / CodeX 消息列表、输入框、后台扫描
 > Task: T176
-> 状态：Phase 1 已完成 → Phase 2a-0 探针先行
+> 状态：已收口；Phase 1 完成，Phase 2a-0 探针证伪 renderContent 方向
 
 ## 0. 执行结论
+
+### 0.0 收口结论（2026-07-04）
+
+T176 的渲染方向已完成应做的部分，不再继续推进 computed 缓存、普通大消息折叠、虚拟列表或输入框拆分。
+
+已完成并验证：
+
+- CodeX history restore 的 completed tool 默认折叠。
+- ToolBash 大输出懒挂载，避免冷加载直接挂完整 `<pre>`。
+- 真实大 JSONL 采样中，最近 60 条的 expanded tools 从常见 29-43 降到 0-3，剩余展开项为 error tool。
+- `renderContent` 探针数据显示：
+  - 打字期间旧消息没有触发 `renderContent` 重跑。
+  - 冷加载 `renderContent` 约 73 calls / 19.5ms。
+  - 单次 max 约 8.5ms，avg 约 0.27ms。
+  - 当前样本 max message text 约 5KB，没有 >80KB 大 assistant/user message。
+
+结论：
+
+- `renderContent` 不是当前剩余卡顿的主要瓶颈。
+- computed 缓存和普通大消息折叠当前收益不足，继续做会偏离证据。
+- T176 不再承接后续“切 session 后仍卡”的排查。
+
+后续问题转入 T177：`docs/plan/2026-07-04-session-switch-background-task-latency.md`。T177 聚焦 session 切换后的后台 IPC / session registry / metrics / draft / instruction 延迟，以及这些异步任务返回后是否和主线程渲染竞争。
 
 当前卡顿不要继续按“所有 session 都被重度关联/全部重渲染”处理。已收窄到更具体的链路：
 
