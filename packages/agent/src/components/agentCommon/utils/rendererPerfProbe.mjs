@@ -50,6 +50,11 @@ export function perfDump() {
   flush()
 }
 
+/** 查询当前是否启用（支持 window.__MCPF_PERF__ 和 localStorage mcpf_perf） */
+export function isPerfEnabled() {
+  return isEnabled()
+}
+
 // ── internal ────────────────────────────────────────────
 
 let _perfSyncDone = false

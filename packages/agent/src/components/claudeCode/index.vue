@@ -800,6 +800,7 @@ function findClaudeChatById(chatId) {
 const sessionDraft = useSessionDraft({
   inputText,
   getActiveChat: () => activeTab.value,
+  labelPrefix: 'claude.',
 })
 const persistActiveInputDraft = sessionDraft.persistActiveDraftNow
 

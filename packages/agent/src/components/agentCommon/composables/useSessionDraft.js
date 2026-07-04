@@ -14,11 +14,13 @@ export function useSessionDraft({
   inputText,
   getActiveChat,
   debounceMs = DEFAULT_DRAFT_SAVE_DEBOUNCE_MS,
+  labelPrefix = '',
 } = {}) {
   let timer = null
   let applyingRemote = false
   let loadSeq = 0
   const _draftCache = new Map()
+  const L = labelPrefix // short alias for label interpolation
 
   function clearTimer() {
     if (!timer) return
@@ -35,7 +37,7 @@ export function useSessionDraft({
   }
 
   async function loadDraftForChat(chat) {
-    const stop = perfStart('sessionDraft.loadDraftForChat')
+    const stop = perfStart(`${L}sessionDraft.loadDraftForChat`)
     clearTimer()
     const chatKey = getChatKey(chat)
     const seq = ++loadSeq
@@ -60,7 +62,7 @@ export function useSessionDraft({
     let text = ''
     let stopWall, stopApply
     try {
-      stopWall = perfStart('sessionDraft.getSessionDraft.wall')
+      stopWall = perfStart(`${L}sessionDraft.getSessionDraft.wall`)
       const draft = await window.electronAPI?.getSessionDraft?.(chatKey)
       if (stopWall) { stopWall(); stopWall = null }
       text = typeof draft?.text === 'string' ? draft.text : ''
@@ -75,7 +77,7 @@ export function useSessionDraft({
       return text
     }
     if (!text) text = getLegacyDraft(chat)
-    stopApply = perfStart('sessionDraft.getSessionDraft.apply')
+    stopApply = perfStart(`${L}sessionDraft.getSessionDraft.apply`)
     applyingRemote = true
     setLocalDraft(text)
     applyingRemote = false

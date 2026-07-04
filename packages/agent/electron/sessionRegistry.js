@@ -753,7 +753,7 @@ function getSessionInstruction(chatKey, options = {}) {
   const attachments = sessionAttachments && (sessionAttachments.length || !instructionId)
     ? sessionAttachments
     : (legacyInstruction?.attachments || [])
-  stop({ hasLegacy: instructionId ? 1 : 0 })
+  stop({ hasInstructionId: instructionId ? 1 : 0 })
   return {
     enabled: Boolean(sessionInstruction.enabled),
     instructionId,

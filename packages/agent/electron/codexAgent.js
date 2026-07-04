@@ -1728,8 +1728,11 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         for (const line of lines) collectMessage(line)
         if (messages.length >= safePageSize || !pageData.hasMore) break
       }
+      // tailRead 含 I/O + collectMessage（循环内交替），仅记录扫描次数和行数
+      stopTail({ scanPages: actualScans, linesRead: lines.length })
+      // collect：循环后的消息收尾（flush + pending flush）
+      const stopCollect = perfStartIpc('codex.readRange.collect')
       flushActiveTurnTokens()
-      stopTail({ scanPages: actualScans, linesRead: lines.length, messagesCollected: messages.length })
 
       // Flush remaining calls without output (timeout/cancelled)
       // NOTE: page=0 uses tail-read; tail may start mid-session. Do not synthesize
@@ -1772,6 +1775,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
           text: JSON.stringify({ name, input: String(input).substring(0, 2000) }, null, 2),
         })
       }
+      stopCollect({ pendingFlushed: Object.keys(pendingCalls).length })
 
       const stopProcess = perfStartIpc('codex.readRange.process')
       const sliced = messages.slice(-safePageSize)

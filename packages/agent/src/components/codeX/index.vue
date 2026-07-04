@@ -298,7 +298,7 @@ import { countVisibleCodexUserMessages, isVisibleCodexUserMessage } from './util
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import { safeIpcPayload, stripSystemContextTags as stripSystemContextTagsShared } from '../agentCommon/utils/helpers.js'
 import { playDoneSound } from '../agentCommon/utils/playDoneSound.js'
-import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
+import { perfStart, isPerfEnabled } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { log as debugLog } from '../agentCommon/utils/rendererDebug.mjs'
 import { createMetricsDedupTracker } from '../agentCommon/utils/metricsDedupHelper.js'
 import { buildProjectTabSummary, getCwdBasename } from '../agentCommon/utils/projectTabSummary.mjs'
@@ -581,6 +581,7 @@ function findCodexChatById(chatId) {
 const sessionDraft = useSessionDraft({
   inputText,
   getActiveChat: () => activeTab.value,
+  labelPrefix: 'codex.',
 })
 const persistActiveInputDraft = sessionDraft.persistActiveDraftNow
 
@@ -2561,7 +2562,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   const requestSessionId = chat.sessionId
   const requestThinking = Boolean(chat.thinking)
 
-  const queryWallStop = perfStart('codex.ipc.queryMetrics.wall')
+  let queryWallStop = perfStart('codex.ipc.queryMetrics.wall')
   const ipcPromise = window.electronAPI.codexAgentQueryMetrics({
     sessionId: chat.sessionId,
     cliSessionId: chat.cliSessionId,
@@ -2576,7 +2577,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   // T172: 互动路径（切 tab / 点 session）不 await IPC，后台异步刷新
   if (isInteraction) {
     ipcPromise.then(result => {
-      if (queryWallStop) queryWallStop()
+      if (queryWallStop) { queryWallStop(); queryWallStop = null }
       if (!result) return
       // resolve 时重新查找当前 tab，不依赖闭包中的旧 chat 对象
       const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === requestSessionId)
@@ -2605,7 +2606,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       }
       if (applyStop) applyStop()
     }).catch(() => {
-      if (queryWallStop) queryWallStop()
+      if (queryWallStop) { queryWallStop(); queryWallStop = null }
     })
     stop()
     return
@@ -2614,7 +2615,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   // 非互动路径（session-scan / history-loaded / done-retry 等）：保持 await
   try {
     const result = await ipcPromise
-    if (queryWallStop) { queryWallStop(); /* queryWallStop = null */ }
+    if (queryWallStop) { queryWallStop(); queryWallStop = null }
     debugLog('metrics', 'refreshMetricsForChat result', {
       reason,
       sessionId: chat.sessionId,
@@ -2634,7 +2635,9 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       thinking: Boolean(chat.thinking),
     })
     if (applyStop) applyStop()
-  } catch (_) {} finally { stop() }
+  } catch (_) {
+    if (queryWallStop) { queryWallStop(); queryWallStop = null }
+  } finally { stop() }
 }
 
 function clearCodexDoneMetricsRetry(sessionId = '') {
@@ -2942,7 +2945,7 @@ async function ensureChatMessagesLoaded(chat) {
     })
     // T177: 仅在 perf 实际开启时记录 meta（避免关闭时 JSON.stringify + filter 开销）
     if (stopIpc) {
-      if (typeof window !== 'undefined' && window.__MCPF_PERF__) {
+      if (isPerfEnabled()) {
         const msgCount = rawData?.messages?.length || 0
         const toolCount = rawData?.messages ? rawData.messages.filter(m => m.role === 'tool' || m.type === 'tool_use' || m.toolCallId).length : 0
         const charCount = rawData?.messages ? JSON.stringify(rawData.messages).length : 0
