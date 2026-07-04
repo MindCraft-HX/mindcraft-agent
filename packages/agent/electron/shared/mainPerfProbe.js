@@ -42,4 +42,17 @@ function perfStartIpc(channel, meta) {
   }
 }
 
-module.exports = { perfStartIpc, setPerfEnabled }
+/**
+ * 计数器（不记录耗时，仅累计次数）。
+ * @param {string} label
+ * @param {number} [inc=1]
+ */
+function perfCount(label, inc = 1) {
+  if (!isEnabled()) return
+  // 使用 Object.create(null) 避免 __proto__/toString 等原型属性污染计数
+  perfCount._counters = perfCount._counters || Object.create(null)
+  perfCount._counters[label] = (perfCount._counters[label] || 0) + inc
+  console.info(`[perf:count] ${label}=${perfCount._counters[label]}`)
+}
+
+module.exports = { perfStartIpc, perfCount, setPerfEnabled }

@@ -34,7 +34,7 @@ const {
   resolveSkillTargetDir,
   safeTempDir,
 } = require('./skillsSecurity')
-const { perfStartIpc } = require('./shared/mainPerfProbe')
+const { perfStartIpc, perfCount } = require('./shared/mainPerfProbe')
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
 
@@ -651,6 +651,23 @@ function resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath
 
 const jsonlLineCache = new Map() // filePath -> { lines: [], mtimeMs: 0 }
 
+// T177: metrics aggregate 结果缓存，避免每次 query 都全量 JSON.parse 聚合
+// key: filePath, value: { mtimeMs, size, result }
+const _metricsAggregateCache = new Map()
+
+function getCachedMetricsAggregate(filePath) {
+  const cached = _metricsAggregateCache.get(filePath)
+  if (!cached) return null
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
+      return cached.result
+    }
+  } catch (_) { /* file deleted */ }
+  _metricsAggregateCache.delete(filePath)
+  return null
+}
+
 function readJsonlLines(filePath, maxLines = Infinity) {
   try {
     const stat = fs.statSync(filePath)
@@ -1090,6 +1107,13 @@ function buildCodexMetricsFromTokenCountPayload(payload = {}, {
 async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
   try {
     if (!filePath || !fs.existsSync(filePath)) return null
+    // T177: 优先走 aggregate 缓存 — 文件未变时直接返回已聚合结果
+    const cachedAggregate = getCachedMetricsAggregate(filePath)
+    if (cachedAggregate !== null) {
+      perfCount('codex-metrics.aggregate-cache-hit')
+      return cachedAggregate
+    }
+    perfCount('codex-metrics.aggregate-cache-miss')
     const lines = readJsonlLines(filePath, Infinity)
     if (!lines.length) return null
 
@@ -1228,7 +1252,7 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
 
     if (CODEX_DEBUG) console.log('[codex metrics] contextUsage:', contextUsage, 'contextWindow:', contextWindow, 'contextPct:', contextWindow ? Math.round((contextUsage / contextWindow) * 100) : 0, 'model:', model)
 
-    return {
+    const result = {
       model: model || '',
       costUsd: estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens),
       inputTokens,
@@ -1242,6 +1266,14 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
       gitBranch: gitInfo?.branch || '',
       gitChanges: gitInfo?.changes || 0,
     }
+
+    // T177: 缓存聚合结果 — 文件未变时下次直接命中
+    try {
+      const resultStat = fs.statSync(filePath)
+      _metricsAggregateCache.set(filePath, { mtimeMs: resultStat.mtimeMs, size: resultStat.size, result })
+    } catch (_) { /* stat 失败不阻塞返回 */ }
+
+    return result
   } catch (_) {
     return null
   }

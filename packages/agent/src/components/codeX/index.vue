@@ -615,6 +615,9 @@ const slashEffortLevel = ref('medium')
 let slashLocalRefreshTimer = null
 let _unregAgentEvent = null
 const _codexMetricsTracker = createMetricsDedupTracker()
+// T177: 切 session 后 300ms 内跳过后续 reason 的 metrics 查询
+const _metricsJustSent = new Map() // sessionId -> timestamp
+const METRICS_DEDUP_TTL_MS = 300
 const SLASH_LOCAL_REFRESH_DEBOUNCE_MS = 220
 const planModeActive = ref(false)  // /plan 切换的计划模式状态
 const msgRefs = {}
@@ -2545,6 +2548,16 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
 
   // T177: 记录 metrics 调用来源分布
   perfCount(`metrics.reason.${reason}`)
+
+  // T177: 切 session 后 300ms TTL — 跳过后续 reason 的重复 metrics 查询
+  if (reason !== 'switch-chat' && dedupKey) {
+    const sent = _metricsJustSent.get(dedupKey)
+    if (sent && Date.now() - sent < METRICS_DEDUP_TTL_MS) {
+      stop()
+      return
+    }
+  }
+  if (dedupKey) _metricsJustSent.set(dedupKey, Date.now())
 
   // 缓存优先：有快照就先显示已有数据（所有 reason 统一，在去重之前）
   if (hasSnapshot) {
