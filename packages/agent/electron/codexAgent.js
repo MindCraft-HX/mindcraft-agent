@@ -260,7 +260,7 @@ function isCodexSnapshotFreshForRunningTurn(snapshot = null, thinkingStart = 0) 
   return sampleAt >= Math.max(0, startedAt - 1000)
 }
 
-async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '', thinking = false, thinkingStart = 0 } = {}) {
+async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '', thinking = false, thinkingStart = 0, lightOnly = false } = {}) {
   const subResolve = perfStartIpc('codex-metrics.resolve')
   const resolvedFilePath = resolveCodexSessionFilePath({
     sessionId,
@@ -288,9 +288,17 @@ async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', f
   let sessionMetrics = null
   const subSession = perfStartIpc('codex-metrics.session-read')
   if (resolvedFilePath && String(resolvedFilePath).toLowerCase().endsWith('.jsonl')) {
-    sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '')
+    if (lightOnly) {
+      // T177: lightOnly 模式 — 仅用缓存，不触发全量读取
+      const cached = getCachedMetricsAggregate(resolvedFilePath)
+      if (cached) sessionMetrics = { ...cached.result }
+    } else {
+      sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '')
+    }
   } else if (sessionId || cliSessionId) {
-    sessionMetrics = await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '')
+    if (!lightOnly) {
+      sessionMetrics = await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '')
+    }
   }
   subSession({ hasSessionMetrics: sessionMetrics ? 1 : 0 })
   logMetricSample({
@@ -667,6 +675,39 @@ function getCachedMetricsAggregate(filePath) {
   } catch (_) { /* file deleted */ }
   _metricsAggregateCache.delete(filePath)
   return null
+}
+
+// T177: 后台聚合去重 — 同 filePath 同时只跑一份
+const _pendingAggregates = new Map() // filePath → Promise
+
+function scheduleBackgroundAggregate(filePath, model, cwd, sender, sessionId) {
+  if (!filePath || _pendingAggregates.has(filePath)) return
+  const promise = (async () => {
+    try {
+      await getCodexSessionMetricsByFile(filePath, model || '', cwd || '')
+    } finally {
+      _pendingAggregates.delete(filePath)
+    }
+    // 聚合完成后通过 push 通道通知 renderer（仅推送 session context 字段）
+    if (sender && !sender.isDestroyed()) {
+      const cached = getCachedMetricsAggregate(filePath)
+      if (cached) {
+        safeSend(sender, 'codex-agent-metrics', {
+          sessionId,
+          model: model || cached.result.model || '',
+          thinking: false,
+          contextUsage: cached.result.contextUsage,
+          contextWindow: cached.result.contextWindow,
+          durationMs: cached.result.durationMs,
+          costUsd: cached.result.costUsd,
+          speedOutputPerSec: cached.result.speedOutputPerSec,
+          gitBranch: '',
+          gitChanges: 0,
+        })
+      }
+    }
+  })().catch(() => { _pendingAggregates.delete(filePath) })
+  _pendingAggregates.set(filePath, promise)
 }
 
 function readJsonlLines(filePath, maxLines = Infinity) {
@@ -3400,11 +3441,27 @@ function setupCodexSdkHandlers() {
   // NOTE: Easy-to-misuse bridge. StatusBar current-turn token fields must come from
   // TurnStore snapshots. Session/file aggregate metrics may only supplement session-level
   // fields such as context usage, git info, and speed.
-  ipcMain.handle('codex-agent-query-metrics', async (_, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
+  ipcMain.handle('codex-agent-query-metrics', async (event, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
     const stop = perfStartIpc('codex-agent-query-metrics')
-    const result = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart })
-    stop({ hasMetrics: result ? 1 : 0 })
-    return result
+    const resolvedFilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath: filePath })
+    const cacheHit = resolvedFilePath && getCachedMetricsAggregate(resolvedFilePath)
+
+    if (cacheHit) {
+      // 热路径：缓存命中，正常流程
+      const result = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart })
+      stop({ hasMetrics: result ? 1 : 0, cacheHit: 1 })
+      return result
+    }
+
+    // T177: 冷路径 — 先返回轻结果（仅 TurnStore snapshot），后台异步聚合
+    const lightResult = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart, lightOnly: true })
+    stop({ hasMetrics: lightResult ? 1 : 0, cacheHit: 0, backgroundAggregate: 1 })
+
+    if (resolvedFilePath) {
+      scheduleBackgroundAggregate(resolvedFilePath, model || '', cwd || '', event.sender, sessionId)
+    }
+
+    return lightResult
   })
 
   ipcMain.handle('codex-list-slash-commands', async (_, { cwd, sessionId } = {}) => {
