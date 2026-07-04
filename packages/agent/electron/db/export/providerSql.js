@@ -11,6 +11,7 @@
  */
 
 const crypto = require('crypto');
+const MINDCRAFT_APP_LOCALES = ['zh-CN', 'en-US'];
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -216,11 +217,11 @@ function buildCodexToml({ name, url, model, reasoningEffort, apiFormat }) {
  * Build Claude settings_config from provider data.
  *
  * Strategy:
- *  1. If provider.config exists and has env keys, use it as base (it IS the
- *     actual ~/.claude/settings.json object).
- *  2. Overlay UI fields (key, url, tierModels, selectedTier, language,
- *     permissionPolicy, effortLevel) so that any drift between stored config
- *     and UI is reconciled.
+ *  1. If provider.config exists and has env keys, use it as the official
+ *     settings-compatible base.
+ *  2. Overlay runtime fields (key, url, tierModels, selectedTier, effortLevel)
+ *     so that any drift between stored config and UI is reconciled.
+ *     MindCraft app language and permissionPolicy are intentionally excluded.
  *  3. If provider.config is null/missing, build fresh from UI fields.
  *
  * @param {object} provider
@@ -235,8 +236,6 @@ function buildClaudeSettingsConfig(provider, { includeSecrets }) {
   const apiKey = includeSecrets ? (provider.key || '') : '';
   const baseUrl = provider.url || '';
   const selectedTier = provider.selectedTier || 'sonnet';
-  const language = provider.language || 'zh-CN';
-  const permissionPolicy = provider.permissionPolicy || '';
   const effortLevel = provider.effortLevel || '';
   const tierModels = provider.tierModels || {};
 
@@ -279,16 +278,31 @@ function buildClaudeSettingsConfig(provider, { includeSecrets }) {
       env[envKey] = modelId.trim();
     }
   }
+  const primaryModel = tierModels[selectedTier];
+  if (primaryModel && typeof primaryModel === 'string' && primaryModel.trim()) {
+    env.ANTHROPIC_MODEL = primaryModel.trim();
+  }
 
-  // Build settings_config
-  const config = { env };
+  const config = {};
+  for (const [key, value] of Object.entries(existingConfig || {})) {
+    if (key === 'env') continue;
+    if (key === 'key' || key === 'url' || key === 'apiKey' || key === 'primaryApiKey') continue;
+    if (key === 'baseURL' || key === 'apiBaseUrl') continue;
+    // MindCraft permissionPolicy is not a Claude settings.json field.
+    if (key === 'permissionPolicy') continue;
+    // Preserve official response-language values (for example "Japanese"),
+    // but never export MindCraft app locales as Claude response language.
+    if (key === 'language' && MINDCRAFT_APP_LOCALES.includes(value)) continue;
+    if (key === 'reasoningEffort' || key === 'apiFormat') continue;
+    config[key] = value;
+  }
+  config.env = env;
 
   // Top-level model = selectedTier
   if (selectedTier) config.model = selectedTier;
 
-  // Claude Code settings-level fields
-  if (language) config.language = language;
-  if (permissionPolicy) config.permissionPolicy = permissionPolicy;
+  // Claude Code settings-level field. App locale (zh-CN/en-US) is not exported
+  // as official response language.
   if (effortLevel) config.effortLevel = effortLevel;
 
   return config;

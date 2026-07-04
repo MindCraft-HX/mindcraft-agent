@@ -1,5 +1,7 @@
 'use strict';
 
+const MINDCRAFT_APP_LOCALES = ['zh-CN', 'en-US'];
+
 /**
  * CC Switch SQL export parser.
  *
@@ -238,24 +240,25 @@ function mapCcSwitchRow(row, source) {
       reasoning: env.ANTHROPIC_REASONING_MODEL || '',
     };
 
-    // Resolve model from tier
-    const tier = String(settings.model || '').toLowerCase();
+    // Resolve model from tier. CC Switch sometimes stores a concrete model
+    // name in `model`; MindCraft's Claude UI stores concrete model names in
+    // tier slots and keeps top-level `model` as the selected tier.
+    const rawModel = String(settings.model || env.ANTHROPIC_MODEL || '').trim();
+    const tier = rawModel.toLowerCase();
     selectedTier = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(tier) ? tier : '';
-    if (tier === 'opus') {
-      model = env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-opus-4-1-20250805';
-    } else if (tier === 'sonnet') {
-      model = env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-20250514';
-    } else if (tier === 'haiku') {
-      model = env.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-3-5-haiku-20241022';
-    } else {
-      model = settings.model || env.ANTHROPIC_MODEL || '';
+    if (!selectedTier && rawModel) selectedTier = 'sonnet';
+    if (selectedTier && rawModel && !['haiku', 'sonnet', 'opus', 'reasoning'].includes(tier) && !tierModels[selectedTier]) {
+      tierModels[selectedTier] = rawModel;
     }
+    model = selectedTier ? (tierModels[selectedTier] || rawModel) : rawModel;
 
     reasoningEffort = '';
-    apiFormat = meta.apiFormat || 'anthropic';
+    apiFormat = '';
 
-    // Other MindCraft ProviderForm-supported fields
-    claudeLanguage = settings.language || '';
+    // Legacy MindCraft exports may contain app locale in settings.language.
+    // Other language values are official Claude response-language settings and
+    // stay in runtimeConfig, not in the MindCraft app-language provider field.
+    claudeLanguage = MINDCRAFT_APP_LOCALES.includes(settings.language) ? settings.language : '';
     claudePermissionPolicy = settings.permissionPolicy || '';
     claudeEffortLevel = settings.effortLevel || '';
     website = String(row.website_url || '').trim();
@@ -274,11 +277,9 @@ function mapCcSwitchRow(row, source) {
       },
     };
 
-    if (selectedTier || settings.model) {
-      runtimeConfig.model = selectedTier || settings.model;
-    }
-    if (claudePermissionPolicy) runtimeConfig.permissionPolicy = claudePermissionPolicy;
-    if (claudeLanguage) runtimeConfig.language = claudeLanguage;
+    if (selectedTier) runtimeConfig.model = selectedTier;
+    delete runtimeConfig.permissionPolicy;
+    if (MINDCRAFT_APP_LOCALES.includes(runtimeConfig.language)) delete runtimeConfig.language;
     if (claudeEffortLevel) runtimeConfig.effortLevel = claudeEffortLevel;
 
     // Only include ANTHROPIC_MODEL / tier defaults in env when we have values,
@@ -367,13 +368,19 @@ function mapCcSwitchRow(row, source) {
   return {
     agentType: appType,
     name,
-    config: {
-      key: apiKey,
-      url: baseUrl,
-      model,
-      reasoningEffort,
-      apiFormat,
-    },
+    config: appType === 'claude'
+      ? {
+          ...(runtimeConfig || {}),
+          key: apiKey,
+          url: baseUrl,
+        }
+      : {
+          key: apiKey,
+          url: baseUrl,
+          model,
+          reasoningEffort,
+          apiFormat,
+        },
     metadata,
     isActive,
     // Claude-specific UI/runtime fields (preserved by commitImport)

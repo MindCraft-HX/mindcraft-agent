@@ -261,7 +261,16 @@ function registerSystemImportIpc(ipcMain, deps) {
           existingProviders: codexExisting.map((p, i) => ({
             id: p.id,  // real UUID from repository
             name: p.name,
-            config: { key: p.key || '', url: p.url || '', model: p.model || '', reasoningEffort: p.reasoningEffort || '', apiFormat: p.apiFormat || '' },
+            config: {
+              key: p.key || '',
+              url: p.url || '',
+              model: p.model || '',
+              reasoningEffort: p.reasoningEffort || '',
+              apiFormat: p.apiFormat || '',
+              authJson: p.authJson || {},
+              alternativeModels: Array.isArray(p.alternativeModels) ? p.alternativeModels : [],
+              tomlText: p.tomlText || '',
+            },
             isActive: i === codexActiveIdx,
           })),
           agentType: 'codex',

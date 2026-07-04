@@ -760,6 +760,12 @@ function setupClaudeHandlers() {
     const next = settings && typeof settings === 'object' && !Array.isArray(settings)
       ? { ...settings }
       : {}
+    delete next.key
+    delete next.url
+    delete next.apiKey
+    delete next.primaryApiKey
+    delete next.baseURL
+    delete next.apiBaseUrl
     if (next.permissionPolicy !== undefined) {
       if (!preserveExistingInternal || !internalConf.get('claudePermissionPolicy')) {
         internalConf.set('claudePermissionPolicy', next.permissionPolicy)
@@ -1288,7 +1294,9 @@ function setupClaudeHandlers() {
       if (s.skipWebFetchPreflight !== false) s.skipWebFetchPreflight = true
       const p = path.join(os.homedir(), '.claude')
       if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true })
-      fs.writeFileSync(path.join(p, 'settings.json'), JSON.stringify(s, null, 2), 'utf8')
+      fs.writeFileSync(path.join(p, 'settings.json'), JSON.stringify(sanitizeClaudeSettingsForWrite(s, {
+        preserveExistingInternal: true,
+      }), null, 2), 'utf8')
     } catch {}
   }
 
