@@ -23,7 +23,7 @@
           :aria-expanded="showFullOutput"
           @click="showFullOutput = !showFullOutput"
         >
-          {{ showFullOutput ? '收起完整输出' : '显示完整输出' }}
+          {{ showFullOutput ? $t('agent.collapseOutput') : $t('agent.expandOutput') }}
         </button>
       </div>
       <pre class="bash-output-preview">{{ previewResult?.preview || '' }}</pre>
@@ -34,11 +34,14 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   buildBashOutputPreview,
   LARGE_BASH_OUTPUT_CHARS,
   LARGE_BASH_OUTPUT_LINES,
 } from '../../../utils/codexUiEventMapper.mjs'
+
+const { t } = useI18n()
 
 const props = defineProps({
   msg: { type: Object, required: true },
@@ -69,7 +72,7 @@ const previewResult = computed(() => {
 const outputStats = computed(() => {
   const r = previewResult.value
   if (!r) return ''
-  return `${r.totalLines} 行，${r.totalChars.toLocaleString()} 字符`
+  return `${r.totalLines} ${t('agent.lines')}，${r.totalChars.toLocaleString()} ${t('agent.chars')}`
 })
 </script>
 
