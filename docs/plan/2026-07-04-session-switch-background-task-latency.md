@@ -3,7 +3,7 @@
 > 日期：2026-07-04
 > Task: T177
 > 相关：CodeX / ClaudeCode session switch、IPC、session registry、draft、metrics、instruction state
-> 状态：待调查；先分段量化，不直接优化
+> 状态：Phase 0 已完成，根因确认 → Phase 1 修复 `codex-metrics.session-read` 阻塞主进程 event loop
 
 ## 1. 背景
 
@@ -106,6 +106,76 @@ Main process:
 - `packages/agent/electron/shared/mainPerfProbe.js`
 
 ## 4. Phase 0：分段探针，只观测不优化
+
+### 4.0 Phase 0 实测数据（2026-07-04）
+
+**测试条件**：CodeX 大 session（46-62MB JSONL），连续 4 次切换 session，`window.__MCPF_PERF__=true` 开启双端探针。
+
+#### renderer wall vs main process handler 对齐
+
+| IPC | Renderer wall (avg) | Main handler | 丢失在队列 |
+|-----|:---:|:---:|:---:|
+| `readSessionRange` | 733ms | **49ms** | **684ms** |
+| `getSessionDraft` | 831ms | **1-3ms** | **828ms** |
+| `getSessionInstruction` | 831ms | **1ms** | **830ms** |
+| `queryMetrics` | 1738ms | **2391ms** | ~对齐 |
+
+**三项 IPC 的 main handler 都是毫秒级，无可优化。**
+
+#### main process 内部阶段拆解
+
+`codex-read-session-file-range`（49ms total）：
+
+| 阶段 | 耗时 | 
+|------|:---:|
+| `stat` | 0ms |
+| `tailRead`（I/O + parse） | 26-44ms |
+| `collect`（flush + pending） | 0-1ms |
+| `process`（result build） | 0ms |
+
+`sessionRegistry.getDraft`：0-1ms 或 cacheHit=1 命中。
+
+`sessionRegistry.getInstruction`：1ms，无 disk cache 但极快。
+
+#### 🔴 根因：`codex-metrics.session-read` 阻塞主进程 event loop
+
+```
+codex-metrics.session-read total=5697ms   ← 读 47MB JSONL
+codex-metrics.session-read total=2384ms   ← 读 ？MB JSONL
+codex-metrics.session-read total=365ms
+codex-metrics.session-read total=117ms
+codex-metrics.session-read total=56ms
+codex-metrics.session-read total=23ms
+```
+
+`getCodexSessionMetricsByFile()` 内部 `fs.readFileSync` 同步读取完整 JSONL 文件求和 token count。文件越大越慢（5697ms），在此期间 **event loop 完全冻结**——draft、instruction、messages 三个已完成的主进程响应被阻塞在队列中无法返回 renderer。
+
+```
+时间线：
+  renderer → 发送 4 个 IPC（draft / instruction / messages / metrics）
+  main   → draft(1ms) → instruction(1ms) → messages(49ms) → 全部完成
+  main   → metrics 开始 → fs.readFileSync(2384ms) → 🔴 event loop 冻结
+                        → 前 3 个响应卡在 IPC 队列
+  main   → metrics 完成 → event loop 恢复 → 4 个响应同时到达 renderer
+  renderer 看到: draft=831ms, instruction=831ms, messages=733ms, metrics=2391ms
+```
+
+#### 其他发现
+
+| 发现 | 数据 |
+|------|------|
+| apply 全 0ms | Vue 状态写入不是瓶颈 |
+| draft cache 生效 | `cacheHit=1` 命中率良好 |
+| metrics 调用频率 | `switch-chat`×4 + `active-tab-state-watch`×4 + `history-loaded`×4 → 每次切 session 3 次刷新 |
+| 后台扫描 | `handleRefreshSessions` avg 1106ms, max 2213ms（也触发了 metrics） |
+| CodeX readRange | 55-83ms 正常路径，2254ms 异常路径（被 metrics 排队拖慢） |
+| Claude 对比 | draft 199ms / instruction 197ms / messages 1880ms — 系统性更慢，待单独诊断 |
+
+#### 结论
+
+**唯一需要修复的瓶颈：`codex-metrics.session-read` 的 `fs.readFileSync`。**
+
+messages / draft / instruction 的 main handler 都是毫秒级，apply 阶段 0ms。修复 metrics 的文件读取方式（异步化或走缓存）即可消除串扰，让前三项 IPC 的实际 wall time 降到 1-49ms。
 
 本阶段只加显式 perf flag 下的探针，不改变行为。禁止直接改缓存策略或调度策略。
 
