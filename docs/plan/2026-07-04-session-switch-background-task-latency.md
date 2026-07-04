@@ -3,7 +3,7 @@
 > 日期：2026-07-04
 > Task: T177
 > 相关：CodeX / ClaudeCode session switch、IPC、session registry、draft、metrics、instruction state
-> 状态：Phase 0 已完成，根因确认 → Phase 1 修复 `codex-metrics.session-read` 阻塞主进程 event loop
+> 状态：Phase 0 ✅ 根因确认 → Phase 1 修复 metrics 阻塞 + 重复触发。范围收紧：只修 metrics，不碰 renderContent/虚拟列表/draft
 
 ## 1. 背景
 
@@ -173,7 +173,7 @@ codex-metrics.session-read total=23ms
 
 #### 结论
 
-**唯一需要修复的瓶颈：`codex-metrics.session-read` 的 `fs.readFileSync`。**
+**CodeX session 切换当前已确认的首要瓶颈：`codex-metrics.session-read` 的 `fs.readFileSync`。**
 
 messages / draft / instruction 的 main handler 都是毫秒级，apply 阶段 0ms。修复 metrics 的文件读取方式（异步化或走缓存）即可消除串扰，让前三项 IPC 的实际 wall time 降到 1-49ms。
 
@@ -259,70 +259,116 @@ metrics:
 | main handler 快，但 apply 慢 | renderer 状态写入 / Vue 更新 / DOM 挂载慢 |
 | wall 快但用户仍卡 | 继续查 Layout/Paint/DOM，而不是 IPC |
 
-## 5. Phase 1：按证据选择修复，不预设方案
+## 5. Phase 1：消除 metrics 同步阻塞 + 去重
 
-只有 Phase 0 数据出来后才进入修复。
+Phase 0 数据明确：draft/instruction/messages 的 main handler 都是毫秒级，renderer apply 0ms。**唯一需要修复的是 metrics 同步全量读 JSONL 阻塞主进程 event loop**，以及同一 session 上三次连续触发重型 metrics 聚合的重复问题。
 
-### 5.1 如果 draft 慢
+### 5.1 根因剖析
 
-候选方向：
+`getCodexSessionMetricsByFile()` 调用链：
 
-1. 验证 `_draftCache` 命中率。
-   - 同一 chat 第二次切回应命中内存，不应再 IPC。
-   - cache key 应为 MindCraft `chatKey/sessionId`，不要混用 `cliSessionId` / `filePath`。
-2. 避免切换时写旧 draft 和读新 draft 互相竞争。
-   - `persistDraftForChat(oldId)` 如果 oldId 为空或文本未变，应跳过。
-   - 旧 draft 写入不应阻塞新 draft 展示。
-3. main handler 如果慢，查 `sessionRegistry` 读写是否每次全量读 index 或大 record。
+```
+getCodexSessionMetricsByFile(filePath, turnOffsets?)
+  → readJsonlLines(filePath, Infinity)
+    → fs.readFileSync(filePath, 'utf8')    ← 🔴 同步读完整文件
+    → .split('\n')                         ← 🔴 同步解析全部行
+    → forEach line → JSON.parse → 累加 tokens
+```
 
-边界：
+函数已经是 `async`，但第一个 `await` 前已完成了同步读 + 解析 —— `async` 包装无效。
 
-- draft 事实来源仍是 session registry。
-- 不回退到 panel state。
-- 不写官方 JSONL。
+触发路径（每次切 session ~3 次全量聚合）：
 
-### 5.2 如果 instruction 慢
+| reason | 来源 | 频率 |
+|--------|------|:---:|
+| `switch-chat` | `switchChat()` 显式调用 | 每次 |
+| `active-tab-state-watch` | `watch activeTab state` deep | 每次 |
+| `history-loaded` | `ensureChatMessagesLoaded` 完成后 | 每次 |
+| poller | `startSessionMetricsPoller()` 每秒轮询 `refreshMetricsForCurrentChat()` | 持续 |
 
-候选方向：
+### 5.2 修复方案
 
-1. 和 draft 共用 session registry 小字段缓存，但必须保持会话级隔离。
-2. `activeTab.sessionId` 未变化时不重复 refresh。
-3. 对 `refreshActiveSessionInstructionState` 做 active guard：返回时若 active chat 已变，不写旧结果。
-4. main handler 慢则查 legacy fallback 或 record read。
+#### Step 1: 给 session metrics aggregate 加缓存（主进程）
 
-边界：
+`codexAgent.js` 新增：
 
-- 不把 instruction 写入官方 config/transcript。
-- 不改变 session instruction 注入语义。
+```js
+const _metricsAggregateCache = new Map() // key: filePath, value: { mtimeMs, size, result, ts }
 
-### 5.3 如果 metrics 慢或重复
+function getCachedSessionMetrics(filePath) {
+  const cached = _metricsAggregateCache.get(filePath)
+  if (!cached) return null
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
+      return cached.result
+    }
+  } catch (_) { /* file deleted */ }
+  _metricsAggregateCache.delete(filePath)
+  return null
+}
+```
 
-候选方向：
+`getCodexSessionMetricsByFile()` 逻辑变为：
 
-1. 按 reason 聚合调用次数，确认是否 `switch-chat` + `active-tab-state-watch` 重复。
-2. 互动路径如果已有 snapshot，可只显示缓存，不发 IPC，或延迟到 idle。
-3. `history-loaded` 后 metrics 刷新可 debounce，避免刚切换时和 draft/instruction/history 同时返回。
-4. main metrics 如果慢，查文件 read/aggregate 是否可走 signature/cache。
+```
+1. 先查 _metricsAggregateCache
+2. 命中 (mtimeMs + size 均未变) → 直接返回缓存 ← 最热路径
+3. 未命中 → fs.readFileSync → 聚合 → 写入缓存 → 返回
+```
 
-边界：
+⚠️ **不要试图把 `fs.readFileSync` 改成 `fs.promises.readFile` 来"异步化"** —— 大文件读仍然会阻塞 event loop，只是阻塞点从 sync call 移到了 libuv thread pool + JSON.parse。正确的做法是 **先走缓存**，让 99% 的调用命中缓存（文件未变），只有文件真的变了才触发全量读。
 
-- 不破坏 Token Metrics 红线。
-- StatusBar current turn 仍走 normalizer -> TurnStore -> snapshot。
-- 不拿上一轮数据冒充当前回合。
+#### Step 2: 渲染进程去重（renderer）
 
-### 5.4 如果 readSessionRange 慢
+`refreshMetricsForChat` 已有 `_pendingMetrics` dedup（by sessionId）。但三个 reason 在同一个 session 上仍会发三次 IPC（dedup 只去并发重复，不去时序重复）。
 
-候选方向：
+方案：
 
-1. main handler 慢：继续优化 JSONL range read / normalize；不要把全部 JSONL 读入 renderer。
-2. renderer apply 慢：分帧 apply 或先 skeleton，再 requestIdleCallback / rAF commit messages。
-3. 如果 payload 大但 DOM 已经变轻，查 `chat.messages = allMessages.slice(-n)` 触发的 Vue update 和 layout。
+- `switchChat()` 中调用 `refreshMetricsForChat(chat, 'switch-chat')` 后，给该 sessionId 打一个短期标记 `_metricsJustSent`（300ms TTL）。
+- `active-tab-state-watch` 和 `history-loaded` 触发时检查标记，命中则跳过。
+- 标记过期后仍允许刷新（后续变化需要反映）。
 
-边界：
+```js
+const _metricsJustSent = new Map() // sessionId → timestamp
 
-- 仍只读官方 JSONL。
-- 不写 sidecar 到官方目录。
-- 不做虚拟列表，除非单独开新专题。
+function refreshMetricsForChat(chat, reason) {
+  if (reason !== 'switch-chat') {
+    const sent = _metricsJustSent.get(chat.sessionId)
+    if (sent && Date.now() - sent < 300) return // 300ms 内跳过
+  }
+  _metricsJustSent.set(chat.sessionId, Date.now())
+  // ... 原有 IPC 逻辑 ...
+}
+```
+
+#### Step 3: 处理 poller（主进程缓存已覆盖）
+
+`startSessionMetricsPoller()` 每秒调用 `refreshMetricsForCurrentChat()` → `getCodexSessionMetricsByFile()`。
+
+Step 1 的缓存生效后，poller 每秒调用走的是 `_metricsAggregateCache` 命中（文件未变 → mtimeMs+size unchanged → 直接返回缓存），不会每秒阻塞主进程。
+
+不需要改 poller 的调用频率或禁用逻辑，缓存已消除阻塞。
+
+### 5.3 Token Metrics 红线
+
+- **StatusBar 当前回合 token**：必须来自 `TurnStore` snapshot → `normalizer`。不经过 `getCodexSessionMetricsByFile()`。
+- **JSONL aggregate 只补 context/git/speed/history**：这些数据走 `_metricsAggregateCache` 是安全的 —— 文件没变，聚合结果不会变。
+- **不拿历史 aggregate 冒充当前回合**：缓存 key 绑定 filePath+mtimeMs+size，文件变了必然重新聚合。
+
+### 5.4 ClaudeCode 侧
+
+Claude 的 `getClaudeSessionMetrics()` 类似结构（`fs.readFileSync` 读 JSONL），同样受益于缓存方案。但 Claude 侧 Phase 0 数据显示 draft 199ms / instruction 197ms / messages 1880ms 系统性更慢，可能还有独立瓶颈，Phase 1 先在 CodeX 侧闭环，Claude 侧复用时追加探针诊断。
+
+### 5.5 不做
+
+T177 Phase 1 **不再回头做**：
+
+- renderContent computed 缓存（T176 已闭环）
+- 虚拟列表
+- draft 方案调整（main handler 1ms，draft cache 命中良好，无可优化）
+- instruction 方案调整（main handler 1ms，apply 0ms）
+- readSessionRange 进一步优化（main handler 49ms for 60 messages，已很快）
 
 ## 6. 明确不做
 
@@ -337,36 +383,36 @@ T177 不做：
 - 不写官方 `~/.claude` / `~/.codex` 旁的 sidecar。
 - 不把 draft 恢复到 panel state。
 - 不默认打开 debug console 噪音。
+- **不把 `fs.readFileSync` 简单包装成 `fs.promises.readFile` 来"异步化"** —— 大文件读 + JSON.parse 仍然阻塞 event loop，只是阻塞点变了。正确做法是缓存优先，文件未变时不读盘。
+- **不把 metrics aggregate 结果冒充 StatusBar 当前回合 token** —— StatusBar 当前回合必须来自 TurnStore snapshot，aggregate 缓存只用于 context/git/speed/history。
+- **ClaudeCode 侧不在此 Phase 内修** —— Claude 的 draft 199ms / instruction 197ms / messages 1880ms 系统性更慢，可能有独立根因（与 CodeX 不同）。Phase 1 仅在 CodeX 侧闭环，Claude 侧单独诊断。
 
 ## 7. 验收标准
 
-### 7.1 量化验收
+### 7.1 性能指标
 
-在同一个大 CodeX session 上执行：
+在同一个大 CodeX JSONL session（≥40MB）上执行：
 
-1. 开启 perf flag。
-2. 连续切换 5 次 session。
-3. 每次切换后立刻输入 5-10 个字符。
-4. dump renderer + main perf。
+| 指标 | 当前 (Phase 0) | 目标 (Phase 1) |
+|------|:---:|:---:|
+| `getSessionDraft` renderer wall | 831ms | **< 50ms**（接近 main handler 1-3ms） |
+| `getSessionInstruction` renderer wall | 831ms | **< 50ms**（接近 main handler 1ms） |
+| `readSessionRange` renderer wall | 733ms | **< 100ms**（接近 main handler 49ms） |
+| `codex-metrics.session-read` 同文件第二次 | 2384ms | **< 5ms**（缓存命中） |
+| `codex-metrics.session-read` 首次/文件变化 | 2384ms | **不变**（仍需读盘，但不阻塞其他 IPC） |
+| 同 session 切 tab 三次 reason 触发 | 3 次全量聚合 | **1 次**（300ms TTL 去重） |
+| poller 每秒调用 | fs.readFileSync 阻塞 | **缓存命中，无阻塞** |
 
-必须能回答：
+### 7.2 功能验收
 
-- 每个慢项 main-side 与 renderer-side 各自耗时多少。
-- draft 第二次切回是否命中缓存。
-- metrics 是否重复发起。
-- instruction 是否重复发起。
-- readSessionRange 的 apply 阶段耗时多少。
-
-### 7.2 体验验收
-
-修复阶段完成后：
-
-- 切 session 后输入不应被 1s 级后台任务拖住。
-- session 内容可以稍后补齐，但输入框不应冻结。
-- StatusBar 允许先显示缓存，再后台刷新；不能显示上一 session 的错误数据。
-- draft 不能串 session。
-- session instruction 开关不能串 session。
-- metrics 不能污染新 thinking cycle。
+- [ ] 大 JSONL session 切换后，draft/instruction/messages 不应再被 metrics 拖到 700ms+
+- [ ] 切同一个 session 不应出现 `switch-chat` + `active-tab-state-watch` + `history-loaded` 三次重型 metrics 聚合
+- [ ] 文件未变时，第二次 metrics query 应走缓存（`_metricsAggregateCache` 命中）
+- [ ] 文件变化后（新消息写入），metrics 应重新聚合（缓存失效 → 全量读 → 新结果 → 写入缓存）
+- [ ] StatusBar 当前回合 token 仍来自 TurnStore snapshot，不经过 aggregate 缓存
+- [ ] perf/debug 输出仍 flag-gated（`window.__MCPF_PERF__` / `localStorage mcpf_perf`），不默认污染 dev console
+- [ ] `npm test` 全量通过
+- [ ] `npm run build` 通过
 
 ## 8. 交付要求
 
