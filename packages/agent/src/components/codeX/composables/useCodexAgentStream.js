@@ -1,4 +1,5 @@
 // Codex 前端 debug 输出开关（需要查看详细日志时改为 true）
+import { nextTick } from 'vue'
 import { log as debugLog } from '../../agentCommon/utils/rendererDebug.mjs'
 import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
@@ -594,6 +595,27 @@ export function useCodexAgentStream({
     }
   }
 
+  // T179 Phase 3: 节流 scrollBottom — nextTick 去重（对齐 ClaudeCode）
+  const scrollPending = new Set()
+  function throttledScroll(tabId) {
+    if (scrollPending.has(tabId)) return
+    scrollPending.add(tabId)
+    nextTick(() => {
+      scrollBottom(tabId)
+      scrollPending.delete(tabId)
+    })
+  }
+
+  // T179 Phase 3: 节流 saveHistory — 3s debounce（对齐 ClaudeCode）
+  let historyTimer = null
+  function throttledSave() {
+    if (historyTimer) return
+    historyTimer = setTimeout(() => {
+      historyTimer = null
+      saveHistory()
+    }, 3000)
+  }
+
   function onAgentMessage({ sessionId: sid, msg }) {
     const stopMsg = perfStart('codex.onAgentMessage')
     try {
@@ -620,7 +642,7 @@ export function useCodexAgentStream({
       if (lastThinking) lastThinking.status = 'done'
       attachPerTurnTokens(tab, msg._perTurnTokens, { replace: false })
       markCodexTerminalSeen(tab)
-      scrollBottom(tab.id)
+      throttledScroll(tab.id)
       saveHistory({ immediate: true })
       return
     }
@@ -631,8 +653,8 @@ export function useCodexAgentStream({
       for (const block of content) {
         if (block.type === 'text' && block.text) appendAssistantText(tab, nextMsgId, onNewMessage, block.text)
       }
-      scrollBottom(tab.id)
-      saveHistory()
+      throttledScroll(tab.id)
+      throttledSave()
       return
     }
 
@@ -667,8 +689,8 @@ export function useCodexAgentStream({
           aMsg._textSource = 'agent_message'
         }
         if (isFinal) tab.currentAssistantId = null
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         return
       }
 
@@ -686,8 +708,8 @@ export function useCodexAgentStream({
         })
       }
 
-      scrollBottom(tab.id)
-      saveHistory()
+      throttledScroll(tab.id)
+      throttledSave()
       return
     }
 
@@ -695,8 +717,8 @@ export function useCodexAgentStream({
       markCodexFailed(tab, msg.error || msg.message)
       const errorText = msg.error?.message || msg.message || 'Turn 执行失败'
       pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${errorText}` })
-      scrollBottom(tab.id)
-      saveHistory()
+      throttledScroll(tab.id)
+      saveHistory({ immediate: true })
       return
     }
 
@@ -711,8 +733,8 @@ export function useCodexAgentStream({
           m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
         )
         if (lastThinking) lastThinking.status = 'done'
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         return
       }
       if (msg.subtype === 'error') {
@@ -727,8 +749,8 @@ export function useCodexAgentStream({
           ? content.filter(b => b.type === 'text').map(b => b.text).join('\n')
           : String(msg.message || '')
         pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${text || '执行异常'}` })
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         return
       }
       if (msg.subtype === 'compact_started') {
@@ -743,8 +765,8 @@ export function useCodexAgentStream({
           _isCompact: true,
           _compacting: true,
         })
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         return
       }
       if (msg.subtype === 'compact_summary') {
@@ -769,8 +791,8 @@ export function useCodexAgentStream({
             _isCompact: true,
           })
         }
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         return
       }
       if (msg.subtype === 'compact_boundary') {
@@ -799,16 +821,16 @@ export function useCodexAgentStream({
             _isCompact: true,
           })
         }
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         if (post > 0) onCompactBoundary(post)
         return
       }
       if (msg.subtype === 'slow_notice') {
         const text = msg.message?.content?.[0]?.text || 'Codex 响应较慢，请稍候…'
         pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text })
-        scrollBottom(tab.id)
-        saveHistory()
+        throttledScroll(tab.id)
+        throttledSave()
         return
       }
       // 已知的 system subtype 已在上面处理，未知 subtype 仅打日志不渲染
@@ -820,7 +842,7 @@ export function useCodexAgentStream({
 
     if (msg.type === 'metrics' && msg.usage) {
       tab.lastMetrics = { ...tab.lastMetrics, ...msg.usage }
-      saveHistory()
+      throttledSave()
       return
     }
 

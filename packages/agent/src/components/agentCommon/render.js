@@ -193,7 +193,7 @@ function highlightCode(code, lang) {
   const trimmed = code.replace(/\n$/, '')
   try {
     if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(trimmed, { language: lang }).value
+      return cachedHighlight(trimmed, lang)
     }
   } catch (_) {}
   return quickHighlight(trimmed)
@@ -602,6 +602,11 @@ function renderNestedList(lines, startIdx) {
  */
 export function renderContent(text, label) {
   if (!text) return ''
+
+  // T179 Phase 3: 文本→HTML 缓存 — renderContent 是纯函数，同 text 总是同 HTML
+  const cached = renderCache.get(text)
+  if (cached) return cached
+
   const stopProbe = label ? rcProbeStart(label, text.length) : null
   const source = String(text).replace(/\r\n/g, '\n')
   const lines = source.split('\n')
@@ -718,6 +723,10 @@ export function renderContent(text, label) {
   }
 
   const result = `<div class="agent-markdown">${out.join('')}</div>`
+  if (renderCache.size >= RENDER_CACHE_MAX) {
+    renderCache.delete(renderCache.keys().next().value)
+  }
+  renderCache.set(text, result)
   if (stopProbe) stopProbe()
   return result
 }
@@ -738,6 +747,10 @@ export {
 
 const hljsCache = new Map()
 const HLJS_CACHE_LIMIT = 2000
+
+// T179 Phase 3: renderContent 文本→HTML 缓存（FIFO eviction via Map insertion order）
+const renderCache = new Map()
+const RENDER_CACHE_MAX = 800
 
 function cachedHighlight(code, lang) {
   const cacheKey = lang ? `${lang}:${code}` : `auto:${code}`
