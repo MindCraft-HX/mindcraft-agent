@@ -101,6 +101,7 @@ const CODEX_CHANNELS = Object.freeze({
   CONFIG_IMPORT_PICK_FILE: 'codex-config-import-pick-file',
   CONFIG_IMPORT_PREVIEW: 'codex-config-import-preview',
   CONFIG_IMPORT_COMMIT: 'codex-config-import-commit',
+  GET_FILE_STAT: 'codex-get-file-stat',
 });
 
 const CORE_CHANNELS = Object.freeze({
