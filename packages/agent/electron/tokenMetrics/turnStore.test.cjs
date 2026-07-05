@@ -262,6 +262,90 @@ test('session-context updates context only and never changes turn tokens', () =>
   assert.strictEqual(snap.contextWindow, 200000)
 })
 
+test('new turn carries forward previous final context only', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  applySample({
+    provider: 'claude',
+    source: 'context-snapshot',
+    scope: 'session-context',
+    contextSource: 'system-context',
+    chatKey: 'test-chat',
+    contextUsage: 45000,
+    contextWindow: 200000,
+  })
+  applySample({
+    provider: 'claude',
+    source: 'sdk-result',
+    chatKey: 'test-chat',
+    inputTokens: 500,
+    outputTokens: 20,
+  })
+
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  const snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.phase, 'live')
+  assert.strictEqual(snap.inputTokens, 0)
+  assert.strictEqual(snap.outputTokens, 0)
+  assert.strictEqual(snap.cacheReadTokens, 0)
+  assert.strictEqual(snap.contextUsage, 45000)
+  assert.strictEqual(snap.contextWindow, 200000)
+})
+
+test('usage-estimate cannot downgrade stronger context source', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  applySample({
+    provider: 'claude',
+    source: 'context-snapshot',
+    scope: 'session-context',
+    contextSource: 'system-context',
+    chatKey: 'test-chat',
+    contextUsage: 80000,
+    contextWindow: 200000,
+  })
+  applySample({
+    provider: 'claude',
+    source: 'sdk-live',
+    scope: 'turn-live',
+    contextSource: 'usage-estimate',
+    chatKey: 'test-chat',
+    contextUsage: 9000,
+    contextWindow: 200000,
+  })
+
+  const snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.contextUsage, 80000)
+  assert.strictEqual(snap.contextWindow, 200000)
+})
+
+test('compact-boundary may legitimately lower context', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+  applySample({
+    provider: 'claude',
+    source: 'context-snapshot',
+    scope: 'session-context',
+    contextSource: 'system-context',
+    chatKey: 'test-chat',
+    contextUsage: 120000,
+    contextWindow: 200000,
+  })
+  applySample({
+    provider: 'claude',
+    source: 'jsonl-poll',
+    scope: 'session-context',
+    contextSource: 'compact-boundary',
+    chatKey: 'test-chat',
+    contextUsage: 45000,
+    contextWindow: 200000,
+  })
+
+  const snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.contextUsage, 45000)
+  assert.strictEqual(snap.contextWindow, 200000)
+})
+
 // ==================== clearCurrentTurn ====================
 
 test('clearCurrentTurn removes unfinalized turn', () => {

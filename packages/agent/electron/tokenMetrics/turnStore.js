@@ -41,6 +41,8 @@ const stores = new Map()
  * @property {number} contextWindow
  * @property {number} durationMs
  * @property {number} costUsd
+ * @property {string} contextSource
+ * @property {number} contextAuthority
  * @property {string[]} sources
  * @property {number} updatedAt
  */
@@ -60,6 +62,8 @@ const stores = new Map()
  * @property {number} contextWindow
  * @property {number} durationMs
  * @property {number} costUsd
+ * @property {string} contextSource
+ * @property {number} contextAuthority
  * @property {string[]} sources
  * @property {number} updatedAt
  * @property {number} finalizedAt
@@ -108,9 +112,83 @@ function stripTurnTokens(sample = {}) {
   }
 }
 
+function getContextAuthority(source = '') {
+  switch (String(source || '')) {
+    case 'compact-boundary':
+      return 4
+    case 'system-context':
+      return 3
+    case 'usage-estimate':
+      return 2
+    case 'carry-forward':
+      return 1
+    default:
+      return 0
+  }
+}
+
+function normalizeContextSource(sample = {}) {
+  const explicit = String(sample.contextSource || '').trim()
+  if (explicit) return explicit
+  switch (sample.source) {
+    case 'context-snapshot':
+      return 'system-context'
+    case 'sdk-live':
+    case 'token-count':
+      return 'usage-estimate'
+    case 'jsonl-poll':
+      return sample.scope === 'session-context' ? 'system-context' : 'usage-estimate'
+    default:
+      return ''
+  }
+}
+
+function shouldAcceptContextValue({
+  nextValue,
+  previousValue,
+  nextSource,
+  previousSource,
+} = {}) {
+  const next = Number(nextValue)
+  const previous = Number(previousValue)
+  const hasNext = Number.isFinite(next) && next > 0
+  const hasPrevious = Number.isFinite(previous) && previous > 0
+  if (!hasNext) return false
+  if (!hasPrevious) return true
+
+  const nextAuthority = getContextAuthority(nextSource)
+  const previousAuthority = getContextAuthority(previousSource)
+
+  if (nextSource === 'carry-forward') return false
+  if (nextAuthority > previousAuthority) return true
+  if (nextAuthority < previousAuthority) return false
+
+  if (nextSource === 'usage-estimate' && next < previous) return false
+  return true
+}
+
 function updateSessionContextSnapshot(snapshot, sample = {}) {
-  snapshot.contextUsage = pickSessionMetricValue(sample.contextUsage, snapshot.contextUsage)
-  snapshot.contextWindow = pickSessionMetricValue(sample.contextWindow, snapshot.contextWindow)
+  const contextSource = normalizeContextSource(sample) || snapshot.contextSource || ''
+  if (shouldAcceptContextValue({
+    nextValue: sample.contextUsage,
+    previousValue: snapshot.contextUsage,
+    nextSource: contextSource,
+    previousSource: snapshot.contextSource,
+  })) {
+    snapshot.contextUsage = Number(sample.contextUsage) || 0
+    snapshot.contextSource = contextSource
+    snapshot.contextAuthority = getContextAuthority(contextSource)
+  }
+  if (shouldAcceptContextValue({
+    nextValue: sample.contextWindow,
+    previousValue: snapshot.contextWindow,
+    nextSource: contextSource,
+    previousSource: snapshot.contextSource,
+  })) {
+    snapshot.contextWindow = Number(sample.contextWindow) || 0
+    if (!snapshot.contextSource) snapshot.contextSource = contextSource
+    snapshot.contextAuthority = getContextAuthority(snapshot.contextSource || contextSource)
+  }
   snapshot.durationMs = sample.durationMs ?? snapshot.durationMs ?? 0
   snapshot.costUsd = sample.costUsd ?? snapshot.costUsd ?? 0
   if (sample.source) {
@@ -130,6 +208,8 @@ function buildLiveSnapshot(sample) {
     cacheCreationTokens: sample.cacheCreationTokens ?? 0,
     contextUsage: sample.contextUsage ?? 0,
     contextWindow: sample.contextWindow ?? 0,
+    contextSource: normalizeContextSource(sample) || '',
+    contextAuthority: getContextAuthority(normalizeContextSource(sample) || ''),
     durationMs: sample.durationMs ?? 0,
     costUsd: sample.costUsd ?? 0,
     sources: [sample.source || 'unknown'],
@@ -158,8 +238,10 @@ function buildFinalSnapshot(turn, sample) {
     outputTokens: sample.outputTokens ?? live.outputTokens ?? 0,
     cacheReadTokens: sample.cacheReadTokens ?? live.cacheReadTokens ?? 0,
     cacheCreationTokens: sample.cacheCreationTokens ?? live.cacheCreationTokens ?? 0,
-    contextUsage: pickSessionMetricValue(sample.contextUsage, live.contextUsage),
-    contextWindow: pickSessionMetricValue(sample.contextWindow, live.contextWindow),
+    contextUsage: live.contextUsage ?? 0,
+    contextWindow: live.contextWindow ?? 0,
+    contextSource: live.contextSource || '',
+    contextAuthority: live.contextAuthority || 0,
     durationMs: sample.durationMs ?? live.durationMs ?? 0,
     costUsd: sample.costUsd ?? live.costUsd ?? 0,
     sources: [...new Set([...(live.sources || []), sample.source || 'unknown'])],
@@ -171,15 +253,33 @@ function buildFinalSnapshot(turn, sample) {
 function mergeLiveSnapshot(existing, sample) {
   const sources = new Set(existing.sources || [])
   if (sample.source) sources.add(sample.source)
+  const contextSource = normalizeContextSource(sample) || existing.contextSource || ''
+  const shouldUpdateContextUsage = shouldAcceptContextValue({
+    nextValue: sample.contextUsage,
+    previousValue: existing.contextUsage,
+    nextSource: contextSource,
+    previousSource: existing.contextSource,
+  })
+  const shouldUpdateContextWindow = shouldAcceptContextValue({
+    nextValue: sample.contextWindow,
+    previousValue: existing.contextWindow,
+    nextSource: contextSource,
+    previousSource: existing.contextSource,
+  })
 
   return {
     inputTokens: Math.max(existing.inputTokens || 0, sample.inputTokens || 0),
     outputTokens: Math.max(existing.outputTokens || 0, sample.outputTokens || 0),
     cacheReadTokens: Math.max(existing.cacheReadTokens || 0, sample.cacheReadTokens || 0),
     cacheCreationTokens: Math.max(existing.cacheCreationTokens || 0, sample.cacheCreationTokens || 0),
-    // context/duration/cost 覆写（取最新值）
-    contextUsage: pickSessionMetricValue(sample.contextUsage, existing.contextUsage),
-    contextWindow: pickSessionMetricValue(sample.contextWindow, existing.contextWindow),
+    contextUsage: shouldUpdateContextUsage ? (Number(sample.contextUsage) || 0) : (existing.contextUsage || 0),
+    contextWindow: shouldUpdateContextWindow ? (Number(sample.contextWindow) || 0) : (existing.contextWindow || 0),
+    contextSource: (shouldUpdateContextUsage || shouldUpdateContextWindow)
+      ? contextSource
+      : (existing.contextSource || ''),
+    contextAuthority: (shouldUpdateContextUsage || shouldUpdateContextWindow)
+      ? getContextAuthority(contextSource)
+      : (existing.contextAuthority || 0),
     durationMs: sample.durationMs ?? existing.durationMs ?? 0,
     costUsd: sample.costUsd ?? existing.costUsd ?? 0,
     sources: [...sources],
@@ -203,13 +303,23 @@ function beginTurn({ provider, chatKey, providerSessionId, startedAt } = {}) {
   if (!chatKey) throw new Error('beginTurn: chatKey is required')
   const s = getOrCreateStore(chatKey)
   const turnId = nextTurnId()
+  const previousFinal = s.currentTurn?.finalized || null
+  const carriedContextUsage = Number(previousFinal?.contextUsage)
+  const carriedContextWindow = Number(previousFinal?.contextWindow)
   s.currentTurn = {
     turnId,
     provider: provider || 'unknown',
     chatKey,
     providerSessionId: providerSessionId || '',
     startedAt: startedAt || Date.now(),
-    liveSnapshot: null,
+    liveSnapshot: (Number.isFinite(carriedContextUsage) && carriedContextUsage > 0) || (Number.isFinite(carriedContextWindow) && carriedContextWindow > 0)
+      ? buildLiveSnapshot({
+        source: 'carry-forward',
+        contextSource: 'carry-forward',
+        contextUsage: Number.isFinite(carriedContextUsage) ? carriedContextUsage : 0,
+        contextWindow: Number.isFinite(carriedContextWindow) ? carriedContextWindow : 0,
+      })
+      : null,
     finalized: null,
   }
   return turnId

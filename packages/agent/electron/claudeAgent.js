@@ -233,6 +233,7 @@ function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
     cacheCreationTokens: normalized.cacheCreationTokens || 0,
     contextUsage,
     contextWindow,
+    contextSource: 'usage-estimate',
   }
 }
 
@@ -330,6 +331,7 @@ function emitClaudeMetricsViaStore(sender, sample, sessionId, model, extra = {})
     cacheCreationTokens: sample.cacheCreationTokens,
     contextUsage: sample.contextUsage,
     contextWindow: sample.contextWindow,
+    contextSource: sample.contextSource,
     durationMs: sample.durationMs,
     costUsd: sample.costUsd,
   })

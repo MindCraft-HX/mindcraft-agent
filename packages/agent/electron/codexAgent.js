@@ -350,6 +350,7 @@ function emitCodexMetricsViaStore(sender, sample, sessionId, model, extra = {}) 
     cacheCreationTokens: sample.cacheCreationTokens,
     contextUsage: sample.contextUsage,
     contextWindow: sample.contextWindow,
+    contextSource: sample.contextSource,
     durationMs: sample.durationMs,
     costUsd: sample.costUsd,
   })
@@ -1164,6 +1165,7 @@ function buildCodexMetricsFromTokenCountPayload(payload = {}, {
     cacheCreationTokens,
     contextUsage,
     contextWindow,
+    contextSource: 'usage-estimate',
     durationMs,
     speedOutputPerSec: 0,
     gitBranch,
@@ -1340,6 +1342,7 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
       cacheCreationTokens,
       contextUsage,
       contextWindow,
+      contextSource: contextUsage > 0 ? 'system-context' : '',
       durationMs: lastTurnDurationMs,
       speedOutputPerSec: speedSec > 0 ? Math.round(totalSpeedOutputTokens / speedSec) : 0,
     }

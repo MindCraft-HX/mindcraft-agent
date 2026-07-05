@@ -135,6 +135,7 @@ function runClaudeAgentLiveUsageEmitsContextEstimateTest() {
     cacheCreationTokens: 0,
     contextUsage: 630100,
     contextWindow: 200000,
+    contextSource: 'usage-estimate',
   })
 }
 
@@ -172,6 +173,7 @@ function runCompactBoundaryProvidesContextTest() {
 
   assert.equal(metrics.contextUsage, 4580)
   assert.equal(metrics.contextWindow, 200000)
+  assert.equal(metrics.contextSource, 'compact-boundary')
 }
 
 function runLatestSessionCwdFromLinesTest() {
@@ -234,6 +236,7 @@ function runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest() {
 
   assert.equal(metrics.contextUsage, 123598)
   assert.equal(metrics.contextWindow, 200000)
+  assert.equal(metrics.contextSource, 'usage-estimate')
 }
 
 function runAssistantUsageBeforeCompactBoundaryPreservesCompactContextTest() {
@@ -265,6 +268,7 @@ function runAssistantUsageBeforeCompactBoundaryPreservesCompactContextTest() {
 
   assert.equal(metrics.contextUsage, 4580)
   assert.equal(metrics.contextWindow, 200000)
+  assert.equal(metrics.contextSource, 'compact-boundary')
 }
 
 function runMultipleAssistantUsageAccumulatesTurnTokensButUsesLatestContextTest() {
@@ -305,6 +309,7 @@ function runMultipleAssistantUsageAccumulatesTurnTokensButUsesLatestContextTest(
   assert.equal(metrics.cacheCreationTokens, 150)
   assert.equal(metrics.contextUsage, 2330)
   assert.equal(metrics.contextWindow, 200000)
+  assert.equal(metrics.contextSource, 'usage-estimate')
 }
 
 function runDefaultMetricsUseLatestTurnNotWholeSessionTest() {
@@ -354,6 +359,7 @@ function runDefaultMetricsUseLatestTurnNotWholeSessionTest() {
   assert.equal(metrics.cacheReadTokens, 20)
   assert.equal(metrics.durationMs, 5000)
   assert.equal(metrics.contextUsage, 35)
+  assert.equal(metrics.contextSource, 'usage-estimate')
 }
 
 function runHistoryTurnTokensAggregateOneUserTurnTest() {

@@ -588,6 +588,7 @@ const {
   buildNewTurnMetrics: buildNewClaudeTurnMetrics,
   mergeRuntimeMetrics: mergeClaudeRuntimeMetrics,
   syncTimerForTab: syncMetricsTimerForClaudeTab,
+  syncActiveMetricsFromTab,
   resetActiveMetrics,
   applyMetricsToTab,
   stopMetricsTimer: stopMetricsLiveTimer,
@@ -626,7 +627,10 @@ function onMetricsUpdate(data) {
 
   const active = activeTab.value
   if (active && active.id === targetTab.id) {
-    Object.assign(metricsData.value, mergeClaudeRuntimeMetrics(metricsData.value, data, targetTab))
+    syncActiveMetricsFromTab(targetTab, {
+      model: getClaudeTabModel(targetTab),
+      compacting: !!targetTab._compacting,
+    })
     syncMetricsTimerForClaudeTab(targetTab, data.durationMs || 0)
   }
 }
@@ -701,7 +705,10 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
 
   // 缓存优先：已有缓存的 metrics 且非 thinking，先显示
   if (!chat.thinking && chat.metrics && chat.metrics.durationMs != null) {
-    Object.assign(metricsData.value, chat.metrics)
+    syncActiveMetricsFromTab(chat, {
+      model: getClaudeTabModel(chat),
+      compacting: !!chat._compacting,
+    })
   }
 
   _refreshingMetrics = true
@@ -725,7 +732,10 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       result.thinking = Boolean(tab.thinking)
       tab.metrics = { ...tab.metrics, ...result }
       if (activeChatId.value === tab.id) {
-        Object.assign(metricsData.value, result)
+        syncActiveMetricsFromTab(tab, {
+          model: getClaudeTabModel(tab),
+          compacting: !!tab._compacting,
+        })
         syncMetricsTimerForClaudeTab(tab, result.durationMs || 0)
       }
     }).catch(() => { _refreshingMetrics = false })
@@ -742,7 +752,10 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
       chat.metrics = { ...chat.metrics, ...result }
       // 竞态 guard：只有仍是当前 active tab 才更新状态栏
       if (activeChatId.value === chat.id) {
-        Object.assign(metricsData.value, result)
+        syncActiveMetricsFromTab(chat, {
+          model: getClaudeTabModel(chat),
+          compacting: !!chat._compacting,
+        })
         syncMetricsTimerForClaudeTab(chat, result.durationMs || 0)
       }
     } else if (activeChatId.value === chat.id) {

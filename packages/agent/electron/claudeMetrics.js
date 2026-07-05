@@ -279,6 +279,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   let lastContextUsage = null
   let lastContextWindow = null
   let lastContextOrder = -1
+  let lastContextSource = ''
   let latestUsageContextUsage = 0
   let latestUsageContextWindow = 0
   let latestUsageContextOrder = -1
@@ -339,6 +340,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
+          lastContextSource = 'system-context'
         }
         if (data.input_tokens && !data.usage) {
           const model = data.model || data.model_name || parsed.model || parsed.model_name || ''
@@ -347,6 +349,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
+          lastContextSource = 'system-context'
         }
       }
 
@@ -360,12 +363,14 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
+          lastContextSource = 'compact-boundary'
         } else if (preTokens > 0) {
           contextUsage = preTokens
           contextWindow = getContextWindowForModel('')
           lastContextUsage = contextUsage
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
+          lastContextSource = 'compact-boundary'
         }
       }
     } catch (_) {}
@@ -406,6 +411,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   if (latestUsageContextUsage > 0 && latestUsageContextOrder >= lastContextOrder) {
     contextUsage = latestUsageContextUsage
     contextWindow = latestUsageContextWindow || getContextWindowForModel('')
+    lastContextSource = 'usage-estimate'
   } else if (lastContextUsage !== null) {
     contextUsage = lastContextUsage
     contextWindow = lastContextWindow || getContextWindowForModel('')
@@ -428,6 +434,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     cacheCreationTokens,
     contextUsage,
     contextWindow,
+    contextSource: lastContextSource || (contextUsage > 0 ? 'usage-estimate' : ''),
     costUsd,
     durationMs: lastTurnDurationMs,
   }

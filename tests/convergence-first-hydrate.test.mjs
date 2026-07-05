@@ -172,6 +172,26 @@ describe('convergence first-hydrate (metrics controller layer)', () => {
       assert.equal(next.gitBranch, 'main')
       assert.equal(next.gitChanges, 3)
     })
+
+    it('does not carry previous turn duration while preserving context', () => {
+      const prev = {
+        inputTokens: 1000,
+        outputTokens: 500,
+        cacheReadTokens: 300,
+        cacheCreationTokens: 100,
+        contextUsage: 60000,
+        contextWindow: 200000,
+        durationMs: 30000,
+      }
+      const next = buildAgentTurnMetrics(prev)
+      assert.equal(next.inputTokens, 0)
+      assert.equal(next.outputTokens, 0)
+      assert.equal(next.cacheReadTokens, 0)
+      assert.equal(next.cacheCreationTokens, 0)
+      assert.equal(next.durationMs, 0)
+      assert.equal(next.contextUsage, 60000)
+      assert.equal(next.contextWindow, 200000)
+    })
   })
 })
 
