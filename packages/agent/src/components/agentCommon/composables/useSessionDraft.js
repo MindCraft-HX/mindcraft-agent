@@ -20,6 +20,16 @@ export function useSessionDraft({
   let applyingRemote = false
   let loadSeq = 0
   const _draftCache = new Map()
+  // T183 Phase 0: bound cache to prevent unbounded growth across many sessions
+  const DRAFT_CACHE_MAX = 200
+  function _draftCacheSet(key, value) {
+    if (_draftCache.size >= DRAFT_CACHE_MAX && !_draftCache.has(key)) {
+      // LRU eviction: delete oldest entry (Map iteration is insertion-ordered)
+      const oldest = _draftCache.keys().next().value
+      _draftCache.delete(oldest)
+    }
+    _draftCache.set(key, value)
+  }
   const L = labelPrefix // short alias for label interpolation
 
   function clearTimer() {
@@ -66,7 +76,7 @@ export function useSessionDraft({
       const draft = await window.electronAPI?.getSessionDraft?.(chatKey)
       if (stopWall) { stopWall(); stopWall = null }
       text = typeof draft?.text === 'string' ? draft.text : ''
-      _draftCache.set(chatKey, { text, updatedAt: draft?.updatedAt || 0 })
+      _draftCacheSet(chatKey, { text, updatedAt: draft?.updatedAt || 0 })
     } catch (_) {
       text = ''
     }
@@ -102,7 +112,7 @@ export function useSessionDraft({
       } else {
         result = await window.electronAPI?.setSessionDraft?.(payload)
       }
-      _draftCache.set(chatKey, { text: safeText, updatedAt: Date.now() })
+      _draftCacheSet(chatKey, { text: safeText, updatedAt: Date.now() })
       return result
     } catch (_) {
       return null

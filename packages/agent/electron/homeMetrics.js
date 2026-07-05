@@ -52,13 +52,15 @@ function readJsonlLinesCached(filePath) {
   const cached = _lineCache.get(filePath)
   try {
     const stat = fs.statSync(filePath)
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.lines
+    if (cached && cached.mtimeMs === stat.mtimeMs) return [...cached.lines]
     const raw = fs.readFileSync(filePath, 'utf8')
     const lines = raw.split('\n').filter(l => l.trim())
     _lineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
     return lines
   } catch (_) {
-    return cached ? cached.lines : []
+    // T183 Phase 0: evict stale entry when file is gone (deleted/moved)
+    if (cached) _lineCache.delete(filePath)
+    return []
   }
 }
 const _lineCache = new Map()

@@ -629,8 +629,12 @@ function upsertSessionRecord(record, options = {}) {
   writeIndex(index, options)
   // T178: 中心写入口 — 清 instruction cache，避免过期
   _instructionCache.delete(_instructionCacheKey(next.chatKey, options))
+  // T183: 防御性清理 draft cache — upsert 路径（provider scan/panel sync/orphan rename）
+  // 可能携带或覆盖 draft 数据，避免缓存与磁盘不一致
+  _draftCache.delete(_draftCacheKey(next.chatKey, options))
   for (const orphanChatKey of orphanChatKeys) {
     _instructionCache.delete(_instructionCacheKey(orphanChatKey, options))
+    _draftCache.delete(_draftCacheKey(orphanChatKey, options))
   }
   return true
 }
