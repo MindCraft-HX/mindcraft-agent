@@ -1,3 +1,10 @@
+let CORE_CHANNELS
+try {
+  CORE_CHANNELS = require('../shared/ipcChannels').CORE_CHANNELS
+} catch (_) {
+  CORE_CHANNELS = { LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index' }
+}
+
 function createAgentBridge(ipcRenderer) {
   return {
   claudeGetKey: () => ipcRenderer.invoke('claude-get-key'),
@@ -264,6 +271,8 @@ function createAgentBridge(ipcRenderer) {
     ipcRenderer.on('codex-stream-tool-delta', handler)
     return () => ipcRenderer.removeListener('codex-stream-tool-delta', handler)
   },
+  // CodeHub SessionIndex (T184)
+  loadCodehubSessionIndex: () => ipcRenderer.invoke(CORE_CHANNELS.LOAD_CODEHUB_SESSION_INDEX),
   // Home 页数据
   loadRecentProject: () => ipcRenderer.invoke('home-get-recent-project'),
   loadTodayStats: () => ipcRenderer.invoke('home-get-today-stats'),

@@ -157,6 +157,9 @@ const CORE_CHANNELS = Object.freeze({
   // Auto-start on boot
   GET_LOGIN_ITEM: 'get-login-item-settings',
   SET_LOGIN_ITEM: 'set-login-item-settings',
+
+  // CodeHub SessionIndex (T184)
+  LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index',
 });
 
 /**
