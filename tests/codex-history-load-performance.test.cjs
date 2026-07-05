@@ -85,7 +85,9 @@ function runListSessionsByCwdCachesSummariesTest() {
       const sessions = __test__.listSessionsByCwd('D:/repo')
       assert.equal(sessions.length, 1)
       assert.equal(sessions[0].name, 'Cached title')
-      assert.equal(jsonlStatCount, 1)
+      // T183 Phase 1: outer scan cache (_codexScanByCwdCache) caches rawSummaries,
+      // so second call skips extractSessionSummary entirely — 0 JSONL stats.
+      assert.equal(jsonlStatCount, 0)
     } finally {
       fs.statSync = oldStatSync
       __test__.clearCodexJsonlCaches()

@@ -236,10 +236,10 @@ No production code changes except optional diagnostic naming cleanup.
 | Action | Count | Items |
 | --- | --- | --- |
 | **migrated** (Phase 1) | 5 | E1, E5, E6, E15, E16 — migrated to `createFileDerivedCache` |
-| **keep** | 13 | E7, E8, E9, E12, E13, E17 (6 electron) + R1, R2, R4, R5, R6, R7, R8, R9, R10, R11 (10 renderer; R3 fixed in Phase 0) |
+| **keep** | 16 | E7, E8, E9, E12, E13, E17 (6 electron) + R1, R2, R4, R5, R6, R7, R8, R9, R10, R11 (10 renderer) |
 | **wrap** | 3 | E2, E4, E10 — still need clone or eviction (deferred to future phase) |
 | **split** | 1 | E3 (key by options hash or document single-purpose) |
-| **fixed** (Phase 0) | 3 | E11 (F1), R3 (F4), F3 (homeMetrics ENOENT) |
+| **fixed** (Phase 0) | 2 | E11 (defensive _draftCache delete), R3 (FIFO cap 200) |
 | **remove** | 0 | No caches should be removed at this stage |
 
 ### Phase 1: Shared Helper For File-Derived Caches ✅ (completed 2026-07-05)
