@@ -1,7 +1,7 @@
 # T183 Cache Governance / Local Derived Data Boundary
 
 > Date: 2026-07-05
-> Status: Phase 0-3 complete (2026-07-05)
+> Status: Phase 0-2 complete; Phase 3 metrics aggregate dedup complete (2026-07-05)
 > Related: T177, T179, T181, token metrics, session registry, provider scans
 
 ## 1. Why This Exists

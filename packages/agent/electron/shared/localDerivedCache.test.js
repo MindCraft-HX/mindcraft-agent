@@ -335,3 +335,28 @@ test('trackDedup: timeout releases slot, old settle does not delete new promise'
   await new Promise(r => setImmediate(r))
   assert.equal(map.has(key), false, 'slot cleaned after new promise settles')
 })
+
+test('trackDedup: reject cleans up map without unhandled rejection', async () => {
+  const map = new Map()
+  const key = 'task-3'
+
+  let unhandled = null
+  const onUnhandled = (err) => { unhandled = err }
+
+  process.on('unhandledRejection', onUnhandled)
+  try {
+    const p = trackDedup(map, key, Promise.reject(new Error('boom')), 0)
+    assert.equal(map.get(key), p, 'promise stored before reject')
+
+    // Await the rejection through the returned promise (caller-side catch)
+    await p.catch(() => {})
+
+    // Let microtasks flush: finally().catch() runs, then onUnhandled would fire
+    await new Promise(r => setImmediate(r))
+
+    assert.equal(map.has(key), false, 'dedup slot cleaned after reject')
+    assert.equal(unhandled, null, 'no unhandledRejection fired')
+  } finally {
+    process.off('unhandledRejection', onUnhandled)
+  }
+})

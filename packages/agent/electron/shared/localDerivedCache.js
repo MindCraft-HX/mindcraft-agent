@@ -190,7 +190,11 @@ function trackDedup(map, key, promise, timeoutMs = 60000) {
   }
 
   // Clean up on settle regardless of timeout — identity guard keeps it safe.
-  promise.finally(cleanup)
+  // .catch() swallows the rejection from finally() itself (which mirrors the
+  // original promise's fate) so a rejecting promise never triggers an
+  // unhandledRejection on the cleanup chain. Callers still get the original
+  // rejection through the returned promise.
+  promise.finally(cleanup).catch(() => {})
 
   return promise
 }
