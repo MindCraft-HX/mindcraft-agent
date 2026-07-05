@@ -1,7 +1,7 @@
 <template>
   <div class="codehub-wrap" :class="themeClass">
     <!-- ===== 统一 Tab 栏 ===== -->
-    <div class="codehub-unified-tabs" v-if="initDone && unifiedTabs.length > 0">
+    <div class="codehub-unified-tabs" v-if="(initDone || sessionIndex.indexReady.value) && unifiedTabs.length > 0">
       <div
         v-for="(tab, idx) in unifiedTabs"
         :key="tab.id"
@@ -119,6 +119,7 @@ import SharedSettings from './SharedSettings.vue'
 import { normalizeRequestedAgent, pickInitialCodeHubTab } from './agentRoutePreference.mjs'
 import { resolveCodeHubSyncedTabId } from './activeTabSync.mjs'
 import { orderCodeHubTabs, reconcileCodeHubTabOrder } from './tabOrder.mjs'
+import { useSessionIndex } from './useSessionIndex.mjs'
 import { shouldAutoShowAgentPicker } from './agentPickerPrompt.mjs'
 import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
@@ -160,6 +161,8 @@ function tabDebugSnapshot(extra = {}) {
   }))
   return {
     initDone: initDone.value,
+    indexReady: sessionIndex.indexReady.value,
+    indexWarnings: sessionIndex.loadWarnings.value,
     activeTabId: activeTabId.value,
     activeAgent: activeAgent.value,
     tabIds: unifiedTabs.value.map(t => t.id),
@@ -232,6 +235,15 @@ function maybeAutoOpenAgentPicker() {
 // 在 CodeHub 级 session index 独立出来前，启动时必须挂载所有已注册 Agent，避免冷启动丢失历史 Tab。
 const mountedMap = reactive(createMountedMap(agentKeys.value))
 
+// T184: SessionIndex — passive lightweight index from panel-state + session-registry.
+// Decouples tab existence from provider panel readiness.
+// projectTabData from mounted panels is pushed as runtime patches only.
+const sessionIndex = useSessionIndex({
+  agentKeys,
+  getAgentMeta,
+  tabOrder,
+})
+
 const ctxMenu = reactive({ visible: false, x: 0, y: 0, tab: null })
 
 // ── TAB 拖拽排序 ──
@@ -271,8 +283,14 @@ function onDrop(e, toIndex) {
   reorderUnifiedTab(fromIndex, toIndex)
 }
 
-// 统一的 Tab 列表（只从已挂载的 Agent 收集）
-// Phase 3: 白名单拷贝，不再 ...p spread，防止上游新增字段自动进入 unifiedTabs
+// T184: unifiedTabs now sources from sessionIndex (persisted panel-state + session-registry).
+// Provider panels push runtime patches via patchRuntimeProjects, not as the tab source.
+// Old collectTabs() path is preserved as dev fallback behind a flag.
+const CODEHUB_USE_LEGACY_TABS = (() => {
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_legacy_codehub_tabs') === '1') return true
+  return false
+})()
+
 function collectTabs(panel, agentType, meta) {
   const stop = perfStart('codehub.collectTabs')
   const data = panel?.projectTabData
@@ -296,16 +314,22 @@ function collectTabs(panel, agentType, meta) {
 }
 
 const unifiedTabs = computed(() => {
-  const tabs = []
-  for (const key of agentKeys.value) {
-    if (mountedMap[key]) {
-      const panel = panelRefs[key]
-      if (panel) {
-        tabs.push(...collectTabs(panel, key, getAgentMeta(key)))
+  // T184 fallback: revert to legacy collectTabs path
+  if (CODEHUB_USE_LEGACY_TABS) {
+    const tabs = []
+    for (const key of agentKeys.value) {
+      if (mountedMap[key]) {
+        const panel = panelRefs[key]
+        if (panel) {
+          tabs.push(...collectTabs(panel, key, getAgentMeta(key)))
+        }
       }
     }
+    return orderCodeHubTabs(tabs, tabOrder.value)
   }
-  return orderCodeHubTabs(tabs, tabOrder.value)
+
+  // T184: Use session index (persisted tabs + runtime patches)
+  return sessionIndex.orderedTabs.value
 })
 
 const activeAgent = computed(() => {
@@ -426,15 +450,48 @@ function getPanel(agentType) {
   return panelRefs[agentType] || null
 }
 
-// ── 初始化：等待所有已挂载的 Agent 就绪后再恢复 Tab ──
+// ── 初始化：T184 SessionIndex — load index first, then wait for panels to patch runtime ──
 const initDone = ref(false)
 let _initTimer = null
+let _panelWatchCleanups = []
 
-onMounted(() => {
+function setupPanelRuntimeWatchers() {
+  // Clean up previous watchers
+  _panelWatchCleanups.forEach(fn => fn())
+  _panelWatchCleanups = []
+
+  for (const key of agentKeys.value) {
+    const stopWatch = watch(
+      () => panelRefs[key]?.projectTabData,
+      (data) => {
+        if (data != null) {
+          sessionIndex.patchRuntimeProjects(key, data)
+        }
+      },
+      { flush: 'post' }
+    )
+    _panelWatchCleanups.push(stopWatch)
+  }
+}
+
+onMounted(async () => {
+  // T184: Load session index first — tabs appear before all panels are ready
+  await sessionIndex.reloadIndex()
+  debugCodeHubTabs('init:index-loaded', {
+    indexReady: sessionIndex.indexReady.value,
+    tabCount: sessionIndex.tabs.value.length,
+  }, { force: true })
+
+  // Set up watchers for provider panel projectTabData → runtime patches
+  setupPanelRuntimeWatchers()
+
+  // Watch panels readiness to trigger restoreActiveTab
   const stopWatch = watchEffect(() => {
     if (initDone.value) return
 
-    // 只检查已挂载的 Agent
+    // Trigger initDone when index is loaded
+    if (!sessionIndex.indexReady.value) return
+
     const pending = Object.keys(mountedMap).filter(k => mountedMap[k])
     if (pending.length === 0) return
 
@@ -497,6 +554,8 @@ onUnmounted(() => {
   if (_initTimer) clearTimeout(_initTimer)
   _shortcutUnregisters.forEach(fn => fn())
   _shortcutUnregisters.length = 0
+  _panelWatchCleanups.forEach(fn => fn())
+  _panelWatchCleanups.length = 0
 })
 
 // ── 监听 route query 变化（keep-alive 下 onMounted 不会重新触发） ──
@@ -582,7 +641,14 @@ watchEffect(() => {
 // ── Tab 操作 ──
 function closeTab(tab) {
   const panel = getPanel(tab.agentType)
-  panel?.deleteProject(tab.projectId)
+  if (!panel?.ready) {
+    // Panel not ready — project not yet recovered from disk.
+    // Deleting now would only hide from memory; tab would resurrect on restart.
+    debugCodeHubTabs('closeTab:panel-not-ready', { tabId: tab.id, agentType: tab.agentType }, { force: true })
+    return
+  }
+  sessionIndex.deleteProjectTab(tab.agentType, tab.projectId)
+  panel.deleteProject(tab.projectId)
 }
 
 function reorderUnifiedTab(fromIndex, toIndex) {
