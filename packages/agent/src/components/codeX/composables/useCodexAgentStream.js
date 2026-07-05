@@ -882,8 +882,8 @@ export function useCodexAgentStream({
       lastThinking.status = 'done'
     }
     markCodexDone(tab, {
-      cliSessionId: detachResume ? (tab.cliSessionId || cliSessionId) : cliSessionId,
-      filePath: detachResume ? (tab.filePath || filePath) : filePath,
+      cliSessionId: detachResume ? '' : cliSessionId,
+      filePath: detachResume ? '' : filePath,
       reason,
     })
     if (ownerProject && reason === 'completed') {

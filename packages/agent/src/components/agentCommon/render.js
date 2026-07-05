@@ -726,7 +726,9 @@ export function renderContent(text, label) {
   if (renderCache.size >= RENDER_CACHE_MAX) {
     renderCache.delete(renderCache.keys().next().value)
   }
-  renderCache.set(text, result)
+  if (text.length <= RENDER_CACHE_MAX_TEXT_BYTES) {
+    renderCache.set(text, result)
+  }
   if (stopProbe) stopProbe()
   return result
 }
@@ -751,6 +753,7 @@ const HLJS_CACHE_LIMIT = 2000
 // T179 Phase 3: renderContent 文本→HTML 缓存（FIFO eviction via Map insertion order）
 const renderCache = new Map()
 const RENDER_CACHE_MAX = 800
+const RENDER_CACHE_MAX_TEXT_BYTES = 131072 // 128KB — 超大消息不缓存，避免常驻大量内存
 
 function cachedHighlight(code, lang) {
   const cacheKey = lang ? `${lang}:${code}` : `auto:${code}`

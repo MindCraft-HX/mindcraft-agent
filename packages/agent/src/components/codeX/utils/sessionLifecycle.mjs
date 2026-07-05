@@ -150,10 +150,10 @@ export function markCodexTerminalSeen(tab) {
   return tab
 }
 
-export function markCodexDone(tab, { cliSessionId = '', filePath = '', reason = 'completed' } = {}) {
+export function markCodexDone(tab, { cliSessionId, filePath, reason = 'completed' } = {}) {
   if (!tab) return tab
-  if (cliSessionId) tab.cliSessionId = cliSessionId
-  if (filePath) tab.filePath = filePath
+  if (cliSessionId !== undefined) tab.cliSessionId = cliSessionId
+  if (filePath !== undefined) tab.filePath = filePath
   setRuntimeState(tab, reason === 'completed' ? CODEX_RUNTIME_STATES.DONE : CODEX_RUNTIME_STATES.FAILED)
   clearRuntimeFields(tab)
   return tab
