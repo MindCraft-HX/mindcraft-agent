@@ -17,6 +17,9 @@ Current decisions:
   `compact_boundary` is confirmed; `system context_usage` is defensive if a
   provider emits it. SDK `query.getContextUsage()` exists but must not be used
   for automatic sampling until it is proven non-blocking in the app runtime.
+- New-turn context may carry forward only the same session's last confirmed
+  `contextUsage/contextWindow`. Do not carry forward previous-turn
+  `in/out/cache/duration`.
 - CodeX context follows its own token-count/context-window contract; do not copy
   ClaudeCode context rules into CodeX.
 - Dynamic token animation may only interpolate between real samples. Missing

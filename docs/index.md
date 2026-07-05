@@ -1,6 +1,6 @@
 # MindCraft Agent 知识库
 
-> 最后更新：2026-07-02
+> 最后更新：2026-07-05
 > 定位：文档体系入口索引，覆盖所有活跃文档。过期/已完成的计划见 `archive/`。
 
 ---
@@ -46,7 +46,13 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-07-05-hot-path-governance-and-streaming-render.md](./plan/2026-07-05-hot-path-governance-and-streaming-render.md) | T181 热路径治理：streaming assistant plain text、activation work queue 后续收口 |
+| [plan/2026-07-05-project-session-activation-work-graph.md](./plan/2026-07-05-project-session-activation-work-graph.md) | T179 Project / Session activation work graph：scan cache hit 去 registry 写副作用 |
+| [plan/2026-07-04-renderer-dom-layout-and-cache-governance.md](./plan/2026-07-04-renderer-dom-layout-and-cache-governance.md) | T177-P2 Renderer DOM/Layout/Paint 归因与缓存治理 |
+| [plan/2026-07-04-session-switch-background-task-latency.md](./plan/2026-07-04-session-switch-background-task-latency.md) | T177 Session 切换后台任务延迟：metrics 主进程阻塞诊断与修复 |
+| [plan/2026-07-04-large-session-rendering-performance.md](./plan/2026-07-04-large-session-rendering-performance.md) | T176 大 session 渲染卡顿：history tool 折叠、bash output 懒挂载、renderContent 证伪 |
 | [plan/2026-07-02-T172-session-switch-performance.md](./plan/2026-07-02-T172-session-switch-performance.md) | T172 Session switch 真优化：CodeX metrics 后台化，Claude Phase 2 跳过 |
+| [plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md](./plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md) | T180 Metrics 收口：context 权威来源、carry-forward、Claude/CodeX 首次 hydrate 对称性 |
 | [plan/2026-07-02-session-tab-switch-performance.md](./plan/2026-07-02-session-tab-switch-performance.md) | T170 Session / Tab 切换性能收口：scheduled refresh、cooldown、scroll restore |
 | [plan/2026-07-02-renderer-hot-path-performance.md](./plan/2026-07-02-renderer-hot-path-performance.md) | T169 Renderer 高频链路瘦身：ProjectTabs summary、CodeHub 白名单、saveHistory/textarea 优化 |
 | [plan/2026-07-01-session-registry-ownership-handoff.md](./plan/2026-07-01-session-registry-ownership-handoff.md) | T165 Session Registry ownership 交接：Phase 1 已完成、T167 覆盖优先、Phase 2 边界 |

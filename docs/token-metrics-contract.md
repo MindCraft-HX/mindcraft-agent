@@ -54,6 +54,7 @@ Clarification:
   - `TokenMetaRow` renders one finalized snapshot for one completed assistant turn.
   - `StatusBarMetrics` renders the active session's current live snapshot while running, and the latest finalized snapshot for that same session when idle.
 - "Shared source" means shared normalized snapshot family, not shared renderer state and not identical display semantics.
+- Starting a new turn may carry forward only the same session's last confirmed `context/contextWindow`. It must not carry forward previous-turn `in/out/cache/duration`.
 
 ## 3. Provider Source Semantics
 
@@ -235,6 +236,7 @@ Renderer acceptance:
   - footer populated but StatusBar empty
   - footer correct but StatusBar showing panel-state leftovers
   - compact/context icon correct while StatusBar `in/out/cache` comes from session totals
+- Starting a new turn must preserve the same session's last confirmed `context` until a stronger current-session context sample arrives; it must not briefly reset to a default placeholder.
 
 Non-goals:
 - Do not make `StatusBarMetrics` render every historical turn at once.
