@@ -12,6 +12,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
+const { createFileDerivedCache } = require('./shared/localDerivedCache')
 const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, findRegistryRecordForProviderScan, mergeRegistryFieldsIntoScanSummary, ensureRegistryFromProviderScan, repairSessionRegistry, restorePanelStateFromSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
@@ -662,23 +663,21 @@ function resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath
   return findCodexSessionFileByThreadId(threadId || cliSessionIds.get(sessionId) || sessionId)
 }
 
-const jsonlLineCache = new Map() // filePath -> { lines: [], mtimeMs: 0 }
+// T183 Phase 1: migrated to createFileDerivedCache
+const jsonlLineCache = createFileDerivedCache({
+  signature: 'mtimeMs',
+  clone: (v) => ({ lines: [...v.lines] }),
+})
 
 // T177: metrics aggregate 结果缓存，避免每次 query 都全量 JSON.parse 聚合
-// key: filePath, value: { mtimeMs, size, result }
-const _metricsAggregateCache = new Map()
+// T183 Phase 1: migrated to createFileDerivedCache
+const _metricsAggregateCache = createFileDerivedCache({
+  signature: 'mtimeMs+size',
+  clone: (v) => ({ result: { ...v.result }, cwd: v.cwd || '' }),
+})
 
 function getCachedMetricsAggregate(filePath) {
-  const cached = _metricsAggregateCache.get(filePath)
-  if (!cached) return null
-  try {
-    const stat = fs.statSync(filePath)
-    if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
-      return { result: cached.result, cwd: cached.cwd || '' }
-    }
-  } catch (_) { /* file deleted */ }
-  _metricsAggregateCache.delete(filePath)
-  return null
+  return _metricsAggregateCache.get(filePath)
 }
 
 // T177: 后台聚合去重 — 同 filePath 同时只跑一份
@@ -715,30 +714,27 @@ function scheduleBackgroundAggregate(filePath, model, cwd, sender, sessionId) {
 }
 
 function readJsonlLines(filePath, maxLines = Infinity) {
+  const cached = jsonlLineCache.get(filePath)
+  if (cached) {
+    return maxLines === Infinity ? cached.lines : cached.lines.slice(0, maxLines)
+  }
   try {
-    const stat = fs.statSync(filePath)
-    const cached = jsonlLineCache.get(filePath)
-    // 文件未修改，直接返回缓存
-    if (cached && cached.mtimeMs === stat.mtimeMs) {
-      return maxLines === Infinity ? cached.lines : cached.lines.slice(0, maxLines)
-    }
     // ⚠️ 此函数仅被 async 调用方使用；调用方已改为流式异步读取
     // 保留此同步路径用于向后兼容，但新代码应使用 readJsonlLinesAsync
     const content = fs.readFileSync(filePath, 'utf8')
     const lines = content.split(/\r?\n/).filter(Boolean)
-    jsonlLineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
+    jsonlLineCache.set(filePath, { lines })
     return maxLines === Infinity ? lines : lines.slice(0, maxLines)
   } catch (_) { return [] }
 }
 
 /** T177: 流式读取 JSONL 行，避免 fs.readFileSync 阻塞主进程 event loop */
 async function readJsonlLinesAsync(filePath, maxLines = Infinity) {
+  const cached = jsonlLineCache.get(filePath)
+  if (cached) {
+    return maxLines === Infinity ? cached.lines : cached.lines.slice(0, maxLines)
+  }
   try {
-    const stat = fs.statSync(filePath)
-    const cached = jsonlLineCache.get(filePath)
-    if (cached && cached.mtimeMs === stat.mtimeMs) {
-      return maxLines === Infinity ? cached.lines : cached.lines.slice(0, maxLines)
-    }
     const lines = []
     const stream = fs.createReadStream(filePath, { encoding: 'utf8', highWaterMark: 64 * 1024 })
     let remainder = ''
@@ -751,7 +747,7 @@ async function readJsonlLinesAsync(filePath, maxLines = Infinity) {
       }
     }
     if (remainder.trim()) lines.push(remainder)
-    jsonlLineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
+    jsonlLineCache.set(filePath, { lines })
     return maxLines === Infinity ? lines : lines.slice(0, maxLines)
   } catch (_) { return [] }
 }
@@ -1350,12 +1346,7 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
     // T177: 缓存聚合结果（不含 git，存拷贝防止外部 mutate 污染缓存）
     try {
       const resultStat = fs.statSync(filePath)
-      _metricsAggregateCache.set(filePath, {
-        mtimeMs: resultStat.mtimeMs,
-        size: resultStat.size,
-        cwd,
-        result: { ...result },
-      })
+      _metricsAggregateCache.set(filePath, { cwd, result: { ...result } })
     } catch (_) { /* stat 失败不阻塞返回 */ }
 
     // git 状态独立获取（getGitInfo 自带 30s TTL cache，不与 JSONL aggregate 混用）

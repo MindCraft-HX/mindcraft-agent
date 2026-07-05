@@ -235,28 +235,34 @@ No production code changes except optional diagnostic naming cleanup.
 
 | Action | Count | Items |
 | --- | --- | --- |
-| **keep** | 18 | E6, E7, E8, E9, E12, E13, E16, E17 (8 electron) + R1, R2, R4, R5, R6, R7, R8, R9, R10, R11 (10 renderer) |
-| **wrap** | 7 | E1, E2, E4, E5, E10, E11, E15 — add clone + eviction; E11 also needs invalidation fix (F1); E15 is duplicate of E1/E5 pattern |
-| **split** | 2 | E3 (key by options hash or document single-purpose), R3 (add size cap + LRU) |
+| **migrated** (Phase 1) | 5 | E1, E5, E6, E15, E16 — migrated to `createFileDerivedCache` |
+| **keep** | 13 | E7, E8, E9, E12, E13, E17 (6 electron) + R1, R2, R4, R5, R6, R7, R8, R9, R10, R11 (10 renderer; R3 fixed in Phase 0) |
+| **wrap** | 3 | E2, E4, E10 — still need clone or eviction (deferred to future phase) |
+| **split** | 1 | E3 (key by options hash or document single-purpose) |
+| **fixed** (Phase 0) | 3 | E11 (F1), R3 (F4), F3 (homeMetrics ENOENT) |
 | **remove** | 0 | No caches should be removed at this stage |
 
-### Phase 1: Shared Helper For File-Derived Caches
+### Phase 1: Shared Helper For File-Derived Caches ✅ (completed 2026-07-05)
 
 Goal: standardize repeated `Map + mtimeMs + size + clone` patterns.
 
-Candidate owners:
+**Implemented:** `packages/agent/electron/shared/localDerivedCache.js` — `createFileDerivedCache({ signature, clone })` factory.
 
-- `packages/agent/electron/shared/localDerivedCache.js`
+**API:** returns `{ get, set, has, delete, clear }`. `get()` auto-stats the file, checks signature, evicts on ENOENT/signature mismatch, applies clone on hit. `set()` captures stat signature internally. Each call returns an independent instance (no global singleton).
 
-First migration candidates:
+**Migrated caches (5/5):**
 
-- `homeMetrics` line/trend cache.
-- Claude / CodeX metrics aggregate cache wrappers, only if migration is low-risk.
+| Step | Cache | File | Pattern | Status |
+| --- | --- | --- | --- | --- |
+| E1 | `_lineCache` | `homeMetrics.js` | mtimeMs | ✅ migrated |
+| E6 | `_claudeAggregateCache` | `claudeMetrics.js` | mtimeMs+size | ✅ migrated |
+| E5 | `jsonlLineCache` | `claudeMetrics.js` | mtimeMs | ✅ migrated (gained clone + ENOENT) |
+| E16 | `_metricsAggregateCache` | `codexAgent.js` | mtimeMs+size | ✅ migrated (gained clone on GET) |
+| E15 | `jsonlLineCache` | `codexAgent.js` | mtimeMs | ✅ migrated (2 callers, gained clone + ENOENT) |
 
-Acceptance:
+**Test coverage:** `localDerivedCache.test.js` — 18 cases covering Pattern A/B, clone variants, ENOENT, edge cases. All existing tests pass (home-metrics, claude-context-usage, codex-git-metrics, codex-turn-tokens, codex-history-load-performance, sessionRegistry*, panel-composable-chain, undef).
 
-- Existing tests still pass.
-- No behavior change.
+**Not migrated (deferred to Phase 2/3):** TTL-based caches (E2, E3, E8, E9), registry read caches (E11, E12, R3), in-flight dedup (E7, E17), renderer caches (R1–R11).
 - Perf probes still report cache hit/miss.
 
 ### Phase 2: Registry Read Cache Contract

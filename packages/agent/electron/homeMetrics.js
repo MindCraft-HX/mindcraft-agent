@@ -5,6 +5,7 @@ const { app } = require('electron')
 const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { normalizeClaudeUsageForUi } = require('./claudeMetrics')
 const { normalizeCodexUsage } = require('./tokenMetrics/normalizer')
+const { createFileDerivedCache } = require('./shared/localDerivedCache')
 
 // ==================== 工具函数 ====================
 
@@ -47,23 +48,23 @@ function walkDir(dir, maxDepth, cb) {
   }
 }
 
+const _lineCache = createFileDerivedCache({
+  signature: 'mtimeMs',
+  clone: (v) => ({ lines: [...v.lines] }),
+})
+
 function readJsonlLinesCached(filePath) {
-  const now = Date.now()
   const cached = _lineCache.get(filePath)
+  if (cached) return cached.lines
   try {
-    const stat = fs.statSync(filePath)
-    if (cached && cached.mtimeMs === stat.mtimeMs) return [...cached.lines]
     const raw = fs.readFileSync(filePath, 'utf8')
     const lines = raw.split('\n').filter(l => l.trim())
-    _lineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
+    _lineCache.set(filePath, { lines })
     return lines
   } catch (_) {
-    // T183 Phase 0: evict stale entry when file is gone (deleted/moved)
-    if (cached) _lineCache.delete(filePath)
     return []
   }
 }
-const _lineCache = new Map()
 const _trendCache = new Map()
 
 // ==================== Claude JSONL 解析 ====================

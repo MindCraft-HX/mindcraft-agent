@@ -6,6 +6,7 @@ const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
 const https = require('https')
 const { perfStartIpc } = require('./shared/mainPerfProbe')
+const { createFileDerivedCache } = require('./shared/localDerivedCache')
 
 // ==================== JSONL 文件定位 ====================
 
@@ -68,27 +69,25 @@ function resolveJsonlPath(cliSessionId) {
 
 // ==================== JSONL 指标解析 ====================
 
-const jsonlLineCache = new Map() // filePath -> { lines: [], mtimeMs: 0 }
+// T183 Phase 1: migrated to createFileDerivedCache
+const jsonlLineCache = createFileDerivedCache({
+  signature: 'mtimeMs',
+  clone: (v) => ({ lines: [...v.lines] }),
+})
 
 // ==================== Aggregate Cache（Phase 1：消除主进程 fs.readFileSync 阻塞）====================
 // 与 CodeX _metricsAggregateCache 同模式：filePath + mtimeMs + size 作为缓存 key，
 // 缓存 getTokenMetrics + getSpeedMetrics 的合并结果。git 状态不进入缓存（独立 30s TTL）。
-const _claudeAggregateCache = new Map() // filePath -> { mtimeMs, size, cwd, result }
+// T183 Phase 1: migrated to createFileDerivedCache
+const _claudeAggregateCache = createFileDerivedCache({
+  signature: 'mtimeMs+size',
+  clone: (v) => ({ result: { ...v.result }, cwd: v.cwd || '' }),
+})
 const _pendingClaudeAggregates = new Map() // filePath -> Promise
 
 function getCachedClaudeAggregate(filePath) {
   if (!filePath) return null
-  const cached = _claudeAggregateCache.get(filePath)
-  if (!cached) return null
-  try {
-    const stat = fs.statSync(filePath)
-    if (stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
-      // 返回浅拷贝 + 拆分 cwd，防止调用方污染缓存
-      return { result: { ...cached.result }, cwd: cached.cwd || '' }
-    }
-  } catch (_) { /* 文件被删除 */ }
-  _claudeAggregateCache.delete(filePath)
-  return null
+  return _claudeAggregateCache.get(filePath)
 }
 
 function computeAndCacheClaudeAggregate(cliSessionId) {
@@ -114,13 +113,7 @@ function computeAndCacheClaudeAggregate(cliSessionId) {
   }
 
   try {
-    const stat = fs.statSync(filePath)
-    _claudeAggregateCache.set(filePath, {
-      mtimeMs: stat.mtimeMs,
-      size: stat.size,
-      cwd: cwd || '',
-      result: { ...result },
-    })
+    _claudeAggregateCache.set(filePath, { cwd: cwd || '', result: { ...result } })
   } catch (_) {}
 
   return result
@@ -217,16 +210,16 @@ function addNormalizedUsageToTotals(totals, normalized) {
 
 function readJsonlLines(filePath) {
   const stop = perfStartIpc('claude-metrics.readJsonlLines')
+  const cached = jsonlLineCache.get(filePath)
+  if (cached) {
+    stop({ cacheHit: 1, lines: cached.lines.length })
+    return cached.lines
+  }
   try {
     const stat = fs.statSync(filePath)
-    const cached = jsonlLineCache.get(filePath)
-    if (cached && cached.mtimeMs === stat.mtimeMs) {
-      stop({ cacheHit: 1, lines: cached.lines.length })
-      return cached.lines
-    }
     const raw = fs.readFileSync(filePath, 'utf8')
     const lines = raw.split('\n').filter(line => line.trim())
-    jsonlLineCache.set(filePath, { lines, mtimeMs: stat.mtimeMs })
+    jsonlLineCache.set(filePath, { lines })
     stop({ cacheHit: 0, lines: lines.length, fileSizeKB: Math.round(stat.size / 1024) })
     return lines
   } catch (_) {
