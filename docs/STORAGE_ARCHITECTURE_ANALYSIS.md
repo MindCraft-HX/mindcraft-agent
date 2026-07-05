@@ -1,6 +1,6 @@
 # MindCraft Storage Architecture Roadmap
 
-> Last updated: 2026-07-03  
+> Last updated: 2026-07-05  
 > Scope: SQLite foundation, CC Switch import, local storage migration, and final storage boundaries.
 
 ## 1. Decision
@@ -13,10 +13,35 @@ Current decision:
 |---|---|
 | SQLite foundation | Build first, with migrations, DAO boundaries, backup, and contract tests. |
 | CC Switch import | Implement early as a global System Settings import, because one CC Switch SQL export can contain both Claude and CodeX providers. |
-| Provider storage migration | Start now as the next storage phase. SQLite should become the authority for CodeX / ClaudeCode provider records, while legacy projection remains during the compatibility window. |
+| Provider storage migration | Implemented in T174. SQLite is now the authority for CodeX / ClaudeCode provider records, while legacy projection remains during the compatibility window. |
 | Full local storage migration | Do later, module by module, after the provider/import path is stable. |
 | Official CLI directories | Do not replace. Continue using official paths only for official CLI/SDK data. |
 | Existing provider-page import UI | Keep the compact `Import` button style, but scope it to local CLI config import only. CC Switch must not live in a single-agent provider panel. |
+
+## 1.1 Current Implemented State After T174
+
+Provider storage is no longer a future-only design. The current implementation state is:
+
+- Live schema version is v3 (`packages/agent/electron/db/schema.js`).
+- Provider repository lives at `packages/agent/electron/db/providerStorage/`.
+- CodeX / ClaudeCode provider reads and writes go through the repository-backed main-process IPC path.
+- DB reads are authoritative after backfill: `SQLite -> legacy fallback only when DB is empty -> backfill SQLite`.
+- Writes update SQLite first and mark provider rows for legacy projection.
+- Legacy provider stores remain compatibility projections for rollback, not permanent authorities.
+- Official runtime files remain required external contracts:
+  - CodeX: `~/.codex/config.toml`.
+  - ClaudeCode: `~/.claude/settings.json`.
+- Official runtime files are written only through explicit activation/repair adapters and must stay official-schema compatible.
+- Claude provider shape normalization is centralized in `packages/agent/electron/db/providerStorage/claudeShape.js`.
+- DB v3 performs one-time cleanup for historical Claude provider config pollution, moving MindCraft-only fields such as app locale, website, note, and permission policy into metadata where appropriate.
+- T174 intentionally did not migrate session registry, panel state, Simple Chat records, official transcripts, file blobs, or token metrics.
+
+Known follow-up items:
+
+- Define the legacy provider projection removal window after the 1.1.x compatibility period.
+- T164 still owns visual drag-and-drop sorting; T174 only needs repository-level ordering correctness.
+- T175 still owns Simple Chat storage.
+- If future code calls repository `setActiveProvider()` directly, ensure it marks rows for projection or immediately projects; current UI paths mostly save through `setProviders()`, but the repository API should remain hard to misuse.
 
 ## 2. Current Problems
 
@@ -154,6 +179,8 @@ Make SQLite the authority for MindCraft provider records.
 
 Execution entry: `docs/plan/2026-07-03-provider-storage-migration.md`.
 
+Status: implemented in T174. Keep this section as the boundary contract and regression checklist.
+
 During the transition, keep compatibility projections:
 
 | Target | Purpose |
@@ -241,7 +268,7 @@ Compatibility note:
 - Official runtime files such as `~/.codex/config.toml` and `~/.claude/settings.json` remain required projections.
 - MindCraft-owned legacy provider stores should not remain permanent authorities. After the compatibility window, SQLite should be the only local authority for provider records, with official runtime files generated/applied from that authority.
 
-## 5. Initial Schema Sketch
+## 5. Current Provider Schema
 
 ```sql
 CREATE TABLE providers (
@@ -253,17 +280,17 @@ CREATE TABLE providers (
   is_active INTEGER NOT NULL DEFAULT 0,
   source TEXT NOT NULL DEFAULT 'mindcraft',
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  sort_index INTEGER NOT NULL DEFAULT 0,
+  projection_status TEXT NOT NULL DEFAULT 'pending',
+  last_projected_at INTEGER
 );
 
 CREATE INDEX idx_providers_agent_active
   ON providers(agent_type, is_active);
 
-CREATE TABLE settings (
-  key TEXT PRIMARY KEY,
-  value_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
+CREATE INDEX idx_providers_agent_sort
+  ON providers(agent_type, sort_index, updated_at);
 
 CREATE TABLE import_runs (
   id TEXT PRIMARY KEY,
@@ -274,7 +301,7 @@ CREATE TABLE import_runs (
 );
 ```
 
-Session tables should be designed later, after provider/settings migration proves stable.
+There is no live Simple Chat schema in T174. Session and settings tables should be designed later, after provider/settings migration proves stable.
 
 ## 6. SQLite Size And Maintenance Policy
 
@@ -306,13 +333,14 @@ Maintenance rules:
 |---|---|
 | T159 | Storage architecture roadmap: SQLite foundation, local storage migration, final boundary contract. |
 | T162 | Import dialog and CC Switch provider import, implemented on top of the new provider/import storage path. |
-| T174 | Provider storage migration: SQLite authority, legacy fallback/backfill/projection, ordering, and provider repository. |
+| T174 | Completed provider storage migration: SQLite authority, legacy fallback/backfill/projection, ordering, provider repository, and DB v3 cleanup for historical Claude provider pollution. |
 | T175 | Future lightweight Chat storage migration: SQLite thread/index metadata plus userData message files; not part of T174. |
 
 ## 8. Open Questions
 
 - Confirm when to reassess `sql.js` vs `better-sqlite3`. Current provider/config scope does not require native SQLite.
-- Decide whether provider activation should immediately project to official config, or only when user presses repair/apply.
-- Define the exact legacy provider file compatibility window after T174 ships.
-- Decide whether T164 drag-and-drop sorting is implemented inside T174 or immediately after repository migration.
+- Define the exact legacy provider file compatibility window after T174 ships in 1.1.x.
+- Decide when to stop projecting MindCraft-owned provider lists to legacy stores.
+- Decide whether repository-level `setActiveProvider()` should itself mark projection pending, even if current UI paths mostly go through full provider saves.
+- Implement T164 visual drag-and-drop sorting on top of existing repository order support.
 - Decide T175 Simple Chat table/file format after T174 stabilizes; do not create unused chat schema during T174.

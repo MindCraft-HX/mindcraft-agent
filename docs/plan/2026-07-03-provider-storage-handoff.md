@@ -4,6 +4,27 @@
 > Owner for implementation: ClaudeCode  
 > Review target: make provider storage SQLite-authoritative without migrating session/panel/chat records.
 
+> 2026-07-05 status: T174 implementation is complete. Keep this document as the original execution plan and acceptance checklist. Current state is summarized in `docs/STORAGE_ARCHITECTURE_ANALYSIS.md#11-current-implemented-state-after-t174`.
+
+## 0. Completion Notes
+
+Implemented state:
+
+- SQLite provider storage is authoritative for CodeX and ClaudeCode provider records.
+- Provider repository is implemented in `packages/agent/electron/db/providerStorage/`.
+- DB schema is at v3. v2 added provider order/projection bookkeeping; v3 performs one-time Claude provider config cleanup.
+- `codex-get-providers`, `codex-set-providers`, `claude-get-providers`, and `claude-set-providers` use repository-backed storage.
+- System import/export uses repository-backed provider data.
+- Legacy provider projection remains for rollback compatibility.
+- Official runtime files remain explicit projections only: `~/.codex/config.toml` and `~/.claude/settings.json`.
+
+Remaining follow-up:
+
+- Define and execute the legacy projection removal window after the 1.1.x compatibility period.
+- Implement T164 visual drag-and-drop sorting on top of existing repository ordering.
+- Keep T175 Simple Chat storage separate; do not add chat message bodies to `mindcraft.db` while using `sql.js`.
+- Harden direct repository `setActiveProvider()` semantics if future callers bypass full provider saves.
+
 ## 1. Read First
 
 ClaudeCode should read these before coding:
