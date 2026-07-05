@@ -587,8 +587,13 @@ function getCodexSessionsTreeSignature(dir) {
       parts.push(`${current}:${Math.trunc(stat.mtimeMs)}:${stat.size}`)
       const entries = fs.readdirSync(current, { withFileTypes: true })
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue
-        visit(path.join(current, entry.name))
+        const fullPath = path.join(current, entry.name)
+        if (entry.isDirectory()) {
+          visit(fullPath)
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.jsonl')) {
+          const fileStat = fs.statSync(fullPath)
+          parts.push(`${fullPath}:${Math.trunc(fileStat.mtimeMs)}:${fileStat.size}`)
+        }
       }
     }
     visit(dir)

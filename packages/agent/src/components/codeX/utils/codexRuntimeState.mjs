@@ -13,6 +13,7 @@ export {
   markCodexTerminalSeen,
   markCodexTurnAccepted,
   markCodexTurnStarting,
+  mergeCodexUpdatedAt,
   mergeScannedCodexChats,
   mergeScannedChatsPreservingRuntime,
   sanitizeCodexPersistedMetrics,

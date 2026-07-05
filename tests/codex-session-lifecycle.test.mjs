@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   CODEX_RUNTIME_STATES,
   isCodexTurnLocked,
+  mergeCodexUpdatedAt,
   mergeScannedChatsPreservingRuntime,
   shouldHydrateHistoryFromDisk,
   shouldSyncThinkingFromMetrics,
@@ -50,6 +51,18 @@ test('cold-restored session must not stay locked by stale awaitingDone flag', ()
   const restored = { thinking: false, _awaitingDone: false }
   assert.equal(isCodexTurnLocked(restored), false)
   assert.equal(shouldHydrateHistoryFromDisk(restored), true)
+})
+
+test('scan metadata must not roll back newer local Codex updatedAt', () => {
+  assert.equal(
+    mergeCodexUpdatedAt('2026-07-06T10:00:00.000Z', '2026-07-06T09:00:00.000Z'),
+    '2026-07-06T10:00:00.000Z',
+  )
+  assert.equal(
+    mergeCodexUpdatedAt('2026-07-06T10:00:00.000Z', '2026-07-06T11:00:00.000Z'),
+    '2026-07-06T11:00:00.000Z',
+  )
+  assert.equal(mergeCodexUpdatedAt(null, '2026-07-06T09:00:00.000Z'), '2026-07-06T09:00:00.000Z')
 })
 
 test('scan merge preserves unbound running Codex chat omitted by transcript scan', () => {

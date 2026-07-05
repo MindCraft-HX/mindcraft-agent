@@ -271,6 +271,7 @@ import {
   markCodexTurnAccepted,
   markCodexTurnStarting,
   isCodexTurnLocked,
+  mergeCodexUpdatedAt,
   mergeScannedChatsPreservingRuntime,
   sanitizeCodexPersistedMetrics,
   shouldHydrateHistoryFromDisk,
@@ -1454,7 +1455,7 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
     if (cached) {
       if (!cached._userRenamed) cached.name = name
       cached.createdAt = summary.createdAt || null
-      cached.updatedAt = summary.updatedAt || null
+      cached.updatedAt = mergeCodexUpdatedAt(cached.updatedAt, summary.updatedAt)
       cached.filePath = summary.filePath || ''
       cached.cliSessionId = providerSessionId || cached.cliSessionId
       cached.sessionId = cached.sessionId || summary.chatKey || `codex-session-${cached.id}-${Date.now()}`
@@ -1545,7 +1546,7 @@ async function refreshProjectSessionsInBackground(project) {
       if (cached) {
         if (!cached._userRenamed) cached.name = name
         cached.createdAt = summary.createdAt || null
-        cached.updatedAt = summary.updatedAt || null
+        cached.updatedAt = mergeCodexUpdatedAt(cached.updatedAt, summary.updatedAt)
         cached.filePath = summary.filePath || ''
         cached.cliSessionId = providerSessionId || cached.cliSessionId
         cached.sessionId = cached.sessionId || summary.chatKey || `codex-session-${cached.id}-${Date.now()}`
@@ -2291,7 +2292,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }
   if (!Array.isArray(tab.inputHistory)) tab.inputHistory = []
   pushToHistory(text, tab.inputHistory)
-  saveHistory({ immediate: true })
+  saveHistory({ immediate: true, force: true })
   smartScrollBottom()
 
   // 携带上轮压缩摘要（新会话首个 prompt）

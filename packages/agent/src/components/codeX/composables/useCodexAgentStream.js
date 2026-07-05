@@ -890,9 +890,17 @@ export function useCodexAgentStream({
     // T182: agent 完成后精准更新 fileSize，替代等扫描
     if (filePath && !detachResume) {
       window.electronAPI.codexGetFileStat?.(filePath).then(stat => {
-        if (!stat || !tab || tab.fileSize === stat.size) return
-        tab.fileSize = stat.size
-        saveHistory()  // 普通 debounce，不阻塞 done 主流程
+        if (!stat || !tab) return
+        let changed = false
+        if (tab.fileSize !== stat.size) {
+          tab.fileSize = stat.size
+          changed = true
+        }
+        if (stat.mtime && new Date(stat.mtime).getTime() > new Date(tab.updatedAt || 0).getTime()) {
+          tab.updatedAt = stat.mtime
+          changed = true
+        }
+        if (changed) saveHistory({ immediate: true, force: true })
       }).catch(() => {})
     }
     if (ownerProject && reason === 'completed') {

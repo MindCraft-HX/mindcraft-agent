@@ -124,6 +124,22 @@ describe('useCodexHistory — characterization', () => {
       assert.equal(payloads.length, 1)
     })
 
+    it('forced immediate save bypasses cooldown for terminal metadata', () => {
+      let pc = 0, cc = 0, mi = 0
+      const projects = ref([])
+      const h = useCodexHistory({
+        projects, setProjects: v => projects.value = v,
+        getProjectCounter: () => pc, setProjectCounter: v => { pc = v },
+        getChatCounter: () => cc, setChatCounter: v => { cc = v },
+        getMsgId: () => mi, setMsgId: v => { mi = v },
+        makeRestoredChat: (c, m) => ({ ...c, messages: m }),
+        filterMessage: identityFilter,
+      })
+      h.saveHistory({ immediate: true })
+      h.saveHistory({ immediate: true, force: true })
+      assert.equal(payloads.length, 2)
+    })
+
     it('panel state includes CodeX-specific fields', () => {
       let pc = 0, cc = 0, mi = 0
       const projects = ref([{

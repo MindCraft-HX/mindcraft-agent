@@ -30,6 +30,19 @@ function touchRuntimeUpdatedAt(tab, now = Date.now()) {
   return tab
 }
 
+function toTime(value) {
+  const time = new Date(value || 0).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+export function mergeCodexUpdatedAt(localValue, providerValue) {
+  const localTime = toTime(localValue)
+  const providerTime = toTime(providerValue)
+  if (!localTime) return providerValue || null
+  if (!providerTime) return localValue || null
+  return providerTime > localTime ? providerValue : localValue
+}
+
 function clearRuntimeState(tab) {
   if (!tab) return tab
   delete tab[RUNTIME_FIELD]

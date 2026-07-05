@@ -79,8 +79,8 @@ export function useAgentHistory({
     })
   }
 
-  function persistNow(skipStreaming) {
-    if (cooldownGuard()) { perfCount('saveHistory.cooldownSkip'); return }
+  function persistNow(skipStreaming, { force = false } = {}) {
+    if (!force && cooldownGuard()) { perfCount('saveHistory.cooldownSkip'); return }
     const stopBuild = perfStart('saveHistory.build')
     const payload = buildPanelStatePayload({ skipStreaming })
     stopBuild()
@@ -88,17 +88,17 @@ export function useAgentHistory({
       const stopClone = perfStart('saveHistory.clone')
       const clean = JSON.parse(JSON.stringify(payload))
       stopClone()
-      adapter.saveAsync(clean)?.catch(() => {})
+      adapter.saveAsync(clean, { force })?.catch(() => {})
     } catch (_) {}
   }
 
-  function saveHistory({ immediate = false } = {}) {
+  function saveHistory({ immediate = false, force = false } = {}) {
     if (immediate) {
       if (historySaveTimer) {
         clearTimeout(historySaveTimer)
         historySaveTimer = null
       }
-      persistNow(true)
+      persistNow(true, { force })
       return
     }
     if (historySaveTimer) clearTimeout(historySaveTimer)

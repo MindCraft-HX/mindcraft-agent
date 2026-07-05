@@ -85,9 +85,10 @@ function runListSessionsByCwdCachesSummariesTest() {
       const sessions = __test__.listSessionsByCwd('D:/repo')
       assert.equal(sessions.length, 1)
       assert.equal(sessions[0].name, 'Cached title')
-      // T183 Phase 1: outer scan cache (_codexScanByCwdCache) caches rawSummaries,
-      // so second call skips extractSessionSummary entirely — 0 JSONL stats.
-      assert.equal(jsonlStatCount, 0)
+      // T183/T185: outer scan cache still skips JSONL parsing, but the scan
+      // signature must stat JSONL files so growing rollout files invalidate
+      // stale updatedAt/fileSize summaries.
+      assert.equal(jsonlStatCount, 1)
     } finally {
       fs.statSync = oldStatSync
       __test__.clearCodexJsonlCaches()
@@ -95,6 +96,47 @@ function runListSessionsByCwdCachesSummariesTest() {
   })
 }
 
+function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
+  withTempDir((dir) => {
+    const sessionsDir = path.join(dir, 'sessions')
+    const dayDir = path.join(sessionsDir, '2026', '07', '01')
+    fs.mkdirSync(dayDir, { recursive: true })
+
+    const threadId = `thread-grow-${Date.now()}`
+    const filePath = path.join(dayDir, `rollout-${threadId}.jsonl`)
+    writeJsonl(filePath, [
+      {
+        timestamp: '2026-07-01T08:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: threadId, cwd: 'D:/repo', timestamp: '2026-07-01T08:00:00.000Z' },
+      },
+      { type: 'event_msg', payload: { type: 'user_message', message: 'Initial title' } },
+    ])
+
+    __test__.setSessionsDirForTest(sessionsDir)
+    const before = __test__.listSessionsByCwd('D:/repo')
+    assert.equal(before.length, 1)
+    assert.equal(before[0].name, 'Initial title')
+    const beforeSize = before[0].fileSize
+
+    fs.appendFileSync(filePath, JSON.stringify({
+      timestamp: '2026-07-01T09:00:00.000Z',
+      type: 'event_msg',
+      payload: { type: 'agent_message', message: 'Later response' },
+    }) + '\n', 'utf8')
+    const later = new Date(Date.now() + 2000)
+    fs.utimesSync(filePath, later, later)
+
+    const after = __test__.listSessionsByCwd('D:/repo')
+    assert.equal(after.length, 1)
+    assert.ok(after[0].fileSize > beforeSize)
+    assert.notEqual(after[0].updatedAt, before[0].updatedAt)
+
+    __test__.clearCodexJsonlCaches()
+  })
+}
+
 runReadSessionFileRangeSkipsNoisyTailTest()
 runListSessionsByCwdCachesSummariesTest()
+runListSessionsByCwdInvalidatesWhenJsonlGrowsTest()
 console.log('codex history load performance tests passed')
