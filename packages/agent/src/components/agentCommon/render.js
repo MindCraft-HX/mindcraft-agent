@@ -9,9 +9,6 @@ import {
 } from './markdown/localPathTokenizer.js'
 export { markdownItLocalPathPlugin } from './markdown/localPathPlugin.js'
 
-// T179 Phase 3: 确保 RC stats API 在 window 上可用（防止 production build tree-shake）
-ensureRcProbeWindowApi()
-
 const EXT_LANG_MAP = {
   py: 'python', js: 'javascript', ts: 'typescript', tsx: 'typescript',
   jsx: 'javascript', vue: 'xml', html: 'html', css: 'css', json: 'json',
@@ -605,6 +602,9 @@ function renderNestedList(lines, startIdx) {
  */
 export function renderContent(text, label) {
   if (!text) return ''
+
+  // T179 Phase 3: 首次调用时挂载 window RC stats API（放函数体内防 production tree-shake）
+  ensureRcProbeWindowApi()
 
   // T179 Phase 3: 文本→HTML 缓存 — renderContent 是纯函数，同 text 总是同 HTML
   const cached = renderCache.get(text)
