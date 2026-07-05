@@ -2264,7 +2264,7 @@ async function sendMessage(textOverride = null, targetTab = null) {
     tab.messages.push(userMsg)
     touchChatUpdatedAt(tab)
     // T182: 发送后即时排序，让最新 session 自动置顶
-    sortChatsByRecency((activeProj.value || activeProject.value)?.chats)
+    if (ownerProject?.chats) sortChatsByRecency(ownerProject.chats)
   }
   // 飞行锁 + 乐观 thinking：必须在 await 之前设置 thinking=true。
   // 后端 Promise 在 finally 中 resolve，晚于 codex-agent-done 事件发送。
