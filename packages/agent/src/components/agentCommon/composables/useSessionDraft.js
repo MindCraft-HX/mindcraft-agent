@@ -24,7 +24,9 @@ export function useSessionDraft({
   const DRAFT_CACHE_MAX = 200
   function _draftCacheSet(key, value) {
     if (_draftCache.size >= DRAFT_CACHE_MAX && !_draftCache.has(key)) {
-      // LRU eviction: delete oldest entry (Map iteration is insertion-ordered)
+      // FIFO bounded cache: when at capacity, evict oldest entry (Map insertion order).
+      // Cache hit and re-set of an existing key do NOT refresh position — not strict LRU,
+      // but bounded growth is the primary goal here.
       const oldest = _draftCache.keys().next().value
       _draftCache.delete(oldest)
     }
