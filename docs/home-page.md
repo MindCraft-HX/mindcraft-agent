@@ -72,6 +72,10 @@ Home 页是 MindCraft-Agent 的启动面板，路径为 `/main/home`。首次启
 
 缓存策略：按文件 mtime 缓存 JSONL 行，仅重解析变更文件。
 
+注意：Home 页是历史用量聚合，不消费 `TurnStore` 当前回合 snapshot，也不显示实时
+StatusBar 指标。会话内 metrics 修复不会自动改变 Home 页算法；Home 页会在刷新/重启后
+重新扫描官方 JSONL 并按当前算法计算。
+
 ### 趋势图数据计算（方案A）
 
 `cache_read_input_tokens` 是 `input_tokens` 的子集，两者不能叠加，否则缓存占比虚高掩盖其他数据。
@@ -83,6 +87,8 @@ Home 页是 MindCraft-Agent 的启动面板，路径为 `/main/home`。首次启
 ```
 
 - Codex 的 `cached_input_tokens` 语义等价于 Claude 的 `cache_read_input_tokens`，统一处理。
+- Codex `total_token_usage` 是 session 累积值：总量统计取文件里的最后一个 cumulative total；
+  每日趋势和今日统计按相邻 cumulative total 的差值归属到对应日期，不能把整份历史累计压到最后一天。
 - 今日统计中"缓存"数字仅显示缓存命中数（cacheReadTokens），不含 cache_creation。
 - 已去掉"费用"统计（按 API 标准费率估算不准确，意义有限）。
 

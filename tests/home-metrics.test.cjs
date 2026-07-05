@@ -134,6 +134,49 @@ function runParseCodexLinesUsesCumulativeTotalsTest() {
   assert.equal(result.cacheRead, 2200)
 }
 
+function runParseCodexLinesDateMapUsesCumulativeDeltasTest() {
+  const lines = [
+    line({
+      timestamp: '2026-06-24T10:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 1000,
+            cached_input_tokens: 800,
+            output_tokens: 100,
+          },
+        },
+      },
+    }),
+    line({
+      timestamp: '2026-06-25T10:01:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 2500,
+            cached_input_tokens: 2200,
+            output_tokens: 300,
+          },
+        },
+      },
+    }),
+  ]
+
+  const result = __test__.parseCodexLines(lines)
+  const previousDay = result.dateMap.get('2026-06-24')
+  const today = result.dateMap.get('2026-06-25')
+  assert.equal(previousDay.input, 200)
+  assert.equal(previousDay.output, 100)
+  assert.equal(previousDay.cacheRead, 800)
+  assert.equal(today.input, 100)
+  assert.equal(today.output, 200)
+  assert.equal(today.cacheRead, 1400)
+}
+
 function runParseCodexLinesSumsLastUsageWhenTotalsAreMissingTest() {
   const lines = [
     line({
@@ -183,6 +226,7 @@ function run() {
   runParseClaudeLinesThirdPartyModelTest()
   runParseClaudeLinesSumsHistoricalCacheReadTest()
   runParseCodexLinesUsesCumulativeTotalsTest()
+  runParseCodexLinesDateMapUsesCumulativeDeltasTest()
   runParseCodexLinesSumsLastUsageWhenTotalsAreMissingTest()
   runEstimateClaudeCostUsesRegularInputPlusCacheCreationTest()
   console.log('home metrics tests passed')

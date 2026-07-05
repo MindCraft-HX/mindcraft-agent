@@ -147,9 +147,11 @@ function parseCodexLines(lines) {
     dateMap.set(d, cur)
   }
 
-  // H2+H3 修复：取末个 token_count 事件的 total_token_usage（累积值），不跨事件累加
+  // Full-session totals use the last cumulative total_token_usage, while dateMap
+  // uses adjacent deltas so old session history is not counted as today's usage.
   let lastInp = 0, lastOut = 0, lastCr = 0, lastCc = 0, lastTs = null
   let sawTotalUsage = false
+  let previousTotalNorm = null
   let fallbackInput = 0, fallbackOutput = 0, fallbackCacheRead = 0, fallbackCacheCreation = 0
   const fallbackDateMap = new Map()
 
@@ -167,11 +169,21 @@ function parseCodexLines(lines) {
         if (hasUsageFields(usage)) {
           sawTotalUsage = true
           const norm = normalizeCodexUsage(usage)
+          const delta = previousTotalNorm
+            ? {
+                inputTokens: Math.max(0, norm.inputTokens - previousTotalNorm.inputTokens),
+                outputTokens: Math.max(0, norm.outputTokens - previousTotalNorm.outputTokens),
+                cacheReadTokens: Math.max(0, norm.cacheReadTokens - previousTotalNorm.cacheReadTokens),
+                cacheCreationTokens: Math.max(0, norm.cacheCreationTokens - previousTotalNorm.cacheCreationTokens),
+              }
+            : norm
           lastInp = norm.inputTokens
           lastOut = norm.outputTokens
           lastCr = norm.cacheReadTokens
           lastCc = norm.cacheCreationTokens
           lastTs = ts
+          addToDate(ts, delta.inputTokens, delta.outputTokens, delta.cacheReadTokens, delta.cacheCreationTokens)
+          previousTotalNorm = norm
         } else if (!sawTotalUsage && hasUsageFields(lastUsage)) {
           const norm = normalizeCodexUsage(lastUsage)
           fallbackInput += norm.inputTokens
@@ -198,7 +210,6 @@ function parseCodexLines(lines) {
     totalOutput = lastOut
     totalCacheRead = lastCr
     totalCacheCreation = lastCc
-    addToDate(lastTs, totalInput, lastOut, lastCr, lastCc)
   } else if (hasTokens) {
     totalInput = fallbackInput
     totalOutput = fallbackOutput
@@ -245,11 +256,12 @@ function getTodayStats() {
       const lines = readJsonlLinesCached(filePath)
       if (!lines.length) return
       const result = parseClaudeLines(lines)
-      if (result.input > 0 || result.output > 0) {
-        claude.inputTokens += result.input
-        claude.outputTokens += result.output
-        claude.cacheReadTokens += result.cacheRead
-        claude.cacheCreationTokens += result.cacheCreation
+      const todayStats = result.dateMap.get(today)
+      if (todayStats && (todayStats.input > 0 || todayStats.output > 0 || todayStats.cacheRead > 0 || todayStats.cacheCreation > 0)) {
+        claude.inputTokens += todayStats.input
+        claude.outputTokens += todayStats.output
+        claude.cacheReadTokens += todayStats.cacheRead
+        claude.cacheCreationTokens += todayStats.cacheCreation
         claude.sessionCount++
       }
     })
@@ -267,11 +279,12 @@ function getTodayStats() {
       const lines = readJsonlLinesCached(filePath)
       if (!lines.length) return
       const result = parseCodexLines(lines)
-      if (result.input > 0 || result.output > 0) {
-        codex.inputTokens += result.input
-        codex.outputTokens += result.output
-        codex.cacheReadTokens += result.cacheRead
-        codex.cacheCreationTokens += result.cacheCreation
+      const todayStats = result.dateMap.get(today)
+      if (todayStats && (todayStats.input > 0 || todayStats.output > 0 || todayStats.cacheRead > 0 || todayStats.cacheCreation > 0)) {
+        codex.inputTokens += todayStats.input
+        codex.outputTokens += todayStats.output
+        codex.cacheReadTokens += todayStats.cacheRead
+        codex.cacheCreationTokens += todayStats.cacheCreation
         codex.sessionCount++
       }
     })
