@@ -1,4 +1,4 @@
-# T182 Cache Governance / Local Derived Data Boundary
+# T183 Cache Governance / Local Derived Data Boundary
 
 > Date: 2026-07-05
 > Status: registered, not implemented
@@ -196,7 +196,7 @@ Acceptance:
 
 ## 8. Handoff For ClaudeCode
 
-Task: T182 Cache Governance / Local Derived Data Boundary.
+Task: T183 Cache Governance / Local Derived Data Boundary.
 
 Start with Phase 0 only.
 
