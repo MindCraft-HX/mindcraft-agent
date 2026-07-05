@@ -1615,6 +1615,10 @@ function repairSessionRegistry(options = {}) {
     report.error = e?.message || String(e)
     report.warnings.push('repair failed after backup; restore from backupPath if needed')
   }
+  // T183 Phase 2: repair may rename chatKeys (polluted key detection);
+  // cached draft/instruction lookups keyed by old chatKey are now stale.
+  _draftCache.clear()
+  _instructionCache.clear()
   report.finishedAt = new Date().toISOString()
   return report
 }

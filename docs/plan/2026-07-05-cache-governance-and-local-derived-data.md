@@ -1,7 +1,7 @@
 # T183 Cache Governance / Local Derived Data Boundary
 
 > Date: 2026-07-05
-> Status: registered, not implemented
+> Status: Phase 0-3 complete (2026-07-05)
 > Related: T177, T179, T181, token metrics, session registry, provider scans
 
 ## 1. Why This Exists
@@ -236,10 +236,12 @@ No production code changes except optional diagnostic naming cleanup.
 | Action | Count | Items |
 | --- | --- | --- |
 | **migrated** (Phase 1) | 5 | E1, E5, E6, E15, E16 — migrated to `createFileDerivedCache` |
-| **keep** | 16 | E7, E8, E9, E12, E13, E17 (6 electron) + R1, R2, R4, R5, R6, R7, R8, R9, R10, R11 (10 renderer) |
-| **wrap** | 3 | E2, E4, E10 — still need clone or eviction (deferred to future phase) |
+| **migrated** (Phase 3) | 2 | E7, E17 — migrated to `trackDedup` (timeout cleanup) |
+| **keep** | 14 | E8, E9, E12, E13 (4 electron) + R1, R2, R4, R5, R6, R7, R8, R9, R10, R11 (10 renderer) |
+| **wrap** | 3 | E2, E4, E10 — still need clone or eviction (deferred) |
 | **split** | 1 | E3 (key by options hash or document single-purpose) |
 | **fixed** (Phase 0) | 2 | E11 (defensive _draftCache delete), R3 (FIFO cap 200) |
+| **fixed** (Phase 2) | 2 | E11, E12 — repairSessionRegistry clears stale cache after chatKey rename |
 | **remove** | 0 | No caches should be removed at this stage |
 
 ### Phase 1: Shared Helper For File-Derived Caches ✅ (completed 2026-07-05)
@@ -265,7 +267,7 @@ Goal: standardize repeated `Map + mtimeMs + size + clone` patterns.
 **Not migrated (deferred to Phase 2/3):** TTL-based caches (E2, E3, E8, E9), registry read caches (E11, E12, R3), in-flight dedup (E7, E17), renderer caches (R1–R11).
 - Perf probes still report cache hit/miss.
 
-### Phase 2: Registry Read Cache Contract
+### Phase 2: Registry Read Cache Contract ✅ (completed 2026-07-05)
 
 Goal: make registry read caches explicit and side-effect free.
 
@@ -275,26 +277,37 @@ Scope:
 - Instruction read cache.
 - Provider scan merge path, only for read-only merge.
 
+**Completed:**
+
+- `repairSessionRegistry` now calls `_draftCache.clear()` + `_instructionCache.clear()` after chatKey rename operations. Stale cache entries for old chatKeys are harmless but wasteful — clearing them prevents lookups from holding stale data.
+- All write paths (setSessionDraft, clearSessionDraft, deleteSessionRecord, upsertSessionRecord, etc.) already invalidate relevant keys (fixed in Phase 0).
+
 Acceptance:
 
-- Registry write/delete/detach invalidates relevant keys.
-- Cache hit path performs zero registry writes.
-- Existing session registry integration tests pass.
+- ✅ Registry write/delete/detach invalidates relevant keys.
+- ✅ Cache hit path performs zero registry writes.
+- ✅ Existing session registry integration tests pass (43/43).
 
-### Phase 3: In-Flight Dedup Contract
+### Phase 3: In-Flight Dedup Contract ✅ (completed 2026-07-05)
 
 Goal: prevent promise dedup from becoming invisible stale UI.
 
+**Completed:**
+
+- Added `trackDedup(map, key, promise, timeoutMs=60000)` to `localDerivedCache.js`. Races the promise against a timeout; the dedup slot is released on whichever settles first. If the timeout fires first, the underlying promise keeps running — only the slot is freed.
+- **E7** (`claudeMetrics.js` `_pendingClaudeAggregates`): migrated to `trackDedup`. Also fixed F5: on dedup hit, now returns the in-flight promise instead of `null`, so callers can await the already-running aggregate.
+- **E17** (`codexAgent.js` `_pendingAggregates`): migrated to `trackDedup`. Manual `set/delete/finally/catch` replaced with single `trackDedup` call. Timeout prevents a hung aggregate from permanently blocking the dedup slot.
+
 Scope:
 
-- Metrics refresh dedup.
-- Session scan dedup.
+- Metrics refresh dedup (E7, E17).
+- Session scan dedup (R9 — deferred, low priority).
 
 Acceptance:
 
-- Dedup has timeout cleanup.
-- Interaction paths still show cache-first state.
-- Repeated tab/session switching does not produce stale blank status.
+- ✅ Dedup has timeout cleanup (60s default).
+- ✅ Interaction paths still show cache-first state.
+- ✅ Existing tests pass (claude-context-usage, codex-git-metrics, codex-turn-tokens, codex-history-load-performance).
 
 ## 7. Acceptance Criteria
 

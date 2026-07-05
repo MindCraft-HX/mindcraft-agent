@@ -6,7 +6,7 @@ const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
 const https = require('https')
 const { perfStartIpc } = require('./shared/mainPerfProbe')
-const { createFileDerivedCache } = require('./shared/localDerivedCache')
+const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
 
 // ==================== JSONL 文件定位 ====================
 
@@ -121,20 +121,17 @@ function computeAndCacheClaudeAggregate(cliSessionId) {
 
 function scheduleBackgroundClaudeAggregate(cliSessionId) {
   const filePath = resolveJsonlPath(cliSessionId)
-  if (!filePath || _pendingClaudeAggregates.has(filePath)) return null
+  if (!filePath) return null
+  // F5 fix: return in-flight promise so callers can await, not just null
+  if (_pendingClaudeAggregates.has(filePath)) return _pendingClaudeAggregates.get(filePath)
 
   const promise = (async () => {
-    try {
-      // yield to event loop before heavy work
-      await new Promise(resolve => setImmediate(resolve))
-      return computeAndCacheClaudeAggregate(cliSessionId)
-    } finally {
-      _pendingClaudeAggregates.delete(filePath)
-    }
+    // yield to event loop before heavy work
+    await new Promise(resolve => setImmediate(resolve))
+    return computeAndCacheClaudeAggregate(cliSessionId)
   })()
 
-  _pendingClaudeAggregates.set(filePath, promise)
-  return promise
+  return trackDedup(_pendingClaudeAggregates, filePath, promise)
 }
 
 function clearClaudeMetricsCaches() {

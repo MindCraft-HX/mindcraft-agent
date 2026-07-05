@@ -150,4 +150,41 @@ function createFileDerivedCache(options = {}) {
   return { get, set, has, delete: _delete, clear }
 }
 
-module.exports = { createFileDerivedCache }
+/**
+ * Track an in-flight promise in a deduplication map, with optional timeout.
+ *
+ * Stores {promise} at {map}[{key}] immediately. When the promise settles
+ * OR the timeout fires (whichever comes first), the entry is removed from
+ * the map — releasing the dedup slot so a subsequent caller can start a
+ * new operation for the same key.
+ *
+ * If the timeout fires first, the underlying promise keeps running
+ * (no abort) — only the dedup slot is released.
+ *
+ * @param {Map} map   - Dedup map (key → Promise)
+ * @param {*} key     - Map key (typically a filePath string)
+ * @param {Promise} promise - The in-flight async operation
+ * @param {number} [timeoutMs=60000] - Max time (ms) before the dedup slot
+ *   is released. Pass 0 to disable (cleanup only on settle).
+ * @returns {Promise} The original promise, so callers can await if needed.
+ */
+function trackDedup(map, key, promise, timeoutMs = 60000) {
+  map.set(key, promise)
+
+  const cleanup = () => { map.delete(key) }
+
+  if (timeoutMs > 0) {
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('DEDUP_TIMEOUT')), timeoutMs)
+    })
+    // Race: whichever settles first triggers cleanup.
+    // We catch the rejection so unhandled-rejection doesn't fire on timeout.
+    Promise.race([promise, timeout]).finally(cleanup).catch(() => {})
+  } else {
+    promise.finally(cleanup)
+  }
+
+  return promise
+}
+
+module.exports = { createFileDerivedCache, trackDedup }

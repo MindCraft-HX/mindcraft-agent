@@ -12,7 +12,7 @@ const { extractCodexSessionSummary } = require('./sessionTitleUtils')
 const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
-const { createFileDerivedCache } = require('./shared/localDerivedCache')
+const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
 const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, findRegistryRecordForProviderScan, mergeRegistryFieldsIntoScanSummary, ensureRegistryFromProviderScan, repairSessionRegistry, restorePanelStateFromSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
@@ -680,17 +680,13 @@ function getCachedMetricsAggregate(filePath) {
   return _metricsAggregateCache.get(filePath)
 }
 
-// T177: 后台聚合去重 — 同 filePath 同时只跑一份
+// T177/T183: 后台聚合去重 — 同 filePath 同时只跑一份，带超时释放
 const _pendingAggregates = new Map() // filePath → Promise
 
 function scheduleBackgroundAggregate(filePath, model, cwd, sender, sessionId) {
   if (!filePath || _pendingAggregates.has(filePath)) return
   const promise = (async () => {
-    try {
-      await getCodexSessionMetricsByFile(filePath, model || '', cwd || '')
-    } finally {
-      _pendingAggregates.delete(filePath)
-    }
+    await getCodexSessionMetricsByFile(filePath, model || '', cwd || '')
     // 聚合完成后通过 push 通道通知 renderer（仅推送 session context 字段）
     if (sender && !sender.isDestroyed()) {
       const cached = getCachedMetricsAggregate(filePath)
@@ -709,8 +705,8 @@ function scheduleBackgroundAggregate(filePath, model, cwd, sender, sessionId) {
         })
       }
     }
-  })().catch(() => { _pendingAggregates.delete(filePath) })
-  _pendingAggregates.set(filePath, promise)
+  })()
+  trackDedup(_pendingAggregates, filePath, promise)
 }
 
 function readJsonlLines(filePath, maxLines = Infinity) {
