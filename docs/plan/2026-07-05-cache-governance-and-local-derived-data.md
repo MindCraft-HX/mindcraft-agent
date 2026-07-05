@@ -320,18 +320,18 @@ Acceptance:
 - No new global cache singleton is introduced.
 - At least one representative cache is migrated to the shared helper with tests.
 
-## 8. Handoff For ClaudeCode
+## 8. Follow-up Handoff
 
 Task: T183 Cache Governance / Local Derived Data Boundary.
 
-Start with Phase 0 only.
+Phase 0-3 mainline is complete. Do not restart from inventory unless a new cache class appears. Future work should extend the existing inventory and helper contracts.
 
-Steps:
+Follow-up candidates:
 
-1. Inventory existing caches in `packages/agent/electron/**` and `packages/agent/src/components/agentCommon/**`.
-2. Classify each cache as file-derived, registry read, in-flight dedup, renderer hot cache, or source-of-truth state.
-3. Update this document with the inventory table.
-4. Do not write production cache helper code in Phase 0 unless the inventory exposes a trivial naming-only cleanup.
+1. Wrap remaining TTL/reference-return caches: E2, E3, E4, E10.
+2. Evaluate `_pendingCodexScans` / `_pendingClaudeScans` timeout cleanup only if scan promises show stuck slots.
+3. Evaluate renderer `metricsDedupHelper` timeout cleanup only if UI stale-in-flight behavior is reproduced.
+4. Keep `createFileDerivedCache()` and `trackDedup()` as the default primitives for new file-derived caches and promise dedup.
 
 Forbidden:
 

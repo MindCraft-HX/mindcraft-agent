@@ -37,6 +37,7 @@ docs/            -> 项目知识库，默认纳入 git
 | 首页功能 | `docs/home-page.md` |
 | 界面性能 | `docs/perf-audit-report.md` |
 | Renderer 高频链路 / tab 切换性能 | `docs/plan/2026-07-02-renderer-hot-path-performance.md`，`docs/plan/2026-07-02-session-tab-switch-performance.md`，`docs/plan/2026-07-02-T172-session-switch-performance.md` |
+| Activation 热路径 / 缓存治理 | `docs/plan/2026-07-05-hot-path-governance-and-streaming-render.md`，`docs/plan/2026-07-05-project-session-activation-work-graph.md`，`docs/plan/2026-07-05-cache-governance-and-local-derived-data.md` |
 | 每日代码审查 | `docs/review.md` |
 | 架构健康审查（优化优先级） | `docs/architecture-health-review-2026-06-28.md` |
 
@@ -63,9 +64,18 @@ docs/            -> 项目知识库，默认纳入 git
 
 - ProjectTabs / CodeHub tab summary 只能暴露轻量 UI 字段；禁止把完整 project、chats、messages 通过 `{ ...p }` 或等价方式传入 tab UI。
 - ClaudeCode 与 CodeX 的 tab summary、provider summary 优先复用共享 helper，禁止重新复制两套全量遍历消息的 computed。
-- session/tab 激活后使用 scheduled refresh 和 per-project cooldown；不要在每次 tab activation 上同步触发 full session scan。
+- session/tab activation 同步段只能更新 active id、显示已有内存状态、启动当前 session 首屏加载和 focus/scroll；不得等待完整 metrics、完整 project scan、registry 批量写入或非当前 session 后台任务。
+- session/tab 激活后使用 scheduled refresh 和 per-project cooldown；不要在每次 tab activation 上同步触发 full session scan。发送完成后由 done 边界更新 `updatedAt/fileSize` 和排序，不依赖窗口 focus 轮询顺手修正。
 - draft 走 session-registry + renderer 两级内存缓存；不要恢复到 per-key panel state 写入，也不要让切 tab 触发磁盘 I/O。
 - 性能探针、debug 日志和 metrics 分段日志必须由显式 flag 打开，禁止默认 dev console 噪音。
+
+## 缓存治理红线
+
+- 新增缓存前先读 `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md`，写清 owner、key、value、source of truth、invalidation、limit/TTL/signature、mutation policy。
+- 文件派生缓存优先复用 `packages/agent/electron/shared/localDerivedCache.js` 的 `createFileDerivedCache()`；key/signature 至少包含 file path + `mtimeMs`，聚合类优先包含 `size`。
+- in-flight dedup 优先复用 `trackDedup()` 或同等 identity guard + timeout cleanup；dedup 命中不能阻止 UI cache-first 展示。
+- cache hit 路径禁止写 registry、panel state、官方目录或触发重型 scan/IPC；scan cache 只能缓存 provider raw summary，registry 派生字段走独立 read/merge。
+- 禁止新增全局 Redis 式缓存服务，禁止把当前 live turn metrics 当历史缓存回灌。
 
 ## Token Metrics 红线
 

@@ -1,8 +1,24 @@
 # T181 CodeHub Startup / Activation Hot Path 收口
 
 > 日期：2026-07-05
-> 状态：待实施
+> 状态：Activation Chain Governance 主线已完成；streaming render 后续独立评估
 > 相关：T176 / T177 / T177-P2 / T178 / T179、CodeHub、ClaudeCode、CodeX、session activation、draft、scan、streaming render
+
+## 0. 执行结果
+
+T181 已完成主线：切 session 卡顿不再继续用“多加缓存”解释，而是收敛到 activation 同步段治理。
+
+已完成：
+
+- 明确 activation 同步段只允许更新 active id、显示已有内存状态、启动当前 session 首屏加载和 focus/scroll。
+- 将完整 metrics、完整 project scan、registry repair、非当前 session 后台任务排除出同步段。
+- 结合 T182，窗口 focus 自动扫描轮询已移除；发送/done 边界负责更新 `updatedAt/fileSize` 和 session 排序。
+- streaming assistant `v-html` 不再作为本任务主线；仅当 active streaming 输入仍有明确证据时，后续单独开专项。
+
+保留风险：
+
+- CodeHub tab summary 独立轻量源仍是长期架构方向，只有当 full panel mount 继续成为证据明确的瓶颈时再推进。
+- active visible chat 的无闪烁 reload 仍需按真实复现决定是否单独处理，不能顺手改 scan/done 恢复边界。
 
 ## 1. 背景
 
@@ -245,4 +261,3 @@ scan finds fileSize changed
 如果 Phase 0 证明闪烁来自 active chat scan reload：
 - Phase 2 改为后台读成功后原子替换，不先清空可见 messages。
 ```
-

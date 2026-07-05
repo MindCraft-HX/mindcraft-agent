@@ -1,6 +1,6 @@
 ﻿# Token Metrics Contract
 
-> Last updated: 2026-06-27
+> Last updated: 2026-07-05
 > Purpose: replace ad-hoc token metric fixes with a strict data contract for ClaudeCode and CodeX.
 
 ## 1. Decision

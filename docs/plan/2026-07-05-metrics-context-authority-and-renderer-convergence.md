@@ -1,9 +1,22 @@
 # T180 Metrics Context Authority + Renderer Convergence
 
 > Date: 2026-07-05
-> Status: proposed
+> Status: context authority + carry-forward implemented; renderer convergence follow-up remains observational
 > Owner: token metrics follow-up
 > Contract anchor: `docs/token-metrics-contract.md`
+
+## 0. Implementation Update
+
+Implemented in `04c9ebb`:
+
+- TurnStore snapshots now carry `contextSource` and `contextAuthority`.
+- New turns may carry forward only same-session confirmed `contextUsage/contextWindow`.
+- Previous-turn `in/out/cache/duration` are not carried forward.
+- Low-authority or empty context samples cannot overwrite stronger confirmed context.
+- ClaudeCode renderer first-hydrate path preserves session context while resetting turn-owned fields.
+- Regression coverage added in `turnStore.test.cjs`, `claude-context-usage.test.cjs`, and `convergence-first-hydrate.test.mjs`.
+
+Remaining observation: renderer convergence should continue to be checked when a StatusBar first-hydrate issue reappears, but the context authority core is no longer merely proposed.
 
 ## 1. Problem
 

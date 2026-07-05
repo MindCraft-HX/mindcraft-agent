@@ -7,6 +7,29 @@
 
 ---
 
+## 0.2 2026-07-05 执行更新
+
+T176-T183 已把 7 月 4-5 日的性能主线从“继续加缓存”收敛为三条长期规则：
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| T176 大 session 渲染 | ✅ 已收口 | CodeX history tool 默认折叠、大 bash output 懒挂载；`renderContent` / 普通 markdown 缓存方向已被探针证伪。 |
+| T177 后台任务延迟 | ✅ 已完成 | CodeX + Claude metrics 主进程 event loop 阻塞修复，冷路径后台聚合，renderer wall 明显下降。 |
+| T177-P2 DOM/Layout | ✅ 已完成阶段目标 | 大消息一次性挂载通过 chunked mount 缓解，剩余 activation 体感问题转 T179/T181。 |
+| T179 activation work graph | ✅ Phase 1 完成 | scan cache hit 去 registry 写副作用，拆出只读 merge 路径。 |
+| T181 activation chain | ✅ 已完成主线 | 切 session 卡顿收口到 activation 同步段治理；streaming render 只保留为后续独立专项。 |
+| T182 session scan 瘦身 | ✅ 已完成 | 移除窗口 focus 自动 scan 轮询，改为发送/done 边界即时排序和 fileSize 精准更新。 |
+| T183 缓存治理 | ✅ Phase 0-3 主线完成 | 新增文件派生缓存 helper 与 in-flight dedup helper，迁移 JSONL/metrics 缓存并补 timeout/identity guard。 |
+
+当前性能红线：
+
+- 交互同步段只做当前可见状态，后台 scan/metrics/registry repair 不能抢首屏和输入。
+- cache hit 路径必须只读，不能写 registry/panel state/官方目录，也不能重新触发重型 scan。
+- 新缓存必须登记治理契约；优先复用 `createFileDerivedCache()` / `trackDedup()`。
+- 发送完成和 agent done 是 session recency/fileSize 的权威更新边界，不再依赖窗口 focus scan 顺手排序。
+
+---
+
 ## 0.1 2026-07-02 执行更新
 
 T169-T173 已完成重构后的主要性能收口。当前重点从“继续拆代码”转为“保持边界、防止回潮、用真实链路验证剩余风险”。

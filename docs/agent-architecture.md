@@ -159,6 +159,21 @@ MindCraft 自有数据包括：
 - `docs/plan/2026-07-02-session-tab-switch-performance.md`
 - `docs/plan/2026-07-02-T172-session-switch-performance.md`
 - `docs/plan/2026-07-05-project-session-activation-work-graph.md`
+- `docs/plan/2026-07-05-hot-path-governance-and-streaming-render.md`
+- `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md`
+
+## 5.2 缓存与本地派生数据边界
+
+缓存可以用于本地派生数据，但不能成为新的隐式事实源。新增或修改缓存前必须满足：
+
+- 写清 owner、key、value、source of truth、invalidation、limit/TTL/signature、mutation policy。
+- 文件派生缓存优先使用 `packages/agent/electron/shared/localDerivedCache.js` 的 `createFileDerivedCache()`；签名至少包含 `mtimeMs`，聚合类优先同时包含 `size`。
+- in-flight dedup 优先使用 `trackDedup()` 或同等 timeout cleanup + identity guard，避免 promise 卡死后永久占用 dedup slot。
+- cache hit 路径必须只读：禁止写 session registry、panel state、官方目录，禁止触发重型 scan/IPC。
+- provider scan cache 只缓存 provider raw summary；registry 派生字段通过独立 read/merge 合并，不能让 cache hit 路径继续隐式 upsert。
+- 不引入全局 Redis 式缓存服务，不把当前 live turn metrics 当历史缓存回灌。
+
+详细盘点和已迁移缓存见 `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md`。
 
 ## 6. 消息来源与持久化
 
