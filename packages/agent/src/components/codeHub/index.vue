@@ -1,7 +1,7 @@
 <template>
   <div class="codehub-wrap" :class="themeClass">
     <!-- ===== 统一 Tab 栏 ===== -->
-    <div class="codehub-unified-tabs" v-if="(initDone || sessionIndex.indexReady.value) && unifiedTabs.length > 0">
+    <div class="codehub-unified-tabs" v-if="indexRestored && unifiedTabs.length > 0">
       <div
         v-for="(tab, idx) in unifiedTabs"
         :key="tab.id"
@@ -54,7 +54,7 @@
 
     <!-- ===== 内容区：始终渲染 Agent 组件 ===== -->
     <div class="codehub-content">
-      <div v-if="!initDone" class="codehub-init-overlay">
+      <div v-if="!indexRestored" class="codehub-init-overlay">
         <div class="codehub-init-card">
           <div class="codehub-init-spinner"></div>
           <div class="codehub-init-title">{{ $t('agent.restoringSession') }}</div>
@@ -154,13 +154,13 @@ function tabDebugSnapshot(extra = {}) {
     const panel = panelRefs[key]
     return [key, {
       hasPanel: Boolean(panel),
-      ready: Boolean(panel?.ready),
+      ready: isPanelReady(panel),
       activeProjectId: panel?.activeProjectId?.value || null,
       projectTabs: Array.isArray(panel?.projectTabData) ? panel.projectTabData.length : null,
     }]
   }))
   return {
-    initDone: initDone.value,
+    indexRestored: indexRestored.value,
     indexReady: sessionIndex.indexReady.value,
     indexWarnings: sessionIndex.loadWarnings.value,
     activeTabId: activeTabId.value,
@@ -178,7 +178,7 @@ function debugCodeHubTabs(event, extra = {}, { force = false } = {}) {
   const snapshot = tabDebugSnapshot(extra)
   const signature = JSON.stringify({
     event,
-    initDone: snapshot.initDone,
+    indexRestored: snapshot.indexRestored,
     activeTabId: snapshot.activeTabId,
     tabIds: snapshot.tabIds,
     tabOrder: snapshot.tabOrder,
@@ -231,9 +231,8 @@ function maybeAutoOpenAgentPicker() {
   if (agentPickerOpenReason.value === 'auto-empty') closeAgentPicker()
 }
 
-// 统一 Tab 目前依赖各 Agent panel 暴露的 projectTabData；未挂载的 panel 不会执行 loadHistory。
-// 在 CodeHub 级 session index 独立出来前，启动时必须挂载所有已注册 Agent，避免冷启动丢失历史 Tab。
-const mountedMap = reactive(createMountedMap(agentKeys.value))
+// SessionIndex owns tab discovery; provider panels mount only for the active agent.
+const mountedMap = reactive(createMountedMap([]))
 
 // T184: SessionIndex — passive lightweight index from panel-state + session-registry.
 // Decouples tab existence from provider panel readiness.
@@ -338,7 +337,7 @@ const activeAgent = computed(() => {
 })
 
 const showEmptyOverlay = computed(() => {
-  return initDone.value && unifiedTabs.value.length === 0
+  return indexRestored.value && unifiedTabs.value.length === 0
 })
 
 // ── 激活 Tab（核心：同步 activeTabId + 调用 switchProject）──
@@ -374,8 +373,13 @@ function doSwitchProject(tab, preferredChat = null) {
   const stop = perfStart('codehub.doSwitchProject')
   const activationId = getActivationId()
   const panel = getPanel(tab.agentType)
-  if (!panel) {
-    debugCodeHubTabs('switchProject:missing-panel', { tabId: tab?.id, agentType: tab?.agentType }, { force: true })
+  if (!panel || !isPanelReady(panel)) {
+    pendingSwitch = { tab, preferredChat }
+    debugCodeHubTabs('switchProject:panel-not-ready', {
+      tabId: tab?.id,
+      agentType: tab?.agentType,
+      hasPanel: Boolean(panel),
+    }, { force: true })
     stop({ activationId })
     return
   }
@@ -451,9 +455,15 @@ function getPanel(agentType) {
 }
 
 // ── 初始化：T184 SessionIndex — load index first, then wait for panels to patch runtime ──
-const initDone = ref(false)
-let _initTimer = null
+const indexRestored = ref(false)
 let _panelWatchCleanups = []
+let pendingSwitch = null
+let pendingCreateAgent = null
+
+function isPanelReady(panel) {
+  const ready = panel?.ready
+  return Boolean(ready?.value ?? ready)
+}
 
 function setupPanelRuntimeWatchers() {
   // Clean up previous watchers
@@ -471,6 +481,24 @@ function setupPanelRuntimeWatchers() {
       { flush: 'post' }
     )
     _panelWatchCleanups.push(stopWatch)
+
+    const stopReadyWatch = watch(
+      () => isPanelReady(panelRefs[key]),
+      (ready) => {
+        if (!ready) return
+        if (pendingCreateAgent === key) {
+          pendingCreateAgent = null
+          nextTick(() => createProjectForAgent(key))
+          return
+        }
+        const pending = pendingSwitch
+        if (!pending || pending.tab?.agentType !== key || pending.tab?.id !== activeTabId.value) return
+        pendingSwitch = null
+        nextTick(() => doSwitchProject(pending.tab, pending.preferredChat))
+      },
+      { flush: 'post' }
+    )
+    _panelWatchCleanups.push(stopReadyWatch)
   }
 }
 
@@ -485,43 +513,14 @@ onMounted(async () => {
   // Set up watchers for provider panel projectTabData → runtime patches
   setupPanelRuntimeWatchers()
 
-  // Watch panels readiness to trigger restoreActiveTab
-  const stopWatch = watchEffect(() => {
-    if (initDone.value) return
-
-    // Trigger initDone when index is loaded
-    if (!sessionIndex.indexReady.value) return
-
-    const pending = Object.keys(mountedMap).filter(k => mountedMap[k])
-    if (pending.length === 0) return
-
-    const allReady = pending.every(k => getPanel(k)?.ready)
-    if (allReady) {
-      initDone.value = true
-      debugCodeHubTabs('init:all-ready', { pending }, { force: true })
-      if (_initTimer) { clearTimeout(_initTimer); _initTimer = null }
-      nextTick(() => {
-        if (unifiedTabs.value.length > 0) {
-          restoreActiveTab()
-        } else {
-          maybeAutoOpenAgentPicker()
-        }
-      })
-    }
-  })
-
-  // 兜底：5s 后如果还没就绪，直接用现有数据
-  _initTimer = setTimeout(() => {
-    if (initDone.value) return
-    initDone.value = true
-    stopWatch()
-    debugCodeHubTabs('init:timeout', {}, { force: true })
-    if (unifiedTabs.value.length > 0) {
-      nextTick(() => restoreActiveTab())
-    } else {
-      maybeAutoOpenAgentPicker()
-    }
-  }, 5000)
+  // Restore tabs immediately after the lightweight index is ready.
+  indexRestored.value = true
+  debugCodeHubTabs('index:restored', {}, { force: true })
+  if (unifiedTabs.value.length > 0) {
+    nextTick(() => restoreActiveTab())
+  } else {
+    maybeAutoOpenAgentPicker()
+  }
 
   // ── 快捷键：Tab 切换 ──
   _shortcutUnregisters.push(register('codehub.nextTab', () => {
@@ -551,7 +550,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (_initTimer) clearTimeout(_initTimer)
   _shortcutUnregisters.forEach(fn => fn())
   _shortcutUnregisters.length = 0
   _panelWatchCleanups.forEach(fn => fn())
@@ -560,7 +558,7 @@ onUnmounted(() => {
 
 // ── 监听 route query 变化（keep-alive 下 onMounted 不会重新触发） ──
 watch(() => [route.query?.agent, route.query?.projectId, route.query?.chatId, route.query?.sessionId], ([agent, projectId]) => {
-  if (!initDone.value) return
+  if (!indexRestored.value) return
   if (!agent && !projectId) return
   const tab = unifiedTabs.value.find(t => {
     if (agent && projectId) {
@@ -581,7 +579,7 @@ watch(() => [route.query?.agent, route.query?.projectId, route.query?.chatId, ro
 
 // ── watch tabs 变化：自动 fallback（仅在初始化完成后） ──
 watch(() => unifiedTabs.value.length, (len) => {
-  if (!initDone.value) return
+  if (!indexRestored.value) return
   debugCodeHubTabs('tabs:length-change', { len })
   if (len === 0) {
     debugCodeHubTabs('tabs:empty-after-init', {}, { force: true })
@@ -600,7 +598,7 @@ watch(() => unifiedTabs.value.length, (len) => {
 watch(
   () => unifiedTabs.value.map(t => t.id),
   (ids) => {
-    if (!initDone.value) return
+    if (!indexRestored.value) return
     const next = reconcileCodeHubTabOrder({
       currentOrder: tabOrder.value,
       visibleTabIds: ids,
@@ -615,7 +613,7 @@ watch(
 )
 
 watchEffect(() => {
-  if (!initDone.value) return
+  if (!indexRestored.value) return
 
   const agentType = activeAgent.value
   const panel = getPanel(agentType)
@@ -641,7 +639,7 @@ watchEffect(() => {
 // ── Tab 操作 ──
 function closeTab(tab) {
   const panel = getPanel(tab.agentType)
-  if (!panel?.ready) {
+  if (!isPanelReady(panel)) {
     // Panel not ready — project not yet recovered from disk.
     // Deleting now would only hide from memory; tab would resurrect on restart.
     debugCodeHubTabs('closeTab:panel-not-ready', { tabId: tab.id, agentType: tab.agentType }, { force: true })
@@ -665,23 +663,25 @@ function reorderUnifiedTab(fromIndex, toIndex) {
   saveTabOrder()
 }
 
+function createProjectForAgent(agentKey) {
+  const panel = getPanel(agentKey)
+  if (!isPanelReady(panel)) {
+    pendingCreateAgent = agentKey
+    if (!mountedMap[agentKey]) mountedMap[agentKey] = true
+    return
+  }
+  const projectId = panel.createProject?.()
+  if (projectId == null) return
+  nextTick(() => {
+    const tabId = `${agentKey}:${projectId}`
+    const tab = unifiedTabs.value.find(t => t.id === tabId)
+    if (tab) activateTab(tab)
+  })
+}
+
 function onAgentSelected(agentKey) {
   closeAgentPicker()
-  // 惰性挂载：首次选择该 Agent 时挂载它
-  if (!mountedMap[agentKey]) {
-    mountedMap[agentKey] = true
-  }
-  nextTick(() => {
-    const panel = getPanel(agentKey)
-    const projectId = panel?.createProject()
-    if (projectId != null) {
-      nextTick(() => {
-        const tabId = `${agentKey}:${projectId}`
-        const tab = unifiedTabs.value.find(t => t.id === tabId)
-        if (tab) activateTab(tab)
-      })
-    }
-  })
+  createProjectForAgent(agentKey)
 }
 
 // ── 右键菜单 ──

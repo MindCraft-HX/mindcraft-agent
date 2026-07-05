@@ -72,10 +72,20 @@ test('deriveProjectName falls back to cwd basename when name is default', () => 
     deriveProjectName({ name: '未命名项目', cwd: 'D:\\repo\\mindcraft-agent' }),
     'mindcraft-agent'
   )
+  assert.equal(
+    deriveProjectName({ name: '新项目', cwd: 'D:\\repo\\mindcraft-agent' }),
+    'mindcraft-agent'
+  )
+  assert.equal(
+    deriveProjectName({ name: 'New Project', cwd: '/home/dev/mindcraft-agent' }),
+    'mindcraft-agent'
+  )
 })
 
 test('deriveProjectName uses name even if default when no cwd', () => {
   assert.equal(deriveProjectName({ name: '未命名项目' }), '未命名项目')
+  assert.equal(deriveProjectName({ name: '新项目' }), '新项目')
+  assert.equal(deriveProjectName({ name: 'New Project' }), 'New Project')
   assert.equal(deriveProjectName({}), '')
 })
 
@@ -176,6 +186,23 @@ test('extractTabsFromPanelState handles null/missing projects', () => {
   assert.equal(extractTabsFromPanelState(null, 'codex', new Map(), warnings).length, 0)
   assert.equal(extractTabsFromPanelState({}, 'codex', new Map(), warnings).length, 0)
   assert.equal(extractTabsFromPanelState({ projects: null }, 'codex', new Map(), warnings).length, 0)
+})
+
+test('extractTabsFromPanelState skips empty placeholder projects', () => {
+  const panelState = {
+    projects: [
+      { id: 'placeholder', name: 'New Project', cwd: '', cwdLocked: false, chats: [] },
+      { id: 'has-chat', name: 'Draft Project', cwd: '', cwdLocked: false, chats: [{ id: 'c1', updatedAt: 200 }] },
+      { id: 'has-cwd', name: 'Repo', cwd: '/tmp/repo', cwdLocked: false, chats: [] },
+    ],
+  }
+
+  const tabs = extractTabsFromPanelState(panelState, 'claudeCode', new Map(), [])
+
+  assert.equal(tabs.length, 2)
+  assert.equal(tabs.some(t => t.projectId === 'placeholder'), false)
+  assert.equal(tabs.some(t => t.projectId === 'has-chat'), true)
+  assert.equal(tabs.some(t => t.projectId === 'has-cwd'), true)
 })
 
 test('extractTabsFromPanelState warns on invalid project entries', () => {

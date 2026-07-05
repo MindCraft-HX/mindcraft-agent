@@ -136,13 +136,22 @@ function toSafeTab(raw) {
   return tab
 }
 
+const DEFAULT_PROJECT_NAMES = new Set(['未命名项目', '新项目', 'New Project'])
+
 function deriveProjectName(project) {
-  if (project.name && project.name !== '未命名项目') return project.name
+  if (project.name && !DEFAULT_PROJECT_NAMES.has(project.name)) return project.name
   if (project.cwd) {
     const segs = project.cwd.replace(/\\/g, '/').split('/').filter(Boolean)
     return segs[segs.length - 1] || project.name || ''
   }
   return project.name || ''
+}
+
+function isEmptyPlaceholderProject(project) {
+  const cwd = typeof project?.cwd === 'string' ? project.cwd.trim() : ''
+  const cwdLocked = Boolean(project?.cwdLocked)
+  const hasChats = Array.isArray(project?.chats) && project.chats.length > 0
+  return !cwd && !cwdLocked && !hasChats
 }
 
 function extractTabsFromPanelState(panelState, agentType, registryIndex, warnings) {
@@ -159,6 +168,9 @@ function extractTabsFromPanelState(panelState, agentType, registryIndex, warning
       const projectId = project.id
       if (!projectId) {
         warnings.push(`Skipping project without id in ${agentType} panel-state`)
+        continue
+      }
+      if (isEmptyPlaceholderProject(project)) {
         continue
       }
 
