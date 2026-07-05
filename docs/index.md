@@ -46,7 +46,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [plan/2026-07-05-hot-path-governance-and-streaming-render.md](./plan/2026-07-05-hot-path-governance-and-streaming-render.md) | T181 热路径治理：streaming assistant plain text、activation work queue 后续收口 |
+| [plan/2026-07-05-hot-path-governance-and-streaming-render.md](./plan/2026-07-05-hot-path-governance-and-streaming-render.md) | T181 CodeHub startup / activation hot path：all-panel mount、scan await、active chat reload 闪烁，streaming render 后续 |
 | [plan/2026-07-05-project-session-activation-work-graph.md](./plan/2026-07-05-project-session-activation-work-graph.md) | T179 Project / Session activation work graph：scan cache hit 去 registry 写副作用 |
 | [plan/2026-07-04-renderer-dom-layout-and-cache-governance.md](./plan/2026-07-04-renderer-dom-layout-and-cache-governance.md) | T177-P2 Renderer DOM/Layout/Paint 归因与缓存治理 |
 | [plan/2026-07-04-session-switch-background-task-latency.md](./plan/2026-07-04-session-switch-background-task-latency.md) | T177 Session 切换后台任务延迟：metrics 主进程阻塞诊断与修复 |

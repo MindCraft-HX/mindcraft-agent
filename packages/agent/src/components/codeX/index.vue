@@ -1562,9 +1562,15 @@ async function refreshProjectSessionsInBackground(project) {
           debugLog('sessionRefresh', 'fileSize changed', { name: cached.name, from: cached.fileSize, to: summary.fileSize })
           cached.fileSize = summary.fileSize
           if (allowHydrateFromDisk && cached.id === activeChatId.value) {
-            cached._messagesLoaded = false
-            if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
-            summary._needReloadActiveChat = true
+            // T181: 活跃 chat 已有可见消息时不触发清空+重载 —
+            // fileSize 变化来自 streaming 输出，用户实时在看。
+            if (cached._messagesLoaded && cached.messages?.length) {
+              // 已加载且正在显示 — 不重载
+            } else {
+              cached._messagesLoaded = false
+              if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
+              summary._needReloadActiveChat = true
+            }
           } else if (allowHydrateFromDisk && (!cached.messages || cached.messages.length === 0)) {
             if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
             cached._messagesLoaded = false
@@ -1575,7 +1581,10 @@ async function refreshProjectSessionsInBackground(project) {
             if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
             cached._messagesLoaded = false
             if (cached.id === activeChatId.value) {
-              summary._needReloadActiveChat = true
+              // T181: 活跃 chat 已有可见消息时不触发重载
+              if (!(cached._messagesLoaded && cached.messages?.length)) {
+                summary._needReloadActiveChat = true
+              }
             }
           }
         }
@@ -2754,7 +2763,8 @@ const activeSessionInstructionEnabled = ref(false)
 
 // 同步活跃 session 的指令启用状态
 watch(() => activeTab.value?.sessionId, () => {
-  void refreshActiveSessionInstructionState()
+  // T181: 推迟到下一帧，让浏览器先 paint 新 UI
+  requestAnimationFrame(() => { void refreshActiveSessionInstructionState() })
 }, { immediate: true })
 
 watch(
@@ -2787,7 +2797,8 @@ watch(
       model: tab?.model || tab?.metrics?.model || codexDefaultModel.value || '',
       compacting: !!tab?._compacting,
     })
-    void refreshMetricsForChat(tab, 'active-tab-state-watch')
+    // T181: 推迟到下一帧，让浏览器先 paint 新 UI
+    requestAnimationFrame(() => { void refreshMetricsForChat(tab, 'active-tab-state-watch') })
   },
   { immediate: true }
 )

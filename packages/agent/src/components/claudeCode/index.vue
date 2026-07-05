@@ -858,8 +858,11 @@ watch(activeChatId, (id, oldId) => {
     stopDraft({ activationId: getActivationId() })
   })
   resetHistory()
-  refreshMetricsForChat(chat, 'switch-chat')
-  void refreshActiveSessionInstructionState()
+  // T181: 推迟到下一帧，让浏览器先 paint 新 UI
+  requestAnimationFrame(() => {
+    refreshMetricsForChat(chat, 'switch-chat')
+    void refreshActiveSessionInstructionState()
+  })
 }, { immediate: true })
 
 watch(inputText, (value) => {
@@ -868,7 +871,8 @@ watch(inputText, (value) => {
 })
 
 watch(() => activeTab.value?.sessionId, () => {
-  void refreshActiveSessionInstructionState()
+  // T181: 推迟到下一帧，让浏览器先 paint 新 UI
+  requestAnimationFrame(() => { void refreshActiveSessionInstructionState() })
 }, { immediate: true })
 
 // 同步 tab._compacting 到 metricsData，驱动状态栏圆环动画
@@ -2156,10 +2160,15 @@ async function refreshProjectSessionsInBackground(p) {
         const canReloadMessages = shouldReloadClaudeChatFromDisk(cached)
         // 如果该会话是当前正在查看的对话，重置加载状态并清空消息，让 UI 重新加载最新内容
         if (canReloadMessages && cached.id === activeChatId.value) {
-          cached._messagesLoaded = false
-          if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
-          // 标记需要在刷新结束后重新加载当前对话
-          s._needReloadActiveChat = true
+          // T181: 活跃 chat 已有可见消息时不触发清空+重载 —
+          // fileSize 变化来自 streaming 输出，用户实时在看。
+          if (cached._messagesLoaded && cached.messages?.length) {
+            // 已加载且正在显示 — 不重载
+          } else {
+            cached._messagesLoaded = false
+            if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
+            s._needReloadActiveChat = true
+          }
         } else if (canReloadMessages && (!cached.messages || cached.messages.length === 0)) {
           if (shouldResetMessagesForDiskReload(cached)) cached.messages = []
           cached._messagesLoaded = false

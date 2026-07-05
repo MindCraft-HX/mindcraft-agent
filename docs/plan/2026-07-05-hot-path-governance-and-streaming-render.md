@@ -1,175 +1,248 @@
-# T181 Hot Path Governance and Streaming Render 收口
+# T181 CodeHub Startup / Activation Hot Path 收口
 
 > 日期：2026-07-05
 > 状态：待实施
-> 相关：T176 / T177 / T177-P2 / T178 / T179、ClaudeCode、CodeX、MessageList、session activation、cache governance
+> 相关：T176 / T177 / T177-P2 / T178 / T179、CodeHub、ClaudeCode、CodeX、session activation、draft、scan、streaming render
 
 ## 1. 背景
 
-本轮性能问题不是一个单点慢函数，而是重构后多条链路同时变长：
+这轮性能问题不能再简单归为“要不要继续加缓存”。用户反馈的主要体感包括：
 
-- session / project activation 会触发 history、draft、instruction、metrics、scan、registry 多个后台任务。
-- renderer 冷挂载曾一次性挂 60 条复杂消息，造成 2.3s 级 long task。
-- streaming assistant 消息仍会反复把增长中的整段文本交给 `v-html`，浏览器需要同步做 `innerHTML -> DOM -> layout -> paint`。
-- 部分缓存确实有效，但也暴露出热路径里混入副作用的问题，例如 scan cache hit 曾继续 registry upsert。
+- CodeHub 初次进入从以前 1-2 秒变成 5-6 秒。
+- 跨 project tab / agent tab 进入 session 时，内容已经显示后又 loading / reload / 闪一下。
+- 切 tab 后几百毫秒内输入框仍会卡一下。
+- active session streaming 时打字也可能卡。
 
-因此下一步不能再叫“继续加缓存”。目标改为：
+这些不是同一个根因。当前代码调查后，优先级需要调整：
 
-**治理热路径：同步段只做可见首屏必需工作；后台任务可延迟、可去重、可取消；streaming 期间避免大 DOM 重建。**
+1. **先治理 CodeHub startup / activation 生命周期。** 它解释 CodeHub 加载慢、跨 tab 二次加载、切换后短卡。
+2. **再评估 streaming assistant 的 `v-html` 热路径。** 它只解释 active streaming 期间持续输入卡，不能解释 CodeHub 初始加载和跨 tab 闪烁。
 
-## 2. 已收口任务
+因此 T181 的主线不是“streaming 改 `<pre>`”，而是：
 
-| 任务 | 结论 |
-|---|---|
-| T176 | CodeX history tool 默认折叠和大 bash output 懒挂载已完成；`renderContent` / computed / 普通大消息折叠方向已被数据证伪。 |
-| T177 | 主进程 metrics 同步读大 JSONL 阻塞 event loop 已修；CodeX + Claude metrics aggregate cache 和后台聚合保留。 |
-| T177-P2 | 冷挂载 60 条消息导致 renderer long task 已通过分片挂载缓解。 |
-| T178 | session scan 缓存/调度首版有效，但暴露 cache hit 仍可能有 registry 副作用。 |
-| T179 | activation work graph 已定位并拆除 scan cache hit 的 registry 写副作用；后续不再以 T179 继续扩大缓存。 |
+**把 CodeHub tab summary / panel ready / session scan / history reload 从 heavy panel lifecycle 中拆清楚，避免切换路径触发全项目扫描和 active chat 二次清空重载。**
 
-旧任务不再继续承载新优化。剩余卡顿统一进入 T181。
+## 2. 已确认事实
 
-## 3. 缓存治理结论
+### 2.1 CodeHub 启动挂载所有 Agent panel
 
-缓存不是禁用项，但必须区分“派生缓存”和“补丁型去重”。
-
-### 3.1 保留的派生缓存
-
-| 缓存 | 保留原因 | 边界 |
-|---|---|---|
-| metrics aggregate cache | 避免重复读/parse 官方 JSONL；命中后 handler 可降到 ms 级。 | key 必须包含 `filePath + size + mtimeMs`；不得写官方 sidecar。 |
-| draft / instruction read cache | session-registry 小字段读缓存；切 tab 不应每次磁盘 I/O。 | session-registry 仍是事实来源；写入、删除、clear 时失效。 |
-| scan raw summary cache | 避免重复目录扫描和 raw summary 构造。 | cache hit 路径只能纯读 merge registry 字段，禁止无条件 upsert。 |
-| in-flight dedup | 防止同一 session 同时发起重复 IPC 或 scan。 | 必须 `finally` 清理，必要时加 timeout。 |
-
-### 3.2 过渡型补丁
-
-| 项 | 风险 | 后续策略 |
-|---|---|---|
-| metrics 300ms TTL dedup | 有效但语义偏补丁；容易掩盖触发链重复。 | 保留，但不再扩展；后续由 activation queue 统一调度。 |
-| streaming 50ms throttle | 降低 `v-html` 次数，但不能降低单次 DOM 成本。 | 作为过渡保留；Phase 1 用 streaming plain text 替代热路径。 |
-| scheduled refresh cooldown | 防止 tab activation 风暴。 | 保留；后续纳入 activation priority。 |
-
-新增缓存必须登记 owner、key、value、失效规则、内存上限、stale policy、mutation policy。没有登记的临时 `Map` 不允许进入新热路径。
-
-## 4. 当前剩余卡点
-
-### 4.1 Streaming 输入卡顿
-
-当前两个 assistant bubble 仍然在 streaming 中使用：
-
-```vue
-v-html="renderContent(displayText, '...AssistantBubble')"
-```
-
-`renderContent` 缓存只能减少 JS markdown 解析，不能避免浏览器同步解析 HTML、替换 DOM、layout 和 paint。`useStreamingText` 的 50ms throttle 只降低频率，不降低单次成本。
-
-因此 active streaming session 中打字仍可能被 renderer main thread 阻塞；非 active session 没有 streaming DOM 更新，所以输入更顺。
-
-### 4.2 Activation 后几百 ms 卡顿
-
-T179 已把 scan cache hit 写 registry 的大头去掉，但 project/session activation 后仍有多个后台任务：
-
-- current chat history / chunked mount
-- draft read
-- instruction read
-- metrics refresh
-- project scan
-- session list merge / apply
-
-如果这些任务各自 `void` 启动、各自 dedup、各自更新 UI，就会继续出现“同步段很短但后续几百 ms 抢主线程”的体感。
-
-## 5. Phase 1：Streaming Assistant Plain Text
-
-目标：streaming 期间不再反复 `v-html` 整段 assistant 消息。
-
-### 5.1 方案
-
-- `MessageList` 计算当前消息是否为 active streaming assistant：
+`codeHub/index.vue` 当前为了统一 tab 能拿到各 Agent 的 `projectTabData`，启动时挂载所有已注册 Agent：
 
 ```js
-tab.thinking && tab.currentAssistantId === msg.id
+// 统一 Tab 目前依赖各 Agent panel 暴露的 projectTabData；未挂载的 panel 不会执行 loadHistory。
+// 在 CodeHub 级 session index 独立出来前，启动时必须挂载所有已注册 Agent，避免冷启动丢失历史 Tab。
+const mountedMap = reactive(createMountedMap(agentKeys.value))
 ```
 
-- 通过 prop 传给 `MessageItem` 和 `AssistantMessageBubble`。
-- streaming 中渲染纯文本：
+这意味着 CodeHub 的 ready 依赖 ClaudeCode + CodeX 两套 panel 初始化。只要任一 panel 在 `onMounted` / idle init 里做重活，CodeHub 就会显得整体变慢。
 
-```vue
-<pre class="assistant-streaming-text">{{ displayText }}</pre>
+### 2.2 CodeX 初始化仍 await 活跃项目 full scan
+
+`codeX/index.vue` 恢复历史后仍有防御型前置：
+
+```js
+// T022: 先 await 活跃项目的 session 扫描，确保 resumeThread 映射就绪再允许用户交互
+await refreshProjectSessionsInBackground(activeProj)
 ```
 
-- done 后切回一次 markdown：
+这个逻辑不是纯历史债。它用于避免后端 `cliSessionIds` map 缺失时下一条消息走 `startThread` 而不是 `resumeThread`。但代价是：活跃项目全量 scan 被放进 ready 前置，CodeHub 初次加载会被拖慢。
 
-```vue
-<div v-html="renderContent(displayText, '...AssistantBubble')"></div>
-```
+ClaudeCode 当前更偏后台化：历史加载后 ready，再对锁定项目 `void refreshProjectSessionsInBackground(p)`。双端策略不一致。
 
-### 5.2 实现约束
+### 2.3 “先显示再 reload 闪一下”的直接候选
 
-- ClaudeCode 和 CodeX 必须共享同一套 prop / composable 思路，禁止两边复制两套状态判断。
-- 不向官方 JSONL 或 session registry 写 streaming UI 状态。
-- 不把 `isStreaming` 持久化进 message schema；优先从 `tab.thinking + tab.currentAssistantId` 派生。
-- `v-memo` 依赖必须包含 `isStreaming`，否则 done 后可能不从纯文本切回 markdown。
-- Token footer、tool cards、system/user bubbles 不受影响。
-- streaming 期间不提供 markdown、高亮、文件链接；done 后恢复完整 markdown。这是明确产品取舍。
+CodeX / ClaudeCode 的 background scan 在发现 active chat `fileSize` 变化时，会：
 
-### 5.3 验收
+- 设置 `_messagesLoaded = false`
+- 可能执行 `messages = []`
+- 标记 `_needReloadActiveChat`
+- 再调用 `ensureChatMessagesLoaded()` 从磁盘重载
 
-- active streaming session 中连续输入，输入框不应出现 200ms+ 可感知停顿。
-- perf 中 `rc:*AssistantBubble` 可以继续出现，但 streaming 期间不应伴随大段 Layout/Paint long task。
-- done 后 assistant 内容变为格式化 markdown，代码块、表格、链接恢复。
-- 历史恢复消息仍直接 markdown 渲染，不走 streaming 纯文本。
+这能解释“session 内容已经显示了，但切 tab 后又 loading / 闪一下”。该逻辑是为了避免 transcript 变更后 UI stale，但对 active visible chat 太粗暴。
 
-## 6. Phase 2：Activation Work Queue 最小收口
+### 2.4 Draft 不是唯一元凶，但会放大切换卡顿
 
-只有 Phase 1 后仍存在“切 tab 后几百 ms 内输入卡一下”时再做。
+draft 改到 session registry 后，输入本身不应该每个字符阻塞磁盘：
 
-目标不是重写生命周期，而是把后台任务按优先级提交：
+- 输入时通常是 timer/debounce 持久化。
+- 切换 session 时会保存 old draft、加载 new draft。
+- 读写如果命中 renderer/sessionRegistry cache，应是 ms 级。
 
-| 优先级 | 工作 | 规则 |
-|---|---|---|
-| P0 | active id、focus、scroll restore | 同步完成，目标 < 16ms |
-| P1 | current chat history / draft / instruction | 当前 chat 优先；旧 activation 返回时必须 guard |
-| P2 | current chat metrics | cache-first；后台刷新；不得阻塞输入 |
-| P3 | project scan / non-active refresh | 延迟、去重、可取消；不得抢 P1 |
+但 draft 会参与 activation 后台任务。如果切 tab 同时触发 draft load、instruction load、metrics refresh、history reload、scan apply、chunked mount，这些任务都在 renderer/main event loop 上排队，就会在切换后几百 ms 内和输入竞争。也就是说：
 
-Phase 2 先只接 project scan 和 metrics，不一次性吞 history/draft/instruction，避免大重构。
+**draft 不是“占后台线程”的根因，但它把输入框状态纳入 session activation 链路，和其他后台任务叠加后会让输入卡顿更容易被感知。**
 
-## 7. 明确不做
+## 3. 任务收口
 
-- 不回滚 T176 / T177 / T179 已验证有效的修复。
-- 不继续扩大 `renderContent` 缓存。
-- 不直接上虚拟列表。
-- 不新建全局缓存框架。
-- 不把 MindCraft 自有缓存写到官方 transcript 旁。
-- 不改 token metrics UI 语义。
+旧任务状态：
 
-## 8. 给 ClaudeCode 的执行口径
+| 任务 | 状态 |
+|---|---|
+| T176 | 大 session history tool / bash output 冷挂载已收口；`renderContent` 普通缓存方向证伪。 |
+| T177 | metrics 主进程 event loop 阻塞已收口。 |
+| T177-P2 | 60 条消息一次性挂载 long task 已通过 chunked mount 缓解。 |
+| T179 | scan cache hit registry 写副作用已定位并拆除。 |
+
+T181 不继续扩大这些任务，而是专门治理：
+
+- CodeHub startup 是否依赖 heavy panel lifecycle。
+- session activation 是否触发不必要 full scan / reload。
+- active chat 的 disk reload 是否能无闪烁。
+- streaming 输入卡是否仍需单独处理。
+
+## 4. Phase 0：重新量化启动和切换工作图
+
+先补数据，不先改业务。
+
+### 4.1 场景
+
+采集三组：
+
+1. 冷启动进入 CodeHub。
+2. 同 agent 同 project 切 session。
+3. 跨 agent / 跨 project tab 切 session。
+
+每组记录：
+
+- CodeHub 从 mounted 到 `initDone=true` 的 wall time。
+- 每个 panel 的 `ready=true` 时间。
+- `loadHistory` 时间。
+- 是否 await active project scan。
+- `refreshProjectSessionsInBackground` wall/apply。
+- `ensureChatMessagesLoaded.ipc/proc/mountStaged`。
+- draft load / instruction load / metrics refresh。
+- active chat 是否被 `_messagesLoaded=false` 或 `messages=[]`。
+
+### 4.2 必须回答的问题
 
 ```text
-任务：T181 Hot Path Governance and Streaming Render。
+CodeHub 5-6 秒是卡在：
+1. 等所有 panel ready？
+2. CodeX await active project scan？
+3. scan main handler？
+4. renderer scan apply / project.chats merge？
+5. active chat reload / chunked mount？
+6. draft/instruction/metrics 同时排队？
+```
 
-先做 Phase 1：streaming assistant plain text。
+## 5. Phase 1：CodeHub Startup 轻量化
 
-要求：
-1. 从 MessageList 派生 isStreaming = tab.thinking && tab.currentAssistantId === msg.id。
-2. isStreaming 通过 MessageItem 传到 AssistantMessageBubble。
-3. isStreaming=true 时使用纯文本节点/pre 渲染 displayText，不调用 v-html/renderContent。
-4. isStreaming=false 时保持现有 markdown renderContent 路径。
-5. v-memo 依赖加入 isStreaming，避免 done 后不切回 markdown。
-6. ClaudeCode 和 CodeX 两边行为一致；共享逻辑放 agentCommon，禁止复制复杂判断。
-7. 不新增缓存，不写 session registry，不写官方 JSONL，不打开默认 console 日志。
+目标：CodeHub 显示 tab 不应依赖挂载完整 ClaudeCode / CodeX panel。
 
-验证：
-- node --test tests/codex-stream-rendering-contract.test.mjs tests/codex-event-rendering-contract.test.mjs
-- node --test tests/agent-markdown-render.test.mjs
-- npm run test:undef
-- npm test
-- npm run build
+候选方案按风险从低到高：
 
-人工验收：
-- active streaming 中连续输入，输入框不卡顿明显改善。
-- done 后 markdown、高亮、链接恢复。
-- 历史 session 直接显示 markdown，不出现纯文本残留。
+### 5.1 低风险：CodeX 初始化不 await full scan
+
+保留 resume 防御，但把“确保映射”拆成轻量步骤：
+
+1. 从 panel state / session registry 中已有 chat 注册 `chatKey -> cliSessionId`。
+2. 如果 active chat 已有 `cliSessionId`，允许 UI ready。
+3. full scan 后台 repair 缺失映射和新 session。
+
+禁忌：
+
+- 不允许因为去掉 await 而恢复“下一条消息新建重复 session”的旧 bug。
+- 必须补测试覆盖：已有 `cliSessionId` 的 restored chat 不依赖 scan 也能 resume。
+
+### 5.2 中风险：CodeHub tab summary 独立轻量源
+
+当前 CodeHub 依赖 panel 暴露 `projectTabData`。更干净方向是让 CodeHub 有轻量 tab index：
+
+- 只读 panel state / session registry 的 project/chat summary。
+- 不加载 messages。
+- 不触发 provider scan。
+- 不挂载完整 Agent panel。
+
+这是架构正解，但比 5.1 大。只有 Phase 0 数据证明“等所有 panel ready”是主因时再做。
+
+## 6. Phase 2：Active Chat Reload 无闪烁
+
+目标：background scan 发现 active chat fileSize 变化时，不要先清空可见消息。
+
+当前风险路径：
+
+```text
+scan finds fileSize changed
+  -> active chat _messagesLoaded = false
+  -> messages = []
+  -> ensureChatMessagesLoaded()
+  -> UI loading / flash / re-render
+```
+
+建议改为：
+
+1. 对 active visible chat，后台读取新 page。
+2. 读取成功后原子替换或 append/merge。
+3. 读取失败保留旧 messages。
+4. 只有 pending adoption / dangling recovery 等明确需要覆盖内存状态的场景，才允许清空。
+
+必须保留的防御：
+
+- running / `_awaitingDone` 的 chat 不得被磁盘 reload 覆盖 live messages。
+- pending permission / AskUserQuestion 不得被 scan 清空。
+- dangling tool recovery 场景仍允许从磁盘修复，但要尽量避免中间空白。
+
+## 7. Phase 3：Streaming Assistant Render
+
+只有在 Phase 1/2 后，active streaming 中持续输入仍卡，再做。
+
+当前确认：
+
+- autosize 已证伪。
+- `renderContent` JS 成本大多已证伪。
+- streaming 中仍有 `v-html="renderContent(displayText)"`，50ms throttle 只能降频，不能降低单次 `innerHTML -> DOM -> layout -> paint`。
+
+候选方案：
+
+- `isStreaming = tab.thinking && tab.currentAssistantId === msg.id`
+- streaming 时用纯文本节点 / `<pre>` 渲染。
+- done 后一次性切回 markdown。
+- `v-memo` 依赖必须包含 `isStreaming`。
+
+这不是 Phase 1，因为它不能解决 CodeHub 初始加载和跨 tab reload 闪烁。
+
+## 8. 明确不做
+
+- 不继续用“再加缓存”解释所有问题。
+- 不回滚 T176 / T177 / T179 已验证有效的修复。
+- 不直接上虚拟列表。
+- 不直接把 streaming `<pre>` 当主线。
+- 不让 scan cache hit 路径恢复 registry 写副作用。
+- 不写官方 JSONL sidecar。
+
+## 9. 给 ClaudeCode 的执行口径
+
+```text
+任务：T181 CodeHub Startup / Activation Hot Path 收口。
+
+先做 Phase 0，不改业务：
+1. 给 CodeHub startup 加分段探针：
+   - codehub.mounted -> initDone
+   - each panel mounted -> ready
+   - unifiedTabs 首次非空
+2. 给 CodeX / Claude panel init 加分段：
+   - loadHistory
+   - registerCliSessions
+   - active project scan await / background scan
+   - isReady=true
+3. 给 active chat reload 加计数：
+   - activeChat.messagesClearedForReload
+   - activeChat.messagesLoadedFalseByScan
+   - reload reason: fileSizeChanged / emptyMessages / pendingAdoption / danglingRecovery
+4. 更新本文件 Phase 0 数据。
+
+禁止：
+- 先改 streaming `<pre>`。
+- 新增缓存。
+- 去掉 resume/dedup 防御。
+- 清理或重写大段生命周期。
+
+如果 Phase 0 证明 CodeX await active project scan 是主因：
+- Phase 1 只做 CodeX 初始化去 await full scan；
+- 用已有 restored cliSessionId 先注册 resume mapping；
+- full scan 后台 repair。
+
+如果 Phase 0 证明闪烁来自 active chat scan reload：
+- Phase 2 改为后台读成功后原子替换，不先清空可见 messages。
 ```
 
