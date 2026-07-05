@@ -86,8 +86,15 @@ export function getRenderContentStats() {
   }
 }
 
-// 挂到 window 方便 console 手动查看
-if (typeof window !== 'undefined') {
+let _windowApiInstalled = false
+
+/**
+ * 将 RC stats API 挂到 window（幂等）。
+ * 必须在 renderContent() 首次调用前执行，由 render.js 的 import 副作用触发。
+ */
+export function ensureRcProbeWindowApi() {
+  if (_windowApiInstalled || typeof window === 'undefined') return
+  _windowApiInstalled = true
   window.__MCPF_RC_STATS__ = () => {
     const stats = getRenderContentStats()
     console.table(
@@ -105,6 +112,3 @@ if (typeof window !== 'undefined') {
   window.__MCPF_RC_CALLS__ = () => getRenderContentCalls()
   window.__MCPF_RC_RESET__ = () => resetRenderContentCalls()
 }
-
-// 确保 esbuild/rollup 不 tree-shake 上面的副作用赋值
-export const _rcProbeWindowApi = typeof window !== 'undefined' ? 1 : 0

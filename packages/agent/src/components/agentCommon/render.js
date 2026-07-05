@@ -1,5 +1,5 @@
 import hljs from 'highlight.js/lib/common'
-import { rcProbeStart } from './utils/renderContentProbe.mjs'
+import { rcProbeStart, ensureRcProbeWindowApi } from './utils/renderContentProbe.mjs'
 import {
   isAbsoluteFilePath,
   isStrongLocalPathCandidate,
@@ -8,6 +8,9 @@ import {
   trimLocalPathCandidate,
 } from './markdown/localPathTokenizer.js'
 export { markdownItLocalPathPlugin } from './markdown/localPathPlugin.js'
+
+// T179 Phase 3: 确保 RC stats API 在 window 上可用（防止 production build tree-shake）
+ensureRcProbeWindowApi()
 
 const EXT_LANG_MAP = {
   py: 'python', js: 'javascript', ts: 'typescript', tsx: 'typescript',
