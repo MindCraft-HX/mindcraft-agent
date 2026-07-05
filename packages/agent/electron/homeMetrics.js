@@ -27,6 +27,12 @@ function startOfLocalDayTs(offsetDays = 0) {
   return d.getTime()
 }
 
+function hasUsageFields(usage) {
+  if (!usage || typeof usage !== 'object') return false
+  return ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cached_input_tokens', 'cache_creation_input_tokens']
+    .some(key => Object.prototype.hasOwnProperty.call(usage, key))
+}
+
 function walkDir(dir, maxDepth, cb) {
   if (maxDepth < 0) return
   let entries
@@ -67,16 +73,11 @@ const _trendCache = new Map()
  */
 function parseClaudeLines(lines) {
   let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0
-  let lastStopInput = 0, lastStopOutput = 0, lastStopCacheRead = 0, lastStopCacheCreation = 0
-  let lastStopTs = null
-  let lastFallbackTs = null
   let hasStop = false
+  let hasUsage = false
   const dateMap = new Map()
-  // 注：首页统一口径必须复用 Claude metrics normalizer：
-  // 原生 Claude: in = input_tokens - cache_read
-  // 第三方 Claude SDK provider: in = input_tokens + cache_creation
-  //     每轮 API 调用的 input_tokens 含全部上下文，跨轮累加会严重偏高
-  //     正确做法：只取最后一个 stop_reason 轮次的值
+  // Home is a historical consumption aggregate. Each assistant usage row is a
+  // real model request, so cache read must be summed across the transcript.
 
   function addToDate(ts, inp, out, cr, cc) {
     if (!ts) return
@@ -102,56 +103,21 @@ function parseClaudeLines(lines) {
         const out = u.output_tokens || 0
         const cr = normalized.cacheReadTokens || 0
         const cc = normalized.cacheCreationTokens || 0
-        if (ts) lastFallbackTs = ts
+        hasUsage = true
+        totalInput += inp
+        totalOutput += out
+        totalCacheRead += cr
+        totalCacheCreation += cc
+        addToDate(ts, inp, out, cr, cc)
 
         if (parsed.message.stop_reason) {
           hasStop = true
-          // H1 修复：每轮只记 delta output，input/cache 只取末轮（不跨轮累加）
-          const deltaOut = out - lastStopOutput
-          lastStopInput = inp
-          lastStopOutput = out
-          lastStopCacheRead = cr
-          lastStopCacheCreation = cc
-          lastStopTs = ts
-          if (deltaOut > 0) {
-            totalOutput += deltaOut
-          }
         }
       }
     } catch (_) {}
   }
 
-  if (hasStop) {
-    totalInput = lastStopInput
-    totalCacheRead = lastStopCacheRead
-    totalCacheCreation = lastStopCacheCreation
-    // 趋势图：整 session 归到最后一轮日期（避免每轮全量 input 重复累加）
-    addToDate(lastStopTs, totalInput, totalOutput, totalCacheRead, totalCacheCreation)
-  } else {
-    // Fallback：没有 stop_reason，统计所有（取最后一个 assistant 的 usage）
-    for (const line of lines) {
-      try {
-        const parsed = JSON.parse(line)
-        if (parsed.type === 'assistant' && parsed.message?.usage) {
-          const u = parsed.message.usage
-          const model = parsed.model_name || parsed.model || parsed.message?.model || ''
-          const normalized = normalizeClaudeUsageForUi(u, model)
-          const fallbackInput = Number.isFinite(Number(normalized.inputTokens)) ? Number(normalized.inputTokens) : totalInput
-          const fallbackCacheRead = Number.isFinite(Number(normalized.cacheReadTokens)) ? Number(normalized.cacheReadTokens) : totalCacheRead
-          totalInput = fallbackInput
-          totalOutput += u.output_tokens || 0
-          totalCacheRead = fallbackCacheRead
-          totalCacheCreation = Number.isFinite(Number(normalized.cacheCreationTokens))
-            ? Number(normalized.cacheCreationTokens)
-            : totalCacheCreation
-        }
-      } catch (_) {}
-    }
-    // Fallback 也归到末条时间戳
-    addToDate(lastFallbackTs, totalInput, totalOutput, totalCacheRead, totalCacheCreation)
-  }
-
-  return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheCreation: totalCacheCreation, dateMap, hasStop }
+  return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheCreation: totalCacheCreation, dateMap, hasStop, hasUsage }
 }
 
 // ==================== Codex JSONL 解析 ====================
@@ -180,6 +146,9 @@ function parseCodexLines(lines) {
 
   // H2+H3 修复：取末个 token_count 事件的 total_token_usage（累积值），不跨事件累加
   let lastInp = 0, lastOut = 0, lastCr = 0, lastCc = 0, lastTs = null
+  let sawTotalUsage = false
+  let fallbackInput = 0, fallbackOutput = 0, fallbackCacheRead = 0, fallbackCacheCreation = 0
+  const fallbackDateMap = new Map()
 
   for (const line of lines) {
     try {
@@ -189,25 +158,52 @@ function parseCodexLines(lines) {
       if (parsed.type === 'event_msg' && parsed.payload?.type === 'token_count') {
         const info = parsed.payload?.info || parsed.info || {}
         const usage = info.total_token_usage || {}
+        const lastUsage = info.last_token_usage || {}
         hasTokens = true
         // Phase 1：走统一 normalizer，不再手写 provider 公式
-        const norm = normalizeCodexUsage(usage)
-        lastInp = norm.inputTokens
-        lastOut = norm.outputTokens
-        lastCr = norm.cacheReadTokens
-        lastCc = norm.cacheCreationTokens
-        lastTs = ts
+        if (hasUsageFields(usage)) {
+          sawTotalUsage = true
+          const norm = normalizeCodexUsage(usage)
+          lastInp = norm.inputTokens
+          lastOut = norm.outputTokens
+          lastCr = norm.cacheReadTokens
+          lastCc = norm.cacheCreationTokens
+          lastTs = ts
+        } else if (!sawTotalUsage && hasUsageFields(lastUsage)) {
+          const norm = normalizeCodexUsage(lastUsage)
+          fallbackInput += norm.inputTokens
+          fallbackOutput += norm.outputTokens
+          fallbackCacheRead += norm.cacheReadTokens
+          fallbackCacheCreation += norm.cacheCreationTokens
+          if (ts) {
+            const d = formatDateLocal(ts)
+            const cur = fallbackDateMap.get(d) || { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+            cur.input += norm.inputTokens
+            cur.output += norm.outputTokens
+            cur.cacheRead += norm.cacheReadTokens
+            cur.cacheCreation += norm.cacheCreationTokens
+            fallbackDateMap.set(d, cur)
+          }
+        }
       }
     } catch (_) {}
   }
 
-  if (hasTokens) {
+  if (sawTotalUsage) {
     // Phase 1：normalizeCodexUsage 已产出统一语义，不再手算
     totalInput = lastInp
     totalOutput = lastOut
     totalCacheRead = lastCr
     totalCacheCreation = lastCc
     addToDate(lastTs, totalInput, lastOut, lastCr, lastCc)
+  } else if (hasTokens) {
+    totalInput = fallbackInput
+    totalOutput = fallbackOutput
+    totalCacheRead = fallbackCacheRead
+    totalCacheCreation = fallbackCacheCreation
+    for (const [date, vals] of fallbackDateMap) {
+      dateMap.set(date, vals)
+    }
   }
 
   return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheCreation: totalCacheCreation, dateMap, hasTokens }
