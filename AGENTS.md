@@ -38,6 +38,10 @@ docs/            -> 项目知识库，默认纳入 git
 | 界面性能 | `docs/perf-audit-report.md` |
 | Renderer 高频链路 / tab 切换性能 | `docs/plan/2026-07-02-renderer-hot-path-performance.md`，`docs/plan/2026-07-02-session-tab-switch-performance.md`，`docs/plan/2026-07-02-T172-session-switch-performance.md` |
 | Activation 热路径 / 缓存治理 | `docs/plan/2026-07-05-hot-path-governance-and-streaming-render.md`，`docs/plan/2026-07-05-project-session-activation-work-graph.md`，`docs/plan/2026-07-05-cache-governance-and-local-derived-data.md` |
+| Electron E2E / 真实链路验收 | `docs/plan/2026-07-05-electron-e2e-smoke-harness.md` |
+| Agent core 生命周期边界 | `docs/plan/2026-07-05-agent-core-lifecycle-boundary-audit.md` |
+| 死代码 / 孤岛业务线清理 | `docs/plan/2026-07-05-dead-code-and-redundant-business-route-audit.md` |
+| legacy 兼容路线退出窗口 | `docs/plan/2026-07-05-legacy-compatibility-exit-plan.md` |
 | 每日代码审查 | `docs/review.md` |
 | 架构健康审查（优化优先级） | `docs/architecture-health-review-2026-06-28.md` |
 
@@ -90,6 +94,9 @@ docs/            -> 项目知识库，默认纳入 git
 
 - 先读完整函数再改大文件，尤其是 `claudeAgent.js` / `codexAgent.js` / 两个 `index.vue`。
 - 同一函数连续三次回归，停止补丁，改为重写边界或补契约测试。
+- 涉及 session/project/codeHub activation、性能卡顿、scan/metrics/draft/history 链路时，先画 work graph：列出同步段、后台任务、事实源、取消/去重/失效规则和预期探针，再改代码。
+- work graph 必须区分 P0 当前可见路径、P1 当前 session 首屏、P2 metrics/draft/instruction 回填、P3 scan/repair/非当前 session 后台任务；禁止把 P3 工作放回交互同步段。
+- 新增缓存、dedup、scheduler、background refresh 时，先写清 owner/key/invalidation/timeout/side effect，再接入实现；不要用“临时 Map”绕过缓存治理。
 - 新增 SDK 用法前先查本地类型定义，不凭记忆：
   - ClaudeCode: `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`
   - CodeX: `node_modules/@openai/codex-sdk/dist/index.d.ts`

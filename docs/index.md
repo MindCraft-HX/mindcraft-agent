@@ -46,6 +46,11 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-07-05-legacy-compatibility-exit-plan.md](./plan/2026-07-05-legacy-compatibility-exit-plan.md) | T188 Legacy compatibility exit：provider projection、electron-conf、旧 IPC/窗口/API 的退出窗口 |
+| [plan/2026-07-05-dead-code-and-redundant-business-route-audit.md](./plan/2026-07-05-dead-code-and-redundant-business-route-audit.md) | T187 Dead code / redundant business route audit：重构后死代码、孤岛业务线、预加载 API 和依赖清理 |
+| [plan/2026-07-05-agent-core-lifecycle-boundary-audit.md](./plan/2026-07-05-agent-core-lifecycle-boundary-audit.md) | T186 Agent core 生命周期边界审计：stream/abort/done/session map 不为减行数强拆 |
+| [plan/2026-07-05-electron-e2e-smoke-harness.md](./plan/2026-07-05-electron-e2e-smoke-harness.md) | T185 Electron E2E smoke harness：真实 preload/main/renderer 链路验收 |
+| [plan/2026-07-05-codehub-session-index-handoff.md](./plan/2026-07-05-codehub-session-index-handoff.md) | T184 CodeHub SessionIndex Phase 1/2：被动索引 + eager mount，解除 tab 存在性对 provider ready 的依赖 |
 | [plan/2026-07-05-cache-governance-and-local-derived-data.md](./plan/2026-07-05-cache-governance-and-local-derived-data.md) | T183 Cache governance / local derived data：file-derived cache helper、registry read cache、in-flight dedup timeout |
 | [plan/2026-07-05-hot-path-governance-and-streaming-render.md](./plan/2026-07-05-hot-path-governance-and-streaming-render.md) | T181 CodeHub startup / activation chain：同步段治理、会话切换卡顿收口，streaming render 后续 |
 | [plan/2026-07-05-project-session-activation-work-graph.md](./plan/2026-07-05-project-session-activation-work-graph.md) | T179 Project / Session activation work graph：scan cache hit 去 registry 写副作用 |
