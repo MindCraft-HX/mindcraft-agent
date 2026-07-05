@@ -2,7 +2,7 @@
   <div class="msg-assistant">
     <div :class="['assistant-avatar', 'icon', 'iconfont', iconClass]" :style="iconStyle"></div>
     <div class="assistant-main">
-      <div class="assistant-content" v-html="renderContent(msg.text, 'CodeX:AssistantBubble')"></div>
+      <div class="assistant-content" v-html="renderContent(displayText, 'CodeX:AssistantBubble')"></div>
       <TokenMetaRow v-if="msg._turnTokens" v-bind="msg._turnTokens" />
     </div>
   </div>
@@ -11,6 +11,7 @@
 <script setup>
 import { computed } from 'vue'
 import { renderContent } from '../../../agentCommon/render.js'
+import { useStreamingText } from '../../../agentCommon/composables/useStreamingText.js'
 import TokenMetaRow from '../../../agentCommon/components/TokenMetaRow.vue'
 import '../../../agentCommon/markdown.css'
 
@@ -18,6 +19,9 @@ const props = defineProps({
   msg: { type: Object, required: true },
   type: { type: String, default: 'claude code' }
 })
+
+// T179 Phase 3.1: streaming 期间 v-html 更新节流 — 削减 DOM 解析次数
+const { displayText } = useStreamingText(() => props.msg.text)
 
 const iconMap = {
   'claude code': 'icon-ChatGPT',

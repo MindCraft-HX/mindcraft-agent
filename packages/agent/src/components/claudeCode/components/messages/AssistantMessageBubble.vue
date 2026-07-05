@@ -2,7 +2,7 @@
   <div class="msg-assistant">
     <div class="assistant-avatar mindcraft-flow-win-iconfont  icon-mindcraft-claude1"></div>
     <div class="assistant-content">
-      <div v-html="renderContent(msg.text, 'ClaudeCode:AssistantBubble')"></div>
+      <div v-html="renderContent(displayText, 'ClaudeCode:AssistantBubble')"></div>
       <TokenMetaRow v-if="msg._turnTokens" v-bind="msg._turnTokens" />
     </div>
   </div>
@@ -10,12 +10,16 @@
 
 <script setup>
 import { renderContent } from '../../../agentCommon/render.js'
+import { useStreamingText } from '../../../agentCommon/composables/useStreamingText.js'
 import TokenMetaRow from '../../../agentCommon/components/TokenMetaRow.vue'
 import '../../../agentCommon/markdown.css'
 
 const props = defineProps({
   msg: { type: Object, required: true },
 })
+
+// T179 Phase 3.1: streaming 期间 v-html 更新节流 — 削减 DOM 解析次数
+const { displayText } = useStreamingText(() => props.msg.text)
 
 // 快速判断：不含任何 markdown 标记时直接渲染纯文本，跳过正则和 v-html
 </script>
