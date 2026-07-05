@@ -171,18 +171,26 @@ function createFileDerivedCache(options = {}) {
 function trackDedup(map, key, promise, timeoutMs = 60000) {
   map.set(key, promise)
 
-  const cleanup = () => { map.delete(key) }
+  let timer = null
+
+  const cleanup = () => {
+    if (timer !== null) { clearTimeout(timer); timer = null }
+    // Identity guard: only delete if the slot still holds THIS promise.
+    // Without this, a timed-out (stale) promise settling after a new
+    // promise has taken the same key would delete the new promise's slot.
+    if (map.get(key) === promise) map.delete(key)
+  }
 
   if (timeoutMs > 0) {
-    const timeout = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('DEDUP_TIMEOUT')), timeoutMs)
-    })
-    // Race: whichever settles first triggers cleanup.
-    // We catch the rejection so unhandled-rejection doesn't fire on timeout.
-    Promise.race([promise, timeout]).finally(cleanup).catch(() => {})
-  } else {
-    promise.finally(cleanup)
+    timer = setTimeout(() => {
+      timer = null
+      // Timeout: release the slot only if it still belongs to this promise.
+      if (map.get(key) === promise) map.delete(key)
+    }, timeoutMs)
   }
+
+  // Clean up on settle regardless of timeout — identity guard keeps it safe.
+  promise.finally(cleanup)
 
   return promise
 }

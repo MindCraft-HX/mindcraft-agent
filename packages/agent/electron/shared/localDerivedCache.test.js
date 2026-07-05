@@ -1,5 +1,5 @@
 /**
- * T183 Phase 1: Tests for createFileDerivedCache
+ * T183 Phase 1+3: Tests for createFileDerivedCache and trackDedup
  *
  * Uses monkey-patched fs.statSync for deterministic cache behavior testing.
  * All tests restore fs.statSync in finally blocks to avoid cross-test pollution.
@@ -8,7 +8,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('fs')
-const { createFileDerivedCache } = require('./localDerivedCache')
+const { createFileDerivedCache, trackDedup } = require('./localDerivedCache')
 
 // Helpers
 
@@ -284,4 +284,54 @@ test('Edge: set then get with same stat returns consistent value', () => {
       assert.deepEqual(r, { lines: ['hello', 'world'] })
     })
   })
+})
+
+// ==================== trackDedup ====================
+
+test('trackDedup: settles normally and removes from map', async () => {
+  const map = new Map()
+  const key = 'task-1'
+  const p = trackDedup(map, key, Promise.resolve(42), 0)
+
+  assert.equal(map.get(key), p, 'promise stored before settle')
+  const result = await p
+  assert.equal(result, 42)
+  // After microtask flush, map entry should be cleaned
+  await new Promise(r => setImmediate(r))
+  assert.equal(map.has(key), false, 'dedup slot cleaned after resolve')
+})
+
+test('trackDedup: timeout releases slot, old settle does not delete new promise', async () => {
+  const map = new Map()
+  const key = 'task-2'
+
+  // Promise A — never settles until we say so
+  let resolveA
+  const neverSettles = new Promise(r => { resolveA = r })
+  trackDedup(map, key, neverSettles, 1) // 1ms timeout
+
+  // Wait for timeout to fire and release the slot
+  await new Promise(r => setTimeout(r, 20))
+
+  assert.equal(map.has(key), false, 'slot released after timeout')
+
+  // Promise B — controlled, does NOT auto-resolve
+  let resolveB
+  const controlledB = new Promise(r => { resolveB = r })
+  trackDedup(map, key, controlledB, 0)
+
+  assert.equal(map.get(key), controlledB, 'new promise occupies the slot')
+
+  // Now settle the old Promise A
+  resolveA('stale')
+  await new Promise(r => setImmediate(r))
+
+  // Identity guard: old settle must NOT delete Promise B's slot
+  assert.equal(map.get(key), controlledB, 'new promise slot survived old settle')
+
+  // Now settle Promise B normally
+  resolveB('new')
+  await controlledB
+  await new Promise(r => setImmediate(r))
+  assert.equal(map.has(key), false, 'slot cleaned after new promise settles')
 })

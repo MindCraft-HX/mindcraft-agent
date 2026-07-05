@@ -288,24 +288,26 @@ Acceptance:
 - ✅ Cache hit path performs zero registry writes.
 - ✅ Existing session registry integration tests pass (43/43).
 
-### Phase 3: In-Flight Dedup Contract ✅ (completed 2026-07-05)
+### Phase 3: In-Flight Dedup Contract ✅ (metrics aggregate complete, session scan / renderer deferred)
 
 Goal: prevent promise dedup from becoming invisible stale UI.
 
-**Completed:**
+**Completed — metrics aggregate dedup (E7, E17):**
 
-- Added `trackDedup(map, key, promise, timeoutMs=60000)` to `localDerivedCache.js`. Races the promise against a timeout; the dedup slot is released on whichever settles first. If the timeout fires first, the underlying promise keeps running — only the slot is freed.
+- Added `trackDedup(map, key, promise, timeoutMs=60000)` to `localDerivedCache.js`. Races the promise against a timeout; the dedup slot is released on whichever settles first. Includes identity guard: stale promise settling after a new promise has taken the same key will not delete the new slot. Timeout timer is also cleared on settle.
 - **E7** (`claudeMetrics.js` `_pendingClaudeAggregates`): migrated to `trackDedup`. Also fixed F5: on dedup hit, now returns the in-flight promise instead of `null`, so callers can await the already-running aggregate.
-- **E17** (`codexAgent.js` `_pendingAggregates`): migrated to `trackDedup`. Manual `set/delete/finally/catch` replaced with single `trackDedup` call. Timeout prevents a hung aggregate from permanently blocking the dedup slot.
+- **E17** (`codexAgent.js` `_pendingAggregates`): migrated to `trackDedup`. Manual `set/delete/finally/catch` replaced with single `trackDedup` call.
 
-Scope:
+**Deferred — session scan / renderer dedup:**
 
-- Metrics refresh dedup (E7, E17).
-- Session scan dedup (R9 — deferred, low priority).
+- `_pendingCodexScans` and `_pendingClaudeScans` (session scan dedup maps) still use manual Map patterns without timeout. Low-risk: scans complete quickly and are triggered by explicit user navigation, not background timers.
+- Renderer `metricsDedupHelper` (R9) still uses its own implementation without timeout. Low priority.
+
+**Test coverage:** 2 new test cases (normal settle cleanup, timeout + identity guard against stale-delete). Total: 20 tests.
 
 Acceptance:
 
-- ✅ Dedup has timeout cleanup (60s default).
+- ✅ Metrics aggregate dedup has timeout cleanup (60s default) with identity guard.
 - ✅ Interaction paths still show cache-first state.
 - ✅ Existing tests pass (claude-context-usage, codex-git-metrics, codex-turn-tokens, codex-history-load-performance).
 
