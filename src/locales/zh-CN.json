@@ -378,7 +378,7 @@
 		"noMatch": "未找到匹配的对话",
 		"noHistory": "暂无历史对话",
 		"selectFolderHint": "请先选择并锁定工作文件夹",
-		"history": "历史对话"
+		"history": "会话扫描"
 	},
 	"time": {
 		"justNow": "刚刚",
@@ -640,7 +640,7 @@
 		"expandOutput": "显示完整输出",
 		"lines": "行",
 		"chars": "字符",
-		"history": "历史对话",
+		"history": "会话扫描",
 		"selectFolderLock": "请先选择并锁定工作文件夹",
 		"newConversation": "新建对话",
 		"projectSettings": "项目设置",

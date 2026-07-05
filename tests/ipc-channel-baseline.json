@@ -107,6 +107,7 @@
   "codex-check-environment",
   "codex-check-latest-version",
   "codex-delete-session-file",
+  "codex-get-file-stat",
   "codex-get-api-format",
   "codex-get-base-url",
   "codex-get-default-network-access",

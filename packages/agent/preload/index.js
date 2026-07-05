@@ -171,6 +171,7 @@ function createAgentBridge(ipcRenderer) {
   codexDeleteSession: (payload) => ipcRenderer.invoke('codex-delete-session', payload),
   codexDeleteSessionFile: (filePath) => ipcRenderer.invoke('codex-delete-session-file', { filePath }),
   codexReadSessionFileRange: (params) => ipcRenderer.invoke('codex-read-session-file-range', params),
+  codexGetFileStat: (filePath) => ipcRenderer.invoke('codex-get-file-stat', { filePath }),
   codexListSlashCommands: (payload) => ipcRenderer.invoke('codex-list-slash-commands', payload),
   codexListLocalSkills: (payload) => ipcRenderer.invoke('codex-list-local-skills', payload),
   codexAgentQueryMetrics: (payload) => ipcRenderer.invoke('codex-agent-query-metrics', payload),

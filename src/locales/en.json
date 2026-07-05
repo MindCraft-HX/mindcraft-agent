@@ -378,7 +378,7 @@
 		"noMatch": "No matching sessions",
 		"noHistory": "No history",
 		"selectFolderHint": "Please select and lock a working folder first",
-		"history": "History"
+		"history": "Session Scan"
 	},
 	"time": {
 		"justNow": "just now",
@@ -640,7 +640,7 @@
 		"expandOutput": "Show Full Output",
 		"lines": "lines",
 		"chars": "chars",
-		"history": "History",
+		"history": "Session Scan",
 		"selectFolderLock": "Select and lock a working folder first",
 		"newConversation": "New Session",
 		"projectSettings": "Project Settings",

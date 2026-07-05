@@ -607,6 +607,12 @@ export function useClaudeAgentStream({
       }
     }
     markClaudeDone(tab, { cliSessionId, filePath, reason })
+    // T182: agent 完成后精准更新 fileSize，替代等扫描
+    if (filePath) {
+      window.electronAPI.claudeGetFileStat?.(filePath).then(stat => {
+        if (stat && tab) tab.fileSize = stat.size
+      }).catch(() => {})
+    }
     if (reason !== 'completed') {
       markOpenToolsInterrupted(tab, reason)
       tab._sessionIntegrity = {

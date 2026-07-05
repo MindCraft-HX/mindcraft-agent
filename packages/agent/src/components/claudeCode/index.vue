@@ -2269,6 +2269,9 @@ function pushTabMessage(tab, msg) {
   if (!tab) return
   tab.messages.push(msg)
   touchChatUpdatedAt(tab)
+  // T182: 发送后即时排序，让最新 session 自动置顶
+  const proj = projects.value.find(p => p.chats.some(c => c.id === tab.id))
+  if (proj) sortChatsByRecency(proj.chats)
   bumpScrollCount()
 }
 

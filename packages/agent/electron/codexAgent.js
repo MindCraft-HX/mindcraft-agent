@@ -3425,6 +3425,18 @@ function setupCodexSdkHandlers() {
     }
   })
 
+  // T182: 获取单个 session 文件的 stat（用于 agent done 后精准更新 fileSize）
+  ipcMain.handle('codex-get-file-stat', (_, { filePath }) => {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) return null
+      const stats = fs.statSync(filePath)
+      return { size: stats.size, mtime: stats.mtime.getTime() }
+    } catch (e) {
+      console.warn('[codex-get-file-stat] failed:', e?.message || e)
+      return null
+    }
+  })
+
   ipcMain.handle('codex-delete-session', (_, payload = {}) => {
     try {
       const filePath = typeof payload?.filePath === 'string' ? payload.filePath : ''

@@ -318,7 +318,6 @@ const showEmptyOverlay = computed(() => {
 })
 
 // ── 激活 Tab（核心：同步 activeTabId + 调用 switchProject）──
-let _tabActivationInit = true  // 首次恢复时不刷，避免初始 toast
 function activateTab(tab, preferredChat = null) {
   const stop = perfStart('codehub.activateTab')
   const activationId = startActivation(
@@ -364,13 +363,8 @@ function doSwitchProject(tab, preferredChat = null) {
     activationId,
   }, { force: true })
   panel.switchProject(tab.projectId, preferredChat)
-  if (!_tabActivationInit) {
-    // Phase 2: 延迟刷新带 cooldown — UI 先切过去，50ms 防抖后立即后台扫描
-    // 同一 panel 快速连续切换时，handleRefreshSessions 内部取消旧 timer
-    panel.refreshSessions?.({ reason: 'tab-activate', silent: true, ifStaleMs: 15000, deferMs: 150 })
-  }
+  // T182: 切 tab 不再触发自动扫描。排序由发送即时排序 + agent done 排序驱动。
   stop({ activationId })
-  _tabActivationInit = false
 }
 
 // 从 route query 提取期望激活的会话（来自首页项目条目点击）

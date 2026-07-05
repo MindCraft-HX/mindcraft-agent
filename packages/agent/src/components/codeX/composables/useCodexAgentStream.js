@@ -887,6 +887,12 @@ export function useCodexAgentStream({
       filePath: detachResume ? '' : filePath,
       reason,
     })
+    // T182: agent 完成后精准更新 fileSize，替代等扫描
+    if (filePath && !detachResume) {
+      window.electronAPI.codexGetFileStat?.(filePath).then(stat => {
+        if (stat && tab) tab.fileSize = stat.size
+      }).catch(() => {})
+    }
     if (ownerProject && reason === 'completed') {
       // 视觉提醒（任务栏闪烁 + Tab 高亮）：仅后台/非活跃项目时
       if (shouldNotifyOnTaskDone({

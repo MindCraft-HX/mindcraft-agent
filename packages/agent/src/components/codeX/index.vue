@@ -474,6 +474,9 @@ function pushTabMessage(tab, msg) {
   if (!tab) return
   tab.messages.push(msg)
   touchChatUpdatedAt(tab)
+  // T182: 发送后即时排序，让最新 session 自动置顶
+  const proj = projects.value.find(p => p.chats.some(c => c.id === tab.id))
+  if (proj) sortChatsByRecency(proj.chats)
   bumpScrollCount()
 }
 const nextProjectId = () => `proj-${++projectCounter}`
@@ -2260,6 +2263,8 @@ async function sendMessage(textOverride = null, targetTab = null) {
     trimMessages(tab, true)
     tab.messages.push(userMsg)
     touchChatUpdatedAt(tab)
+    // T182: 发送后即时排序，让最新 session 自动置顶
+    sortChatsByRecency((activeProj.value || activeProject.value)?.chats)
   }
   // 飞行锁 + 乐观 thinking：必须在 await 之前设置 thinking=true。
   // 后端 Promise 在 finally 中 resolve，晚于 codex-agent-done 事件发送。
