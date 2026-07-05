@@ -17,6 +17,7 @@ import {
   markClaudeStreamActivity,
 } from '../utils/claudeRuntimeState.mjs'
 import { attachTurnTokensToLastRenderableMessage } from '../../agentCommon/utils/turnTokensAttachment.mjs'
+import { sortChatsByRecencyInPlace } from '../../agentCommon/utils/chatRecency.mjs'
 
 /** 追加消息到 messages */
 function pushMessage(tab, onNewMessage, msg) {
@@ -634,6 +635,12 @@ export function useClaudeAgentStream({
     tab._taskToolUseIds = new Set()
     // 对话结束，截断旧消息
     trimMessages?.(tab)
+    if (projects) {
+      const ownerProject = projects.value.find(p => (p.chats || []).some(c => c.sessionId === chatKey))
+      if (ownerProject?.chats) {
+        sortChatsByRecencyInPlace(ownerProject.chats)
+      }
+    }
     scrollBottom(tab.id)
     // onAgentDone 是明确边界，立即保存
     saveHistory()

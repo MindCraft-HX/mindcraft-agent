@@ -24,6 +24,12 @@ function setRuntimeState(tab, state) {
   return tab
 }
 
+function touchRuntimeUpdatedAt(tab, now = Date.now()) {
+  if (!tab) return tab
+  tab.updatedAt = now
+  return tab
+}
+
 function clearRuntimeState(tab) {
   if (!tab) return tab
   delete tab[RUNTIME_FIELD]
@@ -155,6 +161,7 @@ export function markCodexDone(tab, { cliSessionId, filePath, reason = 'completed
   if (cliSessionId !== undefined) tab.cliSessionId = cliSessionId
   if (filePath !== undefined) tab.filePath = filePath
   setRuntimeState(tab, reason === 'completed' ? CODEX_RUNTIME_STATES.DONE : CODEX_RUNTIME_STATES.FAILED)
+  touchRuntimeUpdatedAt(tab)
   clearRuntimeFields(tab)
   return tab
 }

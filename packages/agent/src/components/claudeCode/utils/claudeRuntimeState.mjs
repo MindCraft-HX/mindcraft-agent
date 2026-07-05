@@ -23,6 +23,12 @@ function setRuntimeState(tab, state) {
   return tab
 }
 
+function touchRuntimeUpdatedAt(tab, now = Date.now()) {
+  if (!tab) return tab
+  tab.updatedAt = now
+  return tab
+}
+
 function clearRuntimeState(tab) {
   if (!tab) return tab
   delete tab[RUNTIME_FIELD]
@@ -77,6 +83,7 @@ export function markClaudeDone(tab, { cliSessionId = '', filePath = '', reason =
   if (cliSessionId) tab.cliSessionId = cliSessionId
   if (filePath) tab.filePath = filePath
   setRuntimeState(tab, reason === 'completed' ? CLAUDE_RUNTIME_STATES.DONE : CLAUDE_RUNTIME_STATES.FAILED)
+  touchRuntimeUpdatedAt(tab)
   clearRuntimeFields(tab, { clearState: false })
   return tab
 }

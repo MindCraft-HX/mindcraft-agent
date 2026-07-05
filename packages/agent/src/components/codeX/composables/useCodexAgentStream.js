@@ -5,6 +5,7 @@ import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 import { shouldNotifyOnTaskDone } from '../../agentCommon/utils/taskDoneNotification.mjs'
 import { applyToolResult } from '../../agentCommon/utils/helpers.js'
 import { attachTurnTokensToLastRenderableMessage } from '../../agentCommon/utils/turnTokensAttachment.mjs'
+import { sortChatsByRecencyInPlace } from '../../agentCommon/utils/chatRecency.mjs'
 import { findChatBySessionId } from '../utils/sessionRouting.mjs'
 import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs'
 import {
@@ -899,6 +900,9 @@ export function useCodexAgentStream({
       }
     }
     trimMessages?.(tab)
+    if (ownerProject?.chats) {
+      sortChatsByRecencyInPlace(ownerProject.chats)
+    }
     scrollBottom(tab.id)
     saveHistory()
   }
