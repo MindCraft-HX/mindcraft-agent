@@ -1,6 +1,6 @@
 # TODO
 
-> 最后更新：2026-07-05
+> 最后更新：2026-07-06
 > 历史归档：`docs/archive/todo-history.md`
 > 知识库入口：`docs/index.md`
 
@@ -170,6 +170,18 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 > 全部 7 个在重构前 `18579ce` 提交即已失败。`test:contract`（154 合同测试）不受影响全部通过。
 
+## 2026-07-06 UX 功能登记：文档/通知/弹窗/文案
+
+登记 4 个 UX 相关新需求（T189-T192）：
+
+1. **T189 文档模块持久化** — 重启后文档 tab 清空，是因为 `mdViewer` 的 `tabs` ref 只在 keep-alive 生命周期内存活。`recentDocs` 已通过 IPC 持久化，但打开的 tab 列表和 activeTab 没有。对接方式：在 `onMounted` 恢复、卸载/切换时保存到 electron-conf。
+
+2. **T190 项目 session 运行闪烁** — 侧边栏已有 `codehubHasNotification` 机制（仅对 `hasDoneNotification` 触发 amber pulse）。需要新增对 `runningCount > 0` 的 blink 效果。`Main.vue` 和 `codeHub/index.vue` 之间通过 inject/provide 已有现成通道，只需扩展通知条件。
+
+3. **T191 AskQuestionDialog 非全局化** — 当前 `AskQuestionDialog.vue` 使用 `<Teleport to="body">` + `position: fixed`，全局覆盖。需要：(a) 去掉 Teleport，改为面板内 `position: absolute`；(b) 当用户不在 ClaudeCode tab 时，tab 显示高亮提醒。与 `hasPendingTool` 的蓝色 dot 机制一致。
+
+4. **T192 统一加载文案** — 三个组件共用 `agent.restoringSession` locale key，但文案硬编码了"Claude Code"。仅需改 locale JSON 文件，代码零改动。
+
 ---
 
 ## 活跃任务
@@ -206,8 +218,8 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T184 | architecture/perf | **CodeHub SessionIndex Phase 1/2**：新增被动轻量索引，从 panel-state/session-registry 恢复顶部 tab 摘要，provider `projectTabData` 只作为 runtime patch；保留 eager mount，不启用 lazy mount。详见 `docs/plan/2026-07-05-codehub-session-index-handoff.md`。 | P1 | 📝 待实施 |
 | T185 | test/architecture | **Electron E2E Smoke Harness**：补真实 Electron preload/main/renderer 链路验收，优先覆盖启动、preload bridge、settings sanitizer、session restore；默认不使用真实 provider API key。详见 `docs/plan/2026-07-05-electron-e2e-smoke-harness.md`。 | P2 | 📝 待方案 |
 | T186 | architecture/refactor | **Agent Core Lifecycle Boundary Audit**：审计 ClaudeCode / CodeX stream、abort、done、queue、session map、metrics flush 等核心生命周期边界；不为减行数强拆，先画生命周期 work graph 和补 characterization tests。详见 `docs/plan/2026-07-05-agent-core-lifecycle-boundary-audit.md`。 | P2 | 📝 待方案 |
-| T187 | architecture/cleanup | **Dead Code / Redundant Business Route Audit**：审计多轮重构后的疑似死代码、孤岛业务线、旧 host 组件、未使用 preload/main API、依赖和资产；先建 inventory + guard tests，再按低风险批次删除。详见 `docs/plan/2026-07-05-dead-code-and-redundant-business-route-audit.md`。 | P2 | 📝 待方案 |
-| T188 | architecture/compat | **Legacy Compatibility Exit Plan**：为 provider legacy projection、electron-conf runtime、旧 IPC 名称、standalone agent window、session sidecar fallback 等兼容路径建立退出窗口；不与 T187 死代码清理混删。详见 `docs/plan/2026-07-05-legacy-compatibility-exit-plan.md`。 | P2 | 📝 待方案 |
+| T187 | architecture/cleanup | **Dead Code / Redundant Business Route Audit** ✅ 主线完成。Phase 0 inventory + Phase 1 guard tests (43 tests) + Phase 2 preload 安全面收敛（移除 openNewWindow/openSingleWindow）+ Phase 3 孤立代码删除（5 组件 + 5 目录 + 9 工具文件）+ Phase 4 依赖清理（8 npm 包）。删除 19 源文件 + 82 npm 包。Inventory：`docs/plan/2026-07-06-T187-phase0-inventory.md`。 | P2 | ✅ 主线完成 |
+| T188 | architecture/compat | **Legacy Compatibility Exit Plan**：为 provider legacy projection、electron-conf runtime、旧 IPC 名称、standalone agent window、session sidecar fallback 等兼容路径建立退出窗口；不与 T187 死代码清理混删。兼容 Register：`docs/compatibility-register.md`；方案：`docs/plan/2026-07-05-legacy-compatibility-exit-plan.md`。 | P2 | 🔧 Phase 0 完成（register + electron-conf 分类） |
 | T135 | tech-debt | **Session Registry 后续增强**：`writeJsonAtomic()` 未做 fsync；CodeX session instruction 注入走 user prompt 前缀；`bothFailed` locale key 死代码清理。 | P3 | ⏸️ 部分完成 |
 | T133 | tech-debt | **review follow-up：重复 helper 收敛评估**：`documentLocator.js` 与 `skillsSecurity.js` 各自保留 `isRealPathInside`；`normalizeReasoningEffort.mjs/.cjs` 双份折中。 | P3 | ⏸️ 记录 |
 | T039 | feature | **语音输入能力**：实现前需确定录音权限、STT provider、隐私提示和跨平台权限。 | P3 | ⏸️ 暂缓研究 |
@@ -233,6 +245,10 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T162 | feature | **配置导入弹窗 + CC Switch 导入**：由 T163 全量覆盖，入口已从单 Agent 配置页上移到系统设置全局导入。 | P2 | ✅ T163 已覆盖 |
 | T163 | feature/ux | **系统设置全局 CC Switch 导入**：在系统设置增加 `导入配置`，解析一个 CC Switch `.sql` 后按 CodeX/ClaudeCode 自动分流；预览里处理新增/覆盖/重命名/跳过、unsupported rows、防止未知字段污染 runtime config；active 按 agent 分组且默认不切换；保留各 Agent 配置页 `导入` 仅导本地 CLI 配置。详见 `docs/T163-import-feature.md`。 | P1 | 🔧 核心已完成，待人工验收 |
 | T164 | ux | **Provider 排序拖拽**：从 T163 拆出。在 CodeX/ClaudeCode APISetting.vue provider 列表支持拖拽排序，持久化到 SQLite + legacy storage。 | P2 | 📝 待实现 |
+| T189 | feature/ux | **文档模块 tab 持久化**：每次重启后文档 tab 清空（`mdViewer` keep-alive 失活丢失 `tabs`/`activeTabId` ref）。需在 `src/components/mdViewer/index.vue` 通过 IPC `getSetting/setSetting` 持久化打开的文件列表和当前 active tab，onMounted 恢复；需处理文件被删除/移动的边界。当前 `recentDocs` 已持久化至 electron-conf（最近 5 个），但 tab 状态仅存于内存。 | P1 | 📝 待实施 |
+| T190 | feature/ux | **项目 session 运行时侧边栏闪烁高亮**：当前侧边栏"项目"图标仅对 `hasDoneNotification`（任务完成）有 amber pulse 动画（`sidebar-notify-pulse`），但不反映 `runningCount > 0`（运行中）。用户期望：(1) 在其他模块时，若有 session 运行中，侧边栏"项目"图标应有闪烁效果；(2) 任务完成时的高亮不稳定，需排查清理时机。涉及 `src/Main.vue`（sidebar 通知状态）和 `packages/agent/src/components/codeHub/index.vue`（runningCount 暴露）。可行方案：新增 `codehubHasRunning` ref 或扩展现有 `codehubHasNotification` 逻辑同时接受 running/done 两类触发。 | P1 | 📝 待实施 |
+| T191 | feature/ux | **ClaudeCode AskQuestionDialog 非全局化 + tab 高亮**：当前 `AskQuestionDialog.vue` 使用 `<Teleport to="body">` + `position: fixed` + `z-index: 9999`，覆盖整个窗口。用户期望：(1) 弹窗仅在 ClaudeCode 面板内部显示（去掉 Teleport，改为 `position: absolute` 相对面板）；(2) 当用户不在 ClaudeCode tab 时，ClaudeCode 对应 tab 应有高亮闪烁提醒（类似 `hasPendingTool` 蓝色 dot 机制）。需新增状态标记（如 `hasUserQuestion`），在 `projectTabSummary.mjs` 暴露，由 CodeHub tab 栏和侧边栏消费。涉及 `AskQuestionDialog.vue`、`claudeCode/index.vue`、`projectTabSummary.mjs`、`codeHub/index.vue`、`Main.vue`。 | P1 | 📝 待方案 |
+| T192 | i18n/ux | **统一"智能体界面加载中"文案**：当前 CodeHub / ClaudeCode / CodeX 三个组件的初始化 overlay 都使用 locale key `agent.restoringSession`（中文："正在恢复 Claude Code 会话"），但 CodeX 也显示"Claude Code"不准确，CodeHub 的 loading 也不是恢复特定 agent。方案：将 `agent.restoringSession` 改为"智能体界面加载中"，`agent.restoringSessionHint` 改为"正在加载项目信息，请稍候。"对应英文改为 "Loading agent interface" / "Loading project information, please wait." 仅需修改 `src/locales/zh-CN.json` 和 `src/locales/en.json`，涉及 3 个组件无需改代码。 | P2 | 📝 待实施 |
 
 ---
 

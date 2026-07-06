@@ -64,10 +64,6 @@ export default defineConfig({
             return 'vendor-diagrams'
           }
 
-          if (id.includes('/markmap-lib/') || id.includes('/markmap-view/')) {
-            return 'vendor-markmap'
-          }
-
           if (
             id.includes('/markdown-it/') ||
             id.includes('/highlight.js/') ||

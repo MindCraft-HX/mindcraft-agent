@@ -101,10 +101,12 @@ Recommended action:
 
 This is not dead by static evidence. However it is an old BrowserView subsystem with IPC listener lifecycle risk. Keep it out of deletion candidates unless a product decision removes in-page search.
 
+→ **Registered as supported host subsystem. Not a deletion candidate.** This section stays in the audit only to prevent it from being flagged again in future scans.
+
 Follow-up:
 
-- Register it as "supported host subsystem" or replace with a simpler in-window search path later.
-- If kept, add listener lifecycle checks for `search-page`, `close-search-page`, `found-in-page`.
+- Replace with a simpler in-window search path in a later release.
+- Add listener lifecycle checks for `search-page`, `close-search-page`, `found-in-page`.
 
 ### 2.5 Lightweight Chat
 
@@ -158,14 +160,17 @@ These may look redundant but should not be deleted under T187:
 
 ### Phase 0: Inventory, No Deletion
 
+Tooling: Use `madge` (https://github.com/pahen/madge) or `dependency-cruiser` (https://github.com/sverweij/dependency-cruiser) to generate the import graph. Plain `rg`/grep cannot reliably catch dynamic `import()`, `require()`, Vue async-component lazy imports, or Vite alias resolution.
+
 Deliverables:
 
-- import graph report for `src/**`, `electron/**`, `packages/agent/**`
+- import graph report for `src/**`, `electron/**`, `packages/agent/**` (madge or dependency-cruiser output)
 - renderer route usage table
 - preload API usage table
 - IPC channel usage table
 - dependency usage table
 - asset usage table for large directories
+- **cross-reference report**: for each T187 candidate directory, check whether it imports from T188-protected paths (provider legacy stores, `electron-conf`, old IPC channels). If yes, flag as T188-dependent and exclude from Phase 2.
 
 Acceptance:
 
@@ -190,24 +195,9 @@ Before deletion:
   - `/main/plugin/:pluginId`
 - Add a host orphan import test or script snapshot for known old business directories.
 
-### Phase 2: Remove Low-Risk Orphans
+### Phase 2: Narrow Preload/Main Surface (Elevated — Security)
 
-Only remove after Phase 0/1:
-
-- unreferenced old host components
-- unreferenced old API/socket hooks
-- unreferenced old utilities
-- unreferenced dependencies tied only to removed files
-- stale tests that assert removed compatibility paths
-
-Each removal commit should include:
-
-- file list
-- why it is safe
-- test command
-- rollback note
-
-### Phase 3: Narrow Preload/Main Surface
+**Priority elevated from original draft.** `openNewWindow` / `openSingleWindow` expose `nodeIntegration: true` / `contextIsolation: false` windows even if no active renderer calls them. This is a security surface issue that should not wait for full Phase 3 orphan cleanup.
 
 Candidates:
 
@@ -221,6 +211,23 @@ Rules:
 - update IPC baseline
 - update route/window tests
 - verify with Electron smoke once T185 exists
+
+### Phase 3: Remove Low-Risk Orphans
+
+Only after Phase 0/1 and the T187/T188 cross-reference report confirms no T188 dependency:
+
+- unreferenced old host components
+- unreferenced old API/socket hooks
+- unreferenced old utilities
+- unreferenced dependencies tied only to removed files
+- stale tests that assert removed compatibility paths
+
+Each removal commit should include:
+
+- file list
+- why it is safe
+- test command
+- rollback note
 
 ### Phase 4: Dependency and Asset Cleanup
 
@@ -247,7 +254,14 @@ rg -n "from ['\"]@/socket|from ['\"]@/api|from ['\"]@/hook" src packages tests
 rg -n "vue-codemirror|idb|js-md5|adm-zip|node-stream-zip|markmap|mermaid" src electron packages tests package.json
 ```
 
-For a stronger inventory, use a small Node import graph script instead of manual grep. Dynamic imports and route-based imports must be included.
+For dynamic imports and `require()` calls that plain `rg` may miss:
+
+```text
+rg -n "import\s*\(|require\s*\(" src electron packages --type js
+rg -n "component\s*:\s*\(\)|component\s*:\s*function" src --type js
+```
+
+For a stronger inventory, use `madge` or `dependency-cruiser` instead of manual grep. Dynamic imports, `require()` calls, Vue async-component lazy imports, and Vite alias resolution must be included.
 
 ## 6. Acceptance
 

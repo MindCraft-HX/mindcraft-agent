@@ -117,6 +117,30 @@ Exit options:
 
 Do not decide inside T187 cleanup without product confirmation.
 
+### 2.6 Session Meta Sidecar Fallback
+
+Current state:
+
+- Legacy CodeX sessions stored metadata as a sidecar JSON file alongside the JSONL transcript (e.g. `session_meta.json`).
+- After T174 storage migration, session registry is the authority for metadata (title, instruction, updatedAt, etc.).
+- Some restore/recovery paths still read the legacy sidecar if registry metadata is missing or incomplete.
+
+This is a read-only fallback. It must not be treated as dead code.
+
+Exit condition:
+
+- Session registry metadata has been populated for all existing sessions (via migration or lazy backfill).
+- Manual smoke confirms session restore never depends on sidecar JSON for metadata.
+- Recovery documentation covers the case where sidecar JSON is intentionally removed.
+
+### 2.7 Generic Window APIs (T187 crossover)
+
+Preload exposes `openNewWindow` / `openSingleWindow` which create Electron windows with `nodeIntegration: true` / `contextIsolation: false`. Even if no active renderer calls them, keeping them exposed increases the security surface.
+
+These are handled by T187 Phase 2 (elevated security priority), not by T188 compatibility exit. They are not legacy compatibility paths — they are dead preload surface that happens to be a security concern.
+
+Cross-reference: T187 §2.3, T187 §4 Phase 2.
+
 ## 3. Compatibility Register
 
 Create a small register before removing any legacy path:
@@ -135,18 +159,22 @@ Create a small register before removing any legacy path:
 | `manual smoke` | required manual checks |
 | `rollback` | user recovery path |
 
+Register file location: `docs/compatibility-register.md` (created in Phase 0).
+
 Suggested first register entries:
 
-```text
-LEGACY_PROVIDER_CODEX_PROVIDERS_JSON
-LEGACY_PROVIDER_CLAUDE_INTERNAL_PROVIDERS
-LEGACY_CODEX_RUNTIME_ELECTRON_CONF
-LEGACY_CLAUDE_SETTINGS_SANITIZER
-LEGACY_STANDALONE_CLAUDE_WINDOW
-LEGACY_STANDALONE_CODEX_WINDOW
-LEGACY_AGENT_IPC_CHANNEL_NAMES
-LEGACY_SESSION_META_SIDECAR_FALLBACK
-```
+| id | owner | source | target | read fallback | write projection | introduced | earliest removal |
+|---|---|---|---|---|---|---|---|
+| `LEGACY_PROVIDER_CODEX_PROVIDERS_JSON` | provider | `~/.codex/providers.json` | SQLite `providerStorage` | yes | yes (1.1.x) | T174 (v1.1.0) | v1.2.0 (TBD) |
+| `LEGACY_PROVIDER_CLAUDE_INTERNAL_PROVIDERS` | provider | Claude internal provider store | SQLite `providerStorage` | yes | yes (1.1.x) | T174 (v1.1.0) | v1.2.0 (TBD) |
+| `LEGACY_CODEX_RUNTIME_ELECTRON_CONF` | config | `electron-conf` (`mindcraft-codex`) | JSON/SQLite | yes (locale, prefs) | yes (prefs) | pre-T174 | v1.2.0+ (key-by-key) |
+| `LEGACY_CLAUDE_SETTINGS_SANITIZER` | config | dirty `settings.json` | sanitized `settings.json` | — (repair path) | yes | pre-T174 | keep indefinitely |
+| `LEGACY_STANDALONE_CLAUDE_WINDOW` | window | `#/main/claudeCode` | `#/main/codeHub?agent=claudeCode` | no | no | pre-refactor | product decision |
+| `LEGACY_STANDALONE_CODEX_WINDOW` | window | `#/main/codex` | `#/main/codeHub?agent=codex` | no | no | pre-refactor | product decision |
+| `LEGACY_AGENT_IPC_CHANNEL_NAMES` | ipc | old channel names (string literals) | `ipcChannels.js` constants | no | no | R03 | R10 or never |
+| `LEGACY_SESSION_META_SIDECAR_FALLBACK` | session | sidecar `session_meta.json` | session registry | yes (backfill) | no | pre-T174 | after full backfill |
+
+Version anchoring note: "v1.2.0 (TBD)" means the version is proposed as the earliest removal candidate. Actual removal requires the exit conditions in §2 to be satisfied — the version alone is not sufficient. Adjust version targets as the release schedule solidifies.
 
 ## 4. Execution Plan
 
@@ -156,11 +184,16 @@ No code deletion.
 
 Deliver:
 
-- compatibility register
+- **compatibility register** (`docs/compatibility-register.md`) with all known entries from §3
+- **electron-conf key classification**: classify every `electron-conf` key into one of:
+  - persistent user preference (migrate to JSON/SQLite)
+  - provider projection (keep until T188 Phase 1)
+  - runtime-only override (keep in `electron-conf` or move to in-memory state)
+  - legacy fallback only (candidate for Phase 2 removal)
 - list of current read fallback paths
 - list of current write projection paths
 - list of fallback-only tests
-- release/version recommendation for removal
+- release/version recommendation for removal (per-entry `earliest removal`)
 
 ### Phase 1: Convert Write Projection to Read-Only Fallback
 
@@ -172,6 +205,11 @@ For provider legacy stores after the compatibility window:
 4. Legacy store reads remain one more version as fallback/backfill.
 
 This reduces drift before deletion.
+
+Acceptance additions (beyond standard smoke):
+
+- **Recovery test**: Delete `mindcraft.db`, restart app, confirm providers are rebuilt from legacy fallback reads, confirm rebuilt SQLite rows match legacy source. This validates that the read-only fallback still works as a recovery path after writes stop.
+- Provider import/export still works end-to-end.
 
 ### Phase 2: Remove Fallback Reads
 
@@ -187,8 +225,10 @@ Only after Phase 1 has shipped:
 Only after T185:
 
 - deprecated standalone windows
-- generic unsafe window APIs
+- generic unsafe window APIs (T187 Phase 2, not T188)
 - legacy IPC names only if R10 is approved
+
+R10 fallback: If R10 remains P3/⏸️ indefinitely, T188 Phase 3 will be scoped to **documentation and labeling only** — mark old channel names as `@compat` in `ipcChannels.js` with owner annotations, without renaming. Full channel rename remains gated on R10 + T185.
 
 ## 5. Acceptance
 

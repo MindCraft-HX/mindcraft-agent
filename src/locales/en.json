@@ -403,12 +403,10 @@
 		"timeout": "Response timed out, automatically aborted",
 		"searchFailed": "Search failed",
 		"missingKeyword": "Missing search keyword",
-		"wsClosed": "WebSocket closed, reconnecting",
 		"poorNetwork": "Poor network connection",
 		"contextLimit": "Context limit reached, please click the \"Compress\" button before sending.",
 		"unsupportedTool": "Unsupported tool: {tool}",
 		"compactFailed": "Context compression failed: {error}",
-		"roomSwitched": "Room switch detected, previous room Q&A cancelled",
 		"copyFailed": "Copy failed, please try again"
 	},
 	"theme": {
@@ -916,8 +914,6 @@
 		"running": "Running",
 		"viewDetail": "View Details",
 		"unlockSuccess": "Unlocked successfully",
-		"newRoom": "New Room",
-		"defaultRoom": "Default Room",
 		"copySuccess": "Copied successfully",
 		"copyCode": "Code copied",
 		"saveFailed": "Save failed",

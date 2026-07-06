@@ -66,7 +66,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openFolder: async (folderPath) =>
     ipcRenderer.invoke("open-folder", folderPath),
   openFileWithDefault: (filePath) => ipcRenderer.invoke("open-file-with-default", filePath),
-  openNewWindow: (url) => ipcRenderer.send("open-new-window", url),
 
   // 文档浏览
   openMdWin: (payload) => ipcRenderer.invoke("open-md-win", payload),
@@ -93,7 +92,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // 通用窗口
   openExternalWindow:(url) => ipcRenderer.send("open-external-window", url),
-  openSingleWindow:(info) => ipcRenderer.send("open-single-window", info),
   openSystemSettings: () => ipcRenderer.send("open-system-settings"),
 
 
