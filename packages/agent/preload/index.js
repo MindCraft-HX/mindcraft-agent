@@ -5,29 +5,16 @@ try {
   CLAUDE_CHANNELS = ipcChannels.CLAUDE_CHANNELS
   CODEX_CHANNELS = ipcChannels.CODEX_CHANNELS
 } catch (_) {
-  CORE_CHANNELS = { LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index' }
-  // Fallback: also include core channels used in this bridge
-  // so ipcRenderer doesn't receive undefined channel names.
-  const fallbackCore = {
-    SKILLS_INSTALL_PROGRESS: 'skills-install-progress',
-    GET_SESSION_DRAFT: 'agent-get-session-draft',
-    SET_SESSION_DRAFT: 'agent-set-session-draft',
-    SET_SESSION_DRAFT_SYNC: 'agent-set-session-draft-sync',
-    CLEAR_SESSION_DRAFT: 'agent-clear-session-draft',
-    SET_PERF_ENABLED: 'agent-set-perf-enabled',
-    LOAD_THEME: 'load-theme',
-    SAVE_THEME: 'save-theme',
-    CONFIG_IMPORT_PICK_FILE: 'config-import-pick-file',
-    CONFIG_IMPORT_PREVIEW: 'config-import-preview',
-    CONFIG_IMPORT_COMMIT: 'config-import-commit',
-    CONFIG_EXPORT_PREVIEW: 'config-export-preview',
-    CONFIG_EXPORT_SAVE: 'config-export-save',
-  }
-  Object.assign(CORE_CHANNELS, fallbackCore)
-  // Fallback: hardcode streaming channel names so streaming push events
-  // survive a failed require of ../shared/ipcChannels (e.g. build artifact
-  // mismatch, bundler tree-shaking). Without these, ipcRenderer.on(undefined)
-  // silently drops all stream data.
+  // Fallback: ONLY covers streaming push events.
+  // Push events MUST survive a failed require because ipcRenderer.on(undefined)
+  // silently drops all stream data, breaking the entire renderer.
+  //
+  // All other channels (CLAUDE_CHANNELS.*, CODEX_CHANNELS.*, and most
+  // CORE_CHANNELS.*) will be undefined — the app is already broken if
+  // ../shared/ipcChannels cannot be required.
+  // When adding new channels to this bridge, prefer registering them in
+  // ipcChannels.js; do NOT add them here.
+  CORE_CHANNELS = {}
   CLAUDE_CHANNELS = {
     STREAM_CHUNK: 'claude-stream-chunk',
     STREAM_THINKING: 'claude-stream-thinking',

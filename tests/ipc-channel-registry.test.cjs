@@ -58,8 +58,51 @@ function findInvocations(dirPath, patterns, extensions) {
   return results;
 }
 
+/**
+ * Scan for constant references like CLAUDE_CHANNELS.GET_KEY,
+ * CODEX_CHANNELS.SELECT_DIRECTORY, CORE_CHANNELS.LOAD_THEME.
+ *
+ * Returns { file, line, kind, group, key } — group is 'CLAUDE'/'CODEX'/'CORE',
+ * key is the constant name (e.g. 'GET_KEY').
+ * These are resolved to actual channel strings in before() using the registry.
+ */
+function findConstantInvocations(dirPath, patterns, extensions) {
+  const results = [];
+  const stack = [dirPath];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!fs.existsSync(current)) continue;
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('__') && entry.name !== 'node_modules') {
+          stack.push(full);
+        }
+      } else if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
+        const content = fs.readFileSync(full, 'utf8');
+        for (const pattern of patterns) {
+          const regex = new RegExp(pattern.regex, 'g');
+          let match;
+          while ((match = regex.exec(content)) !== null) {
+            results.push({
+              file: path.relative(ROOT, full),
+              line: content.substring(0, match.index).split('\n').length,
+              kind: pattern.kind,
+              group: match[1],   // CLAUDE | CODEX | CORE
+              key: match[2],     // constant name e.g. GET_KEY
+            });
+          }
+        }
+      }
+    }
+  }
+  return results;
+}
+
 // ---- Pattern definitions ----
 
+// String-literal patterns (pre-migration code, residual channels)
 const PRELOAD_SCAN = [
   { regex: `ipcRenderer\\.invoke\\s*\\(\\s*['"]([^'"]+)['"]`, kind: 'invoke' },
   { regex: `ipcRenderer\\.send\\s*\\(\\s*['"]([^'"]+)['"]`, kind: 'send' },
@@ -77,6 +120,24 @@ const HOST_MAIN_SCAN = [
   { regex: `ipcMain\\.on\\s*\\(\\s*['"]([^'"]+)['"]`, kind: 'on' },
 ];
 
+// Constant-reference patterns (post-migration: CLAUDE_CHANNELS.XXX etc.)
+// Group 1 = prefix (CLAUDE|CODEX|CORE), Group 2 = key name (GET_KEY etc.)
+const CONSTANT_PRELOAD_SCAN = [
+  { regex: `ipcRenderer\\.invoke\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'invoke' },
+  { regex: `ipcRenderer\\.send\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'send' },
+  { regex: `ipcRenderer\\.sendSync\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'sendSync' },
+  { regex: `ipcRenderer\\.on\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'on' },
+  { regex: `ipcRenderer\\.removeAllListeners\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'removeAllListeners' },
+  { regex: `ipcRenderer\\.removeListener\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'removeListener' },
+];
+
+const CONSTANT_MAIN_SCAN = [
+  { regex: `ipcMain\\.handle\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'handle' },
+  { regex: `ipcMain\\.on\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'on' },
+];
+
+const CONSTANT_HOST_MAIN_SCAN = CONSTANT_MAIN_SCAN;  // same patterns
+
 // ---- Tests ----
 
 describe('IPC Channel Parity', () => {
@@ -86,53 +147,97 @@ describe('IPC Channel Parity', () => {
   let baselineChannels;  // Phase 3: historical channels exempt from registry requirement
 
   before(() => {
-    // Scan agent preload
-    const preloadResults = findInvocations(
+    // --- Phase 1: scan for string-literal channels (pre-migration residual) ---
+    const literalPreload = findInvocations(
       path.join(ROOT, 'packages', 'agent', 'preload'),
       PRELOAD_SCAN,
       ['.js', '.ts', '.mjs']
     );
-
-    // Scan host preload
-    const hostPreloadResults = findInvocations(
+    const hostLiteralPreload = findInvocations(
       path.join(ROOT, 'electron'),
       PRELOAD_SCAN,
       ['.js', '.ts']
     );
-
-    preloadChannels = [...preloadResults, ...hostPreloadResults];
-
-    // Scan agent electron main handlers
-    const agentMainResults = findInvocations(
+    const literalMain = findInvocations(
       path.join(ROOT, 'packages', 'agent', 'electron'),
       MAIN_SCAN,
       ['.js', '.mjs']
     );
-
-    // Scan host main handlers (use same patterns as agent — handle + on)
-    const hostMainResults = findInvocations(
+    const hostLiteralMain = findInvocations(
       path.join(ROOT, 'electron'),
       HOST_MAIN_SCAN,
       ['.js']
     );
 
-    mainChannels = [...agentMainResults, ...hostMainResults];
+    // --- Phase 2: scan for constant references (post-migration) ---
+    const constPreload = findConstantInvocations(
+      path.join(ROOT, 'packages', 'agent', 'preload'),
+      CONSTANT_PRELOAD_SCAN,
+      ['.js', '.ts', '.mjs']
+    );
+    const hostConstPreload = findConstantInvocations(
+      path.join(ROOT, 'electron'),
+      CONSTANT_PRELOAD_SCAN,
+      ['.js', '.ts']
+    );
+    const constMain = findConstantInvocations(
+      path.join(ROOT, 'packages', 'agent', 'electron'),
+      CONSTANT_MAIN_SCAN,
+      ['.js', '.mjs']
+    );
+    const hostConstMain = findConstantInvocations(
+      path.join(ROOT, 'electron'),
+      CONSTANT_HOST_MAIN_SCAN,
+      ['.js']
+    );
 
-    // Try loading registry if it exists
+    // --- Phase 3: load registry and resolve constant references ---
+    let registry;
     try {
-      const registry = require('../packages/agent/shared/ipcChannels');
-      const allRegistry = [];
+      registry = require('../packages/agent/shared/ipcChannels');
+    } catch {
+      registry = null;
+    }
+
+    const allRegistry = [];
+    if (registry) {
       for (const group of Object.values(registry)) {
         if (typeof group === 'object') {
           allRegistry.push(...Object.values(group));
         }
       }
-      registryChannels = allRegistry;
-    } catch {
-      registryChannels = [];
+    }
+    registryChannels = allRegistry;
+
+    function resolveConstants(items) {
+      const resolved = [];
+      for (const item of items) {
+        if (!registry) continue;  // can't resolve without registry
+        const groupName = item.group + '_CHANNELS';
+        const channelValue = registry[groupName] && registry[groupName][item.key];
+        if (channelValue) {
+          resolved.push({ ...item, channel: channelValue });
+        }
+        // If key not found in registry, it's a stale reference — skip
+      }
+      return resolved;
     }
 
-    // Load historical channel baseline (Batch 3)
+    // --- Phase 4: merge literal + resolved constant references ---
+    preloadChannels = [
+      ...literalPreload,
+      ...hostLiteralPreload,
+      ...resolveConstants(constPreload),
+      ...resolveConstants(hostConstPreload),
+    ];
+    mainChannels = [
+      ...literalMain,
+      ...hostLiteralMain,
+      ...resolveConstants(constMain),
+      ...resolveConstants(hostConstMain),
+    ];
+
+    // --- Phase 5: load baseline ---
     try {
       baselineChannels = JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8'));
     } catch {
