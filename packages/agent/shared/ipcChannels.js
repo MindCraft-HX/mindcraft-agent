@@ -138,6 +138,24 @@ const CORE_CHANNELS = Object.freeze({
   WRITE_FILE: 'write-file',
   OPEN_EXTERNAL: 'open-external',
   OPEN_EXTERNAL_CONFIRM: 'open-external-confirm',
+  READ_FILE_BY_PATH: 'read-file-by-path',
+  READ_FILE_SYNC: 'read-file-sync',
+  WRITE_FILE_SYNC: 'write-file-sync',
+  UNLINK_FILE_SYNC: 'unlink-file-sync',
+  RMDIR_SYNC: 'rmdir-sync',
+  EXISTS_FILE_SYNC: 'exists-file-sync',
+  MKDIR_SYNC: 'mkdir-sync',
+  COPY_FILE_SYNC: 'copy-file-sync',
+  RENAME_FILE_SYNC: 'rename-file-sync',
+  READ_DIR_SYNC: 'read-dir-Sync',
+  EXEC_CMD: 'exec-cmd',
+
+  // Window management
+  WINDOW_MINIMIZE: 'window-minimize',
+  WINDOW_MAXIMIZE: 'window-maximize',
+  WINDOW_CLOSE: 'window-close',
+  WINDOW_IS_MAXIMIZED: 'window-is-maximized',
+  WINDOW_PERFORMANCE_STATE: 'window-performance-state',
 
   // Local search
   LOCAL_SEARCH: 'local-search',

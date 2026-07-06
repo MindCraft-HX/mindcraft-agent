@@ -5,6 +5,7 @@ const compressing = require("compressing");
 const { exec } = require("child_process");
 const { openMdInMain } = require('../mdRouting')
 const { openDocumentCandidate, resolveCandidatePath } = require('./documentLocator')
+const { CORE_CHANNELS } = require('../../packages/agent/shared/ipcChannels');
 
 
 function setupIpcHandlers(env, platform) {
@@ -58,7 +59,7 @@ function setupIpcHandlers(env, platform) {
       console.error('选择和读取文件出错:',error)
     }
   })
-  ipcMain.handle('read-file-by-path', async (event, filePath) => {
+  ipcMain.handle(CORE_CHANNELS.READ_FILE_BY_PATH, async (event, filePath) => {
     try {
       if (!filePath) {
         return null;
@@ -91,33 +92,33 @@ function setupIpcHandlers(env, platform) {
     }
   })
 
-  ipcMain.handle("read-file-sync", async (event, path) => {
+  ipcMain.handle(CORE_CHANNELS.READ_FILE_SYNC, async (event, path) => {
     const fileContent = fs.readFileSync(path, "utf8");
     return fileContent;
   });
 
-  ipcMain.handle("write-file-sync", async (event, path, data) => {
+  ipcMain.handle(CORE_CHANNELS.WRITE_FILE_SYNC, async (event, path, data) => {
     fs.writeFileSync(path, data);
   });
-  ipcMain.handle("unlink-file-sync", async (event, path) => {
+  ipcMain.handle(CORE_CHANNELS.UNLINK_FILE_SYNC, async (event, path) => {
     fs.unlinkSync(path);
   });
-  ipcMain.handle("rmdir-sync", async (event, folderPath) => {
+  ipcMain.handle(CORE_CHANNELS.RMDIR_SYNC, async (event, folderPath) => {
     fs.rmdirSync(folderPath, { recursive: true });
   });
-  ipcMain.handle("exists-file-sync", async (event, path) => {
+  ipcMain.handle(CORE_CHANNELS.EXISTS_FILE_SYNC, async (event, path) => {
     return fs.existsSync(path);
   });
-  ipcMain.handle("mkdir-sync", async (event, path) => {
+  ipcMain.handle(CORE_CHANNELS.MKDIR_SYNC, async (event, path) => {
     fs.mkdirSync(path, { recursive: true });
   });
-  ipcMain.handle("copy-file-sync", async (event, srcPath, targetPath) => {
+  ipcMain.handle(CORE_CHANNELS.COPY_FILE_SYNC, async (event, srcPath, targetPath) => {
     fs.copyFileSync(srcPath, targetPath);
   });
-  ipcMain.handle("rename-file-sync", async (event, oldPath, newPath) => {
+  ipcMain.handle(CORE_CHANNELS.RENAME_FILE_SYNC, async (event, oldPath, newPath) => {
     fs.renameSync(oldPath, newPath);
   });
-  ipcMain.handle("read-dir-Sync", async (event, dir) => {
+  ipcMain.handle(CORE_CHANNELS.READ_DIR_SYNC, async (event, dir) => {
     return fs.readdirSync(dir, { withFileTypes: true });
   });
   ipcMain.handle(
@@ -130,7 +131,7 @@ function setupIpcHandlers(env, platform) {
   );
 
   // 通用命令执行
-  ipcMain.handle("exec-cmd", async (event, cmd, dir) => {
+  ipcMain.handle(CORE_CHANNELS.EXEC_CMD, async (event, cmd, dir) => {
     return new Promise((resolve, reject) => {
       exec(cmd, { cwd: dir }, (error, stdout, stderr) => {
         if (error) {

@@ -3,6 +3,7 @@ const { ipcRenderer, contextBridge, clipboard } = require("electron");
 const path = require("path");
 const os = require("os");
 const { createAgentBridge } = require("../packages/agent/preload");
+const { CORE_CHANNELS } = require("../packages/agent/shared/ipcChannels");
 
 window.addEventListener("DOMContentLoaded", () => {
   const replaceText = (selector, text) => {
@@ -23,20 +24,20 @@ window.addEventListener("resize", () => {
 // 暴露
 contextBridge.exposeInMainWorld("electronAPI", {
   selectAndReadFile: (option) => ipcRenderer.invoke("select-and-read-file",option),
-  readFileByPath: (option) => ipcRenderer.invoke("read-file-by-path",option),
+  readFileByPath: (option) => ipcRenderer.invoke(CORE_CHANNELS.READ_FILE_BY_PATH,option),
   openFileDialog: (option) => ipcRenderer.invoke("open-file-dialog", option), //上传文件 拿到路径的
-  readFileSync: (filePath) => ipcRenderer.invoke("read-file-sync", filePath),
+  readFileSync: (filePath) => ipcRenderer.invoke(CORE_CHANNELS.READ_FILE_SYNC, filePath),
   writeFileSync: (path, buffer) =>
-    ipcRenderer.invoke("write-file-sync", path, buffer),
-  unlinkFileSync: (path) => ipcRenderer.invoke("unlink-file-sync", path),
-  rmdirSync: (path) => ipcRenderer.invoke("rmdir-sync", path),
-  existsSync: (path) => ipcRenderer.invoke("exists-file-sync", path),
-  mkdirSync: (path) => ipcRenderer.invoke("mkdir-sync", path),
+    ipcRenderer.invoke(CORE_CHANNELS.WRITE_FILE_SYNC, path, buffer),
+  unlinkFileSync: (path) => ipcRenderer.invoke(CORE_CHANNELS.UNLINK_FILE_SYNC, path),
+  rmdirSync: (path) => ipcRenderer.invoke(CORE_CHANNELS.RMDIR_SYNC, path),
+  existsSync: (path) => ipcRenderer.invoke(CORE_CHANNELS.EXISTS_FILE_SYNC, path),
+  mkdirSync: (path) => ipcRenderer.invoke(CORE_CHANNELS.MKDIR_SYNC, path),
   copyFileSync: (srcPath, targetPath) =>
-    ipcRenderer.invoke("copy-file-sync", srcPath, targetPath),
+    ipcRenderer.invoke(CORE_CHANNELS.COPY_FILE_SYNC, srcPath, targetPath),
   renameSync: (oldPath, newPath) =>
-    ipcRenderer.invoke("rename-file-sync", oldPath, newPath),
-  readdirSync: (dir) => ipcRenderer.invoke("read-dir-Sync", dir),
+    ipcRenderer.invoke(CORE_CHANNELS.RENAME_FILE_SYNC, oldPath, newPath),
+  readdirSync: (dir) => ipcRenderer.invoke(CORE_CHANNELS.READ_DIR_SYNC, dir),
   createBuffer: (data) => Buffer.from(data),
   Buffer: (data, format, toFormat) =>
     Buffer.from(data, format).toString(toFormat),
@@ -53,7 +54,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       zipFileNameEncoding
     ),
   getSystmpPath: () => os.tmpdir(),
-  execCmd: (cmd, dir) => ipcRenderer.invoke("exec-cmd", cmd, dir),
+  execCmd: (cmd, dir) => ipcRenderer.invoke(CORE_CHANNELS.EXEC_CMD, cmd, dir),
   send: (channel, data) => {
     let validChannels = ["toMain"];
     if (validChannels.includes(channel)) {
@@ -143,21 +144,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
   appendTaskLog: (line) => ipcRenderer.invoke('append-task-log', line),
 
   // 窗口控制（无边框模式）
-  minimize: () => ipcRenderer.send('window-minimize'),
-  maximize: () => ipcRenderer.send('window-maximize'),
-  close: () => ipcRenderer.send('window-close'),
-  isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  minimize: () => ipcRenderer.send(CORE_CHANNELS.WINDOW_MINIMIZE),
+  maximize: () => ipcRenderer.send(CORE_CHANNELS.WINDOW_MAXIMIZE),
+  close: () => ipcRenderer.send(CORE_CHANNELS.WINDOW_CLOSE),
+  isMaximized: () => ipcRenderer.invoke(CORE_CHANNELS.WINDOW_IS_MAXIMIZED),
 
   // 窗口拖拽状态（性能优化：拖拽期间通知渲染端降低负载）
   onWindowPerformanceState: (callback) => {
     const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('window-performance-state', handler)
-    return () => ipcRenderer.removeListener('window-performance-state', handler)
+    ipcRenderer.on(CORE_CHANNELS.WINDOW_PERFORMANCE_STATE, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.WINDOW_PERFORMANCE_STATE, handler)
   },
   onWindowDragState: (callback) => {
     const handler = (_event, payload) => callback(Boolean(payload?.active && payload?.reason === 'drag'))
-    ipcRenderer.on('window-performance-state', handler)
-    return () => ipcRenderer.removeListener('window-performance-state', handler)
+    ipcRenderer.on(CORE_CHANNELS.WINDOW_PERFORMANCE_STATE, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.WINDOW_PERFORMANCE_STATE, handler)
   },
 
   // ── 插件市场（MindCraft 原生插件，非 Claude/Codex SDK 插件）──

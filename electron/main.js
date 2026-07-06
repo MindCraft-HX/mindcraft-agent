@@ -20,6 +20,7 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require('child_process');
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require("../packages/agent/electron/diagnosticsFileUtils");
+const { CORE_CHANNELS } = require("../packages/agent/shared/ipcChannels");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -140,13 +141,13 @@ function createWindow() {
   win.setMenu(null);
 
   // 窗口控制 IPC（无边框模式）
-  ipcMain.on('window-minimize', () => win?.minimize());
-  ipcMain.on('window-maximize', () => {
+  ipcMain.on(CORE_CHANNELS.WINDOW_MINIMIZE, () => win?.minimize());
+  ipcMain.on(CORE_CHANNELS.WINDOW_MAXIMIZE, () => {
     if (win?.isMaximized()) win.unmaximize();
     else win?.maximize();
   });
-  ipcMain.on('window-close', () => win?.close());
-  ipcMain.handle('window-is-maximized', () => win?.isMaximized() ?? false);
+  ipcMain.on(CORE_CHANNELS.WINDOW_CLOSE, () => win?.close());
+  ipcMain.handle(CORE_CHANNELS.WINDOW_IS_MAXIMIZED, () => win?.isMaximized() ?? false);
 
   // ── 窗口拖拽性能优化（extracted to dragPerformance.js）──
   const { clearDragState } = setupDragOptimization(win)

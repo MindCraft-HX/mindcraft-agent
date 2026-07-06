@@ -1,5 +1,7 @@
 'use strict';
 
+const { CORE_CHANNELS } = require('../packages/agent/shared/ipcChannels');
+
 /**
  * Window drag/rezise performance optimization.
  *
@@ -40,7 +42,7 @@ function setupDragOptimization(win) {
     clearTimeout(dragSafetyTimer);
     if (win && !win.isDestroyed()) {
       win.webContents.setFrameRate(state ? 30 : 60);
-      win.webContents.send('window-performance-state', buildWindowPerformanceState(state));
+      win.webContents.send(CORE_CHANNELS.WINDOW_PERFORMANCE_STATE, buildWindowPerformanceState(state));
     }
     if (state) {
       dragSafetyTimer = setTimeout(() => setDragState(false), DRAG_MAX_DURATION);
