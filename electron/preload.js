@@ -162,21 +162,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // ── 插件市场（MindCraft 原生插件，非 Claude/Codex SDK 插件）──
-  pluginGetInstalled: () => ipcRenderer.invoke('plugin-get-installed'),
-  pluginMarketListing: () => ipcRenderer.invoke('plugin-marketplace-listing'),
-  pluginMarketInstall: (pluginMeta) => ipcRenderer.invoke('plugin-marketplace-install', pluginMeta),
-  pluginMarketUninstall: (pluginId) => ipcRenderer.invoke('plugin-marketplace-uninstall', pluginId),
-  pluginMarketEnable: (pluginId) => ipcRenderer.invoke('plugin-marketplace-enable', pluginId),
-  pluginMarketDisable: (pluginId) => ipcRenderer.invoke('plugin-marketplace-disable', pluginId),
-  pluginGetData: (pluginId, key) => ipcRenderer.invoke('plugin-get-data', pluginId, key),
-  pluginSetData: (pluginId, key, value) => ipcRenderer.invoke('plugin-set-data', pluginId, key, value),
-  pluginDeleteData: (pluginId, key) => ipcRenderer.invoke('plugin-delete-data', pluginId, key),
-  pluginReadAsset: (pluginId, relativePath) => ipcRenderer.invoke('plugin-read-asset', pluginId, relativePath),
-  pluginReadEntry: (pluginId) => ipcRenderer.invoke('plugin-read-entry', pluginId),
+  pluginGetInstalled: () => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_GET_INSTALLED),
+  pluginMarketListing: () => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_MARKETPLACE_LISTING),
+  pluginMarketInstall: (pluginMeta) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_MARKETPLACE_INSTALL, pluginMeta),
+  pluginMarketUninstall: (pluginId) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_MARKETPLACE_UNINSTALL, pluginId),
+  pluginMarketEnable: (pluginId) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_MARKETPLACE_ENABLE, pluginId),
+  pluginMarketDisable: (pluginId) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_MARKETPLACE_DISABLE, pluginId),
+  pluginGetData: (pluginId, key) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_GET_DATA, pluginId, key),
+  pluginSetData: (pluginId, key, value) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_SET_DATA, pluginId, key, value),
+  pluginDeleteData: (pluginId, key) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_DELETE_DATA, pluginId, key),
+  pluginReadAsset: (pluginId, relativePath) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_READ_ASSET, pluginId, relativePath),
+  pluginReadEntry: (pluginId) => ipcRenderer.invoke(CORE_CHANNELS.PLUGIN_READ_ENTRY, pluginId),
   onPluginRegistryChanged: (callback) => {
     const handler = (_event, data) => callback(data)
-    ipcRenderer.on('plugin-registry-changed', handler)
-    return () => ipcRenderer.removeListener('plugin-registry-changed', handler)
+    ipcRenderer.on(CORE_CHANNELS.PLUGIN_REGISTRY_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.PLUGIN_REGISTRY_CHANGED, handler)
   },
 
 });

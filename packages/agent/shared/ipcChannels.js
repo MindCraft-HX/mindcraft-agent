@@ -208,6 +208,26 @@ const CORE_CHANNELS = Object.freeze({
   SKILLS_UNINSTALL: 'skills-uninstall',
   SKILLS_MARKET_INSTALL: 'skills-market-install',
 
+  // Plugin system
+  PLUGIN_GET_INSTALLED: 'plugin-get-installed',
+  PLUGIN_MARKETPLACE_LISTING: 'plugin-marketplace-listing',
+  PLUGIN_MARKETPLACE_INSTALL: 'plugin-marketplace-install',
+  PLUGIN_MARKETPLACE_UNINSTALL: 'plugin-marketplace-uninstall',
+  PLUGIN_MARKETPLACE_ENABLE: 'plugin-marketplace-enable',
+  PLUGIN_MARKETPLACE_DISABLE: 'plugin-marketplace-disable',
+  PLUGIN_GET_DATA: 'plugin-get-data',
+  PLUGIN_SET_DATA: 'plugin-set-data',
+  PLUGIN_DELETE_DATA: 'plugin-delete-data',
+  PLUGIN_READ_ASSET: 'plugin-read-asset',
+  PLUGIN_READ_ENTRY: 'plugin-read-entry',
+  PLUGIN_REGISTRY_CHANGED: 'plugin-registry-changed',
+  PLUGINS_GET_STATE: 'plugins-get-state',
+  PLUGINS_SAVE_STATE: 'plugins-save-state',
+  PLUGINS_INSTALL: 'plugins-install',
+  PLUGINS_UNINSTALL: 'plugins-uninstall',
+  PLUGINS_ENABLE: 'plugins-enable',
+  PLUGINS_DISABLE: 'plugins-disable',
+
   // Config import (system-level, cross-agent)
   CONFIG_IMPORT_PICK_FILE: 'config-import-pick-file',
   CONFIG_IMPORT_PREVIEW: 'config-import-preview',

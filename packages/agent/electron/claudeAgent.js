@@ -1200,7 +1200,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('plugins-get-state', async () => {
+  ipcMain.handle(CORE_CHANNELS.PLUGINS_GET_STATE, async () => {
     const state = readPluginsState(CLAUDE_PLUGINS_DIR)
     const installed = await readInstalledPlugins()
     // 双索引匹配：先精确 ID，失败则按插件名 fallback
@@ -1222,9 +1222,9 @@ function setupClaudeHandlers() {
   // ---- ClaudeCode CLI executor (shared, Batch 5a) ----
   const execClaudeCli = createCliExecutor({ findBinary: findSystemClaude, agentName: "claude" })
 
-  ipcMain.handle('plugins-save-state', () => true)
+  ipcMain.handle(CORE_CHANNELS.PLUGINS_SAVE_STATE, () => true)
 
-  ipcMain.handle('plugins-install', async (_, pluginId) => {
+  ipcMain.handle(CORE_CHANNELS.PLUGINS_INSTALL, async (_, pluginId) => {
     try {
       await execClaudeCli(['plugin', 'install', pluginId])
       _installedPluginsCache = null // 安装后清缓存，下次自动刷新
@@ -1236,7 +1236,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('plugins-uninstall', async (_, pluginId) => {
+  ipcMain.handle(CORE_CHANNELS.PLUGINS_UNINSTALL, async (_, pluginId) => {
     try {
       await execClaudeCli(['plugin', 'uninstall', pluginId])
       _installedPluginsCache = null
@@ -1248,7 +1248,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('plugins-enable', async (_, pluginId) => {
+  ipcMain.handle(CORE_CHANNELS.PLUGINS_ENABLE, async (_, pluginId) => {
     try {
       await execClaudeCli(['plugin', 'enable', pluginId])
       _installedPluginsCache = null // 启用后清缓存
@@ -1261,7 +1261,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('plugins-disable', async (_, pluginId) => {
+  ipcMain.handle(CORE_CHANNELS.PLUGINS_DISABLE, async (_, pluginId) => {
     try {
       await execClaudeCli(['plugin', 'disable', pluginId])
       _installedPluginsCache = null // 禁用后清缓存

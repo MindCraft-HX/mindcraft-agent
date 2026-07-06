@@ -9,6 +9,7 @@ const path = require('path')
 const axios = require('axios')
 const compressing = require('compressing')
 const crypto = require('crypto')
+const { CORE_CHANNELS } = require('../../packages/agent/shared/ipcChannels')
 
 // ─── 常量 ─────────────────────────────────────────────
 const PLUGINS_DIR = path.join(app.getPath('userData'), 'plugins')
@@ -161,7 +162,7 @@ function broadcastPluginChange() {
   const plugins = getInstalledPlugins()
   BrowserWindow.getAllWindows().forEach(win => {
     if (!win.isDestroyed()) {
-      win.webContents.send('plugin-registry-changed', plugins)
+      win.webContents.send(CORE_CHANNELS.PLUGIN_REGISTRY_CHANGED, plugins)
     }
   })
 }
@@ -426,17 +427,17 @@ function compareVersions(a, b) {
 // ═══════════════════════════════════════════════════════
 
 function registerIPCHandlers() {
-  ipcMain.handle('plugin-marketplace-listing', fetchMarketplaceListing)
-  ipcMain.handle('plugin-marketplace-install', async (_e, pluginMeta) => installPlugin(pluginMeta))
-  ipcMain.handle('plugin-marketplace-uninstall', async (_e, pluginId) => uninstallPlugin(pluginId))
-  ipcMain.handle('plugin-marketplace-enable', async (_e, pluginId) => togglePlugin(pluginId, true))
-  ipcMain.handle('plugin-marketplace-disable', async (_e, pluginId) => togglePlugin(pluginId, false))
-  ipcMain.handle('plugin-get-installed', async () => getInstalledPlugins())
-  ipcMain.handle('plugin-read-entry', async (_e, pluginId) => readPluginEntry(pluginId))
-  ipcMain.handle('plugin-read-asset', async (_e, pluginId, relativePath) => readPluginAsset(pluginId, relativePath))
-  ipcMain.handle('plugin-get-data', async (_e, pluginId, key) => getPluginData(pluginId, key))
-  ipcMain.handle('plugin-set-data', async (_e, pluginId, key, value) => setPluginData(pluginId, key, value))
-  ipcMain.handle('plugin-delete-data', async (_e, pluginId, key) => deletePluginData(pluginId, key))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_MARKETPLACE_LISTING, fetchMarketplaceListing)
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_MARKETPLACE_INSTALL, async (_e, pluginMeta) => installPlugin(pluginMeta))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_MARKETPLACE_UNINSTALL, async (_e, pluginId) => uninstallPlugin(pluginId))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_MARKETPLACE_ENABLE, async (_e, pluginId) => togglePlugin(pluginId, true))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_MARKETPLACE_DISABLE, async (_e, pluginId) => togglePlugin(pluginId, false))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_GET_INSTALLED, async () => getInstalledPlugins())
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_READ_ENTRY, async (_e, pluginId) => readPluginEntry(pluginId))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_READ_ASSET, async (_e, pluginId, relativePath) => readPluginAsset(pluginId, relativePath))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_GET_DATA, async (_e, pluginId, key) => getPluginData(pluginId, key))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_SET_DATA, async (_e, pluginId, key, value) => setPluginData(pluginId, key, value))
+  ipcMain.handle(CORE_CHANNELS.PLUGIN_DELETE_DATA, async (_e, pluginId, key) => deletePluginData(pluginId, key))
 }
 
 module.exports = {
