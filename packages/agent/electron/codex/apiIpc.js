@@ -1,5 +1,7 @@
 'use strict';
 
+const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * CodeX API validation / model listing / last CWD IPC handlers.
  *
@@ -11,7 +13,7 @@ function registerApiIpc(ipcMain, {
   readPanelState,
   lt,
 }) {
-  ipcMain.handle('codex-get-last-cwd', () => readPanelState()?.lastCwd || '');
+  ipcMain.handle(CODEX_CHANNELS.GET_LAST_CWD, () => readPanelState()?.lastCwd || '');
 
   ipcMain.handle('codex-validate-key', async (_, { key, baseURL, model: _model }) => {
     const start = Date.now();

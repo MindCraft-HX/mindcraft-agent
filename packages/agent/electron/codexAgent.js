@@ -3929,8 +3929,8 @@ function setupCodexSdkHandlers() {
     }
   }
 
-  ipcMain.handle('codex-get-providers', async () => readProviders())
-  ipcMain.handle('codex-set-providers', async (_, data) => {
+  ipcMain.handle(CODEX_CHANNELS.GET_PROVIDERS, async () => readProviders())
+  ipcMain.handle(CODEX_CHANNELS.SET_PROVIDERS, async (_, data) => {
     const ok = await writeProviders(data)
     return { ok, error: ok ? null : 'DB write failed' }
   })

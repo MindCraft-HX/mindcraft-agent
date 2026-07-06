@@ -1,5 +1,7 @@
 'use strict';
 
+const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * CodeX config/settings IPC handlers — key, model, base URL, reasoning effort,
  * API format, sandbox mode, project settings, default network/web-search.
@@ -40,31 +42,31 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Base URL ----
-  ipcMain.handle('codex-get-base-url', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_BASE_URL, () => {
     const rt = readRuntimeConfig();
     return rt.baseURL || '';
   });
-  ipcMain.handle('codex-set-base-url', (_, url) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_BASE_URL, (_, url) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.baseURL = url; c.set('runtime', r); } catch (_) {}
     return true;
   });
 
   // ---- Model ----
-  ipcMain.handle('codex-get-model', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_MODEL, () => {
     const rt = readRuntimeConfig();
     return rt.model || '';
   });
-  ipcMain.handle('codex-set-model', (_, model) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_MODEL, (_, model) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.model = model; c.set('runtime', r); } catch (_) {}
     return true;
   });
 
   // ---- Reasoning Effort ----
-  ipcMain.handle('codex-get-reasoning-effort', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_REASONING_EFFORT, () => {
     const rt = readRuntimeConfig();
     return rt.reasoningEffort || '';
   });
-  ipcMain.handle('codex-set-reasoning-effort', (_, effort) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_REASONING_EFFORT, (_, effort) => {
     try {
       const c = new Conf({ name: 'mindcraft-codex' });
       const r = c.get('runtime') || {};
@@ -75,11 +77,11 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- API Format ----
-  ipcMain.handle('codex-get-api-format', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_API_FORMAT, () => {
     const rt = readRuntimeConfig();
     return rt.apiFormat || 'responses';
   });
-  ipcMain.handle('codex-set-api-format', (_, format) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_API_FORMAT, (_, format) => {
     try {
       const c = new Conf({ name: 'mindcraft-codex' });
       const r = c.get('runtime') || {};
@@ -141,14 +143,14 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Project Settings ----
-  ipcMain.handle('codex-get-project-settings', (_, { cwd }) => {
+  ipcMain.handle(CODEX_CHANNELS.GET_PROJECT_SETTINGS, (_, { cwd }) => {
     try {
       const conf = new Conf({ name: 'mindcraft-codex' });
       const all = conf.get('projectSettings') || {};
       return all[cwd] || null;
     } catch (_) { return null; }
   });
-  ipcMain.handle('codex-set-project-settings', (_, { cwd, settings }) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_PROJECT_SETTINGS, (_, { cwd, settings }) => {
     try {
       const conf = new Conf({ name: 'mindcraft-codex' });
       const all = conf.get('projectSettings') || {};
@@ -163,17 +165,17 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Default Network / Web Search ----
-  ipcMain.handle('codex-get-default-network-access', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_DEFAULT_NETWORK_ACCESS, () => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); return c.get('defaultNetworkAccess', true); } catch (_) { return true; }
   });
-  ipcMain.handle('codex-set-default-network-access', (_, val) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_DEFAULT_NETWORK_ACCESS, (_, val) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultNetworkAccess', !!val); } catch (_) {}
     return true;
   });
-  ipcMain.handle('codex-get-default-web-search', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_DEFAULT_WEB_SEARCH, () => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); return c.get('defaultWebSearch', 'cached'); } catch (_) { return 'cached'; }
   });
-  ipcMain.handle('codex-set-default-web-search', (_, val) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_DEFAULT_WEB_SEARCH, (_, val) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultWebSearch', val || 'cached'); } catch (_) {}
     return true;
   });
