@@ -54,13 +54,98 @@ function createTempUserData() {
   return dir;
 }
 
+/**
+ * Spawn Electron with isolated userData, wait for readiness signal.
+ * Returns { process, readyData }.
+ */
+function spawnElectron({ tempUserData, homeDir, seedCwd, seedCodexCwd, electronBin, readyFileSuffix = '' }) {
+  const readyFile = path.join(tempUserData, readyFileSuffix || '.e2e-ready');
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(electronBin, ['.'], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        MINDCRAFT_USER_DATA_DIR: tempUserData,
+        MINDCRAFT_E2E_TEST: 'boot-smoke',
+        MINDCRAFT_E2E_READY_FILE: readyFile,
+        MINDCRAFT_E2E_NO_TRAY: '1',
+        MINDCRAFT_E2E_NO_AUTO_UPDATE: '1',
+        HOME: homeDir,
+        USERPROFILE: homeDir,  // Windows: os.homedir() uses USERPROFILE
+        MINDCRAFT_E2E_SEED_CWD: seedCwd || '',
+        MINDCRAFT_E2E_SEED_CODEX_CWD: seedCodexCwd || '',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let resolved = false;
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        proc.kill();
+        reject(new Error(
+          `Boot timeout (${TIMEOUT}ms)\nstderr: ${stderr.slice(-500)}`
+        ));
+      }
+    }, TIMEOUT);
+
+    const poll = setInterval(() => {
+      if (resolved) return;
+      try {
+        if (fs.existsSync(readyFile)) {
+          const data = JSON.parse(fs.readFileSync(readyFile, 'utf8'));
+          clearInterval(poll);
+          clearTimeout(timer);
+          // Let the app stabilize briefly
+          setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              resolve({ process: proc, readyData: data });
+            }
+          }, 1000);
+        }
+      } catch (_) { /* mid-write race */ }
+    }, 500);
+
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    proc.on('error', (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearInterval(poll);
+        clearTimeout(timer);
+        reject(new Error(`Failed to spawn: ${err.message}`));
+      }
+    });
+
+    proc.on('exit', (code) => {
+      clearInterval(poll);
+      clearTimeout(timer);
+      if (!resolved) {
+        resolved = true;
+        reject(new Error(
+          `Electron exited with code ${code} before readiness.\n` +
+          `stderr: ${stderr.slice(-500)}`
+        ));
+      }
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Phase 0: App boot + preload bridge test
 // ---------------------------------------------------------------------------
 
 describe('Electron E2E Boot Smoke (T196)', () => {
   let tempUserData;
-  let readyFile;
+  let homeDir;
+  let seedCwd;
+  let seedCodexCwd;
   let electronProcess;
   let readyData;
 
@@ -89,15 +174,13 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     }
 
     tempUserData = createTempUserData();
-    readyFile = path.join(tempUserData, '.e2e-ready');
-
-    // ── Phase 3: Seed a minimal Claude session for restore smoke ──
-    const homeDir = path.join(tempUserData, 'home');
+    homeDir = path.join(tempUserData, 'home');
     fs.mkdirSync(homeDir, { recursive: true });
 
+    // ── Phase 3: Seed minimal Claude + CodeX sessions ──
     // claudeAgent.js `getClaudeProjectsRootDir` replaces non-alphanumeric
     // chars with `-`. Use a simple cwd so the project dir name is predictable.
-    const seedCwd = process.platform === 'win32' ? 'D:\\e2e-seed' : '/e2e-seed';
+    seedCwd = process.platform === 'win32' ? 'D:\\e2e-seed' : '/e2e-seed';
     const namePart = seedCwd.split('').map(c => (/[a-zA-Z0-9]/).test(c) ? c : '-').join('');
     const seedProjectDir = path.join(homeDir, '.claude', 'projects', namePart);
     fs.mkdirSync(seedProjectDir, { recursive: true });
@@ -108,110 +191,17 @@ describe('Electron E2E Boot Smoke (T196)', () => {
       JSON.stringify({ type: 'user', message: { role: 'user', content: 'e2e' } }) + '\n'
     );
 
-    // Also seed a CodeX session
-    const codexSessionsDir = path.join(homeDir, '.codex', 'sessions', 'e2e-seed-project');
-    fs.mkdirSync(codexSessionsDir, { recursive: true });
+    seedCodexCwd = path.join(homeDir, '.codex', 'sessions', 'e2e-seed-project');
+    fs.mkdirSync(seedCodexCwd, { recursive: true });
     fs.writeFileSync(
-      path.join(codexSessionsDir, `${seedSessionId}.jsonl`),
-      JSON.stringify({ type: 'session_meta', payload: { id: seedSessionId, cwd: codexSessionsDir } }) + '\n' +
+      path.join(seedCodexCwd, `${seedSessionId}.jsonl`),
+      JSON.stringify({ type: 'session_meta', payload: { id: seedSessionId, cwd: seedCodexCwd } }) + '\n' +
       JSON.stringify({ type: 'user', message: { role: 'user', content: 'e2e' } }) + '\n'
     );
 
-    return new Promise((resolve, reject) => {
-      // Use `electron .` so app.getAppPath() returns the project root
-      // (spawning as `electron electron/main.js` would make getAppPath() return electron/)
-
-      // Override home directory so os.homedir() returns the temp dir.
-      // This isolates ~/.claude and ~/.codex references used by
-      // claudeAgent.js, codexAgent.js, metrics, memory, skills, etc.
-      // Without this, the legacy migration in readProviders() would
-      // pull in the developer's real providers and pollute the E2E DB.
-      const homeDir = path.join(tempUserData, 'home');
-      fs.mkdirSync(homeDir, { recursive: true });
-
-      electronProcess = spawn(electronBin, ['.'], {
-        cwd: ROOT,
-        env: {
-          ...process.env,
-          MINDCRAFT_USER_DATA_DIR: tempUserData,
-          MINDCRAFT_E2E_TEST: 'boot-smoke',
-          MINDCRAFT_E2E_READY_FILE: readyFile,
-          MINDCRAFT_E2E_NO_TRAY: '1',
-          MINDCRAFT_E2E_NO_AUTO_UPDATE: '1',
-          HOME: homeDir,
-          USERPROFILE: homeDir,  // Windows: os.homedir() uses USERPROFILE
-          MINDCRAFT_E2E_SEED_CWD: seedCwd,
-          MINDCRAFT_E2E_SEED_CODEX_CWD: path.join(homeDir, '.codex', 'sessions', 'e2e-seed-project'),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-      let resolved = false;
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          electronProcess.kill();
-          reject(new Error(
-            `Boot timeout (${TIMEOUT}ms)\nstderr: ${stderr.slice(-500)}`
-          ));
-        }
-      }, TIMEOUT);
-
-      // Poll for ready file (Electron writes it atomically)
-      const poll = setInterval(() => {
-        if (resolved) return;
-        try {
-          if (fs.existsSync(readyFile)) {
-            readyData = JSON.parse(fs.readFileSync(readyFile, 'utf8'));
-            clearInterval(poll);
-            clearTimeout(timer);
-
-            // Let the app stabilize briefly then kill it
-            setTimeout(() => {
-              if (!resolved) {
-                resolved = true;
-                try { electronProcess.kill(); } catch (_) {}
-                resolve();
-              }
-            }, 1000);
-          }
-        } catch (_) { /* mid-write race */ }
-      }, 500);
-
-      electronProcess.stdout.on('data', d => { stdout += d.toString(); });
-      electronProcess.stderr.on('data', d => { stderr += d.toString(); });
-
-      electronProcess.on('error', (err) => {
-        if (!resolved) {
-          resolved = true;
-          clearInterval(poll);
-          clearTimeout(timer);
-          reject(new Error(`Failed to spawn: ${err.message}`));
-        }
-      });
-
-      electronProcess.on('exit', (code) => {
-        clearInterval(poll);
-        clearTimeout(timer);
-        if (!resolved) {
-          // If we already captured readyData, the app reached readiness
-          // before exiting — resolve instead of rejecting.
-          if (readyData) {
-            resolved = true;
-            resolve();
-          } else {
-            resolved = true;
-            reject(new Error(
-              `Electron exited with code ${code} before readiness.\n` +
-              `stderr: ${stderr.slice(-500)}`
-            ));
-          }
-        }
-      });
-    });
+    const result = await spawnElectron({ tempUserData, homeDir, seedCwd, seedCodexCwd, electronBin });
+    electronProcess = result.process;
+    readyData = result.readyData;
   });
 
   it('main window loads expected route', function () {
@@ -341,6 +331,51 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     if (!readyData) { this.skip(); return; }
     assert.strictEqual(readyData.sanitizerOk, true,
       'sanitizerOk should be true');
+  });
+
+  // ── Phase 3b: Restart and verify no duplicates ──
+
+  it('Phase 3b: reboot preserves session count (no duplicates)', async function () {
+    if (!readyData || process.env.SKIP_E2E || process.env.CI) {
+      this.skip();
+      return;
+    }
+
+    const electronBin = findElectronBinary();
+    if (!electronBin) {
+      this.skip();
+      return;
+    }
+
+    // Kill first process if still alive
+    try { if (electronProcess && !electronProcess.killed) electronProcess.kill(); } catch (_) {}
+
+    // Wait for process to fully exit
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Clean old readyFile so the second boot writes a fresh one
+    const oldReady = path.join(tempUserData, '.e2e-ready');
+    try { fs.unlinkSync(oldReady); } catch (_) {}
+
+    // Boot again with the same userData — registry + DB persist
+    const result = await spawnElectron({
+      tempUserData, homeDir, seedCwd, seedCodexCwd, electronBin,
+      readyFileSuffix: '.e2e-ready-2',
+    });
+    electronProcess = result.process;
+    const secondData = result.readyData;
+
+    // Session counts must NOT have doubled
+    assert.strictEqual(secondData.claudeSeededCount, 1,
+      'Claude seeded sessions must not duplicate after restart');
+    assert.strictEqual(secondData.codexSeededCount, 1,
+      'CodeX seeded sessions must not duplicate after restart');
+
+    // Non-seeded scans should still return 0
+    assert.strictEqual(secondData.claudeSessionsCount, 0,
+      'fresh Claude scan should return 0 after restart');
+    assert.strictEqual(secondData.codexSessionsCount, 0,
+      'fresh CodeX scan should return 0 after restart');
   });
 
   after(() => {
