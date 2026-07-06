@@ -925,7 +925,24 @@ async function importFromFile(i) {
     p.url = sUrl
     p.config = sj
     p.tierModels = { haiku: sHaiku, sonnet: sSonnet, opus: sOpus, reasoning: sReasoning }
-    await persistProviders()
+    const isActive = i === settingsForm.value.activeIdx
+    if (isActive) {
+      const tierFromConfig = typeof sj.model === 'string' && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model)
+        ? sj.model
+        : ''
+      if (tierFromConfig) settingsSelectedTierKey.value = tierFromConfig
+      settingsTierModels.value = {
+        haiku: sHaiku.trim(),
+        sonnet: sSonnet.trim(),
+        opus: sOpus.trim(),
+        reasoning: sReasoning.trim(),
+      }
+      const ok = await applyAndActivate(i, { writeSettings: true })
+      if (!ok) return
+      emit('providerActivated')
+    } else {
+      await persistProviders()
+    }
     ElMessage.success(t('settings.importOverwritten', { name: p.name || t('settings.unnamed') }))
   } catch (e) {
     ElMessage.error(t('settings.importFailedGeneric') + (e?.message || e))

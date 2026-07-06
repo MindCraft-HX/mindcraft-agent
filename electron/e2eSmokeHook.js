@@ -121,9 +121,12 @@ function installE2EHook(win) {
               const api = window.electronAPI;
               const mockProviders = [{ name: 'e2e_smoke', key: 'sk-mock', url: 'https://mock.example.com' }];
 
-              const getFn = api?.claudeGetProviders || api?.codexGetProviders;
-              const setFn = api?.claudeSetProviders || api?.codexSetProviders;
-              if (!getFn || !setFn) return { ok: false, detail, error: 'No provider API available' };
+              // Use CodeX provider CRUD only.
+              // Claude provider persistence can sync official ~/.claude/settings.json
+              // and would pollute the developer's real runtime during E2E.
+              const getFn = api?.codexGetProviders;
+              const setFn = api?.codexSetProviders;
+              if (!getFn || !setFn) return { ok: false, detail, error: 'No codex provider API available' };
 
               const initial = await getFn();
               detail.initialCount = initial?.providers?.length ?? 0;
