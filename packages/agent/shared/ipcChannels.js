@@ -160,6 +160,15 @@ const CORE_CHANNELS = Object.freeze({
 
   // CodeHub SessionIndex (T184)
   LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index',
+
+  // Session draft (cross-agent sessionInstruction)
+  GET_SESSION_DRAFT: 'agent-get-session-draft',
+  SET_SESSION_DRAFT: 'agent-set-session-draft',
+  SET_SESSION_DRAFT_SYNC: 'agent-set-session-draft-sync',
+  CLEAR_SESSION_DRAFT: 'agent-clear-session-draft',
+
+  // Performance diagnostics
+  SET_PERF_ENABLED: 'agent-set-perf-enabled',
 });
 
 /**
