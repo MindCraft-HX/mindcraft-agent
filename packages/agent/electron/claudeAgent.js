@@ -1407,7 +1407,7 @@ function setupClaudeHandlers() {
     return valid.includes(policy) ? policy : 'ask'
   }
   ipcMain.handle(CLAUDE_CHANNELS.GET_PERMISSION_POLICY, () => readPermissionPolicy())
-  ipcMain.handle('claude-set-permission-policy', (_, policy) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_PERMISSION_POLICY, (_, policy) => {
     const valid = ['ask', 'allow_all', 'read_only']
     if (!valid.includes(policy)) return false
     confSet('claudePermissionPolicy', policy)
@@ -1421,7 +1421,7 @@ function setupClaudeHandlers() {
       return s.skipWebFetchPreflight !== false
     } catch (_) { return true }
   })
-  ipcMain.handle('claude-set-skip-webfetch-preflight', (_, val) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_SKIP_WEBFETCH_PREFLIGHT, (_, val) => {
     try {
       const s = readGlobalSettings()
       s.skipWebFetchPreflight = !!val
@@ -1435,7 +1435,7 @@ function setupClaudeHandlers() {
       return typeof s.autoCompactWindow === 'number' ? s.autoCompactWindow : null
     } catch (_) { return null }
   })
-  ipcMain.handle('claude-set-auto-compact-window', (_, val) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_AUTO_COMPACT_WINDOW, (_, val) => {
     try {
       const s = readGlobalSettings()
       if (val === null || val === undefined || val === '') {
@@ -1458,7 +1458,7 @@ function setupClaudeHandlers() {
     return valid.includes(language) ? language : 'zh-CN'
   }
   ipcMain.handle(CLAUDE_CHANNELS.GET_LANGUAGE, () => readLanguage())
-  ipcMain.handle('claude-set-language', (_, language) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_LANGUAGE, (_, language) => {
     const valid = ['zh-CN', 'en-US']
     if (!valid.includes(language)) return false
     confSet('claudeLanguage', language)
@@ -1484,7 +1484,7 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.GET_THINKING_ENABLED, () => {
     return internalConf.get('claudeThinkingEnabled', true)
   })
-  ipcMain.handle('claude-set-thinking-enabled', (_, enabled) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_THINKING_ENABLED, (_, enabled) => {
     internalConf.set('claudeThinkingEnabled', !!enabled)
     return true
   })
@@ -1493,7 +1493,7 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.GET_EXECUTABLE_PATH, () => {
     return confGet('claudeExecutablePath', '') || ''
   })
-  ipcMain.handle('claude-set-executable-path', (_, p) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_EXECUTABLE_PATH, (_, p) => {
     const val = String(p || '').trim()
     confSet('claudeExecutablePath', val)
     resetSystemClaudeCache()
@@ -2036,11 +2036,11 @@ function setupClaudeHandlers() {
   }
 
   ipcMain.handle(CLAUDE_CHANNELS.GET_MODEL, () => readPrimaryModel())
-  ipcMain.handle('claude-set-model', (_, model) => { confSet('claudeModel', model); return true })
+  ipcMain.handle(CLAUDE_CHANNELS.SET_MODEL, (_, model) => { confSet('claudeModel', model); return true })
   ipcMain.handle('claude-set-key', (_, key) => { confSet('claudeApiKey', key); return true })
-  ipcMain.handle('claude-set-base-url', (_, url) => { confSet('claudeBaseURL', url); return true })
+  ipcMain.handle(CLAUDE_CHANNELS.SET_BASE_URL, (_, url) => { confSet('claudeBaseURL', url); return true })
   ipcMain.handle(CLAUDE_CHANNELS.GET_MODELS, () => confGet('claudeModels', defaultModels))
-  ipcMain.handle('claude-set-models', (_, models) => { confSet('claudeModels', models); return true })
+  ipcMain.handle(CLAUDE_CHANNELS.SET_MODELS, (_, models) => { confSet('claudeModels', models); return true })
   ipcMain.handle('claude-add-model', (_, model) => {
     if (!model || !model.id) return false
     const list = confGet('claudeModels', [...defaultModels])
@@ -2059,7 +2059,7 @@ function setupClaudeHandlers() {
     return true
   })
   ipcMain.handle(CLAUDE_CHANNELS.GET_PROVIDERS, async () => readClaudeProviders())
-  ipcMain.handle('claude-set-providers', async (_, data) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_PROVIDERS, async (_, data) => {
     const ok = await writeClaudeProviders(data)
     if (!ok) return { ok: false, error: 'DB write failed' }
     // 同步更新 key/url 为当前激活的 provider（写入 ~/.claude/settings.json）
@@ -2116,7 +2116,7 @@ function setupClaudeHandlers() {
     }
     return 'sonnet'
   })
-  ipcMain.handle('claude-set-selected-tier', (_, tier) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_SELECTED_TIER, (_, tier) => {
     const valid = ['haiku', 'sonnet', 'opus', 'reasoning']
     if (!valid.includes(tier)) return false
     confSet('claudeSelectedTier', tier)
@@ -2178,7 +2178,7 @@ function setupClaudeHandlers() {
   }
 
   ipcMain.handle(CLAUDE_CHANNELS.GET_TIER_MODELS, () => readTierModelsFromConf())
-  ipcMain.handle('claude-set-tier-models', (_, data) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_TIER_MODELS, (_, data) => {
     if (!data || typeof data !== 'object') return false
     return writeTierModelsToConf(data)
   })
