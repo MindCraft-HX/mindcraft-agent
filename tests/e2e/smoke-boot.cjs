@@ -94,6 +94,15 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     return new Promise((resolve, reject) => {
       // Use `electron .` so app.getAppPath() returns the project root
       // (spawning as `electron electron/main.js` would make getAppPath() return electron/)
+
+      // Override home directory so os.homedir() returns the temp dir.
+      // This isolates ~/.claude and ~/.codex references used by
+      // claudeAgent.js, codexAgent.js, metrics, memory, skills, etc.
+      // Without this, the legacy migration in readProviders() would
+      // pull in the developer's real providers and pollute the E2E DB.
+      const homeDir = path.join(tempUserData, 'home');
+      fs.mkdirSync(homeDir, { recursive: true });
+
       electronProcess = spawn(electronBin, ['.'], {
         cwd: ROOT,
         env: {
@@ -103,6 +112,8 @@ describe('Electron E2E Boot Smoke (T196)', () => {
           MINDCRAFT_E2E_READY_FILE: readyFile,
           MINDCRAFT_E2E_NO_TRAY: '1',
           MINDCRAFT_E2E_NO_AUTO_UPDATE: '1',
+          HOME: homeDir,
+          USERPROFILE: homeDir,  // Windows: os.homedir() uses USERPROFILE
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
