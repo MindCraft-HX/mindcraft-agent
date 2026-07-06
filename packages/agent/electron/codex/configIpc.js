@@ -13,6 +13,7 @@ const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
 const { Conf } = require('electron-conf');
 const fs = require('fs');
 const path = require('path');
+const { getCodexDefault, setCodexDefault } = require('../settingsFacade');
 const { appendPreservedCodexConfigSections } = require('./configTomlPreserve');
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('../db/import/index');
 const { getDb, persistDb } = require('../db/index');
@@ -130,15 +131,16 @@ function registerConfigIpc(ipcMain, {
     }
   });
 
-  // ---- Sandbox Mode ----
-  ipcMain.handle(CODEX_CHANNELS.GET_SANDBOX_MODE, () => readSandboxMode());
+  // ---- Sandbox Mode (T198: routed through settingsFacade) ----
+  ipcMain.handle(CODEX_CHANNELS.GET_SANDBOX_MODE, () => {
+    const val = getCodexDefault('sandboxMode');
+    if (val && CODEX_SANDBOX_MODES.includes(val)) return val;
+    return readSandboxMode();
+  });
   ipcMain.handle(CODEX_CHANNELS.SET_SANDBOX_MODE, (_, mode) => {
-    try {
-      const c = new Conf({ name: 'mindcraft-codex' });
-      if (mode && CODEX_SANDBOX_MODES.includes(mode)) {
-        c.set('sandboxMode', mode);
-      }
-    } catch (_) {}
+    if (mode && CODEX_SANDBOX_MODES.includes(mode)) {
+      setCodexDefault('sandboxMode', mode);
+    }
     return true;
   });
 
@@ -164,19 +166,21 @@ function registerConfigIpc(ipcMain, {
     } catch (_) { return false; }
   });
 
-  // ---- Default Network / Web Search ----
+  // ---- Default Network / Web Search (T198: routed through settingsFacade) ----
   ipcMain.handle(CODEX_CHANNELS.GET_DEFAULT_NETWORK_ACCESS, () => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); return c.get('defaultNetworkAccess', true); } catch (_) { return true; }
+    const val = getCodexDefault('defaultNetworkAccess');
+    return val !== undefined ? val : true;
   });
   ipcMain.handle(CODEX_CHANNELS.SET_DEFAULT_NETWORK_ACCESS, (_, val) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultNetworkAccess', !!val); } catch (_) {}
+    setCodexDefault('defaultNetworkAccess', !!val);
     return true;
   });
   ipcMain.handle(CODEX_CHANNELS.GET_DEFAULT_WEB_SEARCH, () => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); return c.get('defaultWebSearch', 'cached'); } catch (_) { return 'cached'; }
+    const val = getCodexDefault('defaultWebSearch');
+    return val || 'cached';
   });
   ipcMain.handle(CODEX_CHANNELS.SET_DEFAULT_WEB_SEARCH, (_, val) => {
-    try { const c = new Conf({ name: 'mindcraft-codex' }); c.set('defaultWebSearch', val || 'cached'); } catch (_) {}
+    setCodexDefault('defaultWebSearch', val || 'cached');
     return true;
   });
 

@@ -28,6 +28,7 @@ const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
+const { getClaudePref, setClaudePref } = require('./settingsFacade')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const { getProviders, setProviders } = require('./db/providerStorage')
 const { CLAUDE_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
@@ -1299,18 +1300,51 @@ function setupClaudeHandlers() {
   /** 从全局 settings.json 读取配置（兼容旧键名） */
   function confGet(key, def) {
     const s = readSystemSettingsJson() || {}
-    // 兼容旧键名 -> settings.json 字段映射
-    if (key === 'claudeApiKey') return s.env?.ANTHROPIC_AUTH_TOKEN || s.apiKey || def
-    if (key === 'claudeBaseURL') return s.env?.ANTHROPIC_BASE_URL || s.apiBaseUrl || def
-    if (key === 'claudePermissionPolicy') return internalConf.get('claudePermissionPolicy', s.permissionPolicy || def)
-    if (key === 'claudeLanguage') return internalConf.get('claudeLanguage', s.language || def)
-    if (key === 'claudeEffortLevel') return s.effortLevel || def
+
+    // T198: route internal-only prefs through settingsFacade first
+    if (key === 'claudePermissionPolicy') {
+      const fv = getClaudePref('permissionPolicy');
+      if (fv !== undefined) return fv;
+      return internalConf.get('claudePermissionPolicy', s.permissionPolicy || def)
+    }
+    if (key === 'claudeLanguage') {
+      const fv = getClaudePref('language');
+      if (fv !== undefined) return fv;
+      return internalConf.get('claudeLanguage', s.language || def)
+    }
     if (key === 'claudeModel') {
-      // 重要：~/.claude/settings.json 的顶层 model 在本项目中表示 tier（sonnet/opus/...），不是“真实模型ID”。
+      const fv = getClaudePref('model');
+      if (fv !== undefined && typeof fv === 'string' && fv.trim()) return fv.trim();
+      // 重要：~/.claude/settings.json 的顶层 model 在本项目中表示 tier（sonnet/opus/...），不是”真实模型ID”。
       const stored = internalConf.get('claudeModel', '')
       return (typeof stored === 'string' && stored.trim()) ? stored.trim() : def
     }
-    if (key === 'claudeExecutablePath') return internalConf.get('claudeExecutablePath', s.pathToClaudeCodeExecutable || '')
+    if (key === 'claudeExecutablePath') {
+      const fv = getClaudePref('executablePath');
+      if (fv !== undefined) return fv;
+      return internalConf.get('claudeExecutablePath', s.pathToClaudeCodeExecutable || '')
+    }
+    if (key.startsWith('tierModels.')) {
+      const tier = key.split('.')[1]
+      const fv = getClaudePref('tierModels');
+      if (fv && typeof fv === 'object' && fv[tier]) return fv[tier];
+      const stored = internalConf.get('tierModels', null)
+      if (stored) return stored[tier] || ''
+      const tm = s.tierModels || {}
+      return tm[tier] || ''
+    }
+    if (key === 'tierModels') {
+      const fv = getClaudePref('tierModels');
+      if (fv && typeof fv === 'object' && Object.keys(fv).length > 0) return fv;
+      const stored = internalConf.get('tierModels', null)
+      if (stored) return stored
+      return s.tierModels || { haiku: '', sonnet: '', opus: '', reasoning: '' }
+    }
+
+    // 兼容旧键名 -> settings.json 字段映射
+    if (key === 'claudeApiKey') return s.env?.ANTHROPIC_AUTH_TOKEN || s.apiKey || def
+    if (key === 'claudeBaseURL') return s.env?.ANTHROPIC_BASE_URL || s.apiBaseUrl || def
+    if (key === 'claudeEffortLevel') return s.effortLevel || def
     if (key === 'claudeSelectedTier') {
       const raw = (typeof s.model === 'string' ? s.model : 'sonnet').toLowerCase()
       return ['haiku', 'sonnet', 'opus', 'reasoning'].includes(raw) ? raw : 'sonnet'
@@ -1322,53 +1356,41 @@ function setupClaudeHandlers() {
       // 首次使用：从 settings.json 导入一次
       return s.providers || null
     }
-    if (key.startsWith('tierModels.')) {
-      const tier = key.split('.')[1]
-      const stored = internalConf.get('tierModels', null)
-      if (stored) return stored[tier] || ''
-      // 首次使用：从 settings.json 导入一次
-      const tm = s.tierModels || {}
-      return tm[tier] || ''
-    }
-    if (key === 'tierModels') {
-      const stored = internalConf.get('tierModels', null)
-      if (stored) return stored
-      // 首次使用：从 settings.json 导入一次
-      return s.tierModels || { haiku: '', sonnet: '', opus: '', reasoning: '' }
-    }
     return def
   }
   /** 写入全局 settings.json */
   function confSet(key, val) {
     const s = readSystemSettingsJson() || {}
-    // settings.json 字段映射
+
+    // T198: route internal-only prefs through settingsFacade
+    if (key === 'claudePermissionPolicy') { setClaudePref('permissionPolicy', val); return }
+    if (key === 'claudeLanguage') { setClaudePref('language', val); return }
+    if (key === 'claudeModel') {
+      setClaudePref('model', typeof val === 'string' ? val.trim() : '')
+      return
+    }
+    if (key === 'claudeExecutablePath') { setClaudePref('executablePath', val); return }
+    if (key.startsWith('tierModels.')) {
+      const tm = getClaudePref('tierModels') || { haiku: '', sonnet: '', opus: '', reasoning: '' }
+      tm[key.split('.')[1]] = val
+      setClaudePref('tierModels', tm)
+      return
+    }
+    if (key === 'tierModels') { setClaudePref('tierModels', val); return }
+
+    // settings.json 字段映射 (official CLI config — still writes ~/.claude/settings.json)
     if (key === 'claudeApiKey') {
       s.env = s.env || {}
       s.env.ANTHROPIC_AUTH_TOKEN = val
     } else if (key === 'claudeBaseURL') {
       s.env = s.env || {}
       s.env.ANTHROPIC_BASE_URL = val
-    } else if (key === 'claudePermissionPolicy') { internalConf.set('claudePermissionPolicy', val); return }
-    else if (key === 'claudeLanguage') { internalConf.set('claudeLanguage', val); return }
-    else if (key === 'claudeEffortLevel') s.effortLevel = val
-    else if (key === 'claudeModel') {
-      // 真实模型 ID 仅写入 app 内部配置，严禁写入 ~/.claude/settings.json 的顶层 model（避免覆盖 sonnet/opus tier）
-      internalConf.set('claudeModel', typeof val === 'string' ? val.trim() : '')
-      return
-    }
-    else if (key === 'claudeExecutablePath') { internalConf.set('claudeExecutablePath', val); return }
+    } else if (key === 'claudeEffortLevel') s.effortLevel = val
     else if (key === 'claudeSelectedTier') {
       // tier 写入顶层 model
       s.model = val
     } else if (key === 'claudeModels') { s.models = val }
     else if (key === 'claudeProviders') { internalConf.set('claudeProviders', val); return }
-    else if (key.startsWith('tierModels.')) {
-      const tm = internalConf.get('tierModels', { haiku: '', sonnet: '', opus: '', reasoning: '' })
-      tm[key.split('.')[1]] = val
-      internalConf.set('tierModels', tm)
-      return
-    }
-    else if (key === 'tierModels') { internalConf.set('tierModels', val); return }
     else return
     try {
       // 确保 skipWebFetchPreflight 不会被覆盖（WebFetch 在国内网络需要跳过预检）

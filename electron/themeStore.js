@@ -9,31 +9,29 @@
 const fs = require('fs');
 const path = require('path');
 
+// T198: lazy-require to avoid circular dependency
+let _facade = null;
+function _getFacade() {
+  if (!_facade) _facade = require('../packages/agent/electron/settingsFacade');
+  return _facade;
+}
+
 const VALID_THEMES = ['dark', 'light', 'blue', 'brown'];
 
+/** @deprecated — theme.json path helper kept for backward compat, no longer the authority */
 function getThemeFilePath(userDataPath) {
   return path.join(userDataPath, 'theme.json');
 }
 
 function loadThemeFromFile(userDataPath) {
-  try {
-    const themeFilePath = getThemeFilePath(userDataPath);
-    if (fs.existsSync(themeFilePath)) {
-      const data = JSON.parse(fs.readFileSync(themeFilePath, 'utf-8'));
-      if (data?.theme && VALID_THEMES.includes(data.theme)) return data.theme;
-    }
-  } catch (_) {}
+  const theme = _getFacade().getTheme();
+  if (theme && VALID_THEMES.includes(theme)) return theme;
   return null;
 }
 
 function saveThemeToFile(userDataPath, name) {
   if (!VALID_THEMES.includes(name)) return;
-  try {
-    const themeFilePath = getThemeFilePath(userDataPath);
-    const dir = path.dirname(themeFilePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(themeFilePath, JSON.stringify({ theme: name }), 'utf-8');
-  } catch (_) {}
+  _getFacade().setTheme(name);
 }
 
 module.exports = {

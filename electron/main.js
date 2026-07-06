@@ -21,6 +21,7 @@ const path = require("path");
 const { exec } = require('child_process');
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require("../packages/agent/electron/diagnosticsFileUtils");
 const { CORE_CHANNELS } = require("../packages/agent/shared/ipcChannels");
+const { init: initSettingsFacade } = require("../packages/agent/electron/settingsFacade");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -280,6 +281,10 @@ registerMdViewerHandlers()
 app.whenReady().then(async () => {
   createWindow();
   setMainWindow(win);
+
+  // T198: Initialize settings facade before any settings readers
+  initSettingsFacade(app.getPath('userData'));
+
   if (!process.env.MINDCRAFT_E2E_NO_TRAY) tray = createTray(win, __dirname)
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM);

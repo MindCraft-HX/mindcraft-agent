@@ -35,18 +35,16 @@ function writeMindCraftSettings(settings, options = {}) {
 }
 
 function getDiagnosticsEnabled(options = {}) {
-  const settings = readMindCraftSettings(options)
-  const value = settings?.diagnostics?.enabled
-  return typeof value === 'boolean' ? value : DEFAULT_DIAGNOSTICS_ENABLED
+  // T198: routed through settingsFacade
+  const { getDiagnosticsEnabled: facadeGet } = require('./settingsFacade');
+  return facadeGet();
 }
 
 function setDiagnosticsEnabled(enabled, options = {}) {
-  const settings = readMindCraftSettings(options)
-  if (!settings.diagnostics || typeof settings.diagnostics !== 'object') settings.diagnostics = {}
-  settings.diagnostics.enabled = Boolean(enabled)
-  settings.diagnostics.tokenMetricsDebug = Boolean(enabled)
-  const settingsPath = writeMindCraftSettings(settings, options)
-  return { ok: true, enabled: Boolean(enabled), path: settingsPath }
+  // T198: routed through settingsFacade
+  const { setDiagnosticsEnabled: facadeSet } = require('./settingsFacade');
+  facadeSet(Boolean(enabled));
+  return { ok: true, enabled: Boolean(enabled) };
 }
 
 function shouldWriteDiagnostics(options = {}) {

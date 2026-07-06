@@ -15,8 +15,8 @@ Registered follow-ups:
 | T195 | architecture/compat | **T188 Phase 1 完成**：CodeX `~/.codex/providers.json` 写投影已停止（sync `writeProviders` 移除）；Claude `confSet('claudeProviders')` 写投影已停止。保留读回退。兼容性注册表已更新。 | P2 | ✅ 已完成 |
 | T196 | test/e2e | **Electron E2E smoke harness**：19/19 tests，覆盖 boot / preload / sanitizer / session restore / provider CRUD / restart dedup。已修复 `this.skip()` crash（node:test 兼容）和 `os.tmpdir()` 环境耦合。 | P2 | ✅ 已完成 |
 | T197 | architecture/agent | **✅ 已完成**：Agent lifecycle characterization — 映射 stream/abort/done/session map/metrics flush 生命周期。输出 `docs/agent-lifecycle-characterization.md`。结论：不合并流循环；可提取共享 emitMetricsViaStore 模式；CodeX runId 竞态防护更健壮。 | P2 | ✅ 已完成 |
-| T198 | architecture/storage | **Settings Storage Facade**：收拢 app-owned settings 写入口，统一 locale/theme/diagnostics/CodeX defaults/Claude app prefs 的 owner 与 facade；不重开 provider authority。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。 | P1 | 📝 待方案 |
-| T199 | architecture/storage | **Session / Panel Storage Boundary Audit**：盘点 `session-registry`、panel-state、renderer restore persistence 的权威边界，先审计不迁移。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。 | P2 | 📝 待方案 |
+| T198 | architecture/storage | **Settings Storage Facade**：收拢 app-owned settings 写入口，统一 locale/theme/diagnostics/CodeX defaults/Claude app prefs 的 owner 与 facade；不重开 provider authority。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。新建 `settingsFacade.js`（5 命名空间，惰性迁移，原子写入）+ 8 文件改造 + 16 合约测试。 | P1 | ✅ 已完成 |
+| T199 | architecture/storage | **Session / Panel Storage Boundary Audit**：盘点 `session-registry`、panel-state、renderer restore persistence 的权威边界，先审计不迁移。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。产出 `docs/plan/2026-07-06-T199-session-panel-storage-audit.md`（7 节审计文档）。 | P2 | ✅ 已完成 |
 
 > 最后更新：2026-07-06
 > 历史归档：`docs/archive/todo-history.md`

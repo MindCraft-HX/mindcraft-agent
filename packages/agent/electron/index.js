@@ -1,5 +1,4 @@
 const { ipcMain } = require('electron')
-const { Conf } = require('electron-conf')
 const { setupClaudeHandlers } = require('./claudeAgent')
 const { setupCodexSdkHandlers, resetCodexSdkRuntime } = require('./codexAgent')
 const { getDiagnosticsEnabled, setDiagnosticsEnabled } = require('./diagnosticsFileUtils')
@@ -12,13 +11,7 @@ const { CORE_CHANNELS } = require('../shared/ipcChannels');
 const { registerSystemExportIpc } = require('./db/export/systemExportIpc')
 const { registerCodehubSessionIndexIpc } = require('./codehubSessionIndex')
 const { getDb } = require('./db')
-
-let localeConf = null
-
-function getLocaleConf() {
-  if (!localeConf) localeConf = new Conf({ configName: 'app-config' })
-  return localeConf
-}
+const { getLocale: facadeGetLocale, setLocale: facadeSetLocale } = require('./settingsFacade')
 
 function registerAgentIPCs(targetIpcMain = ipcMain) {
   setupClaudeHandlers()
@@ -49,15 +42,15 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
     }
   }
 
-  // Locale persistence
+  // Locale persistence (T198: routed through settingsFacade)
   targetIpcMain.handle(CORE_CHANNELS.LOAD_LOCALE, () => {
-    const loc = getLocaleConf().get('locale')
+    const loc = facadeGetLocale()
     if (loc === 'zh' || loc === 'en') setLocale(loc)
     return loc || null
   })
   targetIpcMain.on(CORE_CHANNELS.SAVE_LOCALE, (_e, loc) => {
     if (loc === 'zh' || loc === 'en') {
-      getLocaleConf().set('locale', loc)
+      facadeSetLocale(loc)
       setLocale(loc)
     }
   })
