@@ -296,8 +296,8 @@ function createAgentBridge(ipcRenderer) {
   loadTodayStats: () => ipcRenderer.invoke('home-get-today-stats'),
   loadTokenTrend: (days) => ipcRenderer.invoke('home-get-token-trend', days),
   // Locale
-  loadLocale: () => ipcRenderer.invoke('load-locale'),
-  saveLocale: (locale) => ipcRenderer.send('save-locale', locale),
+  loadLocale: () => ipcRenderer.invoke(CORE_CHANNELS.LOAD_LOCALE),
+  saveLocale: (locale) => ipcRenderer.send(CORE_CHANNELS.SAVE_LOCALE, locale),
   // Agent 领域事件（PR 2：Main 双发，Renderer 暂不消费）
   onAgentEvent: (callback) => {
     const handler = (_, data) => callback(data)

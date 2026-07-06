@@ -1,5 +1,6 @@
 const { globalShortcut, ipcMain, BrowserView } = require("electron");
 const path = require("path");
+const { CORE_CHANNELS } = require('../../packages/agent/shared/ipcChannels');
 let searchView = null;
 let searchUrl = path.join(__dirname, "../dist/search.html");
 function initCodeWin(options) {
@@ -94,9 +95,9 @@ function initCodeWin(options) {
       console.log(error);
     }
   }
-  win.webContents.on("found-in-page", (event, arg) => {
+  win.webContents.on(CORE_CHANNELS.FOUND_IN_PAGE, (event, arg) => {
     // 向搜索视图发送找到的内容
-    searchView?.webContents?.send("found-in-page", arg);
+    searchView?.webContents?.send(CORE_CHANNELS.FOUND_IN_PAGE, arg);
   });
 }
 

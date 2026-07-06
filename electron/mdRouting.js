@@ -40,7 +40,7 @@ function openMdInMain(payload) {
   if (routedPayload) {
     pushPendingPayload(routedPayload)
     if (mdViewerReady) {
-      mainWin.webContents.send('md-content', routedPayload)
+      mainWin.webContents.send(CORE_CHANNELS.MD_CONTENT, routedPayload)
     }
   }
 
@@ -52,7 +52,7 @@ function openMdInMain(payload) {
 }
 
 function registerMdViewerHandlers() {
-  ipcMain.handle('md-viewer-ready', () => {
+  ipcMain.handle(CORE_CHANNELS.MD_VIEWER_READY, () => {
     mdViewerReady = true
     const payloads = [...pendingPayloads]
     pendingPayloads = []

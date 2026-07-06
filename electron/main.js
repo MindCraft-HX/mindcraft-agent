@@ -317,13 +317,13 @@ app.whenReady().then(async () => {
   })
 
   // 任务栏图标闪烁提醒
-  ipcMain.handle('flash-taskbar', (event) => {
+  ipcMain.handle(CORE_CHANNELS.FLASH_TASKBAR, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) win.flashFrame(true)
   })
 
   // MindCraft-owned diagnostics live under app userData, not provider directories.
-  ipcMain.handle('append-task-log', (_event, line) => {
+  ipcMain.handle(CORE_CHANNELS.APPEND_TASK_LOG, (_event, line) => {
     const logDir = path.join(app.getPath('userData'), 'diagnostics')
     fs.mkdirSync(logDir, { recursive: true })
     const logPath = path.join(logDir, 'task-diag.log')
@@ -368,8 +368,8 @@ app.on("web-contents-created", (event, contents) => {
 
 // 主题持久化（IPC 文件存储，不依赖 Chromium localStorage）— extracted to themeStore.js
 const userDataPath = app.getPath('userData')
-ipcMain.on('load-theme', (event) => { event.returnValue = loadThemeFromFile(userDataPath) })
-ipcMain.on('save-theme', (_, name) => {
+ipcMain.on(CORE_CHANNELS.LOAD_THEME, (event) => { event.returnValue = loadThemeFromFile(userDataPath) })
+ipcMain.on(CORE_CHANNELS.SAVE_THEME, (_, name) => {
   saveThemeToFile(userDataPath, name)
 })
 

@@ -2,6 +2,7 @@ const { autoUpdater } = require('electron-updater')
 const { app, ipcMain } = require('electron')
 
 const { getSetting, setSetting } = require('./settingsStore')
+const { CORE_CHANNELS } = require('../../packages/agent/shared/ipcChannels')
 
 let currentStatus = {
   state: 'idle',
@@ -18,7 +19,7 @@ let currentStatus = {
 function sendStatus(win, status) {
   currentStatus = { ...currentStatus, ...status }
   if (win && !win.isDestroyed()) {
-    win.webContents.send('app-update-status', currentStatus)
+    win.webContents.send(CORE_CHANNELS.APP_UPDATE_STATUS, currentStatus)
   }
 }
 
@@ -114,7 +115,7 @@ function setupAutoUpdater(env, win, { beforeInstall } = {}) {
     console.log('版本号：', info.version)
     console.log('更新内容：', info.releaseNotes)
     setSetting('isUpdateAvailable', true)
-    win.webContents.send('client-update-info-data', true)
+    win.webContents.send(CORE_CHANNELS.CLIENT_UPDATE_INFO_DATA, true)
     finishCheck(activeCheckId, {
       state: 'available',
       version: info.version || '',
@@ -132,7 +133,7 @@ function setupAutoUpdater(env, win, { beforeInstall } = {}) {
   autoUpdater.on('update-not-available', () => {
     console.log('没有可用更新')
     setSetting('isUpdateAvailable', false)
-    win.webContents.send('client-update-info-data', false)
+    win.webContents.send(CORE_CHANNELS.CLIENT_UPDATE_INFO_DATA, false)
     finishCheck(activeCheckId, {
       state: 'not-available',
       version: '',
@@ -177,16 +178,16 @@ function setupAutoUpdater(env, win, { beforeInstall } = {}) {
   ipcMain.on('check-for-updates', () => {
     startManualCheck()
   })
-  ipcMain.on('get-update-info-data', () => {
+  ipcMain.on(CORE_CHANNELS.GET_UPDATE_INFO_DATA, () => {
     const isUpdateAvailable = getSetting('isUpdateAvailable')
-    win.webContents.send('client-update-info-data', isUpdateAvailable)
+    win.webContents.send(CORE_CHANNELS.CLIENT_UPDATE_INFO_DATA, isUpdateAvailable)
   })
-  ipcMain.handle('get-app-update-status', () => currentStatus)
+  ipcMain.handle(CORE_CHANNELS.GET_APP_UPDATE_STATUS, () => currentStatus)
 
   ipcMain.handle('download-update', async () => {
     try {
       setSetting('isUpdateAvailable', false)
-      win.webContents.send('client-update-info-data', false)
+      win.webContents.send(CORE_CHANNELS.CLIENT_UPDATE_INFO_DATA, false)
       sendStatus(win, {
         state: 'downloading',
         progress: 0,

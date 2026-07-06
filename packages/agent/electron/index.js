@@ -8,6 +8,7 @@ const { setupHomeMetricsHandlers } = require('./homeMetrics')
 const { registerSessionInstructionIpc } = require('./sessionInstructionIpc')
 const { setLocale } = require('./localeHelper')
 const { registerSystemImportIpc } = require('./db/import/systemImportIpc')
+const { CORE_CHANNELS } = require('../shared/ipcChannels');
 const { registerSystemExportIpc } = require('./db/export/systemExportIpc')
 const { registerCodehubSessionIndexIpc } = require('./codehubSessionIndex')
 const { getDb } = require('./db')
@@ -50,20 +51,20 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
   }
 
   // Locale persistence
-  targetIpcMain.handle('load-locale', () => {
+  targetIpcMain.handle(CORE_CHANNELS.LOAD_LOCALE, () => {
     const loc = getLocaleConf().get('locale')
     if (loc === 'zh' || loc === 'en') setLocale(loc)
     return loc || null
   })
-  targetIpcMain.on('save-locale', (_e, loc) => {
+  targetIpcMain.on(CORE_CHANNELS.SAVE_LOCALE, (_e, loc) => {
     if (loc === 'zh' || loc === 'en') {
       getLocaleConf().set('locale', loc)
       setLocale(loc)
     }
   })
 
-  targetIpcMain.handle('get-diagnostics-enabled', () => ({ enabled: getDiagnosticsEnabled() }))
-  targetIpcMain.handle('set-diagnostics-enabled', (_e, { enabled }) => setDiagnosticsEnabled(enabled))
+  targetIpcMain.handle(CORE_CHANNELS.GET_DIAGNOSTICS_ENABLED, () => ({ enabled: getDiagnosticsEnabled() }))
+  targetIpcMain.handle(CORE_CHANNELS.SET_DIAGNOSTICS_ENABLED, (_e, { enabled }) => setDiagnosticsEnabled(enabled))
 }
 
 module.exports = {

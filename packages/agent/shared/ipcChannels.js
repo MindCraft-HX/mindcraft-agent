@@ -226,6 +226,24 @@ const CORE_CHANNELS = Object.freeze({
   // E2E test infrastructure (T196: only active when MINDCRAFT_E2E_TEST is set)
   E2E_GET_PROVIDER_COUNT: '__e2e_get_provider_count',
   E2E_PING: '__e2e_ping',
+
+  // App diagnostics / lifecycle
+  GET_APP_VERSION: 'get-app-version',
+  GET_DIAGNOSTICS_ENABLED: 'get-diagnostics-enabled',
+  SET_DIAGNOSTICS_ENABLED: 'set-diagnostics-enabled',
+  GET_APP_UPDATE_STATUS: 'get-app-update-status',
+  GET_UPDATE_INFO_DATA: 'get-update-info-data',
+  APP_UPDATE_STATUS: 'app-update-status',
+  CLIENT_UPDATE_INFO_DATA: 'client-update-info-data',
+  LOAD_LOCALE: 'load-locale',
+  SAVE_LOCALE: 'save-locale',
+  LOAD_THEME: 'load-theme',
+  SAVE_THEME: 'save-theme',
+  FLASH_TASKBAR: 'flash-taskbar',
+  APPEND_TASK_LOG: 'append-task-log',
+  FOUND_IN_PAGE: 'found-in-page',
+  MD_CONTENT: 'md-content',
+  MD_VIEWER_READY: 'md-viewer-ready',
 });
 
 /**

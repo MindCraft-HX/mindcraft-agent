@@ -175,7 +175,7 @@ function setupIpcHandlers(env, platform) {
  */
 function setupHostIpcHandlers() {
   // App version
-  ipcMain.handle('get-app-version', () => app.getVersion());
+  ipcMain.handle(CORE_CHANNELS.GET_APP_VERSION, () => app.getVersion());
 
   // Login item settings (auto-start on boot)
   ipcMain.handle('get-login-item-settings', () => {

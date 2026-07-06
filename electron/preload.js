@@ -74,10 +74,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openDocumentCandidate: (payload) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_DOCUMENT_CANDIDATE, payload),
   onMdContent: (callback) => {
     const handler = (_event, data) => callback(data)
-    ipcRenderer.on('md-content', handler)
-    return () => ipcRenderer.removeListener('md-content', handler)
+    ipcRenderer.on(CORE_CHANNELS.MD_CONTENT, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.MD_CONTENT, handler)
   },
-  getPendingMdContent: () => ipcRenderer.invoke('md-viewer-ready'),
+  getPendingMdContent: () => ipcRenderer.invoke(CORE_CHANNELS.MD_VIEWER_READY),
   onOpenMdViewer: (callback) => {
     const handler = () => callback()
     ipcRenderer.on(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
@@ -110,22 +110,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   clientUpdateInfoData: (callback) => {
-    ipcRenderer.on("client-update-info-data", (event, progress) => {
+    ipcRenderer.on(CORE_CHANNELS.CLIENT_UPDATE_INFO_DATA, (event, progress) => {
       callback(progress);
     });
   },
-  getClientUpdateInfoData: () => ipcRenderer.send('get-update-info-data'),
+  getClientUpdateInfoData: () => ipcRenderer.send(CORE_CHANNELS.GET_UPDATE_INFO_DATA),
   onAppUpdateStatus: (callback) => {
     const handler = (_event, data) => callback(data)
-    ipcRenderer.on('app-update-status', handler)
-    return () => ipcRenderer.removeListener('app-update-status', handler)
+    ipcRenderer.on(CORE_CHANNELS.APP_UPDATE_STATUS, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.APP_UPDATE_STATUS, handler)
   },
-  getAppUpdateStatus: () => ipcRenderer.invoke('get-app-update-status'),
+  getAppUpdateStatus: () => ipcRenderer.invoke(CORE_CHANNELS.GET_APP_UPDATE_STATUS),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   installUpdate: () => ipcRenderer.send('install-update'),
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
-  getDiagnosticsEnabled: () => ipcRenderer.invoke('get-diagnostics-enabled'),
-  setDiagnosticsEnabled: (enabled) => ipcRenderer.invoke('set-diagnostics-enabled', { enabled }),
+  getAppVersion: () => ipcRenderer.invoke(CORE_CHANNELS.GET_APP_VERSION),
+  getDiagnosticsEnabled: () => ipcRenderer.invoke(CORE_CHANNELS.GET_DIAGNOSTICS_ENABLED),
+  setDiagnosticsEnabled: (enabled) => ipcRenderer.invoke(CORE_CHANNELS.SET_DIAGNOSTICS_ENABLED, { enabled }),
 
   // Clipboard
   clipboard: () => clipboard,
@@ -134,14 +134,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   sendSearchPage: (info) => ipcRenderer.send('search-page', info),
   closeSearchPage: (info) => ipcRenderer.send('close-search-page', info),
   foundInPage: (callback) => {
-    ipcRenderer.on("found-in-page", (event, progress) => {
+    ipcRenderer.on(CORE_CHANNELS.FOUND_IN_PAGE, (event, progress) => {
       callback(progress);
     });
   },
 
   // 任务栏
-  flashTaskbar: () => ipcRenderer.invoke('flash-taskbar'),
-  appendTaskLog: (line) => ipcRenderer.invoke('append-task-log', line),
+  flashTaskbar: () => ipcRenderer.invoke(CORE_CHANNELS.FLASH_TASKBAR),
+  appendTaskLog: (line) => ipcRenderer.invoke(CORE_CHANNELS.APPEND_TASK_LOG, line),
 
   // 窗口控制（无边框模式）
   minimize: () => ipcRenderer.send(CORE_CHANNELS.WINDOW_MINIMIZE),
