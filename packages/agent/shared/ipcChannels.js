@@ -57,6 +57,12 @@ const CLAUDE_CHANNELS = Object.freeze({
   CONFIG_IMPORT_PICK_FILE: 'claude-config-import-pick-file',
   CONFIG_IMPORT_PREVIEW: 'claude-config-import-preview',
   CONFIG_IMPORT_COMMIT: 'claude-config-import-commit',
+
+  // Streaming push events
+  STREAM_CHUNK: 'claude-stream-chunk',
+  STREAM_THINKING: 'claude-stream-thinking',
+  STREAM_TOOL_START: 'claude-stream-tool-start',
+  STREAM_TOOL_INPUT: 'claude-stream-tool-input',
 });
 
 const CODEX_CHANNELS = Object.freeze({
@@ -102,6 +108,11 @@ const CODEX_CHANNELS = Object.freeze({
   CONFIG_IMPORT_PREVIEW: 'codex-config-import-preview',
   CONFIG_IMPORT_COMMIT: 'codex-config-import-commit',
   GET_FILE_STAT: 'codex-get-file-stat',
+
+  // Streaming push events
+  STREAM_CHUNK: 'codex-stream-chunk',
+  STREAM_THINKING: 'codex-stream-thinking',
+  STREAM_TOOL_DELTA: 'codex-stream-tool-delta',
 });
 
 const CORE_CHANNELS = Object.freeze({

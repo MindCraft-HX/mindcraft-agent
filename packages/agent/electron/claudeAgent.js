@@ -30,6 +30,7 @@ const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const { getProviders, setProviders } = require('./db/providerStorage')
+const { CLAUDE_CHANNELS } = require('../shared/ipcChannels')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
@@ -2447,7 +2448,7 @@ function setupClaudeHandlers() {
                 if (json.content_block?.type === 'tool_use') {
                   const block = { id: json.content_block.id, name: json.content_block.name, input: '' }
                   toolUseBlocks.push(block)
-                  safeSend(event.sender, 'claude-stream-tool-start', { chatId, id: block.id, name: block.name })
+                  safeSend(event.sender, CLAUDE_CHANNELS.STREAM_TOOL_START, { chatId, id: block.id, name: block.name })
                 }
                 break
               }
@@ -2457,20 +2458,20 @@ function setupClaudeHandlers() {
                   // thinking 内容也需要上限，防止第三方 provider 发送过多 thinking 导致卡死
                   if (thinkingChars < MAX_THINKING_CHARS) {
                     thinkingChars += delta.thinking.length
-                    safeSend(event.sender, 'claude-stream-thinking', { chatId, text: delta.thinking })
+                    safeSend(event.sender, CLAUDE_CHANNELS.STREAM_THINKING, { chatId, text: delta.thinking })
                   }
                 }
                 if (delta.text) {
                   if (fullText.length < MAX_STREAM_CHARS) {
                     fullText += delta.text
-                    safeSend(event.sender, 'claude-stream-chunk', { chatId, text: delta.text })
+                    safeSend(event.sender, CLAUDE_CHANNELS.STREAM_CHUNK, { chatId, text: delta.text })
                   }
                 }
                 if (delta.partial_json) {
                   const last = toolUseBlocks[toolUseBlocks.length - 1]
                   if (last) {
                     last.input += delta.partial_json
-                    safeSend(event.sender, 'claude-stream-tool-input', { chatId, id: last.id, partial: delta.partial_json })
+                    safeSend(event.sender, CLAUDE_CHANNELS.STREAM_TOOL_INPUT, { chatId, id: last.id, partial: delta.partial_json })
                   }
                 }
                 break

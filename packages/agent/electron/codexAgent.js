@@ -38,6 +38,7 @@ const {
 const { perfStartIpc, perfCount } = require('./shared/mainPerfProbe')
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
+const { CODEX_CHANNELS } = require('../shared/ipcChannels')
 
 // ---- CodeX Config (extracted leaf module, Phase 5) ----
 // Stateless TOML utils — no deps on module constants, safe to load early.
@@ -4244,21 +4245,21 @@ function setupCodexSdkHandlers() {
               case 'response.output_text.delta':
                 if (fullText.length < MAX_STREAM_CHARS) {
                   fullText += json.delta || ''
-                  safeSend(event.sender, 'codex-stream-chunk', { chatId, text: json.delta || '' })
+                  safeSend(event.sender, CODEX_CHANNELS.STREAM_CHUNK, { chatId, text: json.delta || '' })
                 }
                 break
 
               case 'response.reasoning_text.delta':
                 if (thinkingChars < MAX_THINKING_CHARS) {
                   thinkingChars += (json.delta || '').length
-                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
+                  safeSend(event.sender, CODEX_CHANNELS.STREAM_THINKING, { chatId, text: json.delta || '' })
                 }
                 break
 
               case 'response.reasoning_summary_text.delta':
                 if (thinkingChars < MAX_THINKING_CHARS) {
                   thinkingChars += (json.delta || '').length
-                  safeSend(event.sender, 'codex-stream-thinking', { chatId, text: json.delta || '' })
+                  safeSend(event.sender, CODEX_CHANNELS.STREAM_THINKING, { chatId, text: json.delta || '' })
                 }
                 break
 
@@ -4271,7 +4272,7 @@ function setupCodexSdkHandlers() {
                     type: 'function',
                     function: { name: item.name || '', arguments: '' },
                   })
-                  safeSend(event.sender, 'codex-stream-tool-delta', {
+                  safeSend(event.sender, CODEX_CHANNELS.STREAM_TOOL_DELTA, {
                     chatId, index: idx, id: item.id || '', name: item.name || '', arguments: '',
                   })
                 }

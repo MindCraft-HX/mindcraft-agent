@@ -1,8 +1,13 @@
-let CORE_CHANNELS
+let CORE_CHANNELS, CLAUDE_CHANNELS, CODEX_CHANNELS
 try {
-  CORE_CHANNELS = require('../shared/ipcChannels').CORE_CHANNELS
+  const ipcChannels = require('../shared/ipcChannels')
+  CORE_CHANNELS = ipcChannels.CORE_CHANNELS
+  CLAUDE_CHANNELS = ipcChannels.CLAUDE_CHANNELS
+  CODEX_CHANNELS = ipcChannels.CODEX_CHANNELS
 } catch (_) {
   CORE_CHANNELS = { LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index' }
+  CLAUDE_CHANNELS = {}
+  CODEX_CHANNELS = {}
 }
 
 function createAgentBridge(ipcRenderer) {
@@ -143,23 +148,23 @@ function createAgentBridge(ipcRenderer) {
   chatWebSearch: (payload) => ipcRenderer.invoke('chat-web-search', payload),
   onClaudeStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('claude-stream-chunk', handler)
-    return () => ipcRenderer.removeListener('claude-stream-chunk', handler)
+    ipcRenderer.on(CLAUDE_CHANNELS.STREAM_CHUNK, handler)
+    return () => ipcRenderer.removeListener(CLAUDE_CHANNELS.STREAM_CHUNK, handler)
   },
   onClaudeStreamThinking: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('claude-stream-thinking', handler)
-    return () => ipcRenderer.removeListener('claude-stream-thinking', handler)
+    ipcRenderer.on(CLAUDE_CHANNELS.STREAM_THINKING, handler)
+    return () => ipcRenderer.removeListener(CLAUDE_CHANNELS.STREAM_THINKING, handler)
   },
   onClaudeStreamToolStart: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('claude-stream-tool-start', handler)
-    return () => ipcRenderer.removeListener('claude-stream-tool-start', handler)
+    ipcRenderer.on(CLAUDE_CHANNELS.STREAM_TOOL_START, handler)
+    return () => ipcRenderer.removeListener(CLAUDE_CHANNELS.STREAM_TOOL_START, handler)
   },
   onClaudeStreamToolInput: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('claude-stream-tool-input', handler)
-    return () => ipcRenderer.removeListener('claude-stream-tool-input', handler)
+    ipcRenderer.on(CLAUDE_CHANNELS.STREAM_TOOL_INPUT, handler)
+    return () => ipcRenderer.removeListener(CLAUDE_CHANNELS.STREAM_TOOL_INPUT, handler)
   },
   // 简易对话：会话管理
   chatListSessions: () => ipcRenderer.invoke('chat-list-sessions'),
@@ -258,18 +263,18 @@ function createAgentBridge(ipcRenderer) {
   codexChatAbort: (payload) => ipcRenderer.invoke('codex-chat-abort', payload),
   onCodexStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('codex-stream-chunk', handler)
-    return () => ipcRenderer.removeListener('codex-stream-chunk', handler)
+    ipcRenderer.on(CODEX_CHANNELS.STREAM_CHUNK, handler)
+    return () => ipcRenderer.removeListener(CODEX_CHANNELS.STREAM_CHUNK, handler)
   },
   onCodexStreamThinking: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('codex-stream-thinking', handler)
-    return () => ipcRenderer.removeListener('codex-stream-thinking', handler)
+    ipcRenderer.on(CODEX_CHANNELS.STREAM_THINKING, handler)
+    return () => ipcRenderer.removeListener(CODEX_CHANNELS.STREAM_THINKING, handler)
   },
   onCodexStreamToolDelta: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('codex-stream-tool-delta', handler)
-    return () => ipcRenderer.removeListener('codex-stream-tool-delta', handler)
+    ipcRenderer.on(CODEX_CHANNELS.STREAM_TOOL_DELTA, handler)
+    return () => ipcRenderer.removeListener(CODEX_CHANNELS.STREAM_TOOL_DELTA, handler)
   },
   // CodeHub SessionIndex (T184)
   loadCodehubSessionIndex: () => ipcRenderer.invoke(CORE_CHANNELS.LOAD_CODEHUB_SESSION_INDEX),

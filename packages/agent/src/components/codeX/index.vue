@@ -2263,6 +2263,10 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (!existingQueuedUserMsg) {
     trimMessages(tab, true)
     tab.messages.push(userMsg)
+    // 第一条消息自动作为标题（除非用户已手动重命名）
+    if (countVisibleCodexUserMessages(tab.messages) === 1 && !tab._userRenamed) {
+      tab.name = text ? text.slice(0, 24) + (text.length > 24 ? '…' : '') : (fileAttachments.length ? fileAttachments.map(f => f.name).join(', ') : undefined)
+    }
     touchChatUpdatedAt(tab)
     // T182: 发送后即时排序，让最新 session 自动置顶
     if (ownerProject?.chats) sortChatsByRecency(ownerProject.chats)
