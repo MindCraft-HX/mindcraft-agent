@@ -279,11 +279,15 @@ registerMdViewerHandlers()
 app.whenReady().then(async () => {
   createWindow();
   setMainWindow(win);
-  tray = createTray(win, __dirname)
+  if (!process.env.MINDCRAFT_E2E_NO_TRAY) tray = createTray(win, __dirname)
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM);
   setupHostIpcHandlers();
   setupAutoUpdater(NODE_ENV, win, { beforeInstall: prepareForUpdateInstall }); //更新文件
+
+  // T196 E2E smoke hook — no-op unless MINDCRAFT_E2E_TEST env is set
+  const { installE2EHook } = require('./e2eSmokeHook');
+  installE2EHook(win, app.getPath('userData'));
 
   // 插件系统：IPC handlers + 注册表立即加载（轻量），目录扫描延迟执行
   loadRegistry()

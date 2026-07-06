@@ -169,6 +169,10 @@ const CORE_CHANNELS = Object.freeze({
 
   // Performance diagnostics
   SET_PERF_ENABLED: 'agent-set-perf-enabled',
+
+  // E2E test infrastructure (T196: only active when MINDCRAFT_E2E_TEST is set)
+  E2E_GET_PROVIDER_COUNT: '__e2e_get_provider_count',
+  E2E_PING: '__e2e_ping',
 });
 
 /**

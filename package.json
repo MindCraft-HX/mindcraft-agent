@@ -8,6 +8,7 @@
     "test:undef": "eslint --no-warn-ignored packages/agent/electron/codexAgent.js packages/agent/electron/claudeAgent.js packages/agent/electron/shared/ packages/agent/electron/claude/ packages/agent/electron/codex/",
     "test:contract": "npm run test:undef && node tests/run-contract-tests.cjs contract",
     "test:all": "npm run test:undef && node tests/run-contract-tests.cjs all",
+    "test:e2e": "node --test tests/e2e/smoke-boot.cjs",
     "dev": "cross-env NODE_ENV=development vite --mode dev",
     "dev-ios": "cross-env NODE_ENV=development vite --mode devIos",
     "build": "vite build",
