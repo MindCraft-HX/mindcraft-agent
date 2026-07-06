@@ -878,6 +878,27 @@ watch(activeChatId, (id, oldId) => {
   })
 }, { immediate: true })
 
+watch(
+  () => ({
+    id: activeTab.value?.id || '',
+    sessionId: activeTab.value?.sessionId || '',
+    cliSessionId: activeTab.value?.cliSessionId || '',
+    thinking: Boolean(activeTab.value?.thinking),
+    thinkingStart: activeTab.value?._thinkingStart || 0,
+  }),
+  () => {
+    const tab = activeTab.value
+    syncMetricsTimerForClaudeTab(tab)
+    syncActiveMetricsFromTab(tab, {
+      model: getClaudeTabModel(tab),
+      compacting: !!tab?._compacting,
+    })
+    // T181: 推迟到下一帧，让浏览器先 paint 新 UI
+    requestAnimationFrame(() => { void refreshMetricsForChat(tab, 'active-tab-state-watch') })
+  },
+  { immediate: true }
+)
+
 watch(inputText, (value) => {
   if (!activeTab.value) return
   sessionDraft.scheduleActiveDraftPersist()
