@@ -71,10 +71,10 @@ function createAgentBridge(ipcRenderer) {
   claudeConfigImportPreview: (payload) => ipcRenderer.invoke('claude-config-import-preview', payload),
   claudeConfigImportCommit: (payload) => ipcRenderer.invoke('claude-config-import-commit', payload),
   // Claude Agent SDK
-  claudeAgentQuery: (payload) => ipcRenderer.invoke('claude-agent-query', payload),
-  claudeAgentAbort: (sessionId) => ipcRenderer.invoke('claude-agent-abort', sessionId),
-  claudeAgentUpdateRunMode: (sessionId, runMode) => ipcRenderer.invoke('claude-agent-update-runmode', { sessionId, runMode }),
-  claudeAgentQueryMetrics: (payload) => ipcRenderer.invoke('claude-agent-query-metrics', payload),
+  claudeAgentQuery: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_QUERY, payload),
+  claudeAgentAbort: (sessionId) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_ABORT, sessionId),
+  claudeAgentUpdateRunMode: (sessionId, runMode) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE, { sessionId, runMode }),
+  claudeAgentQueryMetrics: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_QUERY_METRICS, payload),
   setPerfEnabled: (v) => ipcRenderer.invoke('agent-set-perf-enabled', v),
   claudeSelectDirectory: () => ipcRenderer.invoke('select-directory'),
   claudeListFiles: (payload) => ipcRenderer.invoke('claude-list-files', payload),
@@ -134,25 +134,25 @@ function createAgentBridge(ipcRenderer) {
   localSearchText: (payload) => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_TEXT, payload),
   localSearchFiles: (payload) => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_FILES, payload),
   localSearchDiagnose: () => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_DIAGNOSE),
-  onClaudeAgentMessage: (callback) => ipcRenderer.on('claude-agent-message', (_, data) => callback(data)),
-  onClaudeAgentDone: (callback) => ipcRenderer.on('claude-agent-done', (_, data) => callback(data)),
-  onClaudeAgentPermission: (callback) => ipcRenderer.on('claude-agent-permission', (_, data) => callback(data)),
-  onClaudeAgentAskQuestion: (callback) => ipcRenderer.on('claude-agent-ask-question', (_, data) => callback(data)),
-  onClaudeAgentPlanReview: (callback) => ipcRenderer.on('claude-agent-plan-review', (_, data) => callback(data)),
-  onClaudeAgentMetrics: (callback) => ipcRenderer.on('claude-agent-metrics', (_, data) => callback(data)),
-  onClaudeAgentEarlyCliSession: (callback) => ipcRenderer.on('claude-agent-early-cli-session', (_, data) => callback(data)),
-  offClaudeAgentMetrics: (callback) => ipcRenderer.removeListener('claude-agent-metrics', callback),
-  claudePermissionResponse: (payload) => ipcRenderer.invoke('claude-permission-response', payload),
-  claudeAskQuestionResponse: (payload) => ipcRenderer.invoke('claude-ask-question-response', payload),
-  claudePlanReviewResponse: (payload) => ipcRenderer.invoke('claude-plan-review-response', payload),
+  onClaudeAgentMessage: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_MESSAGE, (_, data) => callback(data)),
+  onClaudeAgentDone: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_DONE, (_, data) => callback(data)),
+  onClaudeAgentPermission: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_PERMISSION, (_, data) => callback(data)),
+  onClaudeAgentAskQuestion: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_ASK_QUESTION, (_, data) => callback(data)),
+  onClaudeAgentPlanReview: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_PLAN_REVIEW, (_, data) => callback(data)),
+  onClaudeAgentMetrics: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_METRICS, (_, data) => callback(data)),
+  onClaudeAgentEarlyCliSession: (callback) => ipcRenderer.on(CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, (_, data) => callback(data)),
+  offClaudeAgentMetrics: (callback) => ipcRenderer.removeListener(CLAUDE_CHANNELS.AGENT_METRICS, callback),
+  claudePermissionResponse: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.PERMISSION_RESPONSE, payload),
+  claudeAskQuestionResponse: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.ASK_QUESTION_RESPONSE, payload),
+  claudePlanReviewResponse: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.PLAN_REVIEW_RESPONSE, payload),
   offClaudeAgentListeners: () => {
-    ipcRenderer.removeAllListeners('claude-agent-message')
-    ipcRenderer.removeAllListeners('claude-agent-done')
-    ipcRenderer.removeAllListeners('claude-agent-permission')
-    ipcRenderer.removeAllListeners('claude-agent-ask-question')
-    ipcRenderer.removeAllListeners('claude-agent-plan-review')
-    ipcRenderer.removeAllListeners('claude-agent-metrics')
-    ipcRenderer.removeAllListeners('claude-agent-early-cli-session')
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_MESSAGE)
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_DONE)
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_PERMISSION)
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_ASK_QUESTION)
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_PLAN_REVIEW)
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_METRICS)
+    ipcRenderer.removeAllListeners(CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION)
   },
   // 简易对话：Claude
   claudeChat: (payload) => ipcRenderer.invoke('claude-chat', payload),

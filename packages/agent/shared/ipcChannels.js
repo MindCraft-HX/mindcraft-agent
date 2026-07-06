@@ -58,6 +58,22 @@ const CLAUDE_CHANNELS = Object.freeze({
   CONFIG_IMPORT_PREVIEW: 'claude-config-import-preview',
   CONFIG_IMPORT_COMMIT: 'claude-config-import-commit',
 
+  // Agent lifecycle
+  AGENT_QUERY: 'claude-agent-query',
+  AGENT_ABORT: 'claude-agent-abort',
+  AGENT_UPDATE_RUNMODE: 'claude-agent-update-runmode',
+  AGENT_QUERY_METRICS: 'claude-agent-query-metrics',
+  AGENT_MESSAGE: 'claude-agent-message',
+  AGENT_DONE: 'claude-agent-done',
+  AGENT_PERMISSION: 'claude-agent-permission',
+  AGENT_ASK_QUESTION: 'claude-agent-ask-question',
+  AGENT_PLAN_REVIEW: 'claude-agent-plan-review',
+  AGENT_METRICS: 'claude-agent-metrics',
+  AGENT_EARLY_CLI_SESSION: 'claude-agent-early-cli-session',
+  PERMISSION_RESPONSE: 'claude-permission-response',
+  ASK_QUESTION_RESPONSE: 'claude-ask-question-response',
+  PLAN_REVIEW_RESPONSE: 'claude-plan-review-response',
+
   // Streaming push events
   STREAM_CHUNK: 'claude-stream-chunk',
   STREAM_THINKING: 'claude-stream-thinking',

@@ -353,7 +353,7 @@ function emitClaudeMetricsViaStore(sender, sample, sessionId, model, extra = {})
     rawUsage: sample.rawUsage || null,
   })
 
-  safeSend(sender, 'claude-agent-metrics', {
+  safeSend(sender, CLAUDE_CHANNELS.AGENT_METRICS, {
     sessionId,
     model: model || '',
     thinking: snapshot.phase === 'live',
@@ -2618,7 +2618,7 @@ function setupClaudeHandlers() {
     resetSystemClaudeCache()
   }
 
-  ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, modelTier: modelTierOverride, sessionInstruction }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, modelTier: modelTierOverride, sessionInstruction }) => {
     const chatKey = sessionId
     const runtime = resolveEffectiveRuntimeConfig()
     const apiKey = runtime.apiKey
@@ -2662,7 +2662,7 @@ function setupClaudeHandlers() {
         reason,
       })
 
-      safeSend(sender, 'claude-agent-message', {
+      safeSend(sender, CLAUDE_CHANNELS.AGENT_MESSAGE, {
         sessionId,
         msg: {
           type: 'system',
@@ -2670,7 +2670,7 @@ function setupClaudeHandlers() {
           message: { content: [{ type: 'text', text: lt('send.failed', { error: err?.message || err }) }] },
         },
       })
-      safeSend(sender, 'claude-agent-done', donePayload)
+      safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, donePayload)
       clearCurrentTurn(chatKey)
       agentSessions.delete(chatKey)
       pendingSessionMetaByChatKey.delete(chatKey)
@@ -2744,7 +2744,7 @@ function setupClaudeHandlers() {
           if (slowNoticeSent.has(chatKey)) return
           slowNoticeSent.add(chatKey)
           const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
-          safeSend(sender,'claude-agent-message', {
+          safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
             sessionId,
             msg: {
               type: 'system',
@@ -2860,7 +2860,7 @@ function setupClaudeHandlers() {
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                   const answers = await new Promise((resolve) => {
                     pendingPermissionResolvers.set(requestId, resolve)
-                    safeSend(sender, 'claude-agent-ask-question', {
+                    safeSend(sender, CLAUDE_CHANNELS.AGENT_ASK_QUESTION, {
                       sessionId,
                       requestId,
                       questions: input.questions || [],
@@ -2876,7 +2876,7 @@ function setupClaudeHandlers() {
                   const planFilePath = input.planFilePath || ''
                   const action = await new Promise((resolve) => {
                     pendingPermissionResolvers.set(requestId, resolve)
-                    safeSend(sender, 'claude-agent-plan-review', {
+                    safeSend(sender, CLAUDE_CHANNELS.AGENT_PLAN_REVIEW, {
                       sessionId,
                       requestId,
                       plan,
@@ -2919,7 +2919,7 @@ function setupClaudeHandlers() {
                   pendingPermissionResolvers.set(requestId, (allow) => {
                     permResolve(!!allow)
                   })
-                  safeSend(sender,'claude-agent-permission', {
+                  safeSend(sender,CLAUDE_CHANNELS.AGENT_PERMISSION, {
                     sessionId,
                     msg: { ...msg, _requestId: requestId },
                   })
@@ -2939,7 +2939,7 @@ function setupClaudeHandlers() {
                         updatedAt: Date.now(),
                       })
                       const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
-                      safeSend(sender,'claude-agent-message', {
+                      safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
                         sessionId,
                         msg: {
                           type: 'system',
@@ -3021,7 +3021,7 @@ function setupClaudeHandlers() {
             doneSent = true
             backgroundTaskTracker.clearPendingDonePayload()
             console.log('[Claude] agent-done → filePath:', finalPayload.filePath || '(empty)')
-            safeSend(sender, 'claude-agent-done', finalPayload)
+            safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, finalPayload)
             _agentRunDoneFilePath = finalPayload.filePath || ''
             agentSessions.delete(chatKey)
             try {
@@ -3049,13 +3049,13 @@ function setupClaudeHandlers() {
                 cliSessionIds.set(chatKey, msg.session_id)
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
                 if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
-                safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.session_id })
+                safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.session_id })
               }
             } else if (msg?.uuid && !cliSessionIds.has(chatKey)) {
               cliSessionIds.set(chatKey, msg.uuid)
               const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
               if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
-              safeSend(sender, 'claude-agent-early-cli-session', { sessionId, cliSessionId: msg.uuid })
+              safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.uuid })
             }
             const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
             if (liveUsageMetrics) {
@@ -3121,7 +3121,7 @@ function setupClaudeHandlers() {
                 }
               }
             }
-            safeSend(sender,'claude-agent-message', { sessionId, msg })
+            safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, { sessionId, msg })
             if (resultReceived && !doneSent && !backgroundTaskTracker.hasActiveTasks() && backgroundTaskTracker.hasPendingDonePayload()) {
               await sendCompletedDoneIfReady(sender, null, { force: true })
             }
@@ -3167,7 +3167,7 @@ function setupClaudeHandlers() {
               await runQuery(undefined)
               exitCode = 0
             } catch (err2) {
-              safeSend(sender,'claude-agent-message', {
+              safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: {
                   type: 'system',
@@ -3180,7 +3180,7 @@ function setupClaudeHandlers() {
             // maxTurns 耗尽：清除旧 session 避免后续 resume 死循环
             cliSessionIds.delete(chatKey)
             sessionModels.delete(chatKey)
-            safeSend(sender,'claude-agent-message', {
+            safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
               sessionId,
               msg: {
                 type: 'system',
@@ -3189,7 +3189,7 @@ function setupClaudeHandlers() {
               },
             })
           } else {
-            safeSend(sender,'claude-agent-message', {
+            safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
               sessionId,
               msg: {
                 type: 'system',
@@ -3263,7 +3263,7 @@ function setupClaudeHandlers() {
               cwd: s.cwd || resolvedCwd,
               reason: doneReason,
             })
-            safeSend((s.event?.sender || event.sender), 'claude-agent-done', donePayload)
+            safeSend((s.event?.sender || event.sender), CLAUDE_CHANNELS.AGENT_DONE, donePayload)
             _agentRunDoneFilePath = donePayload.filePath || ''  // PR 2：fallback 路径也捕获 filePath
           }
           // PR 2：双发 agent.run.done（finally 统一发送，abort/success/failure 全部覆盖）
@@ -3286,7 +3286,7 @@ function setupClaudeHandlers() {
     })
   })
 
-  ipcMain.handle('claude-agent-abort', (_, sessionId) => {
+  ipcMain.handle(CLAUDE_CHANNELS.AGENT_ABORT, (_, sessionId) => {
     const chatKey = sessionId
     const s = agentSessions.get(chatKey)
     if (s) {
@@ -3294,7 +3294,7 @@ function setupClaudeHandlers() {
       try { s.query?.close?.() } catch (_) {}
       agentSessions.delete(chatKey)
       pendingSessionMetaByChatKey.delete(chatKey)
-      safeSend(s.event?.sender, 'claude-agent-done', buildClaudeAgentDonePayload({
+      safeSend(s.event?.sender, CLAUDE_CHANNELS.AGENT_DONE, buildClaudeAgentDonePayload({
         sessionId,
         cliSessionId: cliSessionIds.get(chatKey) || '',
         cwd: s.cwd || '',
@@ -3305,7 +3305,7 @@ function setupClaudeHandlers() {
   })
 
   // 运行时更新 runMode（用户在运行中途切换模式时生效）
-  ipcMain.handle('claude-agent-update-runmode', (_, { sessionId, runMode }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE, (_, { sessionId, runMode }) => {
     const chatKey = sessionId
     const s = agentSessions.get(chatKey)
     if (!s) return
@@ -3315,8 +3315,8 @@ function setupClaudeHandlers() {
   })
 
   // 主动查询会话 metrics（用于切换 tab 时恢复历史数据）
-  ipcMain.handle('claude-agent-query-metrics', async (event, { cliSessionId, model }) => {
-    const stop = perfStartIpc('claude-agent-query-metrics')
+  ipcMain.handle(CLAUDE_CHANNELS.AGENT_QUERY_METRICS, async (event, { cliSessionId, model }) => {
+    const stop = perfStartIpc(CLAUDE_CHANNELS.AGENT_QUERY_METRICS)
     if (!cliSessionId) { stop(); return null }
 
     // 1. 解析 JSONL 路径（sessionJsonlCache 已缓存，第二次起 0ms）
@@ -3353,7 +3353,7 @@ function setupClaudeHandlers() {
       const sender = event.sender
       promise.then((aggResult) => {
         if (!aggResult || !sender || sender.isDestroyed()) return
-        safeSend(sender, 'claude-agent-metrics', {
+        safeSend(sender, CLAUDE_CHANNELS.AGENT_METRICS, {
           sessionId: cliSessionId,
           model: model || '',
           thinking: false,
@@ -3374,7 +3374,7 @@ function setupClaudeHandlers() {
     return null
   })
 
-  ipcMain.handle('claude-permission-response', (_, { sessionId, requestId, allowed }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.PERMISSION_RESPONSE, (_, { sessionId, requestId, allowed }) => {
     const chatKey = sessionId
     const s = agentSessions.get(chatKey)
     if (!s) return
@@ -3386,7 +3386,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-ask-question-response', (_, { requestId, answers }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.ASK_QUESTION_RESPONSE, (_, { requestId, answers }) => {
     if (!requestId) return
     const resolve = pendingPermissionResolvers.get(requestId)
     if (resolve) {
@@ -3395,7 +3395,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-plan-review-response', (_, { requestId, action }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.PLAN_REVIEW_RESPONSE, (_, { requestId, action }) => {
     if (!requestId) return
     const resolve = pendingPermissionResolvers.get(requestId)
     if (resolve) {

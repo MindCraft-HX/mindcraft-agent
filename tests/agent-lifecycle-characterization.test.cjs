@@ -17,7 +17,7 @@ test('Claude abort: abortController.abort() fires before query.close()', () => {
   // Abort handler at claude-agent-abort
   assert.match(
     source,
-    /ipcMain\.handle\('claude-agent-abort'[\s\S]*abortController\?\.abort[\s\S]*query\?\.close/,
+    /ipcMain\.handle\(CLAUDE_CHANNELS\.AGENT_ABORT[\s\S]*abortController\?\.abort[\s\S]*query\?\.close/,
     'expected abort controller to be aborted before query.close() in claude-agent-abort',
   )
 })
@@ -27,7 +27,7 @@ test('Claude abort: sends agent-done with reason "aborted" after cleanup', () =>
 
   assert.match(
     source,
-    /ipcMain\.handle\('claude-agent-abort'[\s\S]*agentSessions\.delete\(chatKey\)[\s\S]*claude-agent-done[\s\S]*reason:\s*'aborted'/,
+    /ipcMain\.handle\(CLAUDE_CHANNELS\.AGENT_ABORT[\s\S]*agentSessions\.delete\(chatKey\)[\s\S]*CLAUDE_CHANNELS\.AGENT_DONE[\s\S]*reason:\s*'aborted'/,
     'expected agent-done with aborted reason after session cleanup',
   )
 })

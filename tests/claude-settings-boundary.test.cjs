@@ -67,7 +67,7 @@ test('claude runtime uses effective active provider config and provider activati
 
   assert.match(
     source,
-    /ipcMain\.handle\('claude-agent-query'[\s\S]*const runtime = resolveEffectiveRuntimeConfig\(\)/,
+    /ipcMain\.handle\(CLAUDE_CHANNELS\.AGENT_QUERY[\s\S]*const runtime = resolveEffectiveRuntimeConfig\(\)/,
     'expected claude-agent-query to use effective active provider runtime config',
   )
   assert.match(
@@ -102,7 +102,7 @@ test('claude reused query failures finalize the run instead of leaving session s
   )
   assert.match(
     source,
-    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*safeSend\(sender, 'claude-agent-done', donePayload\)/,
+    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*safeSend\(sender, CLAUDE_CHANNELS\.AGENT_DONE, donePayload\)/,
     'expected reused-query failure finalizer to emit claude-agent-done',
   )
   assert.match(
