@@ -11,6 +11,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 
 function installE2EHook(win) {
   const mode = process.env.MINDCRAFT_E2E_TEST;
@@ -85,10 +86,18 @@ function installE2EHook(win) {
       } catch (e) { console.error('[e2e] Phase 2 error:', e.message); }
 
       // ── Phase 3: Session restore ──
-      const os = require('os');
-      const tmpDir = os.tmpdir();
+      // Scan seeded data (see smoke-boot.cjs seed step).
+      // Since HOME/USERPROFILE are overridden, os.homedir() points to the
+      // temp home dir where we seeded .claude/projects/ and .codex/sessions/.
       let claudeSessionsCount = -1, codexSessionsCount = -1;
+      let claudeSeededCount = -1, codexSeededCount = -1;
+      const seedCwd = process.env.MINDCRAFT_E2E_SEED_CWD || '';
+      const seedCodexCwd = process.env.MINDCRAFT_E2E_SEED_CODEX_CWD || '';
+
       try {
+        // Scan system temp dir for fresh-userData check
+        const os = require('os');
+        const tmpDir = os.tmpdir();
         claudeSessionsCount = await win.webContents.executeJavaScript(`
           (async () => {
             try {
@@ -108,6 +117,31 @@ function installE2EHook(win) {
               return Array.isArray(sessions) ? sessions.length : -1;
             } catch (e) { return -1; }
           })()`);
+
+        // Scan seeded project dir
+        if (seedCwd) {
+          claudeSeededCount = await win.webContents.executeJavaScript(`
+            (async () => {
+              try {
+                const api = window.electronAPI;
+                if (!api?.claudeScanProjectsSessions) return -1;
+                const sessions = await api.claudeScanProjectsSessions(${JSON.stringify(seedCwd)});
+                return Array.isArray(sessions) ? sessions.length : -1;
+              } catch (e) { return -1; }
+            })()`);
+        }
+
+        if (seedCodexCwd) {
+          codexSeededCount = await win.webContents.executeJavaScript(`
+            (async () => {
+              try {
+                const api = window.electronAPI;
+                if (!api?.codexListSessionsByCwd) return -1;
+                const sessions = await api.codexListSessionsByCwd(${JSON.stringify(seedCodexCwd)});
+                return Array.isArray(sessions) ? sessions.length : -1;
+              } catch (e) { return -1; }
+            })()`);
+        }
       } catch (e) { console.error('[e2e] Phase 3 error:', e.message); }
 
       // ── Phase 4: Provider CRUD smoke ──
@@ -148,6 +182,72 @@ function installE2EHook(win) {
         if (crud?.detail) providerCrudDetail = crud.detail;
       } catch (e) { console.error('[e2e] Phase 4 error:', e.message); }
 
+      // ── Phase 2b: Settings sanitizer ──
+      // Verify that MindCraft-owned fields are stripped from
+      // ~/.claude/settings.json during write (sanitizeClaudeSettingsForWrite).
+      //
+      // Flow: deliberately pollute settings.json → trigger sanitizer write →
+      // verify pollution is removed and SDK fields are preserved.
+      let sanitizerOk = false;
+      let sanitizerDetail = {};
+
+      try {
+        const homeDir = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
+        const claudeDir = path.join(homeDir, '.claude');
+        if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+        const settingsPath = path.join(claudeDir, 'settings.json');
+
+        // 1. Simulate pollution: write MindCraft-owned fields into settings.json
+        const polluted = {
+          model: 'sonnet',
+          skipWebFetchPreflight: true,
+          gitMirrorUrl: 'https://e2e-pollution.example.com',
+          memoryInjectMode: 'none',
+          permissionPolicy: 'ask',
+        };
+        const polluteTmp = settingsPath + '.pollute.tmp';
+        fs.writeFileSync(polluteTmp, JSON.stringify(polluted, null, 2), 'utf8');
+        fs.renameSync(polluteTmp, settingsPath);
+
+        // 2. Trigger sanitizer via claudePatchSettingsJson (harmless patch)
+        const patchResult = await win.webContents.executeJavaScript(`
+          (async () => {
+            try {
+              const api = window.electronAPI;
+              if (!api?.claudePatchSettingsJson) return 'no-api';
+              const r = await api.claudePatchSettingsJson({ model: 'sonnet' });
+              return r?.ok ? 'ok' : 'fail';
+            } catch (e) { return 'error:' + e.message; }
+          })()`);
+
+        // 3. Read settings.json after sanitizer write
+        let settingsAfter = {};
+        try {
+          if (fs.existsSync(settingsPath)) {
+            settingsAfter = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+          }
+        } catch (_) {}
+
+        const hasGitMirror = 'gitMirrorUrl' in settingsAfter;
+        const hasMemoryInject = 'memoryInjectMode' in settingsAfter;
+        const hasPermissionPolicy = 'permissionPolicy' in settingsAfter;
+        const modelPreserved = settingsAfter.model === 'sonnet';
+        const skipWebFetchPreserved = settingsAfter.skipWebFetchPreflight === true;
+
+        sanitizerDetail = {
+          hasGitMirrorUrl: hasGitMirror,
+          hasMemoryInjectMode: hasMemoryInject,
+          hasPermissionPolicy: hasPermissionPolicy,
+          modelPreserved,
+          skipWebFetchPreserved,
+          patchResult,
+        };
+        sanitizerOk = !hasGitMirror && !hasMemoryInject && !hasPermissionPolicy
+          && modelPreserved && skipWebFetchPreserved;
+      } catch (e) {
+        sanitizerDetail = { error: e.message };
+      }
+
       // ── Phases errored tracker ──
       const phasesErrored = [];
       if (!pingOk) phasesErrored.push('phase1:ping');
@@ -156,7 +256,10 @@ function installE2EHook(win) {
       if (appVersion === null) phasesErrored.push('phase2:appVersion');
       if (claudeSessionsCount === -1) phasesErrored.push('phase3:claudeSessions');
       if (codexSessionsCount === -1) phasesErrored.push('phase3:codexSessions');
+      if (claudeSeededCount !== 1) phasesErrored.push('phase3:claudeSeeded');
+      if (codexSeededCount !== 1) phasesErrored.push('phase3:codexSeeded');
       if (!providerRoundtripOk && providerCrudDetail.initialCount === -1) phasesErrored.push('phase4:providerCRUD');
+      if (!sanitizerOk) phasesErrored.push('phase2b:sanitizer');
 
       const signal = {
         mode,
@@ -172,9 +275,14 @@ function installE2EHook(win) {
         settingsLoaded,
         appVersion,
         diagnosticsEnabled,
+        // Phase 2b
+        sanitizerOk,
+        sanitizerDetail,
         // Phase 3
         claudeSessionsCount,
         codexSessionsCount,
+        claudeSeededCount,
+        codexSeededCount,
         // Phase 4
         providerRoundtripOk,
         providerCrudDetail,

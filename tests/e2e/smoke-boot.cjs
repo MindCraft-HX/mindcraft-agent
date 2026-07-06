@@ -91,6 +91,32 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     tempUserData = createTempUserData();
     readyFile = path.join(tempUserData, '.e2e-ready');
 
+    // ── Phase 3: Seed a minimal Claude session for restore smoke ──
+    const homeDir = path.join(tempUserData, 'home');
+    fs.mkdirSync(homeDir, { recursive: true });
+
+    // claudeAgent.js `getClaudeProjectsRootDir` replaces non-alphanumeric
+    // chars with `-`. Use a simple cwd so the project dir name is predictable.
+    const seedCwd = process.platform === 'win32' ? 'D:\\e2e-seed' : '/e2e-seed';
+    const namePart = seedCwd.split('').map(c => (/[a-zA-Z0-9]/).test(c) ? c : '-').join('');
+    const seedProjectDir = path.join(homeDir, '.claude', 'projects', namePart);
+    fs.mkdirSync(seedProjectDir, { recursive: true });
+
+    const seedSessionId = 'e2e-seed-001';
+    fs.writeFileSync(
+      path.join(seedProjectDir, `${seedSessionId}.jsonl`),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'e2e' } }) + '\n'
+    );
+
+    // Also seed a CodeX session
+    const codexSessionsDir = path.join(homeDir, '.codex', 'sessions', 'e2e-seed-project');
+    fs.mkdirSync(codexSessionsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(codexSessionsDir, `${seedSessionId}.jsonl`),
+      JSON.stringify({ type: 'session_meta', payload: { id: seedSessionId, cwd: codexSessionsDir } }) + '\n' +
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'e2e' } }) + '\n'
+    );
+
     return new Promise((resolve, reject) => {
       // Use `electron .` so app.getAppPath() returns the project root
       // (spawning as `electron electron/main.js` would make getAppPath() return electron/)
@@ -114,6 +140,8 @@ describe('Electron E2E Boot Smoke (T196)', () => {
           MINDCRAFT_E2E_NO_AUTO_UPDATE: '1',
           HOME: homeDir,
           USERPROFILE: homeDir,  // Windows: os.homedir() uses USERPROFILE
+          MINDCRAFT_E2E_SEED_CWD: seedCwd,
+          MINDCRAFT_E2E_SEED_CODEX_CWD: path.join(homeDir, '.codex', 'sessions', 'e2e-seed-project'),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -254,6 +282,18 @@ describe('Electron E2E Boot Smoke (T196)', () => {
       'codexSessionsCount should be 0 for empty userData');
   });
 
+  it('Phase 3: Claude scan finds seeded session', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.claudeSeededCount, 1,
+      'should find exactly 1 seeded Claude session');
+  });
+
+  it('Phase 3: CodeX scan finds seeded session', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.codexSeededCount, 1,
+      'should find exactly 1 seeded CodeX session');
+  });
+
   // ── Phase 4: Provider CRUD smoke ──
 
   it('Phase 4: provider CRUD roundtrip succeeds', function () {
@@ -273,6 +313,34 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     const d = readyData.providerCrudDetail;
     assert.strictEqual(d.afterWriteCount, 1, 'after write should be 1');
     assert.strictEqual(d.afterDeleteCount, 0, 'after delete should be 0');
+  });
+
+  // ── Phase 2b: Settings sanitizer ──
+
+  it('Phase 2b: sanitizer removes MindCraft fields from settings.json', function () {
+    if (!readyData?.sanitizerDetail) { this.skip(); return; }
+    const d = readyData.sanitizerDetail;
+    assert.strictEqual(d.hasGitMirrorUrl, false,
+      'gitMirrorUrl must NOT leak into settings.json');
+    assert.strictEqual(d.hasMemoryInjectMode, false,
+      'memoryInjectMode must NOT leak into settings.json');
+    assert.strictEqual(d.hasPermissionPolicy, false,
+      'permissionPolicy must NOT leak into settings.json');
+  });
+
+  it('Phase 2b: sanitizer preserves SDK-owned fields', function () {
+    if (!readyData?.sanitizerDetail) { this.skip(); return; }
+    const d = readyData.sanitizerDetail;
+    assert.strictEqual(d.modelPreserved, true,
+      'model (SDK field) must be preserved in settings.json');
+    assert.strictEqual(d.skipWebFetchPreserved, true,
+      'skipWebFetchPreflight (SDK field) must be preserved in settings.json');
+  });
+
+  it('Phase 2b: sanitizer roundtrip succeeds', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.sanitizerOk, true,
+      'sanitizerOk should be true');
   });
 
   after(() => {
