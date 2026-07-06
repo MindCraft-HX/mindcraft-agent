@@ -38,7 +38,7 @@ const {
 const { perfStartIpc, perfCount } = require('./shared/mainPerfProbe')
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
-const { CODEX_CHANNELS } = require('../shared/ipcChannels')
+const { CODEX_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
 
 // ---- CodeX Config (extracted leaf module, Phase 5) ----
 // Stateless TOML utils — no deps on module constants, safe to load early.
@@ -2777,7 +2777,7 @@ function setupCodexSdkHandlers() {
             }))
             // PR 2：双发 agent.run.done（triggerDone 是同步函数，用 .then）
             getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
-              safeSend(sender, 'agent:event', buildAgentRunDoneEvent({
+              safeSend(sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
                 agent: 'codex',
                 chatKey: sessionId,
                 runId,
@@ -3049,7 +3049,7 @@ function setupCodexSdkHandlers() {
               if (!wasAlreadyTerminal) {
                 const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
                 getAgentProtocol().then(({ buildAgentTurnTerminalEvent, TerminalKind }) => {
-                  safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
+                  safeSend(sender, CORE_CHANNELS.AGENT_EVENT, buildAgentTurnTerminalEvent({
                     agent: 'codex',
                     chatKey: sessionId,
                     runId,
@@ -3316,7 +3316,7 @@ function setupCodexSdkHandlers() {
             // PR 2：双发 agent.run.done
             try {
               const { buildAgentRunDoneEvent } = await getAgentProtocol()
-              safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
+              safeSend(event.sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
                 agent: 'codex',
                 chatKey: sessionId,
                 runId,
@@ -3358,7 +3358,7 @@ function setupCodexSdkHandlers() {
       // PR 2：双发 agent.run.done（abort 路径）
       try {
         const { buildAgentRunDoneEvent } = await getAgentProtocol()
-        safeSend(s.event?.sender, 'agent:event', buildAgentRunDoneEvent({
+        safeSend(s.event?.sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
           agent: 'codex',
           chatKey: sessionId,
         }))

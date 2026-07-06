@@ -3026,7 +3026,7 @@ function setupClaudeHandlers() {
             agentSessions.delete(chatKey)
             try {
               const { buildAgentTurnTerminalEvent, TerminalKind } = await getAgentProtocol()
-              safeSend(sender, 'agent:event', buildAgentTurnTerminalEvent({
+              safeSend(sender, CORE_CHANNELS.AGENT_EVENT, buildAgentTurnTerminalEvent({
                 agent: 'claudeCode',
                 chatKey: sessionId,
                 cliSessionId: finalPayload.cliSessionId || '',
@@ -3271,7 +3271,7 @@ function setupClaudeHandlers() {
           // filePath 从 result/fallback 的 donePayload 捕获，abort 交给 finally 统一发。
           try {
             const { buildAgentRunDoneEvent } = await getAgentProtocol()
-            safeSend(event.sender, 'agent:event', buildAgentRunDoneEvent({
+            safeSend(event.sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
               agent: 'claudeCode',
               chatKey: sessionId,
               cliSessionId: cliSessionIds.get(chatKey) || '',

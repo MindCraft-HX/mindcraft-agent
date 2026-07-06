@@ -1,4 +1,5 @@
 const { dialog } = require('electron')
+const { CORE_CHANNELS } = require('../shared/ipcChannels')
 const {
   clearSessionDraft,
   getSessionDraft,
@@ -11,8 +12,8 @@ const { resolveAttachments, buildFullInstructionPrompt, ALLOWED_EXTENSIONS } = r
 const { perfStartIpc } = require('./shared/mainPerfProbe')
 
 function registerSessionInstructionIpc(ipcMain) {
-  ipcMain.handle('agent-get-session-instruction', (_, { chatKey } = {}) => {
-    const stop = perfStartIpc('agent-get-session-instruction')
+  ipcMain.handle(CORE_CHANNELS.AGENT_GET_SESSION_INSTRUCTION, (_, { chatKey } = {}) => {
+    const stop = perfStartIpc(CORE_CHANNELS.AGENT_GET_SESSION_INSTRUCTION)
     try {
       const result = getSessionInstruction(chatKey); stop(); return result
     } catch (err) {
@@ -20,8 +21,8 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-set-session-instruction', (_, { chatKey, instruction } = {}) => {
-    const stop = perfStartIpc('agent-set-session-instruction')
+  ipcMain.handle(CORE_CHANNELS.AGENT_SET_SESSION_INSTRUCTION, (_, { chatKey, instruction } = {}) => {
+    const stop = perfStartIpc(CORE_CHANNELS.AGENT_SET_SESSION_INSTRUCTION)
     try {
       const result = setSessionInstruction(chatKey, instruction || {}); stop(); return result
     } catch (err) {
@@ -29,8 +30,8 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-set-session-title', (_, payload = {}) => {
-    const stop = perfStartIpc('agent-set-session-title')
+  ipcMain.handle(CORE_CHANNELS.AGENT_SET_SESSION_TITLE, (_, payload = {}) => {
+    const stop = perfStartIpc(CORE_CHANNELS.AGENT_SET_SESSION_TITLE)
     try {
       const result = setSessionTitle(payload.chatKey, payload.title, payload); stop(); return result
     } catch (err) {
@@ -73,7 +74,7 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-open-session-attachment-dialog', async () => {
+  ipcMain.handle(CORE_CHANNELS.AGENT_OPEN_SESSION_ATTACHMENT_DIALOG, async () => {
     const exts = [...ALLOWED_EXTENSIONS].map(ext => ext.replace('.', '')).join(' ')
     const result = await dialog.showOpenDialog({
       title: '选择会话指令附件',
@@ -90,7 +91,7 @@ function registerSessionInstructionIpc(ipcMain) {
     })
   })
 
-  ipcMain.handle('agent-resolve-session-attachments', (_, { attachments } = {}) => {
+  ipcMain.handle(CORE_CHANNELS.AGENT_RESOLVE_SESSION_ATTACHMENTS, (_, { attachments } = {}) => {
     try {
       return resolveAttachments(attachments || [])
     } catch (err) {
@@ -98,7 +99,7 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-build-session-instruction-prompt', async (_, { instruction } = {}) => {
+  ipcMain.handle(CORE_CHANNELS.AGENT_BUILD_SESSION_INSTRUCTION_PROMPT, async (_, { instruction } = {}) => {
     try {
       return await buildFullInstructionPrompt(instruction || {})
     } catch (err) {

@@ -86,16 +86,16 @@ function createAgentBridge(ipcRenderer) {
   claudeLoadCodePanelState: (cwd) => ipcRenderer.invoke('claude-load-code-panel-state', { cwd }),
   claudeSaveCodePanelState: (payload) => ipcRenderer.invoke('claude-save-code-panel-state', payload),
   claudeSaveCodePanelStateSync: (payload) => ipcRenderer.sendSync('claude-save-code-panel-state-sync', payload),
-  getSessionInstruction: (chatKey) => ipcRenderer.invoke('agent-get-session-instruction', { chatKey }),
-  setSessionInstruction: (payload) => ipcRenderer.invoke('agent-set-session-instruction', payload),
-  setSessionTitle: (payload) => ipcRenderer.invoke('agent-set-session-title', payload),
+  getSessionInstruction: (chatKey) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_GET_SESSION_INSTRUCTION, { chatKey }),
+  setSessionInstruction: (payload) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_SET_SESSION_INSTRUCTION, payload),
+  setSessionTitle: (payload) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_SET_SESSION_TITLE, payload),
   getSessionDraft: (chatKey) => ipcRenderer.invoke('agent-get-session-draft', { chatKey }),
   setSessionDraft: (payload) => ipcRenderer.invoke('agent-set-session-draft', payload),
   setSessionDraftSync: (payload) => ipcRenderer.sendSync('agent-set-session-draft-sync', payload),
   clearSessionDraft: (chatKey) => ipcRenderer.invoke('agent-clear-session-draft', { chatKey }),
-  openSessionAttachmentDialog: () => ipcRenderer.invoke('agent-open-session-attachment-dialog'),
-  resolveSessionAttachments: (attachments) => ipcRenderer.invoke('agent-resolve-session-attachments', { attachments }),
-  buildSessionInstructionPrompt: (instruction) => ipcRenderer.invoke('agent-build-session-instruction-prompt', { instruction }),
+  openSessionAttachmentDialog: () => ipcRenderer.invoke(CORE_CHANNELS.AGENT_OPEN_SESSION_ATTACHMENT_DIALOG),
+  resolveSessionAttachments: (attachments) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_RESOLVE_SESSION_ATTACHMENTS, { attachments }),
+  buildSessionInstructionPrompt: (instruction) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_BUILD_SESSION_INSTRUCTION_PROMPT, { instruction }),
   pluginsGetState: () => ipcRenderer.invoke(CORE_CHANNELS.PLUGINS_GET_STATE),
   pluginsInstall: (pluginId) => ipcRenderer.invoke(CORE_CHANNELS.PLUGINS_INSTALL, pluginId),
   pluginsUninstall: (pluginId) => ipcRenderer.invoke(CORE_CHANNELS.PLUGINS_UNINSTALL, pluginId),
@@ -301,8 +301,8 @@ function createAgentBridge(ipcRenderer) {
   // Agent 领域事件（PR 2：Main 双发，Renderer 暂不消费）
   onAgentEvent: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('agent:event', handler)
-    return () => ipcRenderer.removeListener('agent:event', handler)
+    ipcRenderer.on(CORE_CHANNELS.AGENT_EVENT, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.AGENT_EVENT, handler)
   },
   }
 }

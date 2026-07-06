@@ -190,6 +190,13 @@ const CORE_CHANNELS = Object.freeze({
   SET_SESSION_INSTRUCTION: 'set-session-instruction',
   GET_ATTACHMENTS: 'get-attachments',
   SET_ATTACHMENTS: 'set-attachments',
+  AGENT_GET_SESSION_INSTRUCTION: 'agent-get-session-instruction',
+  AGENT_SET_SESSION_INSTRUCTION: 'agent-set-session-instruction',
+  AGENT_SET_SESSION_TITLE: 'agent-set-session-title',
+  AGENT_OPEN_SESSION_ATTACHMENT_DIALOG: 'agent-open-session-attachment-dialog',
+  AGENT_RESOLVE_SESSION_ATTACHMENTS: 'agent-resolve-session-attachments',
+  AGENT_BUILD_SESSION_INSTRUCTION_PROMPT: 'agent-build-session-instruction-prompt',
+  AGENT_EVENT: 'agent:event',
 
   // Home / codeHub
   GET_HOME_METRICS: 'get-home-metrics',

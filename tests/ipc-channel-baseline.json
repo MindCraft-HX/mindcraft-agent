@@ -1,11 +1,4 @@
 [
-  "agent-build-session-instruction-prompt",
-  "agent-get-session-instruction",
-  "agent-open-session-attachment-dialog",
-  "agent-resolve-session-attachments",
-  "agent-set-session-instruction",
-  "agent-set-session-title",
-  "agent:event",
   "claude-activate-provider",
   "claude-add-model",
   "claude-agent-abort",
