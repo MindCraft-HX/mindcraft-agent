@@ -812,7 +812,7 @@ function setupClaudeHandlers() {
   loadClaudeAgentSdk().catch(() => {})
 
   // 同步 renderer 端 perf flag 到主进程
-  ipcMain.handle('agent-set-perf-enabled', (_, v) => { setPerfEnabled(v) })
+  ipcMain.handle(CORE_CHANNELS.SET_PERF_ENABLED, (_, v) => { setPerfEnabled(v) })
 
   // 直接读写 ~/.claude/settings.json，与系统 Claude 配置一致
   const getSettingsPath = () => path.join(os.homedir(), '.claude', 'settings.json')
@@ -965,7 +965,7 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.WRITE_SESSION_META, (_, { cwd, cliSessionId, filePath, chatKey, sessionId, data } = {}) => {
     return writeClaudeSessionMeta(cwd, cliSessionId, data, { chatKey: chatKey || sessionId, filePath })
   })
-  ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.RENAME_SESSION, async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
       const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: sessionId }, sessionRegistryOptionsForTest || {})
@@ -984,7 +984,7 @@ function setupClaudeHandlers() {
       return { success: false, error: e?.message || 'unknown' }
     }
   })
-  ipcMain.handle('claude-read-session-file', async (_, { filePath }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.READ_SESSION, async (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) {
         console.warn('[claude-read-session-file] file not found:', filePath)
@@ -1381,7 +1381,7 @@ function setupClaudeHandlers() {
     } catch {}
   }
 
-  ipcMain.handle('claude-get-key', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_KEY, () => {
     let key = confGet('claudeApiKey', '')
     if (!key) {
       const sj = readSystemSettingsJson()
@@ -1473,7 +1473,7 @@ function setupClaudeHandlers() {
     return valid.includes(effort) ? effort : 'medium'
   }
   ipcMain.handle(CLAUDE_CHANNELS.GET_EFFORT_LEVEL, () => readEffortLevel())
-  ipcMain.handle('claude-set-effort-level', (_, effort) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SET_EFFORT_LEVEL, (_, effort) => {
     // SDK Settings interface 合法值：low/medium/high/xhigh（不含 max）
     const valid = ['low', 'medium', 'high', 'xhigh']
     if (!valid.includes(effort)) return false
@@ -2037,7 +2037,7 @@ function setupClaudeHandlers() {
 
   ipcMain.handle(CLAUDE_CHANNELS.GET_MODEL, () => readPrimaryModel())
   ipcMain.handle(CLAUDE_CHANNELS.SET_MODEL, (_, model) => { confSet('claudeModel', model); return true })
-  ipcMain.handle('claude-set-key', (_, key) => { confSet('claudeApiKey', key); return true })
+  ipcMain.handle(CLAUDE_CHANNELS.SET_KEY, (_, key) => { confSet('claudeApiKey', key); return true })
   ipcMain.handle(CLAUDE_CHANNELS.SET_BASE_URL, (_, url) => { confSet('claudeBaseURL', url); return true })
   ipcMain.handle(CLAUDE_CHANNELS.GET_MODELS, () => confGet('claudeModels', defaultModels))
   ipcMain.handle(CLAUDE_CHANNELS.SET_MODELS, (_, models) => { confSet('claudeModels', models); return true })
@@ -2246,7 +2246,7 @@ function setupClaudeHandlers() {
   })
 
   // ---- Import: preview (local-cli only) ----
-  ipcMain.handle('claude-config-import-preview', async (_, payload) => {
+  ipcMain.handle(CLAUDE_CHANNELS.CONFIG_IMPORT_PREVIEW, async (_, payload) => {
     const { source } = payload || {};
 
     if (source === 'cc-switch') {
@@ -2272,7 +2272,7 @@ function setupClaudeHandlers() {
   });
 
   // ---- Import: commit (local-cli only) ----
-  ipcMain.handle('claude-config-import-commit', async (_, payload) => {
+  ipcMain.handle(CLAUDE_CHANNELS.CONFIG_IMPORT_COMMIT, async (_, payload) => {
     const { source, providers: decisions } = payload || {};
 
     if (source === 'cc-switch') {
@@ -2540,7 +2540,7 @@ function setupClaudeHandlers() {
 
   ipcMain.handle(CLAUDE_CHANNELS.CHAT, async (event, payload) => runClaudeChatStream(event, payload))
   ipcMain.handle(CLAUDE_CHANNELS.CHAT_CONTINUE, async (event, payload) => runClaudeChatStream(event, payload))
-  ipcMain.handle('claude-chat-abort', (_event, { chatId }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.CHAT_ABORT, (_event, { chatId }) => {
     const ab = activeChatAborts.get(chatId)
     if (ab) { ab.abort(); activeChatAborts.delete(chatId); return true }
     return false
@@ -3897,7 +3897,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-memory-delete', (_, { cwd, filename, scope }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.DELETE_MEMORY, (_, { cwd, filename, scope }) => {
     try {
       if (scope === 'system') {
         const deleted = claudeMemory.deleteSystemMemoryFile(filename)

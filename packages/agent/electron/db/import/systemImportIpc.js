@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const { dialog } = require('electron');
+const { CORE_CHANNELS } = require('../../../shared/ipcChannels');
 const { previewCcSwitchFile, previewLocalCliConfig, annotateConflicts, commitImport } = require('./index');
 const { getDb, persistDb } = require('../index');
 const { getProviders } = require('../providerStorage');
@@ -83,7 +84,7 @@ function registerSystemImportIpc(ipcMain, deps) {
   } = deps;
 
   // ---- File picker ----
-  ipcMain.handle('config-import-pick-file', async () => {
+  ipcMain.handle(CORE_CHANNELS.CONFIG_IMPORT_PICK_FILE, async () => {
     try {
       const result = await dialog.showOpenDialog({
         title: 'Import CC Switch Config',
@@ -103,7 +104,7 @@ function registerSystemImportIpc(ipcMain, deps) {
   });
 
   // ---- Preview ----
-  ipcMain.handle('config-import-preview', async (_, payload) => {
+  ipcMain.handle(CORE_CHANNELS.CONFIG_IMPORT_PREVIEW, async (_, payload) => {
     const { source, filePath } = payload || {};
 
     try {
@@ -192,7 +193,7 @@ function registerSystemImportIpc(ipcMain, deps) {
   });
 
   // ---- Commit (global CC Switch) ----
-  ipcMain.handle('config-import-commit', async (_, payload) => {
+  ipcMain.handle(CORE_CHANNELS.CONFIG_IMPORT_COMMIT, async (_, payload) => {
     const {
       source,
       providers: decisions,

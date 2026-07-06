@@ -1,5 +1,7 @@
 'use strict';
 
+const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * CodeX environment check / install / directory IPC handlers.
  *
@@ -17,7 +19,7 @@ function registerEnvironmentIpc(ipcMain, {
   resetCodexSdkPromise,
   lt,
 }) {
-  ipcMain.handle('codex-check-environment', async () => {
+  ipcMain.handle(CODEX_CHANNELS.CHECK_ENVIRONMENT, async () => {
     const result = { node: null, npm: null, codex: null };
     try {
       const ver = (await new Promise((resolve, reject) => {
@@ -72,7 +74,7 @@ function registerEnvironmentIpc(ipcMain, {
     return result;
   });
 
-  ipcMain.handle('codex-check-latest-version', async () => {
+  ipcMain.handle(CODEX_CHANNELS.CHECK_LATEST_VERSION, async () => {
     try {
       const https = require('https');
       return new Promise((resolve) => {
@@ -96,7 +98,7 @@ function registerEnvironmentIpc(ipcMain, {
     }
   });
 
-  ipcMain.handle('codex-install-codex', async () => {
+  ipcMain.handle(CODEX_CHANNELS.INSTALL_CODEX, async () => {
     if (isInstallingCodex()) return { success: false, message: lt('install.inProgress') };
     setInstallingCodex(true);
     try {
@@ -119,7 +121,7 @@ function registerEnvironmentIpc(ipcMain, {
     }
   });
 
-  ipcMain.handle('codex-select-directory', async () => {
+  ipcMain.handle(CODEX_CHANNELS.SELECT_DIRECTORY, async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     if (result.canceled || !result.filePaths.length) return null;
     return result.filePaths[0];

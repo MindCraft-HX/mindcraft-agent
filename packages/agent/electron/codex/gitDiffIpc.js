@@ -1,5 +1,7 @@
 'use strict';
 
+const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * CodeX git diff IPC handler — runs git diff/diff-index on a working directory,
  * including untracked file diffs via parallel `git diff --no-index` workers.
@@ -25,7 +27,7 @@ function execFileAsync(cmd, args, opts = {}) {
 }
 
 function registerGitDiffIpc(ipcMain) {
-  ipcMain.handle('codex-run-git-diff', async (_, { cwd } = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.RUN_GIT_DIFF, async (_, { cwd } = {}) => {
     const resolvedCwd = path.resolve(cwd || process.cwd());
     try {
       // 检查是否在 git 仓库内

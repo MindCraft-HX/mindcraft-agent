@@ -216,6 +216,48 @@ const CODEX_CHANNELS = Object.freeze({
   STREAM_CHUNK: 'codex-stream-chunk',
   STREAM_THINKING: 'codex-stream-thinking',
   STREAM_TOOL_DELTA: 'codex-stream-tool-delta',
+
+  // Chat
+  CHAT: 'codex-chat',
+
+  // Environment & updates
+  CHECK_ENVIRONMENT: 'codex-check-environment',
+  CHECK_LATEST_VERSION: 'codex-check-latest-version',
+  INSTALL_CODEX: 'codex-install-codex',
+
+  // Session lifecycle
+  LIST_SESSIONS_BY_CWD: 'codex-list-sessions-by-cwd',
+  REGISTER_CLI_SESSIONS: 'codex-register-cli-sessions',
+  UNREGISTER_CLI_SESSION: 'codex-unregister-cli-session',
+  DELETE_SESSION_FILE: 'codex-delete-session-file',
+  READ_SESSION_FILE_RANGE: 'codex-read-session-file-range',
+
+  // Commands & skills
+  LIST_SLASH_COMMANDS: 'codex-list-slash-commands',
+  LIST_LOCAL_SKILLS: 'codex-list-local-skills',
+  SKILLS_GET_CATALOG: 'codex-skills-get-catalog',
+
+  // Panel state
+  LOAD_CODE_PANEL_STATE: 'codex-load-code-panel-state',
+  SAVE_CODE_PANEL_STATE: 'codex-save-code-panel-state',
+  SAVE_CODE_PANEL_STATE_SYNC: 'codex-save-code-panel-state-sync',
+
+  // Auth & config
+  VALIDATE_KEY: 'codex-validate-key',
+  LIST_AVAILABLE_MODELS: 'codex-list-available-models',
+  WRITE_AUTH_JSON: 'codex-write-auth-json',
+
+  // Config TOML
+  READ_CONFIG_TOML: 'codex-read-config-toml',
+  WRITE_CONFIG_TOML: 'codex-write-config-toml',
+  REPAIR_CONFIG_TOML: 'codex-repair-config-toml',
+  IMPORT_LEGACY_CONFIG: 'codex-import-legacy-config',
+
+  // Git
+  RUN_GIT_DIFF: 'codex-run-git-diff',
+
+  // Directory
+  SELECT_DIRECTORY: 'codex-select-directory',
 });
 
 const CORE_CHANNELS = Object.freeze({

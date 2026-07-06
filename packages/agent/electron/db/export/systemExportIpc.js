@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const { dialog } = require('electron');
+const { CORE_CHANNELS } = require('../../../shared/ipcChannels');
 const { buildProviderSqlExport } = require('./providerSql');
 
 // ---------------------------------------------------------------------------
@@ -73,7 +74,7 @@ async function readClaudeFromRepo(deps) {
  */
 function registerSystemExportIpc(ipcMain, deps) {
   // ---- Preview ----
-  ipcMain.handle('config-export-preview', async () => {
+  ipcMain.handle(CORE_CHANNELS.CONFIG_EXPORT_PREVIEW, async () => {
     try {
       const codexPayload = await readCodexFromRepo(deps);
       const claudePayload = await readClaudeFromRepo(deps);
@@ -111,7 +112,7 @@ function registerSystemExportIpc(ipcMain, deps) {
   });
 
   // ---- Save ----
-  ipcMain.handle('config-export-save', async (_, payload) => {
+  ipcMain.handle(CORE_CHANNELS.CONFIG_EXPORT_SAVE, async (_, payload) => {
     const { includeSecrets = true, includeActive = false } = payload || {};
 
     try {

@@ -3373,7 +3373,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-register-cli-sessions', (_, map) => {
+  ipcMain.handle(CODEX_CHANNELS.REGISTER_CLI_SESSIONS, (_, map) => {
     for (const [sid, cliId] of Object.entries(map || {})) {
       if (!cliId) continue
       const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: cliId })
@@ -3385,7 +3385,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-unregister-cli-session', (_, sessionId) => {
+  ipcMain.handle(CODEX_CHANNELS.UNREGISTER_CLI_SESSION, (_, sessionId) => {
     if (sessionId) {
       cliSessionIds.delete(sessionId)
       sessionFingerprints.delete(sessionId)
@@ -3393,7 +3393,7 @@ function setupCodexSdkHandlers() {
   })
 
   // T178: in-flight dedup — 同 cwd 并发调用共享同一结果
-  ipcMain.handle('codex-list-sessions-by-cwd', async (_, cwd) => {
+  ipcMain.handle(CODEX_CHANNELS.LIST_SESSIONS_BY_CWD, async (_, cwd) => {
     if (!cwd) return []
     const normalizedTarget = normalizeFsPath(cwd)
     const pending = _pendingCodexScans.get(normalizedTarget)
@@ -3404,7 +3404,7 @@ function setupCodexSdkHandlers() {
     finally { _pendingCodexScans.delete(normalizedTarget) }
   })
 
-  ipcMain.handle('codex-delete-session-file', (_, { filePath }) => {
+  ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION_FILE, (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return false
       const record = findSessionRecordByProvider({ agent: 'codex', filePath })
@@ -3419,7 +3419,7 @@ function setupCodexSdkHandlers() {
   })
 
   // T182: 获取单个 session 文件的 stat（用于 agent done 后精准更新 fileSize）
-  ipcMain.handle('codex-get-file-stat', (_, { filePath }) => {
+  ipcMain.handle(CODEX_CHANNELS.GET_FILE_STAT, (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return null
       const stats = fs.statSync(filePath)
@@ -3430,7 +3430,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-delete-session', (_, payload = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION, (_, payload = {}) => {
     try {
       const filePath = typeof payload?.filePath === 'string' ? payload.filePath : ''
       const cliSessionId = typeof payload?.cliSessionId === 'string' ? payload.cliSessionId : ''
@@ -3461,7 +3461,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-rename-session', async (_, { sessionId, title }) => {
+  ipcMain.handle(CODEX_CHANNELS.RENAME_SESSION, async (_, { sessionId, title }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
       const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
@@ -3480,7 +3480,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-read-session-file-range', (_, { filePath, page = 0, pageSize = 60 } = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.READ_SESSION_FILE_RANGE, (_, { filePath, page = 0, pageSize = 60 } = {}) => {
     const stop = perfStartIpc('codex-read-session-file-range', { page, pageSize })
     if (!filePath || !String(filePath).toLowerCase().endsWith('.jsonl')) {
       stop()
@@ -3517,7 +3517,7 @@ function setupCodexSdkHandlers() {
     return lightResult
   })
 
-  ipcMain.handle('codex-list-slash-commands', async (_, { cwd, sessionId } = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.LIST_SLASH_COMMANDS, async (_, { cwd, sessionId } = {}) => {
     const resolvedCwd = path.resolve(cwd || process.cwd())
     const cacheKey = `${resolvedCwd}::${sessionId || ''}`
     const now = Date.now()
@@ -3580,7 +3580,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-list-local-skills', async (_, { cwd } = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.LIST_LOCAL_SKILLS, async (_, { cwd } = {}) => {
     try {
       const hasProjectCwd = !!String(cwd || '').trim()
       const dirs = {
@@ -3615,12 +3615,12 @@ function setupCodexSdkHandlers() {
   })
 
   // ─── Skills 市场与管理 ──────────────────────────────────────────
-  ipcMain.handle('codex-skills-get-catalog', async () => {
+  ipcMain.handle(CODEX_CHANNELS.SKILLS_GET_CATALOG, async () => {
     const catalog = await fetchSkillsMarketplace()
     return { skills: catalog.skills || [], version: catalog.version }
   })
 
-  ipcMain.handle('codex-skills-get-state', async (_, { cwd }) => {
+  ipcMain.handle(CODEX_CHANNELS.GET_SKILLS_STATE, async (_, { cwd }) => {
     try {
       const catalog = await fetchSkillsMarketplace()
 
@@ -3697,7 +3697,7 @@ function setupCodexSdkHandlers() {
     return normalizeGithubSkillSource(item.gitUrl, item.subPath || '')
   }
 
-  ipcMain.handle('codex-skills-install', async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
+  ipcMain.handle(CODEX_CHANNELS.INSTALL_SKILL, async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
     try {
       const target = resolveSkillTargetDir({ agentName: 'codex', scope, cwd, skillName })
       const source = await resolveCodexCatalogSkillSource(target.skillName)
@@ -3729,7 +3729,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-skills-uninstall', async (_, { skillName, scope, cwd }) => {
+  ipcMain.handle(CODEX_CHANNELS.UNINSTALL_SKILL, async (_, { skillName, scope, cwd }) => {
     try {
       const target = resolveSkillTargetDir({ agentName: 'codex', scope, cwd, skillName })
 
@@ -3745,7 +3745,7 @@ function setupCodexSdkHandlers() {
 
   // 社区市场搜索已改为 renderer 直连 API，不再需要 IPC handler
 
-  ipcMain.handle('codex-skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
+  ipcMain.handle(CODEX_CHANNELS.MARKET_INSTALL_SKILL, async (event, { skillName, scope, cwd, gitUrl }) => {
     try {
       const target = resolveSkillTargetDir({ agentName: 'codex', scope, cwd, skillName })
       const source = await resolveCodexCatalogSkillSource(target.skillName)
@@ -3869,9 +3869,9 @@ function setupCodexSdkHandlers() {
       console.warn('[codex] writePanelState failed:', e?.message || e, 'file=', PANEL_STATE_FILE)
     }
   }
-  ipcMain.handle('codex-load-code-panel-state', () => readPanelState())
-  ipcMain.handle('codex-save-code-panel-state', (_, payload) => { writePanelState(payload); return true })
-  ipcMain.on('codex-save-code-panel-state-sync', (event, payload) => {
+  ipcMain.handle(CODEX_CHANNELS.LOAD_CODE_PANEL_STATE, () => readPanelState())
+  ipcMain.handle(CODEX_CHANNELS.SAVE_CODE_PANEL_STATE, (_, payload) => { writePanelState(payload); return true })
+  ipcMain.on(CODEX_CHANNELS.SAVE_CODE_PANEL_STATE_SYNC, (event, payload) => {
     writePanelState(payload)
     event.returnValue = true
   })
@@ -3935,7 +3935,7 @@ function setupCodexSdkHandlers() {
     return { ok, error: ok ? null : 'DB write failed' }
   })
 
-  ipcMain.handle('codex-write-auth-json', (_, obj) => {
+  ipcMain.handle(CODEX_CHANNELS.WRITE_AUTH_JSON, (_, obj) => {
     try {
       if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
       fs.writeFileSync(AUTH_JSON_FILE, JSON.stringify(obj, null, 2), 'utf8')
@@ -4023,7 +4023,7 @@ function setupCodexSdkHandlers() {
     }
   }
 
-  ipcMain.handle('codex-plugins-get-state', async () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_PLUGINS_STATE, async () => {
     const plugins = codexReadMarketplacePlugins()
     const installed = await codexReadInstalledPlugins()
     const installedMap = new Map(installed.map(p => [p.id, p]))
@@ -4035,7 +4035,7 @@ function setupCodexSdkHandlers() {
     return { plugins, marketplaces: [{ id: 'openai-curated', url: 'https://github.com/openai/plugins' }] }
   })
 
-  ipcMain.handle('codex-plugins-install', async (_, pluginId) => {
+  ipcMain.handle(CODEX_CHANNELS.INSTALL_PLUGIN, async (_, pluginId) => {
     try {
       await execCodexCli(['plugin', 'add', pluginId])
       _codexInstalledPluginsCache = null // 安装后清缓存
@@ -4047,7 +4047,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-plugins-uninstall', async (_, pluginId) => {
+  ipcMain.handle(CODEX_CHANNELS.UNINSTALL_PLUGIN, async (_, pluginId) => {
     try {
       await execCodexCli(['plugin', 'remove', pluginId])
       _codexInstalledPluginsCache = null
@@ -4060,7 +4060,7 @@ function setupCodexSdkHandlers() {
   })
 
   // CodeX 没有独立的 enable/disable 命令，用 add/remove 代替
-  ipcMain.handle('codex-plugins-enable', async (_, pluginId) => {
+  ipcMain.handle(CODEX_CHANNELS.ENABLE_PLUGIN, async (_, pluginId) => {
     try {
       await execCodexCli(['plugin', 'add', pluginId])
       _codexInstalledPluginsCache = null
@@ -4072,7 +4072,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle('codex-plugins-disable', async (_, pluginId) => {
+  ipcMain.handle(CODEX_CHANNELS.DISABLE_PLUGIN, async (_, pluginId) => {
     try {
       await execCodexCli(['plugin', 'remove', pluginId])
       _codexInstalledPluginsCache = null
@@ -4317,9 +4317,9 @@ function setupCodexSdkHandlers() {
     return { fullText, finish_reason: finishReason, toolCalls, usage }
   }
 
-  ipcMain.handle('codex-chat', async (event, payload) => runCodexChatStream(event, payload))
-  ipcMain.handle('codex-chat-continue', async (event, payload) => runCodexChatStream(event, payload))
-  ipcMain.handle('codex-chat-abort', (_event, { chatId }) => {
+  ipcMain.handle(CODEX_CHANNELS.CHAT, async (event, payload) => runCodexChatStream(event, payload))
+  ipcMain.handle(CODEX_CHANNELS.CHAT_CONTINUE, async (event, payload) => runCodexChatStream(event, payload))
+  ipcMain.handle(CODEX_CHANNELS.CHAT_ABORT, (_event, { chatId }) => {
     const ab = activeChatAborts.get(chatId)
     if (ab) { ab.abort(); activeChatAborts.delete(chatId); return true }
     return false

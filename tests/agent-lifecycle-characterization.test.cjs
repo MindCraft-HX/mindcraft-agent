@@ -128,7 +128,7 @@ test('CodeX queued input: codex-chat-continue handler exists', () => {
 
   assert.match(
     source,
-    /ipcMain\.handle\('codex-chat-continue'/,
+    /ipcMain\.handle\(CODEX_CHANNELS\.CHAT_CONTINUE/,
     'expected codex-chat-continue IPC handler for queued input',
   )
 })

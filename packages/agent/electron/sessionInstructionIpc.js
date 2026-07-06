@@ -39,7 +39,7 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-get-session-draft', (_, { chatKey } = {}) => {
+  ipcMain.handle(CORE_CHANNELS.GET_SESSION_DRAFT, (_, { chatKey } = {}) => {
     const stop = perfStartIpc('agent-get-session-draft')
     try {
       const result = getSessionDraft(chatKey); stop(); return result
@@ -48,7 +48,7 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-set-session-draft', (_, { chatKey, draft } = {}) => {
+  ipcMain.handle(CORE_CHANNELS.SET_SESSION_DRAFT, (_, { chatKey, draft } = {}) => {
     const stop = perfStartIpc('agent-set-session-draft')
     try {
       const result = setSessionDraft(chatKey, draft || {}); stop(); return result
@@ -57,7 +57,7 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.on('agent-set-session-draft-sync', (event, { chatKey, draft } = {}) => {
+  ipcMain.on(CORE_CHANNELS.SET_SESSION_DRAFT_SYNC, (event, { chatKey, draft } = {}) => {
     try {
       event.returnValue = setSessionDraft(chatKey, draft || {})
     } catch (err) {
@@ -65,7 +65,7 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle('agent-clear-session-draft', (_, { chatKey } = {}) => {
+  ipcMain.handle(CORE_CHANNELS.CLEAR_SESSION_DRAFT, (_, { chatKey } = {}) => {
     const stop = perfStartIpc('agent-clear-session-draft')
     try {
       const result = clearSessionDraft(chatKey); stop(); return result

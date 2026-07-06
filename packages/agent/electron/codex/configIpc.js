@@ -32,11 +32,11 @@ function registerConfigIpc(ipcMain, {
   readCodexConfigTomlRaw,
 }) {
   // ---- API Key ----
-  ipcMain.handle('codex-get-key', () => {
+  ipcMain.handle(CODEX_CHANNELS.GET_KEY, () => {
     const rt = readRuntimeConfig();
     return rt.apiKey || '';
   });
-  ipcMain.handle('codex-set-key', (_, key) => {
+  ipcMain.handle(CODEX_CHANNELS.SET_KEY, (_, key) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.apiKey = key; c.set('runtime', r); } catch (_) {}
     return true;
   });
@@ -92,7 +92,7 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Legacy Config Import ----
-  ipcMain.handle('codex-import-legacy-config', (_, customPath) => {
+  ipcMain.handle(CODEX_CHANNELS.IMPORT_LEGACY_CONFIG, (_, customPath) => {
     const imported = { key: false, url: false, model: false, reasoningEffort: false };
     try {
       const legacyDir = customPath || findLegacyUserData();
@@ -131,8 +131,8 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Sandbox Mode ----
-  ipcMain.handle('codex-get-sandbox-mode', () => readSandboxMode());
-  ipcMain.handle('codex-set-sandbox-mode', (_, mode) => {
+  ipcMain.handle(CODEX_CHANNELS.GET_SANDBOX_MODE, () => readSandboxMode());
+  ipcMain.handle(CODEX_CHANNELS.SET_SANDBOX_MODE, (_, mode) => {
     try {
       const c = new Conf({ name: 'mindcraft-codex' });
       if (mode && CODEX_SANDBOX_MODES.includes(mode)) {
@@ -182,14 +182,14 @@ function registerConfigIpc(ipcMain, {
 
   // ---- Raw config.toml file operations (Batch 5c) ----
 
-  ipcMain.handle('codex-read-config-toml', () => {
+  ipcMain.handle(CODEX_CHANNELS.READ_CONFIG_TOML, () => {
     try {
       if (fs.existsSync(configTomlFile)) return fs.readFileSync(configTomlFile, 'utf8');
       return '';
     } catch (_) { return ''; }
   });
 
-  ipcMain.handle('codex-write-config-toml', (_, content) => {
+  ipcMain.handle(CODEX_CHANNELS.WRITE_CONFIG_TOML, (_, content) => {
     try {
       if (!fs.existsSync(codexConfigDir)) fs.mkdirSync(codexConfigDir, { recursive: true });
       // 保留现有文件中的 plugin/marketplace 段，防止模型配置保存时覆盖插件信息
@@ -203,7 +203,7 @@ function registerConfigIpc(ipcMain, {
     } catch (e) { return { ok: false, message: e.message }; }
   });
 
-  ipcMain.handle('codex-repair-config-toml', (_, content) => {
+  ipcMain.handle(CODEX_CHANNELS.REPAIR_CONFIG_TOML, (_, content) => {
     try {
       if (!fs.existsSync(codexConfigDir)) fs.mkdirSync(codexConfigDir, { recursive: true });
       const previous = fs.existsSync(configTomlFile) ? fs.readFileSync(configTomlFile, 'utf8') : '';
@@ -225,7 +225,7 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Import Preview (local-cli only) ----
-  ipcMain.handle('codex-config-import-preview', async (_, payload) => {
+  ipcMain.handle(CODEX_CHANNELS.CONFIG_IMPORT_PREVIEW, async (_, payload) => {
     const { source } = payload || {};
     if (source === 'cc-switch') {
       return { ok: false, providers: [], warnings: ['CC Switch import has moved to System Settings > Import Config.'] };
@@ -250,7 +250,7 @@ function registerConfigIpc(ipcMain, {
   });
 
   // ---- Import Commit (local-cli only) ----
-  ipcMain.handle('codex-config-import-commit', async (_, payload) => {
+  ipcMain.handle(CODEX_CHANNELS.CONFIG_IMPORT_COMMIT, async (_, payload) => {
     const { source, providers: decisions } = payload || {};
     if (source === 'cc-switch') {
       return { ok: false, providers: [], warnings: ['CC Switch import has moved to System Settings > Import Config.'] };

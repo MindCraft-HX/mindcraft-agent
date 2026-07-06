@@ -6,6 +6,24 @@ try {
   CODEX_CHANNELS = ipcChannels.CODEX_CHANNELS
 } catch (_) {
   CORE_CHANNELS = { LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index' }
+  // Fallback: also include core channels used in this bridge
+  // so ipcRenderer doesn't receive undefined channel names.
+  const _fallbackCore = {
+    SKILLS_INSTALL_PROGRESS: 'skills-install-progress',
+    GET_SESSION_DRAFT: 'agent-get-session-draft',
+    SET_SESSION_DRAFT: 'agent-set-session-draft',
+    SET_SESSION_DRAFT_SYNC: 'agent-set-session-draft-sync',
+    CLEAR_SESSION_DRAFT: 'agent-clear-session-draft',
+    SET_PERF_ENABLED: 'agent-set-perf-enabled',
+    LOAD_THEME: 'load-theme',
+    SAVE_THEME: 'save-theme',
+    CONFIG_IMPORT_PICK_FILE: 'config-import-pick-file',
+    CONFIG_IMPORT_PREVIEW: 'config-import-preview',
+    CONFIG_IMPORT_COMMIT: 'config-import-commit',
+    CONFIG_EXPORT_PREVIEW: 'config-export-preview',
+    CONFIG_EXPORT_SAVE: 'config-export-save',
+  }
+  Object.assign(CORE_CHANNELS, _fallbackCore)
   // Fallback: hardcode streaming channel names so streaming push events
   // survive a failed require of ../shared/ipcChannels (e.g. build artifact
   // mismatch, bundler tree-shaking). Without these, ipcRenderer.on(undefined)
@@ -25,8 +43,8 @@ try {
 
 function createAgentBridge(ipcRenderer) {
   return {
-  claudeGetKey: () => ipcRenderer.invoke('claude-get-key'),
-  claudeSetKey: (key) => ipcRenderer.invoke('claude-set-key', key),
+  claudeGetKey: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_KEY),
+  claudeSetKey: (key) => ipcRenderer.invoke(CLAUDE_CHANNELS.SET_KEY, key),
   claudeGetBaseURL: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_BASE_URL),
   claudeSetBaseURL: (url) => ipcRenderer.invoke(CLAUDE_CHANNELS.SET_BASE_URL, url),
   claudeGetPermissionPolicy: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_PERMISSION_POLICY),
@@ -34,7 +52,7 @@ function createAgentBridge(ipcRenderer) {
   claudeGetLanguage: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_LANGUAGE),
   claudeSetLanguage: (language) => ipcRenderer.invoke(CLAUDE_CHANNELS.SET_LANGUAGE, language),
   claudeGetEffortLevel: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_EFFORT_LEVEL),
-  claudeSetEffortLevel: (effortLevel) => ipcRenderer.invoke('claude-set-effort-level', effortLevel),
+  claudeSetEffortLevel: (effortLevel) => ipcRenderer.invoke(CLAUDE_CHANNELS.SET_EFFORT_LEVEL, effortLevel),
   claudeGetThinkingEnabled: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_THINKING_ENABLED),
   claudeSetThinkingEnabled: (enabled) => ipcRenderer.invoke(CLAUDE_CHANNELS.SET_THINKING_ENABLED, enabled),
   claudeGetModel: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_MODEL),
@@ -67,15 +85,15 @@ function createAgentBridge(ipcRenderer) {
   claudeGetAutoCompactWindow: () => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_AUTO_COMPACT_WINDOW),
   claudeSetAutoCompactWindow: (v) => ipcRenderer.invoke(CLAUDE_CHANNELS.SET_AUTO_COMPACT_WINDOW, v),
   claudeImportLegacyConfig: (customPath) => ipcRenderer.invoke(CLAUDE_CHANNELS.IMPORT_LEGACY_CONFIG, customPath),
-  claudeConfigImportPickFile: () => ipcRenderer.invoke('claude-config-import-pick-file'),
-  claudeConfigImportPreview: (payload) => ipcRenderer.invoke('claude-config-import-preview', payload),
-  claudeConfigImportCommit: (payload) => ipcRenderer.invoke('claude-config-import-commit', payload),
+  claudeConfigImportPickFile: () => ipcRenderer.invoke(CLAUDE_CHANNELS.CONFIG_IMPORT_PICK_FILE),
+  claudeConfigImportPreview: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.CONFIG_IMPORT_PREVIEW, payload),
+  claudeConfigImportCommit: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.CONFIG_IMPORT_COMMIT, payload),
   // Claude Agent SDK
   claudeAgentQuery: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_QUERY, payload),
   claudeAgentAbort: (sessionId) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_ABORT, sessionId),
   claudeAgentUpdateRunMode: (sessionId, runMode) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE, { sessionId, runMode }),
   claudeAgentQueryMetrics: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.AGENT_QUERY_METRICS, payload),
-  setPerfEnabled: (v) => ipcRenderer.invoke('agent-set-perf-enabled', v),
+  setPerfEnabled: (v) => ipcRenderer.invoke(CORE_CHANNELS.SET_PERF_ENABLED, v),
   claudeSelectDirectory: () => ipcRenderer.invoke(CLAUDE_CHANNELS.SELECT_DIRECTORY),
   claudeListFiles: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.LIST_FILES, payload),
   claudeListSlashCommands: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.LIST_SLASH_COMMANDS, payload),
@@ -89,10 +107,10 @@ function createAgentBridge(ipcRenderer) {
   getSessionInstruction: (chatKey) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_GET_SESSION_INSTRUCTION, { chatKey }),
   setSessionInstruction: (payload) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_SET_SESSION_INSTRUCTION, payload),
   setSessionTitle: (payload) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_SET_SESSION_TITLE, payload),
-  getSessionDraft: (chatKey) => ipcRenderer.invoke('agent-get-session-draft', { chatKey }),
-  setSessionDraft: (payload) => ipcRenderer.invoke('agent-set-session-draft', payload),
-  setSessionDraftSync: (payload) => ipcRenderer.sendSync('agent-set-session-draft-sync', payload),
-  clearSessionDraft: (chatKey) => ipcRenderer.invoke('agent-clear-session-draft', { chatKey }),
+  getSessionDraft: (chatKey) => ipcRenderer.invoke(CORE_CHANNELS.GET_SESSION_DRAFT, { chatKey }),
+  setSessionDraft: (payload) => ipcRenderer.invoke(CORE_CHANNELS.SET_SESSION_DRAFT, payload),
+  setSessionDraftSync: (payload) => ipcRenderer.sendSync(CORE_CHANNELS.SET_SESSION_DRAFT_SYNC, payload),
+  clearSessionDraft: (chatKey) => ipcRenderer.invoke(CORE_CHANNELS.CLEAR_SESSION_DRAFT, { chatKey }),
   openSessionAttachmentDialog: () => ipcRenderer.invoke(CORE_CHANNELS.AGENT_OPEN_SESSION_ATTACHMENT_DIALOG),
   resolveSessionAttachments: (attachments) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_RESOLVE_SESSION_ATTACHMENTS, { attachments }),
   buildSessionInstructionPrompt: (instruction) => ipcRenderer.invoke(CORE_CHANNELS.AGENT_BUILD_SESSION_INSTRUCTION_PROMPT, { instruction }),
@@ -108,15 +126,15 @@ function createAgentBridge(ipcRenderer) {
   skillsMarketInstall: (payload) => ipcRenderer.invoke(CORE_CHANNELS.SKILLS_MARKET_INSTALL, payload),
   onSkillsInstallProgress: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('skills-install-progress', handler)
-    return () => ipcRenderer.removeListener('skills-install-progress', handler)
+    ipcRenderer.on(CORE_CHANNELS.SKILLS_INSTALL_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.SKILLS_INSTALL_PROGRESS, handler)
   },
   claudeScanProjectsSessions: (cwd) => ipcRenderer.invoke(CLAUDE_CHANNELS.SCANNER_PROJECTS_SESSIONS, { cwd }),
-  claudeRenameSession: (payload) => ipcRenderer.invoke('claude-rename-session', payload),
-  claudeReadSessionFile: (filePath) => ipcRenderer.invoke('claude-read-session-file', { filePath }),
+  claudeRenameSession: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.RENAME_SESSION, payload),
+  claudeReadSessionFile: (filePath) => ipcRenderer.invoke(CLAUDE_CHANNELS.READ_SESSION, { filePath }),
   // 主题持久化（IPC 文件存储，绕过 Chromium localStorage）
-  loadTheme: () => ipcRenderer.sendSync('load-theme'),
-  saveTheme: (name) => ipcRenderer.send('save-theme', name),
+  loadTheme: () => ipcRenderer.sendSync(CORE_CHANNELS.LOAD_THEME),
+  saveTheme: (name) => ipcRenderer.send(CORE_CHANNELS.SAVE_THEME, name),
   claudeReadSessionFileRange: (params) => ipcRenderer.invoke(CLAUDE_CHANNELS.READ_SESSION_FILE_RANGE, params),
   claudeGetFileStat: (filePath) => ipcRenderer.invoke(CLAUDE_CHANNELS.GET_FILE_STAT, { filePath }),
   claudeDeleteSessionFile: (filePath) => ipcRenderer.invoke(CLAUDE_CHANNELS.DELETE_SESSION_FILE, { filePath }),
@@ -127,7 +145,7 @@ function createAgentBridge(ipcRenderer) {
   claudeMemoryList: (cwd, scope) => ipcRenderer.invoke(CLAUDE_CHANNELS.MEMORY_LIST, { cwd, scope }),
   claudeMemoryRead: ({ cwd, filename, scope }) => ipcRenderer.invoke(CLAUDE_CHANNELS.MEMORY_READ, { cwd, filename, scope }),
   claudeMemoryWrite: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.MEMORY_WRITE, payload),
-  claudeMemoryDelete: ({ cwd, filename, scope }) => ipcRenderer.invoke('claude-memory-delete', { cwd, filename, scope }),
+  claudeMemoryDelete: ({ cwd, filename, scope }) => ipcRenderer.invoke(CLAUDE_CHANNELS.DELETE_MEMORY, { cwd, filename, scope }),
   claudeMemoryGetInjectMode: () => ipcRenderer.invoke(CLAUDE_CHANNELS.MEMORY_GET_INJECT_MODE),
   claudeMemorySetInjectMode: (mode) => ipcRenderer.invoke(CLAUDE_CHANNELS.MEMORY_SET_INJECT_MODE, mode),
   localSearchCapability: () => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_CAPABILITY),
@@ -157,7 +175,7 @@ function createAgentBridge(ipcRenderer) {
   // 简易对话：Claude
   claudeChat: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.CHAT, payload),
   claudeChatContinue: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.CHAT_CONTINUE, payload),
-  claudeChatAbort: (payload) => ipcRenderer.invoke('claude-chat-abort', payload),
+  claudeChatAbort: (payload) => ipcRenderer.invoke(CLAUDE_CHANNELS.CHAT_ABORT, payload),
   chatWebSearch: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_WEB_SEARCH, payload),
   onClaudeStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
@@ -188,17 +206,17 @@ function createAgentBridge(ipcRenderer) {
   // Codex Agent SDK
   codexAgentQuery: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_QUERY, payload),
   codexAgentAbort: (sessionId) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_ABORT, sessionId),
-  codexSelectDirectory: () => ipcRenderer.invoke('codex-select-directory'),
-  codexRegisterCliSessions: (map) => ipcRenderer.invoke('codex-register-cli-sessions', map),
-  codexUnregisterCliSession: (sessionId) => ipcRenderer.invoke('codex-unregister-cli-session', sessionId),
-  codexListSessionsByCwd: (cwd) => ipcRenderer.invoke('codex-list-sessions-by-cwd', cwd),
-  codexRenameSession: (payload) => ipcRenderer.invoke('codex-rename-session', payload),
-  codexDeleteSession: (payload) => ipcRenderer.invoke('codex-delete-session', payload),
-  codexDeleteSessionFile: (filePath) => ipcRenderer.invoke('codex-delete-session-file', { filePath }),
-  codexReadSessionFileRange: (params) => ipcRenderer.invoke('codex-read-session-file-range', params),
-  codexGetFileStat: (filePath) => ipcRenderer.invoke('codex-get-file-stat', { filePath }),
-  codexListSlashCommands: (payload) => ipcRenderer.invoke('codex-list-slash-commands', payload),
-  codexListLocalSkills: (payload) => ipcRenderer.invoke('codex-list-local-skills', payload),
+  codexSelectDirectory: () => ipcRenderer.invoke(CODEX_CHANNELS.SELECT_DIRECTORY),
+  codexRegisterCliSessions: (map) => ipcRenderer.invoke(CODEX_CHANNELS.REGISTER_CLI_SESSIONS, map),
+  codexUnregisterCliSession: (sessionId) => ipcRenderer.invoke(CODEX_CHANNELS.UNREGISTER_CLI_SESSION, sessionId),
+  codexListSessionsByCwd: (cwd) => ipcRenderer.invoke(CODEX_CHANNELS.LIST_SESSIONS_BY_CWD, cwd),
+  codexRenameSession: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.RENAME_SESSION, payload),
+  codexDeleteSession: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.DELETE_SESSION, payload),
+  codexDeleteSessionFile: (filePath) => ipcRenderer.invoke(CODEX_CHANNELS.DELETE_SESSION_FILE, { filePath }),
+  codexReadSessionFileRange: (params) => ipcRenderer.invoke(CODEX_CHANNELS.READ_SESSION_FILE_RANGE, params),
+  codexGetFileStat: (filePath) => ipcRenderer.invoke(CODEX_CHANNELS.GET_FILE_STAT, { filePath }),
+  codexListSlashCommands: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.LIST_SLASH_COMMANDS, payload),
+  codexListLocalSkills: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.LIST_LOCAL_SKILLS, payload),
   codexAgentQueryMetrics: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_QUERY_METRICS, payload),
   onCodexAgentMessage: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_MESSAGE, (_, data) => callback(data)),
   onCodexAgentDone: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_DONE, (_, data) => callback(data)),
@@ -211,16 +229,16 @@ function createAgentBridge(ipcRenderer) {
   // Codex 配置管理
   codexGetProviders: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_PROVIDERS),
   codexSetProviders: (data) => ipcRenderer.invoke(CODEX_CHANNELS.SET_PROVIDERS, data),
-  codexWriteAuthJson: (obj) => ipcRenderer.invoke('codex-write-auth-json', obj),
-  codexReadConfigToml: () => ipcRenderer.invoke('codex-read-config-toml'),
-  codexWriteConfigToml: (content) => ipcRenderer.invoke('codex-write-config-toml', content),
-  codexRepairConfigToml: (content) => ipcRenderer.invoke('codex-repair-config-toml', content),
+  codexWriteAuthJson: (obj) => ipcRenderer.invoke(CODEX_CHANNELS.WRITE_AUTH_JSON, obj),
+  codexReadConfigToml: () => ipcRenderer.invoke(CODEX_CHANNELS.READ_CONFIG_TOML),
+  codexWriteConfigToml: (content) => ipcRenderer.invoke(CODEX_CHANNELS.WRITE_CONFIG_TOML, content),
+  codexRepairConfigToml: (content) => ipcRenderer.invoke(CODEX_CHANNELS.REPAIR_CONFIG_TOML, content),
   codexGetLastCwd: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_LAST_CWD),
-  codexCheckEnvironment: () => ipcRenderer.invoke('codex-check-environment'),
-  codexCheckLatestVersion: () => ipcRenderer.invoke('codex-check-latest-version'),
-  codexInstallCodex: () => ipcRenderer.invoke('codex-install-codex'),
-  codexGetKey: () => ipcRenderer.invoke('codex-get-key'),
-  codexSetKey: (key) => ipcRenderer.invoke('codex-set-key', key),
+  codexCheckEnvironment: () => ipcRenderer.invoke(CODEX_CHANNELS.CHECK_ENVIRONMENT),
+  codexCheckLatestVersion: () => ipcRenderer.invoke(CODEX_CHANNELS.CHECK_LATEST_VERSION),
+  codexInstallCodex: () => ipcRenderer.invoke(CODEX_CHANNELS.INSTALL_CODEX),
+  codexGetKey: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_KEY),
+  codexSetKey: (key) => ipcRenderer.invoke(CODEX_CHANNELS.SET_KEY, key),
   codexGetBaseURL: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_BASE_URL),
   codexSetBaseURL: (url) => ipcRenderer.invoke(CODEX_CHANNELS.SET_BASE_URL, url),
   codexGetModel: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_MODEL),
@@ -229,51 +247,51 @@ function createAgentBridge(ipcRenderer) {
   codexSetReasoningEffort: (effort) => ipcRenderer.invoke(CODEX_CHANNELS.SET_REASONING_EFFORT, effort),
   codexGetApiFormat: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_API_FORMAT),
   codexSetApiFormat: (format) => ipcRenderer.invoke(CODEX_CHANNELS.SET_API_FORMAT, format),
-  codexImportLegacyConfig: (customPath) => ipcRenderer.invoke('codex-import-legacy-config', customPath),
-  codexConfigImportPickFile: () => ipcRenderer.invoke('codex-config-import-pick-file'),
-  codexConfigImportPreview: (payload) => ipcRenderer.invoke('codex-config-import-preview', payload),
-  codexConfigImportCommit: (payload) => ipcRenderer.invoke('codex-config-import-commit', payload),
+  codexImportLegacyConfig: (customPath) => ipcRenderer.invoke(CODEX_CHANNELS.IMPORT_LEGACY_CONFIG, customPath),
+  codexConfigImportPickFile: () => ipcRenderer.invoke(CODEX_CHANNELS.CONFIG_IMPORT_PICK_FILE),
+  codexConfigImportPreview: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.CONFIG_IMPORT_PREVIEW, payload),
+  codexConfigImportCommit: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.CONFIG_IMPORT_COMMIT, payload),
   // System-level config import (T163: CC Switch global import)
-  configImportPickFile: () => ipcRenderer.invoke('config-import-pick-file'),
-  configImportPreview: (payload) => ipcRenderer.invoke('config-import-preview', payload),
-  configImportCommit: (payload) => ipcRenderer.invoke('config-import-commit', payload),
+  configImportPickFile: () => ipcRenderer.invoke(CORE_CHANNELS.CONFIG_IMPORT_PICK_FILE),
+  configImportPreview: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CONFIG_IMPORT_PREVIEW, payload),
+  configImportCommit: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CONFIG_IMPORT_COMMIT, payload),
   // System-level config export (mindcraft-providers.sql)
-  configExportPreview: () => ipcRenderer.invoke('config-export-preview'),
-  configExportSave: (payload) => ipcRenderer.invoke('config-export-save', payload),
-  codexGetSandboxMode: () => ipcRenderer.invoke('codex-get-sandbox-mode'),
-  codexSetSandboxMode: (mode) => ipcRenderer.invoke('codex-set-sandbox-mode', mode),
+  configExportPreview: () => ipcRenderer.invoke(CORE_CHANNELS.CONFIG_EXPORT_PREVIEW),
+  configExportSave: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CONFIG_EXPORT_SAVE, payload),
+  codexGetSandboxMode: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_SANDBOX_MODE),
+  codexSetSandboxMode: (mode) => ipcRenderer.invoke(CODEX_CHANNELS.SET_SANDBOX_MODE, mode),
   codexGetProjectSettings: (cwd) => ipcRenderer.invoke(CODEX_CHANNELS.GET_PROJECT_SETTINGS, { cwd }),
   codexSetProjectSettings: (cwd, settings) => ipcRenderer.invoke(CODEX_CHANNELS.SET_PROJECT_SETTINGS, { cwd, settings }),
   codexGetDefaultNetworkAccess: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_DEFAULT_NETWORK_ACCESS),
   codexSetDefaultNetworkAccess: (val) => ipcRenderer.invoke(CODEX_CHANNELS.SET_DEFAULT_NETWORK_ACCESS, val),
   codexGetDefaultWebSearch: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_DEFAULT_WEB_SEARCH),
   codexSetDefaultWebSearch: (val) => ipcRenderer.invoke(CODEX_CHANNELS.SET_DEFAULT_WEB_SEARCH, val),
-  codexValidateKey: (key, baseURL, model) => ipcRenderer.invoke('codex-validate-key', { key, baseURL, model }),
-  codexListAvailableModels: () => ipcRenderer.invoke('codex-list-available-models'),
-  codexRunGitDiff: (cwd) => ipcRenderer.invoke('codex-run-git-diff', { cwd }),
-  codexLoadCodePanelState: () => ipcRenderer.invoke('codex-load-code-panel-state'),
-  codexSaveCodePanelState: (payload) => ipcRenderer.invoke('codex-save-code-panel-state', payload),
-  codexSaveCodePanelStateSync: (payload) => ipcRenderer.sendSync('codex-save-code-panel-state-sync', payload),
+  codexValidateKey: (key, baseURL, model) => ipcRenderer.invoke(CODEX_CHANNELS.VALIDATE_KEY, { key, baseURL, model }),
+  codexListAvailableModels: () => ipcRenderer.invoke(CODEX_CHANNELS.LIST_AVAILABLE_MODELS),
+  codexRunGitDiff: (cwd) => ipcRenderer.invoke(CODEX_CHANNELS.RUN_GIT_DIFF, { cwd }),
+  codexLoadCodePanelState: () => ipcRenderer.invoke(CODEX_CHANNELS.LOAD_CODE_PANEL_STATE),
+  codexSaveCodePanelState: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.SAVE_CODE_PANEL_STATE, payload),
+  codexSaveCodePanelStateSync: (payload) => ipcRenderer.sendSync(CODEX_CHANNELS.SAVE_CODE_PANEL_STATE_SYNC, payload),
   // CodeX 插件管理
-  codexPluginsGetState: () => ipcRenderer.invoke('codex-plugins-get-state'),
-  codexPluginsInstall: (pluginId) => ipcRenderer.invoke('codex-plugins-install', pluginId),
-  codexPluginsUninstall: (pluginId) => ipcRenderer.invoke('codex-plugins-uninstall', pluginId),
-  codexPluginsEnable: (pluginId) => ipcRenderer.invoke('codex-plugins-enable', pluginId),
-  codexPluginsDisable: (pluginId) => ipcRenderer.invoke('codex-plugins-disable', pluginId),
-  codexSkillsGetCatalog: () => ipcRenderer.invoke('codex-skills-get-catalog'),
-  codexSkillsGetState: (cwd) => ipcRenderer.invoke('codex-skills-get-state', { cwd }),
-  codexSkillsInstall: (payload) => ipcRenderer.invoke('codex-skills-install', payload),
-  codexSkillsUninstall: (payload) => ipcRenderer.invoke('codex-skills-uninstall', payload),
-  codexSkillsMarketInstall: (payload) => ipcRenderer.invoke('codex-skills-market-install', payload),
+  codexPluginsGetState: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_PLUGINS_STATE),
+  codexPluginsInstall: (pluginId) => ipcRenderer.invoke(CODEX_CHANNELS.INSTALL_PLUGIN, pluginId),
+  codexPluginsUninstall: (pluginId) => ipcRenderer.invoke(CODEX_CHANNELS.UNINSTALL_PLUGIN, pluginId),
+  codexPluginsEnable: (pluginId) => ipcRenderer.invoke(CODEX_CHANNELS.ENABLE_PLUGIN, pluginId),
+  codexPluginsDisable: (pluginId) => ipcRenderer.invoke(CODEX_CHANNELS.DISABLE_PLUGIN, pluginId),
+  codexSkillsGetCatalog: () => ipcRenderer.invoke(CODEX_CHANNELS.SKILLS_GET_CATALOG),
+  codexSkillsGetState: (cwd) => ipcRenderer.invoke(CODEX_CHANNELS.GET_SKILLS_STATE, { cwd }),
+  codexSkillsInstall: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.INSTALL_SKILL, payload),
+  codexSkillsUninstall: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.UNINSTALL_SKILL, payload),
+  codexSkillsMarketInstall: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.MARKET_INSTALL_SKILL, payload),
   onCodexSkillsInstallProgress: (callback) => {
     const handler = (_, data) => callback(data)
-    ipcRenderer.on('skills-install-progress', handler)
-    return () => ipcRenderer.removeListener('skills-install-progress', handler)
+    ipcRenderer.on(CORE_CHANNELS.SKILLS_INSTALL_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.SKILLS_INSTALL_PROGRESS, handler)
   },
   // 简易对话：CodeX
-  codexChat: (payload) => ipcRenderer.invoke('codex-chat', payload),
-  codexChatContinue: (payload) => ipcRenderer.invoke('codex-chat-continue', payload),
-  codexChatAbort: (payload) => ipcRenderer.invoke('codex-chat-abort', payload),
+  codexChat: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.CHAT, payload),
+  codexChatContinue: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.CHAT_CONTINUE, payload),
+  codexChatAbort: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.CHAT_ABORT, payload),
   onCodexStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
     ipcRenderer.on(CODEX_CHANNELS.STREAM_CHUNK, handler)

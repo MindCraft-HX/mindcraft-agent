@@ -15,7 +15,7 @@ function registerApiIpc(ipcMain, {
 }) {
   ipcMain.handle(CODEX_CHANNELS.GET_LAST_CWD, () => readPanelState()?.lastCwd || '');
 
-  ipcMain.handle('codex-validate-key', async (_, { key, baseURL, model: _model }) => {
+  ipcMain.handle(CODEX_CHANNELS.VALIDATE_KEY, async (_, { key, baseURL, model: _model }) => {
     const start = Date.now();
     try {
       const fetchUrl = `${baseURL.replace(/\/$/, '')}/models`;
@@ -38,7 +38,7 @@ function registerApiIpc(ipcMain, {
     }
   });
 
-  ipcMain.handle('codex-list-available-models', async () => {
+  ipcMain.handle(CODEX_CHANNELS.LIST_AVAILABLE_MODELS, async () => {
     try {
       const rt = readRuntimeConfig();
       if (!rt.apiKey || !rt.baseURL) return { models: [], error: lt('noApiKey') };
