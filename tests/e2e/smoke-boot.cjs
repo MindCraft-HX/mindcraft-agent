@@ -92,7 +92,10 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     readyFile = path.join(tempUserData, '.e2e-ready');
 
     return new Promise((resolve, reject) => {
-      electronProcess = spawn(electronBin, [path.join(ROOT, 'electron', 'main.js')], {
+      // Use `electron .` so app.getAppPath() returns the project root
+      // (spawning as `electron electron/main.js` would make getAppPath() return electron/)
+      electronProcess = spawn(electronBin, ['.'], {
+        cwd: ROOT,
         env: {
           ...process.env,
           MINDCRAFT_USER_DATA_DIR: tempUserData,

@@ -13,13 +13,11 @@
  *  - config-import-commit        → write to both CodeX and Claude storages
  */
 
-const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { dialog } = require('electron');
 const { previewCcSwitchFile, previewLocalCliConfig, annotateConflicts, commitImport } = require('./index');
 const { getDb, persistDb } = require('../index');
-const { getProviders, projectToLegacy } = require('../providerStorage');
+const { getProviders } = require('../providerStorage');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -278,23 +276,6 @@ function registerSystemImportIpc(ipcMain, deps) {
           sourcePath: filePath || null,
           userDataDir,
         });
-
-        if (codexResult.ok) {
-          // T174: Project CodeX providers from DB to legacy providers.json
-          try {
-            const codexDir = path.join(os.homedir(), '.codex');
-            const providersFile = path.join(codexDir, 'providers.json');
-            const legacyWriter = (payload) => {
-              if (!fs.existsSync(codexDir)) fs.mkdirSync(codexDir, { recursive: true });
-              const tmp = `${providersFile}.${process.pid}.tmp`;
-              fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8');
-              fs.renameSync(tmp, providersFile);
-            };
-            await projectToLegacy(db, 'codex', legacyWriter);
-          } catch (e) {
-            console.error('[systemImportIpc] CodeX projection error:', e.message);
-          }
-        }
       }
 
       // ---- Commit Claude providers ----
@@ -324,21 +305,7 @@ function registerSystemImportIpc(ipcMain, deps) {
           userDataDir,
         });
 
-        if (claudeResult.ok && claudeResult.providers.length > 0) {
-          try {
-            // commitImport() already wrote to DB — just project to legacy.
-            // Do NOT call setProviders() here: it would do a full replacement
-            // with the lossy claudeResult.providers, overwriting existing
-            // providers' website/note/language/permissionPolicy/effortLevel etc.
-            const legacyWriter = (payload) => {
-              if (claudeSetConfig) claudeSetConfig('claudeProviders', payload);
-            };
-            await projectToLegacy(db, 'claude', legacyWriter);
-          } catch (e) {
-            console.error('[systemImportIpc] Claude projection error:', e.message);
-          }
         }
-      }
 
       // ---- Persist DB ----
       await persistDb();
