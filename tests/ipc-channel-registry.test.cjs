@@ -123,17 +123,17 @@ const HOST_MAIN_SCAN = [
 // Constant-reference patterns (post-migration: CLAUDE_CHANNELS.XXX etc.)
 // Group 1 = prefix (CLAUDE|CODEX|CORE), Group 2 = key name (GET_KEY etc.)
 const CONSTANT_PRELOAD_SCAN = [
-  { regex: `ipcRenderer\\.invoke\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'invoke' },
-  { regex: `ipcRenderer\\.send\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'send' },
-  { regex: `ipcRenderer\\.sendSync\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'sendSync' },
-  { regex: `ipcRenderer\\.on\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'on' },
-  { regex: `ipcRenderer\\.removeAllListeners\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'removeAllListeners' },
-  { regex: `ipcRenderer\\.removeListener\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'removeListener' },
+  { regex: `ipcRenderer\\.invoke\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'invoke' },
+  { regex: `ipcRenderer\\.send\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'send' },
+  { regex: `ipcRenderer\\.sendSync\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'sendSync' },
+  { regex: `ipcRenderer\\.on\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'on' },
+  { regex: `ipcRenderer\\.removeAllListeners\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'removeAllListeners' },
+  { regex: `ipcRenderer\\.removeListener\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'removeListener' },
 ];
 
 const CONSTANT_MAIN_SCAN = [
-  { regex: `ipcMain\\.handle\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'handle' },
-  { regex: `ipcMain\\.on\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z_]+)`, kind: 'on' },
+  { regex: `ipcMain\\.handle\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'handle' },
+  { regex: `ipcMain\\.on\\s*\\(\\s*(CLAUDE|CODEX|CORE)_CHANNELS\\.([A-Z0-9_]+)`, kind: 'on' },
 ];
 
 const CONSTANT_HOST_MAIN_SCAN = CONSTANT_MAIN_SCAN;  // same patterns
@@ -145,6 +145,7 @@ describe('IPC Channel Parity', () => {
   let mainChannels;
   let registryChannels;
   let baselineChannels;  // Phase 3: historical channels exempt from registry requirement
+  let unresolvedConstants;  // constant references not found in registry (typos, stale refs)
 
   before(() => {
     // --- Phase 1: scan for string-literal channels (pre-migration residual) ---
@@ -209,16 +210,19 @@ describe('IPC Channel Parity', () => {
     }
     registryChannels = allRegistry;
 
+    unresolvedConstants = [];
+
     function resolveConstants(items) {
       const resolved = [];
       for (const item of items) {
-        if (!registry) continue;  // can't resolve without registry
+        if (!registry) continue;
         const groupName = item.group + '_CHANNELS';
         const channelValue = registry[groupName] && registry[groupName][item.key];
         if (channelValue) {
           resolved.push({ ...item, channel: channelValue });
+        } else {
+          unresolvedConstants.push(item);
         }
-        // If key not found in registry, it's a stale reference — skip
       }
       return resolved;
     }
@@ -355,6 +359,29 @@ describe('IPC Channel Parity', () => {
     assert.strictEqual(
       unregisteredNew.length, 0,
       `${unregisteredNew.length} new unregistered channel(s): ${unregisteredNew.join(', ')}`
+    );
+  });
+
+  it('all constant references resolve to known registry keys', () => {
+    if (unresolvedConstants && unresolvedConstants.length > 0) {
+      console.error(
+        `❌ ${unresolvedConstants.length} constant reference(s) NOT found in registry:`
+      );
+      for (const u of unresolvedConstants) {
+        console.error(
+          `    ${u.group}_CHANNELS.${u.key} (${u.file}:${u.line})`
+        );
+      }
+      console.error(
+        '\n  Possible causes:'
+        + '\n  - Typo in constant name (e.g. GET_KEEY → GET_KEY)'
+        + '\n  - Constant was removed from ipcChannels.js but still referenced'
+        + '\n  - Missing registry key for a new channel'
+      );
+    }
+    assert.strictEqual(
+      (unresolvedConstants || []).length, 0,
+      `${(unresolvedConstants || []).length} unresolved constant reference(s) — see error output above`
     );
   });
 });
