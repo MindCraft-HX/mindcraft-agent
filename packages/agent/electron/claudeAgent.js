@@ -1987,9 +1987,9 @@ function setupClaudeHandlers() {
       const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
       const result = setProviders(db, 'claude', data || { providers: [], activeIdx: 0 })
       if (result.ok) {
-                await persistDb()
+        await persistDb()
       }
-      return true
+      return result.ok
     } catch (e) {
       console.error('[claude] writeProviders error:', e.message)
       // Emergency backup to a separate path — do NOT silently overwrite the
@@ -2288,8 +2288,6 @@ function setupClaudeHandlers() {
 
       // Persist to disk (sql.js is in-memory)
       await persistDb();
-
-            await persistDb();
 
       // 同步 active key/url 到 settings.json
       const newProviders = result.providers || [];

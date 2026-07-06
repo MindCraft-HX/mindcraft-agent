@@ -3910,9 +3910,9 @@ function setupCodexSdkHandlers() {
       const result = setProviders(db, 'codex', data || { providers: [], activeIdx: 0 })
 
       if (result.ok) {
-                await persistDb()
+        await persistDb()
       }
-      return true
+      return result.ok
     } catch (e) {
       console.error('[codex] writeProviders error:', e.message)
       // Emergency backup to a separate path — do NOT silently overwrite the

@@ -287,7 +287,7 @@ app.whenReady().then(async () => {
 
   // T196 E2E smoke hook — no-op unless MINDCRAFT_E2E_TEST env is set
   const { installE2EHook } = require('./e2eSmokeHook');
-  installE2EHook(win, app.getPath('userData'));
+  installE2EHook(win);
 
   // 插件系统：IPC handlers + 注册表立即加载（轻量），目录扫描延迟执行
   loadRegistry()

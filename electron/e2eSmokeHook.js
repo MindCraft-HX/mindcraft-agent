@@ -11,9 +11,8 @@
  */
 
 const fs = require('fs');
-const path = require('path');
 
-function installE2EHook(win, userDataDir) {
+function installE2EHook(win) {
   const mode = process.env.MINDCRAFT_E2E_TEST;
   const readyFile = process.env.MINDCRAFT_E2E_READY_FILE;
 
@@ -94,8 +93,9 @@ function installE2EHook(win, userDataDir) {
       const result = await win.webContents.executeJavaScript(`
         (async () => {
           try {
-            if (window.electronAPI && window.electronAPI.getProviders) {
-              const data = await window.electronAPI.getProviders();
+            if (window.electronAPI && (window.electronAPI.claudeGetProviders || window.electronAPI.codexGetProviders)) {
+              const getProvidersFn = window.electronAPI.claudeGetProviders || window.electronAPI.codexGetProviders;
+              const data = await getProvidersFn();
               return { ok: true, count: data?.providers?.length || 0 };
             }
             return { ok: false, error: 'getProviders not available' };

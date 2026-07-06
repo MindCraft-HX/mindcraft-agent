@@ -155,11 +155,18 @@ describe('Electron E2E Boot Smoke (T196)', () => {
         clearInterval(poll);
         clearTimeout(timer);
         if (!resolved) {
-          resolved = true;
-          reject(new Error(
-            `Electron exited with code ${code} before readiness.\n` +
-            `stderr: ${stderr.slice(-500)}`
-          ));
+          // If we already captured readyData, the app reached readiness
+          // before exiting — resolve instead of rejecting.
+          if (readyData) {
+            resolved = true;
+            resolve();
+          } else {
+            resolved = true;
+            reject(new Error(
+              `Electron exited with code ${code} before readiness.\n` +
+              `stderr: ${stderr.slice(-500)}`
+            ));
+          }
         }
       });
     });
