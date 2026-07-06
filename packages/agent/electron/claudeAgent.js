@@ -29,7 +29,7 @@ const { t: lt } = require('./localeHelper')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
-const { getProviders, setProviders, projectToLegacy } = require('./db/providerStorage')
+const { getProviders, setProviders } = require('./db/providerStorage')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
@@ -1987,12 +1987,7 @@ function setupClaudeHandlers() {
       const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
       const result = setProviders(db, 'claude', data || { providers: [], activeIdx: 0 })
       if (result.ok) {
-        // Legacy projection to internalConf (claude-internal.json)
-        const legacyWriter = (payload) => {
-          internalConf.set('claudeProviders', payload)
-        }
-        projectToLegacy(db, 'claude', legacyWriter)
-        await persistDb()
+                await persistDb()
       }
       return true
     } catch (e) {
@@ -2294,10 +2289,7 @@ function setupClaudeHandlers() {
       // Persist to disk (sql.js is in-memory)
       await persistDb();
 
-      // Project to legacy via repository (handles projection_status)
-      const legacyWriter = (payload) => { internalConf.set('claudeProviders', payload) };
-      projectToLegacy(db, 'claude', legacyWriter);
-      await persistDb();
+            await persistDb();
 
       // 同步 active key/url 到 settings.json
       const newProviders = result.providers || [];

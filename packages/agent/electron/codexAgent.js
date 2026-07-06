@@ -3878,7 +3878,7 @@ function setupCodexSdkHandlers() {
   // ─── Provider storage (T174: SQLite-authoritative with legacy projection) ──
   const PROVIDERS_FILE = path.join(CODEX_CONFIG_DIR, 'providers.json')
   const { getDb, persistDb } = require('./db')
-  const { getProviders, setProviders, migrateFromLegacy, projectToLegacy } = require('./db/providerStorage')
+  const { getProviders, setProviders, migrateFromLegacy } = require('./db/providerStorage')
 
   async function readProviders() {
     try {
@@ -3910,15 +3910,7 @@ function setupCodexSdkHandlers() {
       const result = setProviders(db, 'codex', data || { providers: [], activeIdx: 0 })
 
       if (result.ok) {
-        // Project to legacy providers.json for rollback compatibility
-        const legacyWriter = (payload) => {
-          if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
-          const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
-          fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
-          fs.renameSync(tmp, PROVIDERS_FILE)
-        }
-        projectToLegacy(db, 'codex', legacyWriter)
-        await persistDb()
+                await persistDb()
       }
       return true
     } catch (e) {

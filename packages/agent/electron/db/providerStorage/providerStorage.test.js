@@ -950,3 +950,80 @@ test('Claude id empotency: setProviders multiple times → same ID, no duplicate
 
   db.close();
 });
+
+// ---------------------------------------------------------------------------
+// G. T195 Phase 1 — Legacy recovery tests
+// ---------------------------------------------------------------------------
+
+test('T195: CodeX providers recover from legacy fallback read after DB loss', async () => {
+  const db = await createFreshDb();
+  const { getProviders } = require('./index');
+
+  // Simulate legacy providers.json that would exist on disk
+  const legacyCodexData = {
+    providers: [
+      { name: 'LegacyCodeX', key: 'sk-legacy-codex', url: 'https://legacy.codex.com', model: 'gpt-4' },
+      { name: 'LegacyCodeX2', key: 'sk-legacy-codex2', url: 'https://legacy2.codex.com' },
+    ],
+    activeIdx: 0,
+  };
+
+  // First call: DB is empty, legacyReader provides data → backfill
+  const payload1 = getProviders(db, 'codex', () => legacyCodexData);
+  assert.equal(payload1.providers.length, 2, 'should backfill 2 providers from legacy');
+  assert.equal(payload1.providers[0].name, 'LegacyCodeX');
+  assert.equal(payload1.providers[0].key, 'sk-legacy-codex');
+  assert.equal(payload1.providers[1].name, 'LegacyCodeX2');
+
+  // Second call: DB now has data, legacyReader should NOT be called
+  let legacyCalled = false;
+  const payload2 = getProviders(db, 'codex', () => { legacyCalled = true; return null; });
+  assert.equal(legacyCalled, false, 'legacyReader should not be called when DB has data');
+  assert.equal(payload2.providers.length, 2, 'should return data from DB, not legacy');
+
+  db.close();
+});
+
+test('T195: Claude providers recover from legacy fallback read after DB loss', async () => {
+  const db = await createFreshDb();
+  const { getProviders } = require('./index');
+
+  const legacyClaudeData = {
+    providers: [
+      {
+        name: 'LegacyClaude',
+        key: 'sk-legacy-claude',
+        url: 'https://legacy.claude.com',
+        config: { env: { ANTHROPIC_AUTH_TOKEN: 'sk-legacy-claude', ANTHROPIC_BASE_URL: 'https://legacy.claude.com' } },
+        website: 'https://claude.ai',
+        note: 'Legacy provider',
+        language: 'zh-CN',
+        permissionPolicy: 'ask',
+        effortLevel: 'medium',
+        tierModels: {},
+        selectedTier: 'max',
+      },
+    ],
+    activeIdx: 0,
+  };
+
+  const payload = getProviders(db, 'claude', () => legacyClaudeData);
+  assert.equal(payload.providers.length, 1, 'should backfill 1 provider from legacy');
+  assert.equal(payload.providers[0].name, 'LegacyClaude');
+  assert.equal(payload.providers[0].key, 'sk-legacy-claude');
+  assert.equal(payload.providers[0].website, 'https://claude.ai');
+  assert.equal(payload.providers[0].note, 'Legacy provider');
+
+  db.close();
+});
+
+test('T195: empty DB with empty legacy data returns empty result', async () => {
+  const db = await createFreshDb();
+  const { getProviders } = require('./index');
+
+  const payload = getProviders(db, 'codex', () => null);
+  assert.equal(payload.providers.length, 0);
+  assert.equal(payload.activeIdx, -1);
+
+  db.close();
+});

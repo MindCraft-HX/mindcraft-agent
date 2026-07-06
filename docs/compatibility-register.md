@@ -14,8 +14,8 @@
 
 | id | owner | source | target | read fallback? | write proj? | introduced | earliest removal | tests | manual smoke | rollback |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `LEGACY_PROVIDER_CODEX_PROVIDERS_JSON` | provider | `~/.codex/providers.json` | SQLite `providerStorage` | yes | yes (1.1.x) | T174 (v1.1.0) | v1.2.0 (TBD) | TBD | provider CRUD, import, export, activate | restore from JSON backup |
-| `LEGACY_PROVIDER_CLAUDE_INTERNAL_PROVIDERS` | provider | `claude-internal` Conf → `claudeProviders` key | SQLite `providerStorage` | yes | yes (1.1.x) | T174 (v1.1.0) | v1.2.0 (TBD) | TBD | provider CRUD, import, export, activate | restore from JSON backup |
+| `LEGACY_PROVIDER_CODEX_PROVIDERS_JSON` | provider | `~/.codex/providers.json` | SQLite `providerStorage` | yes | ~~yes (1.1.x)~~ → **no** (T195 Ph1, v1.1.3) | T174 (v1.1.0) | v1.2.0 (TBD) | TBD | provider CRUD, import, export, activate | restore from JSON backup |
+| `LEGACY_PROVIDER_CLAUDE_INTERNAL_PROVIDERS` | provider | `claude-internal` Conf → `claudeProviders` key | SQLite `providerStorage` | yes | ~~yes (1.1.x)~~ → **no** (T195 Ph1, v1.1.3) | T174 (v1.1.0) | v1.2.0 (TBD) | TBD | provider CRUD, import, export, activate | restore from JSON backup |
 | `LEGACY_CODEX_RUNTIME_ELECTRON_CONF` | config | `electron-conf` (`mindcraft-codex`) | JSON/SQLite (key-by-key) | yes (locale, prefs) | yes (prefs) | pre-T174 | v1.2.0+ (key-by-key) | codexRuntimeConfig.test.js | settings save, restore, migration | restore runtime conf from backup |
 | `LEGACY_CLAUDE_SETTINGS_SANITIZER` | config | dirty `~/.claude/settings.json` | sanitized `~/.claude/settings.json` | — (repair path) | yes | pre-T174 | **keep indefinitely** | TBD | settings save, repair, MCP/plugin preservation | revert settings.json from git/backup |
 | `LEGACY_STANDALONE_CLAUDE_WINDOW` | window | `#/main/claudeCode` standalone window | `#/main/codeHub?agent=claudeCode` | no | no | pre-refactor | product decision | route tests | open Claude from sidebar/menu | N/A |
