@@ -1168,7 +1168,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-get-file-stat', (_, { filePath }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_FILE_STAT, (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return null
       const stats = fs.statSync(filePath)
@@ -1391,7 +1391,7 @@ function setupClaudeHandlers() {
     }
     return key
   })
-  ipcMain.handle('claude-get-base-url', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_BASE_URL, () => {
     let url = confGet('claudeBaseURL', '')
     if (!url) {
       const sj = readSystemSettingsJson()
@@ -1406,7 +1406,7 @@ function setupClaudeHandlers() {
     const valid = ['ask', 'allow_all', 'read_only']
     return valid.includes(policy) ? policy : 'ask'
   }
-  ipcMain.handle('claude-get-permission-policy', () => readPermissionPolicy())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_PERMISSION_POLICY, () => readPermissionPolicy())
   ipcMain.handle('claude-set-permission-policy', (_, policy) => {
     const valid = ['ask', 'allow_all', 'read_only']
     if (!valid.includes(policy)) return false
@@ -1415,7 +1415,7 @@ function setupClaudeHandlers() {
   })
 
   // WebFetch 预检跳过开关（在国内网络环境下需要跳过指向 claude.ai 的域名安全验证）
-  ipcMain.handle('claude-get-skip-webfetch-preflight', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_SKIP_WEBFETCH_PREFLIGHT, () => {
     try {
       const s = readGlobalSettings()
       return s.skipWebFetchPreflight !== false
@@ -1429,7 +1429,7 @@ function setupClaudeHandlers() {
       return true
     } catch (_) { return false }
   })
-  ipcMain.handle('claude-get-auto-compact-window', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_AUTO_COMPACT_WINDOW, () => {
     try {
       const s = readGlobalSettings()
       return typeof s.autoCompactWindow === 'number' ? s.autoCompactWindow : null
@@ -1457,7 +1457,7 @@ function setupClaudeHandlers() {
     const valid = ['zh-CN', 'en-US']
     return valid.includes(language) ? language : 'zh-CN'
   }
-  ipcMain.handle('claude-get-language', () => readLanguage())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_LANGUAGE, () => readLanguage())
   ipcMain.handle('claude-set-language', (_, language) => {
     const valid = ['zh-CN', 'en-US']
     if (!valid.includes(language)) return false
@@ -1472,7 +1472,7 @@ function setupClaudeHandlers() {
     const valid = ['low', 'medium', 'high', 'xhigh']
     return valid.includes(effort) ? effort : 'medium'
   }
-  ipcMain.handle('claude-get-effort-level', () => readEffortLevel())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_EFFORT_LEVEL, () => readEffortLevel())
   ipcMain.handle('claude-set-effort-level', (_, effort) => {
     // SDK Settings interface 合法值：low/medium/high/xhigh（不含 max）
     const valid = ['low', 'medium', 'high', 'xhigh']
@@ -1481,7 +1481,7 @@ function setupClaudeHandlers() {
     return true
   })
 
-  ipcMain.handle('claude-get-thinking-enabled', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_THINKING_ENABLED, () => {
     return internalConf.get('claudeThinkingEnabled', true)
   })
   ipcMain.handle('claude-set-thinking-enabled', (_, enabled) => {
@@ -1490,7 +1490,7 @@ function setupClaudeHandlers() {
   })
 
   // 自定义 Claude Code 可执行文件路径
-  ipcMain.handle('claude-get-executable-path', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_EXECUTABLE_PATH, () => {
     return confGet('claudeExecutablePath', '') || ''
   })
   ipcMain.handle('claude-set-executable-path', (_, p) => {
@@ -2035,11 +2035,11 @@ function setupClaudeHandlers() {
     writeProviders: writeClaudeProviders,
   }
 
-  ipcMain.handle('claude-get-model', () => readPrimaryModel())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_MODEL, () => readPrimaryModel())
   ipcMain.handle('claude-set-model', (_, model) => { confSet('claudeModel', model); return true })
   ipcMain.handle('claude-set-key', (_, key) => { confSet('claudeApiKey', key); return true })
   ipcMain.handle('claude-set-base-url', (_, url) => { confSet('claudeBaseURL', url); return true })
-  ipcMain.handle('claude-get-models', () => confGet('claudeModels', defaultModels))
+  ipcMain.handle(CLAUDE_CHANNELS.GET_MODELS, () => confGet('claudeModels', defaultModels))
   ipcMain.handle('claude-set-models', (_, models) => { confSet('claudeModels', models); return true })
   ipcMain.handle('claude-add-model', (_, model) => {
     if (!model || !model.id) return false
@@ -2058,7 +2058,7 @@ function setupClaudeHandlers() {
     confSet('claudeModels', list)
     return true
   })
-  ipcMain.handle('claude-get-providers', async () => readClaudeProviders())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_PROVIDERS, async () => readClaudeProviders())
   ipcMain.handle('claude-set-providers', async (_, data) => {
     const ok = await writeClaudeProviders(data)
     if (!ok) return { ok: false, error: 'DB write failed' }
@@ -2108,7 +2108,7 @@ function setupClaudeHandlers() {
     resetAgentRuntime('provider-activated')
     return { ok: true, model }
   })
-  ipcMain.handle('claude-get-selected-tier', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_SELECTED_TIER, () => {
     // 从 ~/.claude/settings.json 读取默认 tier（SDK 原生路径）
     const sj = readSystemSettingsJson()
     if (sj && typeof sj.model === 'string' && ['haiku','sonnet','opus','reasoning'].includes(sj.model)) {
@@ -2177,7 +2177,7 @@ function setupClaudeHandlers() {
     return env
   }
 
-  ipcMain.handle('claude-get-tier-models', () => readTierModelsFromConf())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_TIER_MODELS, () => readTierModelsFromConf())
   ipcMain.handle('claude-set-tier-models', (_, data) => {
     if (!data || typeof data !== 'object') return false
     return writeTierModelsToConf(data)
@@ -3416,7 +3416,7 @@ function setupClaudeHandlers() {
     return sessionIds
   })
 
-  ipcMain.handle('claude-get-last-compact-summary', (_, sessionId) => {
+  ipcMain.handle(CLAUDE_CHANNELS.GET_LAST_COMPACT_SUMMARY, (_, sessionId) => {
     if (!sessionId) return null
     return compactSummaries.get(sessionId) || null
   })
