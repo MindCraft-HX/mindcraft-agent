@@ -1,5 +1,7 @@
 'use strict';
 
+const { CLAUDE_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * Claude UI utility IPC handlers — directory picker, clipboard, file listing.
  *
@@ -7,18 +9,18 @@
  */
 
 function registerUiUtilsIpc(ipcMain) {
-  ipcMain.handle('claude-select-directory', async (event) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SELECT_DIRECTORY, async (event) => {
     const { BrowserWindow, dialog } = require('electron');
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0];
   });
 
-  ipcMain.handle('claude-write-clipboard', (_, text) => {
+  ipcMain.handle(CLAUDE_CHANNELS.WRITE_CLIPBOARD, (_, text) => {
     require('electron').clipboard.writeText(text || '');
   });
 
-  ipcMain.handle('claude-list-files', async (_, { cwd, query }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.LIST_FILES, async (_, { cwd, query }) => {
     const fs = require('fs');
     const p = require('path');
     try {

@@ -82,7 +82,7 @@ test('claude runtime uses effective active provider config and provider activati
   )
   assert.match(
     source,
-    /ipcMain\.handle\('claude-activate-provider'[\s\S]*confSet\('claudeProviders', \{ providers, activeIdx \}\)[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(runtimeConfig\)\)/,
+    /ipcMain\.handle\(CLAUDE_CHANNELS\.ACTIVATE_PROVIDER[\s\S]*confSet\('claudeProviders', \{ providers, activeIdx \}\)[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(runtimeConfig\)\)/,
     'expected provider activation to sync legacy projection and official runtime settings from active provider in main process',
   )
 })

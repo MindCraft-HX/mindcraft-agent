@@ -948,9 +948,9 @@ function setupClaudeHandlers() {
 
   const pendingPermissionResolvers = new Map() // requestId -> resolver(allowed)
 
-  ipcMain.handle('claude-load-code-panel-state', () => readClaudeCodePanelState())
+  ipcMain.handle(CLAUDE_CHANNELS.LOAD_CODE_PANEL_STATE, () => readClaudeCodePanelState())
   // T178: in-flight dedup — 同 cwd 并发调用共享同一结果
-  ipcMain.handle('claude-scanner-projects-sessions', async (_, { cwd }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SCANNER_PROJECTS_SESSIONS, async (_, { cwd }) => {
     const pending = _pendingClaudeScans.get(cwd)
     if (pending) return (await pending).map(s => ({ ...s }))
     const promise = Promise.resolve(scanCliSessionsForProject(cwd))
@@ -958,11 +958,11 @@ function setupClaudeHandlers() {
     try { return await promise }
     finally { _pendingClaudeScans.delete(cwd) }
   })
-  ipcMain.handle('claude-read-session-meta', (_, { cwd, cliSessionId, filePath } = {}) => {
+  ipcMain.handle(CLAUDE_CHANNELS.READ_SESSION_META, (_, { cwd, cliSessionId, filePath } = {}) => {
     if (filePath) return readClaudeSessionMetaByFilePath(filePath)
     return readClaudeSessionMeta(cwd, cliSessionId)
   })
-  ipcMain.handle('claude-write-session-meta', (_, { cwd, cliSessionId, filePath, chatKey, sessionId, data } = {}) => {
+  ipcMain.handle(CLAUDE_CHANNELS.WRITE_SESSION_META, (_, { cwd, cliSessionId, filePath, chatKey, sessionId, data } = {}) => {
     return writeClaudeSessionMeta(cwd, cliSessionId, data, { chatKey: chatKey || sessionId, filePath })
   })
   ipcMain.handle('claude-rename-session', async (_, { sessionId, title, cwd }) => {
@@ -1059,8 +1059,8 @@ function setupClaudeHandlers() {
   // 参数：{ filePath, page: 0, pageSize: 50 }
   // page=0 读取最后 pageSize 条，page=1 读取再往前 pageSize 条
   // 返回：{ messages, hasMore: boolean, totalPages: number }
-  ipcMain.handle('claude-read-session-file-range', async (_, { filePath, page = 0, pageSize = 50 }) => {
-    const stop = perfStartIpc('claude-read-session-file-range', { page, pageSize })
+  ipcMain.handle(CLAUDE_CHANNELS.READ_SESSION_FILE_RANGE, async (_, { filePath, page = 0, pageSize = 50 }) => {
+    const stop = perfStartIpc(CLAUDE_CHANNELS.READ_SESSION_FILE_RANGE, { page, pageSize })
     try {
       const diagStart = Date.now()
       appendClaudeFreezeDiag('session-range.enter', {
@@ -1178,10 +1178,10 @@ function setupClaudeHandlers() {
       return null
     }
   })
-  ipcMain.handle('claude-delete-session-file', (_, { filePath }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.DELETE_SESSION_FILE, (_, { filePath }) => {
     return deleteClaudeSessionArtifacts(filePath)
   })
-  ipcMain.handle('claude-save-code-panel-state', (_, payload) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SAVE_CODE_PANEL_STATE, (_, payload) => {
     try {
       writeClaudeCodePanelState(payload)
       return true
@@ -1190,7 +1190,7 @@ function setupClaudeHandlers() {
       return false
     }
   })
-  ipcMain.on('claude-save-code-panel-state-sync', (event, payload) => {
+  ipcMain.on(CLAUDE_CHANNELS.SAVE_CODE_PANEL_STATE_SYNC, (event, payload) => {
     try {
       writeClaudeCodePanelState(payload)
       event.returnValue = true
@@ -1499,7 +1499,7 @@ function setupClaudeHandlers() {
     resetSystemClaudeCache()
     return true
   })
-  ipcMain.handle('claude-browse-executable', async () => {
+  ipcMain.handle(CLAUDE_CHANNELS.BROWSE_EXECUTABLE, async () => {
     const result = await dialog.showOpenDialog({
       title: lt('dialog.selectExe'),
       filters: process.platform === 'win32'
@@ -1512,7 +1512,7 @@ function setupClaudeHandlers() {
   })
 
   // 检测运行环境：Node、npm、Claude Code
-  ipcMain.handle('claude-check-environment', async () => {
+  ipcMain.handle(CLAUDE_CHANNELS.CHECK_ENVIRONMENT, async () => {
     const result = { node: null, npm: null, claude: null }
 
     // 检测 Node.js
@@ -1578,7 +1578,7 @@ function setupClaudeHandlers() {
   })
 
   // 安装 Claude Code（需要 Node >= 18 且 npm 可用）
-  ipcMain.handle('claude-install-claude-code', async () => {
+  ipcMain.handle(CLAUDE_CHANNELS.INSTALL_CLAUDE_CODE, async () => {
     if (isInstallingClaudeCode()) return { success: false, message: lt('install.inProgress') }
     setInstallingClaudeCode(true)
     try {
@@ -1626,7 +1626,7 @@ function setupClaudeHandlers() {
   })
 
   // 查询 npm 最新版本（用于版本对比）
-  ipcMain.handle('claude-check-latest-version', async () => {
+  ipcMain.handle(CLAUDE_CHANNELS.CHECK_LATEST_VERSION, async () => {
     try {
       const https = require('https')
       return new Promise((resolve) => {
@@ -1665,7 +1665,7 @@ function setupClaudeHandlers() {
   })
 
   // 读取 ~/.claude/settings.json
-  ipcMain.handle('claude-read-settings-json', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.READ_SETTINGS_JSON, () => {
     try {
       const settingsPath = path.join(os.homedir(), '.claude', 'settings.json')
       const settings = fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, 'utf8')) : {}
@@ -1677,7 +1677,7 @@ function setupClaudeHandlers() {
   })
 
   // 局部更新 ~/.claude/settings.json（只合并传入的字段，不覆盖其他）
-  ipcMain.handle('claude-patch-settings-json', (_, patch) => {
+  ipcMain.handle(CLAUDE_CHANNELS.PATCH_SETTINGS_JSON, (_, patch) => {
     try {
       if (Object.prototype.hasOwnProperty.call(patch || {}, 'gitMirrorUrl')) {
         internalConf.set('gitMirrorUrl', String(patch.gitMirrorUrl || '').trim())
@@ -1691,7 +1691,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-repair-settings-json', (_, content) => {
+  ipcMain.handle(CLAUDE_CHANNELS.REPAIR_SETTINGS_JSON, (_, content) => {
     try {
       const claudeDir = path.join(os.homedir(), '.claude')
       if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
@@ -2041,7 +2041,7 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.SET_BASE_URL, (_, url) => { confSet('claudeBaseURL', url); return true })
   ipcMain.handle(CLAUDE_CHANNELS.GET_MODELS, () => confGet('claudeModels', defaultModels))
   ipcMain.handle(CLAUDE_CHANNELS.SET_MODELS, (_, models) => { confSet('claudeModels', models); return true })
-  ipcMain.handle('claude-add-model', (_, model) => {
+  ipcMain.handle(CLAUDE_CHANNELS.ADD_MODEL, (_, model) => {
     if (!model || !model.id) return false
     const list = confGet('claudeModels', [...defaultModels])
     if (list.some(m => m.id === model.id)) return false
@@ -2049,7 +2049,7 @@ function setupClaudeHandlers() {
     confSet('claudeModels', list)
     return true
   })
-  ipcMain.handle('claude-remove-model', (_, modelId) => {
+  ipcMain.handle(CLAUDE_CHANNELS.REMOVE_MODEL, (_, modelId) => {
     if (!modelId) return false
     const list = confGet('claudeModels', [...defaultModels])
     const idx = list.findIndex(m => m.id === modelId)
@@ -2070,7 +2070,7 @@ function setupClaudeHandlers() {
     }
     return { ok: true }
   })
-  ipcMain.handle('claude-activate-provider', async (_, data) => {
+  ipcMain.handle(CLAUDE_CHANNELS.ACTIVATE_PROVIDER, async (_, data) => {
     const providers = Array.isArray(data?.providers) ? data.providers : []
     const activeIdx = Number.isInteger(data?.activeIdx) ? data.activeIdx : -1
     const selectedTier = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(data?.selectedTier)
@@ -2184,7 +2184,7 @@ function setupClaudeHandlers() {
   })
 
   // 从 mindcraft-electron 导入 Claude 配置（手动触发）
-  ipcMain.handle('claude-import-legacy-config', (_, customPath) => {
+  ipcMain.handle(CLAUDE_CHANNELS.IMPORT_LEGACY_CONFIG, (_, customPath) => {
     const imported = { providers: 0, tierModels: false }
     try {
       const legacyDir = customPath || findLegacyUserData()
@@ -2538,8 +2538,8 @@ function setupClaudeHandlers() {
     }
   }
 
-  ipcMain.handle('claude-chat', async (event, payload) => runClaudeChatStream(event, payload))
-  ipcMain.handle('claude-chat-continue', async (event, payload) => runClaudeChatStream(event, payload))
+  ipcMain.handle(CLAUDE_CHANNELS.CHAT, async (event, payload) => runClaudeChatStream(event, payload))
+  ipcMain.handle(CLAUDE_CHANNELS.CHAT_CONTINUE, async (event, payload) => runClaudeChatStream(event, payload))
   ipcMain.handle('claude-chat-abort', (_event, { chatId }) => {
     const ab = activeChatAborts.get(chatId)
     if (ab) { ab.abort(); activeChatAborts.delete(chatId); return true }
@@ -3404,14 +3404,14 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-register-cli-sessions', (_, map) => {
+  ipcMain.handle(CLAUDE_CHANNELS.REGISTER_CLI_SESSIONS, (_, map) => {
     for (const [sid, cliId] of Object.entries(map || {})) {
       if (cliId) cliSessionIds.set(sid, cliId)
     }
   })
 
   // 扫描并注册当前项目下的所有 CLI 会话 ID
-  ipcMain.handle('claude-scan-cli-sessions', async (_, { cwd }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.SCAN_CLI_SESSIONS, async (_, { cwd }) => {
     const sessionIds = scanCliSessionIds(cwd)
     return sessionIds
   })
@@ -3453,7 +3453,7 @@ function setupClaudeHandlers() {
     return { apiKey, baseURL, model, tierEnv }
   }
 
-  ipcMain.handle('claude-list-slash-commands', async (_, { cwd, sessionId }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.LIST_SLASH_COMMANDS, async (_, { cwd, sessionId }) => {
     const chatKey = sessionId
     const { apiKey, baseURL, model, tierEnv } = readSlashCommandsEnvFromUserSettingsFile()
     const resolvedCwd = path.resolve(cwd || process.cwd())
@@ -3594,7 +3594,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-list-local-skills', async (_, { cwd }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.LIST_LOCAL_SKILLS, async (_, { cwd }) => {
     const hasProjectCwd = !!String(cwd || '').trim()
     const result = {
       system: [],
@@ -3851,7 +3851,7 @@ function setupClaudeHandlers() {
   })
 
   // ─── Memory 管理 ───────────────────────────────────────────────
-  ipcMain.handle('claude-memory-list', (_, { cwd, scope }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.MEMORY_LIST, (_, { cwd, scope }) => {
     try {
       if (scope === 'system') return claudeMemory.readSystemMemories()
       return claudeMemory.readAllMemories(cwd)
@@ -3861,7 +3861,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-memory-read', (_, { cwd, filename, scope }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.MEMORY_READ, (_, { cwd, filename, scope }) => {
     try {
       if (scope === 'system') {
         const dir = claudeMemory.getSystemMemoryDir()
@@ -3884,7 +3884,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-memory-write', (_, { cwd, filename, name, description, type, body, scope }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.MEMORY_WRITE, (_, { cwd, filename, name, description, type, body, scope }) => {
     try {
       if (scope === 'system') {
         const saved = claudeMemory.writeSystemMemoryFile(filename, { name, description, type, body })
@@ -3910,11 +3910,11 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('claude-memory-get-inject-mode', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.MEMORY_GET_INJECT_MODE, () => {
     return readMemoryInjectMode()
   })
 
-  ipcMain.handle('claude-memory-set-inject-mode', (_, mode) => {
+  ipcMain.handle(CLAUDE_CHANNELS.MEMORY_SET_INJECT_MODE, (_, mode) => {
     const valid = ['system', 'user', 'off']
     if (!valid.includes(mode)) return false
     try {

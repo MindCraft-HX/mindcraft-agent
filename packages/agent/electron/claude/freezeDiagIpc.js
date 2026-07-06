@@ -1,5 +1,7 @@
 'use strict';
 
+const { CLAUDE_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * Claude freeze diagnostic enable/disable IPC handlers.
  *
@@ -11,11 +13,11 @@ function registerFreezeDiagIpc(ipcMain, {
   getClaudeFreezeDiagLogPath,
   setClaudeFreezeDiagEnabled,
 }) {
-  ipcMain.handle('claude-freeze-diag-get-enabled', () => {
+  ipcMain.handle(CLAUDE_CHANNELS.FREEZE_DIAG_GET_ENABLED, () => {
     return { enabled: getClaudeFreezeDiagEnabled(), path: getClaudeFreezeDiagLogPath() };
   });
 
-  ipcMain.handle('claude-freeze-diag-set-enabled', (_, { enabled }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.FREEZE_DIAG_SET_ENABLED, (_, { enabled }) => {
     const result = setClaudeFreezeDiagEnabled(enabled);
     return { ...result, logPath: getClaudeFreezeDiagLogPath() };
   });

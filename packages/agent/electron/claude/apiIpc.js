@@ -1,5 +1,7 @@
 'use strict';
 
+const { CLAUDE_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * Claude API key validation IPC handler.
  *
@@ -7,7 +9,7 @@
  */
 
 function registerApiIpc(ipcMain, { lt }) {
-  ipcMain.handle('claude-validate-key', async (_, { key, baseURL, model }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.VALIDATE_KEY, async (_, { key, baseURL, model }) => {
     try {
       const Anthropic = require('@anthropic-ai/sdk');
       const opts = { apiKey: key };
