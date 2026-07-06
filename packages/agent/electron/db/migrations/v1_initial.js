@@ -14,10 +14,13 @@
 const {
   V1_PROVIDER_DDL,
   IMPORT_RUNS_DDL,
+  CHAT_THREADS_DDL,
   INDEXES,
   SCHEMA_VERSION,
 } = require('../schema');
 const { normalizeClaudeProviderStorageShape } = require('../providerStorage/claudeShape');
+const path = require('path');
+const fs = require('fs');
 
 /**
  * Apply the initial migration.
@@ -41,8 +44,9 @@ function migrateV1(db) {
     db.run(IMPORT_RUNS_DDL);
     // Only create pre-v2 indexes here; v2 indexes are added by migrateV2
     for (const idx of INDEXES) {
-      // Skip v2 index (added in migrateV2 for v1→v2 path)
-      if (idx.includes('idx_providers_agent_sort')) continue;
+      // Skip indexes that belong to later migrations
+      if (idx.includes('idx_providers_agent_sort')) continue;   // added in v2
+      if (idx.includes('idx_chat_threads')) continue;           // added in v4
       db.run(idx);
     }
 
@@ -162,20 +166,152 @@ function migrateV3(db) {
 }
 
 /**
+ * v4 migration: create chat_threads table for Simple Chat session metadata.
+ *
+ * Optionally migrates data from old `{userData}/chat-sessions/` JSON files
+ * into the new SQLite metadata + messages.jsonl layout.
+ *
+ * Old files are NOT deleted — they serve as manual rollback.
+ *
+ * @param {import('sql.js').Database} db
+ * @param {object} [opts]
+ * @param {string} [opts.userDataDir]
+ * @returns {{ ok: boolean, version: number, message: string, migrated?: number }}
+ */
+function migrateV4(db, { userDataDir } = {}) {
+  if (!db || typeof db.run !== 'function' || typeof db.exec !== 'function') {
+    return { ok: false, version: 0, message: 'Invalid db instance' };
+  }
+
+  const currentVersion = getDbVersion(db);
+
+  try {
+    if (currentVersion >= 4) {
+      return { ok: true, version: currentVersion, message: 'Already at v4, no migration needed', migrated: 0 };
+    }
+    if (currentVersion < 3) {
+      return { ok: false, version: currentVersion, message: 'Must run migrateV3 before migrateV4' };
+    }
+
+    // Create table
+    db.run(CHAT_THREADS_DDL);
+
+    // Create index
+    db.run('CREATE INDEX IF NOT EXISTS idx_chat_threads_updated ON chat_threads(updated_at DESC)');
+
+    // Data migration from old chat-sessions/ if available
+    let migrated = 0;
+    if (userDataDir && typeof userDataDir === 'string') {
+      const oldDir = path.join(userDataDir, 'chat-sessions');
+      try {
+        if (fs.existsSync(oldDir)) {
+          // Read old index.json for session list
+          const indexPath = path.join(oldDir, 'index.json');
+          let sessionIds = [];
+          if (fs.existsSync(indexPath)) {
+            try {
+              const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+              sessionIds = (idx.sessions || []).map(s => s.id).filter(Boolean);
+            } catch (_) { /* index.json corrupt, fall through */ }
+          }
+
+          // If no index, scan *.json files (skip index.json)
+          if (sessionIds.length === 0) {
+            const files = fs.readdirSync(oldDir).filter(f => f.endsWith('.json') && f !== 'index.json');
+            sessionIds = files.map(f => f.replace(/\.json$/, ''));
+          }
+
+          // Phase 1: read all old session data first (no transaction yet)
+          const sessionDataList = [];
+          for (const id of sessionIds) {
+            const filePath = path.join(oldDir, `${id}.json`);
+            if (!fs.existsSync(filePath)) continue;
+
+            let data;
+            try {
+              data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (_) { continue; }
+
+            if (!data || typeof data !== 'object') continue;
+            sessionDataList.push({ id, data });
+          }
+
+          // Phase 2: SQLite transaction — metadata INSERTs only
+          db.run('BEGIN');
+          try {
+            for (const { id, data } of sessionDataList) {
+              db.run(
+                `INSERT OR IGNORE INTO chat_threads (id, title, created_at, updated_at, provider, model, thinking_level, web_search_enabled, context_summary)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  String(data.id || id),
+                  String(data.title || ''),
+                  typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+                  typeof data.updatedAt === 'number' ? data.updatedAt : Date.now(),
+                  String(data.provider || 'claude'),
+                  String(data.model || ''),
+                  String(data.thinkingLevel || 'off'),
+                  data.webSearchEnabled ? 1 : 0,
+                  String(data.contextSummary || ''),
+                ],
+              );
+            }
+            db.run('COMMIT');
+          } catch (e) {
+            db.run('ROLLBACK');
+            throw e;
+          }
+
+          // Phase 3: filesystem writes (outside SQLite transaction)
+          const newMsgDir = path.join(userDataDir, 'simple-chat', 'threads');
+          for (const { id, data } of sessionDataList) {
+            const messages = Array.isArray(data.messages) ? data.messages : [];
+            if (messages.length > 0) {
+              const threadDir = path.join(newMsgDir, id);
+              if (!fs.existsSync(threadDir)) {
+                fs.mkdirSync(threadDir, { recursive: true });
+              }
+              const msgFile = path.join(threadDir, 'messages.jsonl');
+              const lines = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
+              fs.writeFileSync(msgFile, lines, 'utf8');
+            }
+            migrated++;
+          }
+        }
+      } catch (e) {
+        console.error('[migrateV4] data migration error:', e.message);
+        // Schema migration still succeeded; data migration failure is non-fatal
+      }
+    }
+
+    db.run('PRAGMA user_version = 4');
+
+    return { ok: true, version: 4, message: `Migrated to v4; data migration: ${migrated} sessions`, migrated };
+  } catch (e) {
+    try { db.run('ROLLBACK'); } catch (_) {}
+    return { ok: false, version: currentVersion, message: `Migration v4 failed: ${e.message}` };
+  }
+}
+
+/**
  * Run all migrations in order to bring the DB to the latest version.
  *
  * @param {import('sql.js').Database} db
+ * @param {object} [opts]
+ * @param {string} [opts.userDataDir] — required for v4 data migration
  * @returns {{ ok: boolean, version: number, message: string }}
  */
-function runMigrations(db) {
+function runMigrations(db, opts = {}) {
   const v1 = migrateV1(db);
   if (!v1.ok) return v1;
 
-  // v1 already ran (or was already at v1+), now v2
   const v2 = migrateV2(db);
   if (!v2.ok) return v2;
 
-  return migrateV3(db);
+  const v3 = migrateV3(db);
+  if (!v3.ok) return v3;
+
+  return migrateV4(db, opts);
 }
 
 /**
@@ -204,4 +340,4 @@ function parseJsonObject(str) {
   }
 }
 
-module.exports = { migrateV1, migrateV2, migrateV3, runMigrations, getDbVersion };
+module.exports = { migrateV1, migrateV2, migrateV3, migrateV4, runMigrations, getDbVersion };

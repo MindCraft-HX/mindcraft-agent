@@ -31,10 +31,9 @@ const { registerChatPersistenceIpc } = require('./chatPersistenceIpc');
  * @param {Function} deps.getClaudeFreezeDiagEnabled
  * @param {Function} deps.getClaudeFreezeDiagLogPath
  * @param {Function} deps.setClaudeFreezeDiagEnabled
- * @param {string} deps.CHAT_SESSIONS_DIR
- * @param {Function} deps.ensureChatSessionsDir
- * @param {Function} deps.readChatIndex
- * @param {Function} deps.writeChatIndexAsync
+ * @param {Function} deps.getDb — async () => sql.js Database
+ * @param {Function} deps.persistDb — async () => persist DB to disk
+ * @param {string} deps.userDataDir — app.getPath('userData')
  */
 function registerClaudeLeafIpcs(ipcMain, deps) {
   _registerApiIpc(ipcMain, { lt: deps.lt });
@@ -50,10 +49,9 @@ function registerClaudeLeafIpcs(ipcMain, deps) {
   registerUiUtilsIpc(ipcMain);
 
   registerChatPersistenceIpc(ipcMain, {
-    CHAT_SESSIONS_DIR: deps.CHAT_SESSIONS_DIR,
-    ensureChatSessionsDir: deps.ensureChatSessionsDir,
-    readChatIndex: deps.readChatIndex,
-    writeChatIndexAsync: deps.writeChatIndexAsync,
+    getDb: deps.getDb,
+    persistDb: deps.persistDb,
+    userDataDir: deps.userDataDir,
     lt: deps.lt,
   });
 }

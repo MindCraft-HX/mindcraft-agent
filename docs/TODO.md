@@ -15,6 +15,8 @@ Registered follow-ups:
 | T195 | architecture/compat | **T188 Phase 1 完成**：CodeX `~/.codex/providers.json` 写投影已停止（sync `writeProviders` 移除）；Claude `confSet('claudeProviders')` 写投影已停止。保留读回退。兼容性注册表已更新。 | P2 | ✅ 已完成 |
 | T196 | test/e2e | **Electron E2E smoke harness**：19/19 tests，覆盖 boot / preload / sanitizer / session restore / provider CRUD / restart dedup。已修复 `this.skip()` crash（node:test 兼容）和 `os.tmpdir()` 环境耦合。 | P2 | ✅ 已完成 |
 | T197 | architecture/agent | **✅ 已完成**：Agent lifecycle characterization — 映射 stream/abort/done/session map/metrics flush 生命周期。输出 `docs/agent-lifecycle-characterization.md`。结论：不合并流循环；可提取共享 emitMetricsViaStore 模式；CodeX runId 竞态防护更健壮。 | P2 | ✅ 已完成 |
+| T198 | architecture/storage | **Settings Storage Facade**：收拢 app-owned settings 写入口，统一 locale/theme/diagnostics/CodeX defaults/Claude app prefs 的 owner 与 facade；不重开 provider authority。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。 | P1 | 📝 待方案 |
+| T199 | architecture/storage | **Session / Panel Storage Boundary Audit**：盘点 `session-registry`、panel-state、renderer restore persistence 的权威边界，先审计不迁移。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。 | P2 | 📝 待方案 |
 
 > 最后更新：2026-07-06
 > 历史归档：`docs/archive/todo-history.md`
@@ -117,9 +119,22 @@ T174 已完成实现，执行和验收入口保留在 `docs/plan/2026-07-03-prov
 - DB 需要维护策略：`import_runs`、备份、legacy projection 都必须有保留窗口和清理计划，避免只增不减。
 
 后续：
-- 明确 1.1.x 之后 legacy provider projection 的退出窗口。
+- T195 已停止 provider legacy 写投影，当前只保留读回退；后续再定义读回退的最终退出窗口。
 - T164 实现可视化拖拽排序，复用 T174 已有 repository ordering。
-- 如后续代码直接调用 repository `setActiveProvider()`，需保证 active 切换也标记 projection pending 或立即投影；当前 UI 主路径大多通过完整 provider save。
+- T175 进入下一阶段：Simple Chat 元数据/消息体边界分离。
+- T198 负责 app-owned settings facade，统一 locale/theme/diagnostics/CodeX defaults/Claude app prefs 的存储 owner。
+- T199 只做 session/panel 存储边界审计，不与 T175/T198 混做。
+- 如后续代码直接调用 repository `setActiveProvider()`，需保证它与“无 legacy 写投影”的当前模型保持一致；当前 UI 主路径大多通过完整 provider save。
+
+## 2026-07-06 本地存储 Phase 2 规划：Chat + Settings + Session Boundary
+
+Provider 存储主线在 T174/T195 已经收口，不应继续把后续零散需求塞回 provider migration。当前剩余存储问题已经分成三类，必须拆题：
+
+- T175：Simple Chat 存储边界与迁移。当前 `{userData}/chat-sessions/index.json + <id>.json` 混存 metadata + messages，后续应改为 SQLite 元数据 + `messages.jsonl` 文件正文。
+- T198：Settings Storage Facade。当前 locale/theme/diagnostics/CodeX defaults/Claude app-owned prefs 仍分散在 JSON 与 `electron-conf`，先统一 owner 和 facade，不强行全部入 SQLite。
+- T199：Session / Panel Storage Boundary Audit。先审计 `session-registry`、`*-panel-state.json`、renderer restore persistence 的职责边界，不直接做迁移。
+
+统一执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。
 
 ## 2026-06-27 Docs Knowledge Base Cleanup ✅ 已完成 (2026-06-28)
 
@@ -222,8 +237,8 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T171 | perf/metrics | **Metrics 正确性与性能量化收口**：完成 metrics reset、`isEnabled` 缓存、hasMore 数值修复、探针补全、IPC guard、快照去重、默认参数和 CodeX metrics 内部分段。 | P1 | ✅ 已完成 |
 | T172 | perf/metrics | **CodeX metrics 后台化**：CodeX 切 tab / 点 session 后不再 await full metrics IPC；后台完成时通过 active guard 回填。Claude Phase 2 因 T171 后收益过低已明确跳过。详见 `docs/plan/2026-07-02-T172-session-switch-performance.md`。 | P1 | ✅ Phase 1 完成，Phase 2 跳过 |
 | T173 | perf/session | **Session draft 两级内存缓存**：draft 写入仍以 session-registry 为事实来源，但 renderer 切 tab 走内存缓存，避免每次磁盘 I/O；已修复 userDataDir 隔离和删除 record 时缓存清理。 | P1 | ✅ 已完成 |
-| T174 | architecture/storage | **Provider Storage Migration**：已让 SQLite 成为 CodeX / ClaudeCode provider 配置权威源；新增 provider repository、v2 `sort_index`/projection bookkeeping、v3 Claude provider 污染清理、legacy fallback/backfill/projection；导入/导出/active/reorder 统一走 repository；保留 legacy projection 作为 1.1.x 回滚窗口；不迁移 session/panel/transcript。执行交接：`docs/plan/2026-07-03-provider-storage-handoff.md`；方案详见 `docs/plan/2026-07-03-provider-storage-migration.md`。 | P1 | ✅ 已完成，待打包 smoke |
-| T175 | architecture/storage | **Simple Chat Storage Boundary**：后续单独迁移轻量 Chat；SQLite 只存 thread/index/summary/provider 元数据，消息正文按 thread 写入 `{userData}/simple-chat/threads/<threadId>/messages.jsonl`，附件存文件引用；T174 不创建未使用的 Chat schema。 | P2 | 📝 待方案 |
+| T174 | architecture/storage | **Provider Storage Migration**：已让 SQLite 成为 CodeX / ClaudeCode provider 配置权威源；新增 provider repository、v2 `sort_index`/projection bookkeeping、v3 Claude provider 污染清理、legacy fallback/backfill；导入/导出/active/reorder 统一走 repository；T195 已停止 provider legacy 写投影，仅保留读回退；不迁移 session/panel/transcript。执行交接：`docs/plan/2026-07-03-provider-storage-handoff.md`；方案详见 `docs/plan/2026-07-03-provider-storage-migration.md`。 | P1 | ✅ 已完成 |
+| T175 | architecture/storage | **Simple Chat Storage Boundary**：下一阶段迁移轻量 Chat；当前 `{userData}/chat-sessions/index.json + <id>.json` 混存 metadata + messages，目标改为 SQLite 只存 thread/index/summary 元数据，消息正文按 thread 写入 `{userData}/simple-chat/threads/<threadId>/messages.jsonl`，附件存文件引用；不与 provider/session-panel 任务混做。方案：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`；执行方案：`docs/plan/2026-07-06-T175-simple-chat-storage-execution.md`。 | P1 | 📝 方案就绪，待实施 |
 | T176 | perf/ux | **大 Session 渲染卡顿收口**：Phase 1 已完成（history tool 折叠 + ToolBash 懒挂载，expanded tools 29-43→0-3）；Phase 2a-0 探针证伪 `renderContent` / computed / 普通大消息折叠方向，后续不再沿渲染缓存继续推进。详见 `docs/plan/2026-07-04-large-session-rendering-performance.md`。 | P1 | ✅ 已收口 |
 | T177 | perf/diagnostics | **Session 切换后台任务延迟与主线程竞争**：已完成 renderer/main IPC 分段对齐，并修复 CodeX + Claude metrics 主进程 event loop 阻塞。剩余 renderer DOM/activation 体感问题已转 T177-P2 / T179 / T181。详见 `docs/plan/2026-07-04-session-switch-background-task-latency.md`。 | P1 | ✅ 已完成 |
 | T179 | perf/architecture | **Project / Session activation work graph 收口**：已完成 Phase 0 数据采集和 Phase 1 scan cache hit 去 registry 写副作用；后续不再以 T179 扩大缓存。剩余热路径治理转 T181。详见 `docs/plan/2026-07-05-project-session-activation-work-graph.md`。 | P1 | ✅ Phase 1 完成 |
@@ -236,6 +251,9 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T186 | architecture/refactor | **Agent Core Lifecycle Boundary Audit**：审计 ClaudeCode / CodeX stream、abort、done、queue、session map、metrics flush 等核心生命周期边界；不为减行数强拆，先画生命周期 work graph 和补 characterization tests。详见 `docs/plan/2026-07-05-agent-core-lifecycle-boundary-audit.md`。 | P2 | 📝 待方案 |
 | T187 | architecture/cleanup | **Dead Code / Redundant Business Route Audit** ✅ 主线完成。Phase 0 inventory + Phase 1 guard tests (43 tests) + Phase 2 preload 安全面收敛（移除 openNewWindow/openSingleWindow）+ Phase 3 孤立代码删除（5 组件 + 5 目录 + 9 工具文件）+ Phase 4 依赖清理（8 npm 包）。删除 19 源文件 + 82 npm 包。Inventory：`docs/plan/2026-07-06-T187-phase0-inventory.md`。 | P2 | ✅ 主线完成 |
 | T188 | architecture/compat | **Legacy Compatibility Exit Plan**：为 provider legacy projection、electron-conf runtime、旧 IPC 名称、standalone agent window、session sidecar fallback 等兼容路径建立退出窗口；不与 T187 死代码清理混删。兼容 Register：`docs/compatibility-register.md`；方案：`docs/plan/2026-07-05-legacy-compatibility-exit-plan.md`。 | P2 | 🔧 Phase 0 完成（register + electron-conf 分类） |
+| T198 | architecture/storage | **Settings Storage Facade**：统一 locale/theme/diagnostics/CodeX defaults/Claude app-owned prefs 的 owner 与主进程 facade；优先移除双写与散入口，不强制全部迁入 SQLite。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。 | P1 | 📝 待方案 |
+| T199 | architecture/storage | **Session / Panel Storage Boundary Audit**：盘点 `session-registry`、`*-panel-state.json`、renderer restore persistence 的权威边界，先审计不迁移；为后续高风险 session metadata phase 做入口文档。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。 | P2 | 📝 待方案 |
+| T200 | bug/ux | **Skill/Plugin 配置与 UI 不同步**：配置里注册/启用的 skill/plugin 有时不会在 UI 里反映出来（新增不显示）；已卸载的 skill/plugin 实际上仍然在运行（删除后仍生效）。需全链路排查配置持久化、UI 状态同步、IPC 通知、缓存清理。 | P1 | 🔍 分析中 |
 | T135 | tech-debt | **Session Registry 后续增强**：`writeJsonAtomic()` 未做 fsync；CodeX session instruction 注入走 user prompt 前缀；`bothFailed` locale key 死代码清理。 | P3 | ⏸️ 部分完成 |
 | T133 | tech-debt | **review follow-up：重复 helper 收敛评估**：`documentLocator.js` 与 `skillsSecurity.js` 各自保留 `isRealPathInside`；`normalizeReasoningEffort.mjs/.cjs` 双份折中。 | P3 | ⏸️ 记录 |
 | T039 | feature | **语音输入能力**：实现前需确定录音权限、STT provider、隐私提示和跨平台权限。 | P3 | ⏸️ 暂缓研究 |

@@ -10,6 +10,7 @@
 const TABLES = {
   providers: 'providers',
   import_runs: 'import_runs',
+  chat_threads: 'chat_threads',
 };
 
 const VALID_AGENT_TYPES = ['claude', 'codex'];
@@ -64,13 +65,28 @@ CREATE TABLE IF NOT EXISTS import_runs (
 )
 `;
 
+const CHAT_THREADS_DDL = `
+CREATE TABLE IF NOT EXISTS chat_threads (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'claude',
+  model TEXT NOT NULL DEFAULT '',
+  thinking_level TEXT NOT NULL DEFAULT 'off',
+  web_search_enabled INTEGER NOT NULL DEFAULT 0,
+  context_summary TEXT NOT NULL DEFAULT ''
+)
+`;
+
 const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_providers_agent_active ON providers(agent_type, is_active)',
   'CREATE INDEX IF NOT EXISTS idx_import_runs_created ON import_runs(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_providers_agent_sort ON providers(agent_type, sort_index, updated_at)',
+  'CREATE INDEX IF NOT EXISTS idx_chat_threads_updated ON chat_threads(updated_at DESC)',
 ];
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 module.exports = {
   TABLES,
@@ -80,6 +96,7 @@ module.exports = {
   V1_PROVIDER_DDL,
   PROVIDER_DDL,
   IMPORT_RUNS_DDL,
+  CHAT_THREADS_DDL,
   INDEXES,
   SCHEMA_VERSION,
 };

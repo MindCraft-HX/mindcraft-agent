@@ -16,6 +16,7 @@ const { runMigrations } = require('./migrations/v1_initial');
 const { backupDb, readBackupBuffer } = require('./backup');
 const providerDao = require('./dao/providers');
 const importRunsDao = require('./dao/importRuns');
+const chatThreadsDao = require('./dao/chatThreads');
 
 let initSqlJs = null;
 
@@ -100,7 +101,7 @@ async function openMindCraftDb({ userDataDir }) {
     }
 
     // Run migrations
-    const migrationResult = runMigrations(db);
+    const migrationResult = runMigrations(db, { userDataDir });
     if (!migrationResult.ok) {
       db.close();
       return { ok: false, db: null, dbPath, message: migrationResult.message };
@@ -166,7 +167,7 @@ function persistToFile(db, dbPath) {
 async function createTestDb() {
   const SQL = await loadSqlJs();
   const db = new SQL.Database();
-  const migResult = runMigrations(db);
+  const migResult = runMigrations(db, {});
   if (!migResult.ok) {
     db.close();
     throw new Error(`Migration failed in createTestDb: ${migResult.message}`);
@@ -231,4 +232,5 @@ module.exports = {
   // DAOs
   ...providerDao,
   ...importRunsDao,
+  ...chatThreadsDao,
 };

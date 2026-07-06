@@ -1,6 +1,6 @@
 # MindCraft Storage Architecture Roadmap
 
-> Last updated: 2026-07-05  
+> Last updated: 2026-07-06  
 > Scope: SQLite foundation, CC Switch import, local storage migration, and final storage boundaries.
 
 ## 1. Decision
@@ -13,7 +13,7 @@ Current decision:
 |---|---|
 | SQLite foundation | Build first, with migrations, DAO boundaries, backup, and contract tests. |
 | CC Switch import | Implement early as a global System Settings import, because one CC Switch SQL export can contain both Claude and CodeX providers. |
-| Provider storage migration | Implemented in T174. SQLite is now the authority for CodeX / ClaudeCode provider records, while legacy projection remains during the compatibility window. |
+| Provider storage migration | Implemented in T174 and tightened in T195. SQLite is now the authority for CodeX / ClaudeCode provider records; legacy provider writes are stopped and read fallback remains during the compatibility window. |
 | Full local storage migration | Do later, module by module, after the provider/import path is stable. |
 | Official CLI directories | Do not replace. Continue using official paths only for official CLI/SDK data. |
 | Existing provider-page import UI | Keep the compact `Import` button style, but scope it to local CLI config import only. CC Switch must not live in a single-agent provider panel. |
@@ -26,8 +26,8 @@ Provider storage is no longer a future-only design. The current implementation s
 - Provider repository lives at `packages/agent/electron/db/providerStorage/`.
 - CodeX / ClaudeCode provider reads and writes go through the repository-backed main-process IPC path.
 - DB reads are authoritative after backfill: `SQLite -> legacy fallback only when DB is empty -> backfill SQLite`.
-- Writes update SQLite first and mark provider rows for legacy projection.
-- Legacy provider stores remain compatibility projections for rollback, not permanent authorities.
+- Writes update SQLite first.
+- Provider legacy writes were stopped in T195; old provider stores remain read fallback only for rollback/recovery, not permanent authorities.
 - Official runtime files remain required external contracts:
   - CodeX: `~/.codex/config.toml`.
   - ClaudeCode: `~/.claude/settings.json`.
@@ -38,10 +38,11 @@ Provider storage is no longer a future-only design. The current implementation s
 
 Known follow-up items:
 
-- Define the legacy provider projection removal window after the 1.1.x compatibility period.
 - T164 still owns visual drag-and-drop sorting; T174 only needs repository-level ordering correctness.
 - T175 still owns Simple Chat storage.
-- If future code calls repository `setActiveProvider()` directly, ensure it marks rows for projection or immediately projects; current UI paths mostly save through `setProviders()`, but the repository API should remain hard to misuse.
+- T198 should consolidate app-owned settings storage without reopening provider authority.
+- T199 should audit session/panel storage boundaries before any larger session metadata migration.
+- If future code calls repository `setActiveProvider()` directly, ensure it remains consistent with the no-legacy-write model; current UI paths mostly save through `setProviders()`, but the repository API should remain hard to misuse.
 
 ## 2. Current Problems
 
@@ -68,8 +69,8 @@ SQLite should become the authority for MindCraft-owned app data. It should not b
 
 | Data | Authority | Notes |
 |---|---|---|
-| Provider list, selected provider, import metadata | SQLite | Then project to official config files when required. |
-| App settings, diagnostics toggles, locale, theme | SQLite or a single settings facade backed by SQLite | Device-local settings can stay separate if intentionally local. |
+| Provider list, selected provider, import metadata | SQLite | Project only to official config files when required; do not restore legacy provider writes. |
+| App settings, diagnostics toggles, locale, theme | Single settings facade first; SQLite optional later | Device-local settings do not need forced DB migration if a single owner/facade is enough. |
 | Lightweight Chat threads and indexes | SQLite in a later phase | Message bodies should stay in userData files while using `sql.js`, unless a later native driver decision changes this. |
 | Lightweight Chat message bodies and attachments | userData files in a later phase | Prefer `{userData}/simple-chat/threads/<threadId>/messages.jsonl` plus attachment files; DB stores identity/index/summary only. |
 | Session identity: `chatKey`, `cliSessionId`, `filePath`, title, cwd, runtime model | SQLite | Does not replace official transcript JSONL. |
@@ -190,12 +191,12 @@ During the transition, keep compatibility projections:
 | `~/.codex/config.toml` / `~/.claude/settings.json` | Written only through explicit repair/activate adapters. |
 | Legacy JSON/electron-conf | Read fallback only, then backfill SQLite. |
 
-Write strategy:
+Current provider write strategy:
 
 ```text
 Read: SQLite -> legacy fallback -> backfill SQLite
-Write: SQLite -> legacy projection -> required official config projection
-Legacy direct writes: removed after compatibility window
+Write: SQLite -> required official config projection
+Legacy provider writes: stopped in T195
 ```
 
 This phase should not change session restoration logic.
@@ -206,7 +207,7 @@ Phase 2 implementation boundaries:
 - Add a v2 migration for provider ordering and projection bookkeeping, including `sort_index`.
 - `codex-get-providers` / `claude-get-providers` should read through the repository and backfill SQLite from legacy stores only when DB is empty for that agent type.
 - `codex-set-providers` / `claude-set-providers`, system import, export, activation, and future reorder should write through the repository.
-- Keep legacy projection during the compatibility window so rollback to an older app version can still read provider files.
+- Keep legacy read fallback during the compatibility window so rollback or DB recovery can still rebuild provider rows.
 - Do not migrate session registry, panel state, transcripts, uploaded file cache, or token metrics in this phase.
 - Fix hidden-key export redaction before or during this phase; redaction must cover both top-level provider keys and nested config/env keys.
 
@@ -222,7 +223,9 @@ Targets:
 - locale
 - CodeX defaults such as sandbox/network/search
 
-First fix should be a single settings facade even if SQLite is not fully active yet. This removes the current double-write risk.
+First fix should be a single settings facade even if SQLite is not fully active yet. This removes the current double-write risk without forcing every device-local preference into the DB.
+
+Execution entry: `docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md` (T198 section).
 
 ### Phase 4: Session And Panel Metadata Migration
 
@@ -235,6 +238,8 @@ Rules:
 - Panel state must stop owning current-turn metrics and provider identity facts.
 - `chatKey`, `cliSessionId`, and `filePath` must remain separate fields.
 - Any migration needs restore tests for crash recovery, stale panel-state sync, and provider scan adoption.
+
+Execution entry: `docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md` (T199 section).
 
 Candidate tables:
 
@@ -335,12 +340,14 @@ Maintenance rules:
 | T162 | Import dialog and CC Switch provider import, implemented on top of the new provider/import storage path. |
 | T174 | Completed provider storage migration: SQLite authority, legacy fallback/backfill/projection, ordering, provider repository, and DB v3 cleanup for historical Claude provider pollution. |
 | T175 | Future lightweight Chat storage migration: SQLite thread/index metadata plus userData message files; not part of T174. |
+| T198 | App settings storage facade: consolidate app-owned settings out of scattered JSON + `electron-conf` entry points; provider authority is out of scope. |
+| T199 | Session/panel storage boundary audit: classify current authorities before any session metadata migration. |
 
 ## 8. Open Questions
 
 - Confirm when to reassess `sql.js` vs `better-sqlite3`. Current provider/config scope does not require native SQLite.
-- Define the exact legacy provider file compatibility window after T174 ships in 1.1.x.
-- Decide when to stop projecting MindCraft-owned provider lists to legacy stores.
+- Define the exact legacy provider read-fallback removal window after T195 ships in 1.2.x.
 - Decide whether repository-level `setActiveProvider()` should itself mark projection pending, even if current UI paths mostly go through full provider saves.
 - Implement T164 visual drag-and-drop sorting on top of existing repository order support.
-- Decide T175 Simple Chat table/file format after T174 stabilizes; do not create unused chat schema during T174.
+- Execute T175 Simple Chat metadata/file split without reopening provider storage.
+- Decide how far T198 should migrate device-local settings into SQLite versus a single JSON-backed facade.

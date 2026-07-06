@@ -2543,33 +2543,9 @@ function setupClaudeHandlers() {
     return false
   })
 
-  // ── 简易对话：会话持久化（JSON 文件）──
-  const CHAT_SESSIONS_DIR = path.join(app.getPath('userData'), 'chat-sessions')
-  const CHAT_SESSIONS_INDEX = path.join(CHAT_SESSIONS_DIR, 'index.json')
-
-  function ensureChatSessionsDir() {
-    if (!fs.existsSync(CHAT_SESSIONS_DIR)) fs.mkdirSync(CHAT_SESSIONS_DIR, { recursive: true })
-  }
-  function readChatIndex() {
-    ensureChatSessionsDir()
-    try {
-      if (fs.existsSync(CHAT_SESSIONS_INDEX)) {
-        return JSON.parse(fs.readFileSync(CHAT_SESSIONS_INDEX, 'utf8'))
-      }
-    } catch (_) {}
-    return { sessions: [] }
-  }
-  // P1-1：index 写入串行队列，避免 chat-save-session 高频调用时 read-modify-write 覆盖
-  let _indexWriteQueue = Promise.resolve()
-  async function writeChatIndexAsync(data) {
-    _indexWriteQueue = _indexWriteQueue.then(async () => {
-      ensureChatSessionsDir()
-      const tmp = CHAT_SESSIONS_INDEX + '.tmp'
-      await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf8')
-      await fs.promises.rename(tmp, CHAT_SESSIONS_INDEX)
-    })
-    return _indexWriteQueue
-  }
+  // ── 简易对话：会话持久化（T175: SQLite metadata + JSONL messages）──
+  // Old {userData}/chat-sessions/ JSON files are read fallback only
+  // during the compatibility window. New writes go to SQLite + file layer.
 
   // ---- Leaf IPC modules (aggregated via claude/index.js, R09 Phase A) ----
   registerClaudeLeafIpcs(ipcMain, {
@@ -2577,10 +2553,9 @@ function setupClaudeHandlers() {
     getClaudeFreezeDiagEnabled,
     getClaudeFreezeDiagLogPath,
     setClaudeFreezeDiagEnabled,
-    CHAT_SESSIONS_DIR,
-    ensureChatSessionsDir,
-    readChatIndex,
-    writeChatIndexAsync,
+    getDb: () => getDb({ userDataDir: getMindCraftUserDataDir() }),
+    persistDb,
+    userDataDir: getMindCraftUserDataDir(),
   })
 
   // Claude Agent SDK 会话管理
