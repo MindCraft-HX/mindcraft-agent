@@ -125,6 +125,14 @@ const CODEX_CHANNELS = Object.freeze({
   CONFIG_IMPORT_COMMIT: 'codex-config-import-commit',
   GET_FILE_STAT: 'codex-get-file-stat',
 
+  // Agent lifecycle
+  AGENT_QUERY: 'codex-agent-query',
+  AGENT_ABORT: 'codex-agent-abort',
+  AGENT_DONE: 'codex-agent-done',
+  AGENT_MESSAGE: 'codex-agent-message',
+  AGENT_METRICS: 'codex-agent-metrics',
+  AGENT_QUERY_METRICS: 'codex-agent-query-metrics',
+
   // Streaming push events
   STREAM_CHUNK: 'codex-stream-chunk',
   STREAM_THINKING: 'codex-stream-thinking',

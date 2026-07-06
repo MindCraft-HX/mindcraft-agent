@@ -110,7 +110,7 @@ function safeSend(sender, channel, ...args) {
 }
 
 function sendMetrics(sender, payload, diag = null) {
-  safeSend(sender, 'codex-agent-metrics', payload)
+  safeSend(sender, CODEX_CHANNELS.AGENT_METRICS, payload)
   if (diag) logMetricSample(diag)
 }
 
@@ -373,7 +373,7 @@ function emitCodexMetricsViaStore(sender, sample, sessionId, model, extra = {}) 
     rawUsage: sample.rawUsage || null,
   })
 
-  safeSend(sender, 'codex-agent-metrics', {
+  safeSend(sender, CODEX_CHANNELS.AGENT_METRICS, {
     sessionId,
     model: model || '',
     thinking: snapshot.phase === 'live',
@@ -697,7 +697,7 @@ function scheduleBackgroundAggregate(filePath, model, cwd, sender, sessionId) {
     if (sender && !sender.isDestroyed()) {
       const cached = getCachedMetricsAggregate(filePath)
       if (cached) {
-        safeSend(sender, 'codex-agent-metrics', {
+        safeSend(sender, CODEX_CHANNELS.AGENT_METRICS, {
           sessionId,
           model: model || cached.result.model || '',
           thinking: false,
@@ -2338,7 +2338,7 @@ function shouldResumeCodexSession({ previousCliId } = {}) {
 function setupCodexSdkHandlers() {
   loadCodexSdk().catch(() => {})
 
-  ipcMain.handle('codex-agent-query', async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxMode: frontendSandbox, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
+  ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxMode: frontendSandbox, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
     const runtime = readRuntimeConfig()
     console.log('[codex-diag] readRuntimeConfig:', {
       hasApiKey: !!runtime.apiKey,
@@ -2453,7 +2453,7 @@ function setupCodexSdkHandlers() {
         if (!gotAnyMessage && !slowNoticeSent.has(sessionId)) {
           slowNoticeSent.add(sessionId)
           const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-          safeSend(sender, 'codex-agent-message', {
+          safeSend(sender, CODEX_CHANNELS.AGENT_MESSAGE, {
             sessionId,
             msg: { type: 'system', subtype: 'slow_notice', message: { content: [{ type: 'text', text: lt('codex.slow') }] } },
           })
@@ -2477,7 +2477,7 @@ function setupCodexSdkHandlers() {
           console.warn('[codex] turn idle timeout after', TURN_TIMEOUT_MS / 60000, 'min, aborting session', sessionId)
           try { abortController.abort() } catch (_) {}
           const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-          safeSend(sender, 'codex-agent-message', {
+          safeSend(sender, CODEX_CHANNELS.AGENT_MESSAGE, {
             sessionId,
             msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.timeout') }] } },
           })
@@ -2768,7 +2768,7 @@ function setupCodexSdkHandlers() {
             const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
             const sfilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: thread.id })
             console.log(`[codex] triggerDone: sessionId=${sessionId} cliId=${thread?.id} filePath=${!!sfilePath}`)
-            safeSend(sender, 'codex-agent-done', buildCodexAgentDonePayload({
+            safeSend(sender, CODEX_CHANNELS.AGENT_DONE, buildCodexAgentDonePayload({
               sessionId,
               cliSessionId: thread.id,
               filePath: sfilePath,
@@ -2943,7 +2943,7 @@ function setupCodexSdkHandlers() {
                 cacheCreationTokens: snapshot.cacheCreationTokens,
                 durationMs: snapshot.durationMs,
               } : null
-              safeSend(sender, 'codex-agent-message', {
+              safeSend(sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: { type: ev.type, payload: ev.payload || ev, _perTurnTokens: perTurnTokens },
               })
@@ -3019,7 +3019,7 @@ function setupCodexSdkHandlers() {
                     textPreview: debugText.slice(0, 300),
                   })
                   try {
-                    safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, 'codex-agent-message', {
+                    safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                       sessionId,
                       msg: {
                         type: 'system',
@@ -3036,7 +3036,7 @@ function setupCodexSdkHandlers() {
                 }
               }
               const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-              safeSend(sender, 'codex-agent-message', { sessionId, msg: { type: ev.type, item: forwardItem } })
+              safeSend(sender, CODEX_CHANNELS.AGENT_MESSAGE, { sessionId, msg: { type: ev.type, item: forwardItem } })
             }
 
             if (ev.type === 'turn.completed' || ev.type === 'task_complete') {
@@ -3064,7 +3064,7 @@ function setupCodexSdkHandlers() {
             const topLevelAgentMessage = normalizeTopLevelCodexStreamEvent(ev)
             if (topLevelAgentMessage) {
               const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-              safeSend(sender, 'codex-agent-message', { sessionId, msg: topLevelAgentMessage })
+              safeSend(sender, CODEX_CHANNELS.AGENT_MESSAGE, { sessionId, msg: topLevelAgentMessage })
               continue
             }
 
@@ -3095,7 +3095,7 @@ function setupCodexSdkHandlers() {
                 detachResumeOnDone: Boolean(detachResumeOnDone),
                 terminal: summarizeCodexTerminalEvent(ev),
               })
-              safeSend(sender, 'codex-agent-message', {
+              safeSend(sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: errorText }) }] } },
               })
@@ -3106,7 +3106,7 @@ function setupCodexSdkHandlers() {
             // compaction_trigger: 压缩即将开始
             if (ev.type === 'compaction_trigger') {
               if (CODEX_DEBUG) console.log('[codex-main] compaction_trigger:', JSON.stringify(ev).slice(0, 500))
-              safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, 'codex-agent-message', {
+              safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: {
                   type: 'system',
@@ -3136,7 +3136,7 @@ function setupCodexSdkHandlers() {
                 csession._compactedBefore = preTokens
               }
 
-              safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, 'codex-agent-message', {
+              safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: {
                   type: 'system',
@@ -3151,7 +3151,7 @@ function setupCodexSdkHandlers() {
 
               // 如果有摘要文本，也发送 compact_summary 消息
               if (summary) {
-                safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, 'codex-agent-message', {
+                safeSend(codexSessions.get(sessionId)?.event?.sender || event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                   sessionId,
                   msg: {
                     type: 'system',
@@ -3184,7 +3184,7 @@ function setupCodexSdkHandlers() {
             doneReason = resolveCodexDoneReasonFromError(err)
             resultReceived = true // 阻止发送错误消息
             if (canEmitTerminalSignals) {
-              safeSend(event.sender, 'codex-agent-message', {
+              safeSend(event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: lt('aborted') }] } },
               })
@@ -3201,7 +3201,7 @@ function setupCodexSdkHandlers() {
           else if (/Unable to locate Codex CLI/i.test(errMsg) || /Missing optional dependency/i.test(errMsg)) {
             doneReason = resolveCodexDoneReasonFromError(err)
             if (!resultReceived && canEmitTerminalSignals) {
-              safeSend(event.sender, 'codex-agent-message', {
+              safeSend(event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('noCodex') }] } },
               })
@@ -3209,7 +3209,7 @@ function setupCodexSdkHandlers() {
           }
           else if (!resultReceived && canEmitTerminalSignals) {
             doneReason = resolveCodexDoneReasonFromError(err)
-            safeSend(event.sender, 'codex-agent-message', {
+            safeSend(event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
               sessionId,
               msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: errMsg }) }] } },
             })
@@ -3288,7 +3288,7 @@ function setupCodexSdkHandlers() {
 
           if (isCurrentRunAtCleanup && !resultReceived) {
             if (finalized.shouldSendSilentFailureMessage) {
-              safeSend(event.sender, 'codex-agent-message', {
+              safeSend(event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
                 sessionId,
                 msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.ended') }] } },
               })
@@ -3306,7 +3306,7 @@ function setupCodexSdkHandlers() {
           if (isCurrentRunAtCleanup && needDone) {
             const sfilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: thread?.id })
             if (CODEX_DEBUG) console.log('[Codex] agent-done (finally) → filePath:', sfilePath || '(empty)')
-            safeSend(event.sender, 'codex-agent-done', buildCodexAgentDonePayload({
+            safeSend(event.sender, CODEX_CHANNELS.AGENT_DONE, buildCodexAgentDonePayload({
               sessionId,
               cliSessionId: thread?.id,
               filePath: sfilePath,
@@ -3332,7 +3332,7 @@ function setupCodexSdkHandlers() {
     })
   })
 
-  ipcMain.handle('codex-agent-abort', async (_, sessionId) => {
+  ipcMain.handle(CODEX_CHANNELS.AGENT_ABORT, async (_, sessionId) => {
     const s = codexSessions.get(sessionId)
     if (s) {
       try { s.abortController?.abort?.() } catch (_) {}
@@ -3347,11 +3347,11 @@ function setupCodexSdkHandlers() {
       } catch (_) {}
       codexSessions.delete(sessionId)
       // 发送 abort 系统消息，让前端显示"已中断"并立即停止 thinking 状态
-      safeSend(s.event?.sender, 'codex-agent-message', {
+      safeSend(s.event?.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
         sessionId,
         msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: lt('aborted') }] } },
       })
-      safeSend(s.event?.sender, 'codex-agent-done', buildCodexAgentDonePayload({
+      safeSend(s.event?.sender, CODEX_CHANNELS.AGENT_DONE, buildCodexAgentDonePayload({
         sessionId,
         reason: 'aborted',
       }))
@@ -3494,8 +3494,8 @@ function setupCodexSdkHandlers() {
   // NOTE: Easy-to-misuse bridge. StatusBar current-turn token fields must come from
   // TurnStore snapshots. Session/file aggregate metrics may only supplement session-level
   // fields such as context usage, git info, and speed.
-  ipcMain.handle('codex-agent-query-metrics', async (event, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
-    const stop = perfStartIpc('codex-agent-query-metrics')
+  ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY_METRICS, async (event, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
+    const stop = perfStartIpc(CODEX_CHANNELS.AGENT_QUERY_METRICS)
     const resolvedFilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath: filePath })
     const cacheHit = resolvedFilePath && getCachedMetricsAggregate(resolvedFilePath)
 

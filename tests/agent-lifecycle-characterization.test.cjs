@@ -37,7 +37,7 @@ test('CodeX abort: abortController.abort() fires before thread cancel', () => {
 
   assert.match(
     source,
-    /ipcMain\.handle\('codex-agent-abort'[\s\S]*abortController\?\.abort[\s\S]*thread\.cancel/,
+    /ipcMain\.handle\(CODEX_CHANNELS\.AGENT_ABORT[\s\S]*abortController\?\.abort[\s\S]*thread\.cancel/,
     'expected abort controller to be aborted before thread.cancel() in codex-agent-abort',
   )
 })
@@ -47,7 +47,7 @@ test('CodeX abort: sends abort message then agent-done', () => {
 
   assert.match(
     source,
-    /ipcMain\.handle\('codex-agent-abort'[\s\S]*codex-agent-message[\s\S]*subtype:\s*'abort'[\s\S]*codex-agent-done/,
+    /ipcMain\.handle\(CODEX_CHANNELS\.AGENT_ABORT[\s\S]*CODEX_CHANNELS\.AGENT_MESSAGE[\s\S]*subtype:\s*'abort'[\s\S]*CODEX_CHANNELS\.AGENT_DONE/,
     'expected abort system message before agent-done in codex-agent-abort',
   )
 })

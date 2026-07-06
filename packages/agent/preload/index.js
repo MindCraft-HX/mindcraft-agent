@@ -186,8 +186,8 @@ function createAgentBridge(ipcRenderer) {
   chatDeleteSession: (id) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_DELETE_SESSION, id),
   chatGenerateTitle: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_GENERATE_TITLE, payload),
   // Codex Agent SDK
-  codexAgentQuery: (payload) => ipcRenderer.invoke('codex-agent-query', payload),
-  codexAgentAbort: (sessionId) => ipcRenderer.invoke('codex-agent-abort', sessionId),
+  codexAgentQuery: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_QUERY, payload),
+  codexAgentAbort: (sessionId) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_ABORT, sessionId),
   codexSelectDirectory: () => ipcRenderer.invoke('codex-select-directory'),
   codexRegisterCliSessions: (map) => ipcRenderer.invoke('codex-register-cli-sessions', map),
   codexUnregisterCliSession: (sessionId) => ipcRenderer.invoke('codex-unregister-cli-session', sessionId),
@@ -199,14 +199,14 @@ function createAgentBridge(ipcRenderer) {
   codexGetFileStat: (filePath) => ipcRenderer.invoke('codex-get-file-stat', { filePath }),
   codexListSlashCommands: (payload) => ipcRenderer.invoke('codex-list-slash-commands', payload),
   codexListLocalSkills: (payload) => ipcRenderer.invoke('codex-list-local-skills', payload),
-  codexAgentQueryMetrics: (payload) => ipcRenderer.invoke('codex-agent-query-metrics', payload),
-  onCodexAgentMessage: (callback) => ipcRenderer.on('codex-agent-message', (_, data) => callback(data)),
-  onCodexAgentDone: (callback) => ipcRenderer.on('codex-agent-done', (_, data) => callback(data)),
-  onCodexAgentMetrics: (callback) => ipcRenderer.on('codex-agent-metrics', (_, data) => callback(data)),
+  codexAgentQueryMetrics: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_QUERY_METRICS, payload),
+  onCodexAgentMessage: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_MESSAGE, (_, data) => callback(data)),
+  onCodexAgentDone: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_DONE, (_, data) => callback(data)),
+  onCodexAgentMetrics: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_METRICS, (_, data) => callback(data)),
   offCodexAgentListeners: () => {
-    ipcRenderer.removeAllListeners('codex-agent-message')
-    ipcRenderer.removeAllListeners('codex-agent-done')
-    ipcRenderer.removeAllListeners('codex-agent-metrics')
+    ipcRenderer.removeAllListeners(CODEX_CHANNELS.AGENT_MESSAGE)
+    ipcRenderer.removeAllListeners(CODEX_CHANNELS.AGENT_DONE)
+    ipcRenderer.removeAllListeners(CODEX_CHANNELS.AGENT_METRICS)
   },
   // Codex 配置管理
   codexGetProviders: () => ipcRenderer.invoke('codex-get-providers'),
