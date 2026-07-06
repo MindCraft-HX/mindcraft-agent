@@ -46,6 +46,7 @@
 
 | 文档 | 说明 |
 |------|------|
+| [plan/2026-07-06-post-refactor-release-and-cleanup-queue.md](./plan/2026-07-06-post-refactor-release-and-cleanup-queue.md) | Post-refactor release gate and cleanup queue：当前发布线冻结新功能，后续清理按 T193-T197 分批推进 |
 | [plan/2026-07-05-legacy-compatibility-exit-plan.md](./plan/2026-07-05-legacy-compatibility-exit-plan.md) | T188 Legacy compatibility exit：provider projection、electron-conf、旧 IPC/窗口/API 的退出窗口 |
 | [plan/2026-07-05-dead-code-and-redundant-business-route-audit.md](./plan/2026-07-05-dead-code-and-redundant-business-route-audit.md) | T187 Dead code / redundant business route audit：重构后死代码、孤岛业务线、预加载 API 和依赖清理 |
 | [plan/2026-07-05-agent-core-lifecycle-boundary-audit.md](./plan/2026-07-05-agent-core-lifecycle-boundary-audit.md) | T186 Agent core 生命周期边界审计：stream/abort/done/session map 不为减行数强拆 |

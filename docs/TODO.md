@@ -1,5 +1,21 @@
 # TODO
 
+## 2026-07-06 Post-refactor release gate / cleanup queue
+
+Current decision: freeze new feature development on this release line. Package a release candidate only after automated gates are green, then use manual smoke to decide whether it can ship. Follow-up cleanup is registered separately so it does not mix with feature work or release-blocker fixes.
+
+Execution entry: `docs/plan/2026-07-06-post-refactor-release-and-cleanup-queue.md`.
+
+Registered follow-ups:
+
+| ID | Category | Scope | Priority | Status |
+|----|----------|-------|----------|--------|
+| T193 | release/qa | Release stabilization window: current line only accepts smoke/build/P0-P1 fixes until package candidate passes manual smoke. | P1 | Registered |
+| T194 | architecture/ipc | IPC historical channel retirement plan: classify and migrate grandfathered channels by owner group; no bulk rename before T185. | P2 | Registered |
+| T195 | architecture/compat | T188 Phase 1: convert eligible legacy write projections to read-only fallback after the release window. | P2 | Registered |
+| T196 | test/e2e | Electron E2E smoke harness subset for boot, preload bridge, settings sanitizer, session restore, provider settings. | P2 | Registered |
+| T197 | architecture/agent | Agent lifecycle characterization before any further core loop extraction. | P2 | Registered |
+
 > 最后更新：2026-07-06
 > 历史归档：`docs/archive/todo-history.md`
 > 知识库入口：`docs/index.md`
