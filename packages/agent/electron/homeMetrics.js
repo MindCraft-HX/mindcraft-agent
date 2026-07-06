@@ -3,6 +3,7 @@ const path = require('path')
 const os = require('os')
 const { app } = require('electron')
 const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
+const { CORE_CHANNELS } = require('../shared/ipcChannels')
 const { normalizeClaudeUsageForUi } = require('./claudeMetrics')
 const { normalizeCodexUsage } = require('./tokenMetrics/normalizer')
 const { createFileDerivedCache } = require('./shared/localDerivedCache')
@@ -507,7 +508,7 @@ function getRecentProject() {
 // ==================== IPC 注册 ====================
 
 function setupHomeMetricsHandlers(ipcMain) {
-  ipcMain.handle('home-get-today-stats', async () => {
+  ipcMain.handle(CORE_CHANNELS.HOME_GET_TODAY_STATS, async () => {
     try {
       return getTodayStats()
     } catch (e) {
@@ -520,7 +521,7 @@ function setupHomeMetricsHandlers(ipcMain) {
     }
   })
 
-  ipcMain.handle('home-get-token-trend', async (_, days = 7) => {
+  ipcMain.handle(CORE_CHANNELS.HOME_GET_TOKEN_TREND, async (_, days = 7) => {
     try {
       const d = Math.min(Math.max(parseInt(days) || 7, 1), 90)
       return getTokenTrend(d)
@@ -530,7 +531,7 @@ function setupHomeMetricsHandlers(ipcMain) {
     }
   })
 
-  ipcMain.handle('home-get-recent-project', async () => {
+  ipcMain.handle(CORE_CHANNELS.HOME_GET_RECENT_PROJECT, async () => {
     try {
       return getRecentProject()
     } catch (e) {

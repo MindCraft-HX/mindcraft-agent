@@ -40,7 +40,7 @@ function initCodeWin(options) {
       }
     });
 
-    ipcMain.on("search-page", (event, arg) => {
+    ipcMain.on(CORE_CHANNELS.SEARCH_PAGE, (event, arg) => {
       try {
         const searchObj = JSON.parse(arg);
   
@@ -53,10 +53,10 @@ function initCodeWin(options) {
       }
     });
 
-    ipcMain.on("stop-search", (event, arg) => {
+    ipcMain.on(CORE_CHANNELS.STOP_SEARCH, (event, arg) => {
       win?.webContents?.stopFindInPage("clearSelection");
     });
-    ipcMain.on("close-search-page", (event, arg) => {
+    ipcMain.on(CORE_CHANNELS.CLOSE_SEARCH_PAGE, (event, arg) => {
       closeSearchView();
     });
   });

@@ -177,6 +177,13 @@ const CORE_CHANNELS = Object.freeze({
   // Local search
   LOCAL_SEARCH: 'local-search',
   LOCAL_SEARCH_INDEX: 'local-search-index',
+  LOCAL_SEARCH_CAPABILITY: 'local-search-capability',
+  LOCAL_SEARCH_TEXT: 'local-search-text',
+  LOCAL_SEARCH_FILES: 'local-search-files',
+  LOCAL_SEARCH_DIAGNOSE: 'local-search-diagnose',
+  SEARCH_PAGE: 'search-page',
+  CLOSE_SEARCH_PAGE: 'close-search-page',
+  STOP_SEARCH: 'stop-search',
 
   // Session instruction
   GET_SESSION_INSTRUCTION: 'get-session-instruction',
@@ -187,6 +194,19 @@ const CORE_CHANNELS = Object.freeze({
   // Home / codeHub
   GET_HOME_METRICS: 'get-home-metrics',
   GET_RECENT_PROJECTS: 'get-recent-projects',
+  HOME_GET_RECENT_PROJECT: 'home-get-recent-project',
+  HOME_GET_TODAY_STATS: 'home-get-today-stats',
+  HOME_GET_TOKEN_TREND: 'home-get-token-trend',
+
+  // Chat
+  CHAT_WEB_SEARCH: 'chat-web-search',
+
+  // Skills (cross-agent)
+  SKILLS_GET_CATALOG: 'skills-get-catalog',
+  SKILLS_GET_STATE: 'skills-get-state',
+  SKILLS_INSTALL: 'skills-install',
+  SKILLS_UNINSTALL: 'skills-uninstall',
+  SKILLS_MARKET_INSTALL: 'skills-market-install',
 
   // Config import (system-level, cross-agent)
   CONFIG_IMPORT_PICK_FILE: 'config-import-pick-file',

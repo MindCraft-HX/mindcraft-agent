@@ -1,5 +1,7 @@
 'use strict';
 
+const { CORE_CHANNELS } = require('../../shared/ipcChannels');
+
 /**
  * Claude web search IPC handler — DuckDuckGo HTML search (no API key needed).
  *
@@ -7,7 +9,7 @@
  */
 
 function registerWebSearchIpc(ipcMain, { lt }) {
-  ipcMain.handle('chat-web-search', async (_event, { query }) => {
+  ipcMain.handle(CORE_CHANNELS.CHAT_WEB_SEARCH, async (_event, { query }) => {
     if (!query || typeof query !== 'string' || !query.trim()) {
       return { results: [] };
     }

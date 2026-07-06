@@ -131,8 +131,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   clipboard: () => clipboard,
 
   // 页面搜索
-  sendSearchPage: (info) => ipcRenderer.send('search-page', info),
-  closeSearchPage: (info) => ipcRenderer.send('close-search-page', info),
+  sendSearchPage: (info) => ipcRenderer.send(CORE_CHANNELS.SEARCH_PAGE, info),
+  closeSearchPage: (info) => ipcRenderer.send(CORE_CHANNELS.CLOSE_SEARCH_PAGE, info),
   foundInPage: (callback) => {
     ipcRenderer.on(CORE_CHANNELS.FOUND_IN_PAGE, (event, progress) => {
       callback(progress);

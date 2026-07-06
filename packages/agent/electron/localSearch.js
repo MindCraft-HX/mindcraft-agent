@@ -3,6 +3,7 @@ const path = require('path')
 const { execFile } = require('child_process')
 const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
+const { CORE_CHANNELS } = require('../shared/ipcChannels')
 
 const RG_VERSION_ARGS = ['--version']
 const DEFAULT_MAX_RESULTS = 200
@@ -466,10 +467,10 @@ async function listFiles(options = {}) {
 function registerLocalSearchIpc(ipcMain) {
   if (!ipcMain || typeof ipcMain.handle !== 'function') return
   // P1-4：所有 handler 改为 async，匹配异步化的底层函数
-  ipcMain.handle('local-search-capability', async () => getLocalSearchCapability(true))
-  ipcMain.handle('local-search-text', async (_, payload = {}) => searchText(payload))
-  ipcMain.handle('local-search-files', async (_, payload = {}) => listFiles(payload))
-  ipcMain.handle('local-search-diagnose', async () => ({
+  ipcMain.handle(CORE_CHANNELS.LOCAL_SEARCH_CAPABILITY, async () => getLocalSearchCapability(true))
+  ipcMain.handle(CORE_CHANNELS.LOCAL_SEARCH_TEXT, async (_, payload = {}) => searchText(payload))
+  ipcMain.handle(CORE_CHANNELS.LOCAL_SEARCH_FILES, async (_, payload = {}) => listFiles(payload))
+  ipcMain.handle(CORE_CHANNELS.LOCAL_SEARCH_DIAGNOSE, async () => ({
     platform: process.platform,
     capability: await getLocalSearchCapability(true),
     bundledPath: getBundledRgPath(),

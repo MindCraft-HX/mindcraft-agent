@@ -101,11 +101,11 @@ function createAgentBridge(ipcRenderer) {
   pluginsUninstall: (pluginId) => ipcRenderer.invoke('plugins-uninstall', pluginId),
   pluginsEnable: (pluginId) => ipcRenderer.invoke('plugins-enable', pluginId),
   pluginsDisable: (pluginId) => ipcRenderer.invoke('plugins-disable', pluginId),
-  skillsGetCatalog: () => ipcRenderer.invoke('skills-get-catalog'),
-  skillsGetState: (cwd) => ipcRenderer.invoke('skills-get-state', { cwd }),
-  skillsInstall: (payload) => ipcRenderer.invoke('skills-install', payload),
-  skillsUninstall: (payload) => ipcRenderer.invoke('skills-uninstall', payload),
-  skillsMarketInstall: (payload) => ipcRenderer.invoke('skills-market-install', payload),
+  skillsGetCatalog: () => ipcRenderer.invoke(CORE_CHANNELS.SKILLS_GET_CATALOG),
+  skillsGetState: (cwd) => ipcRenderer.invoke(CORE_CHANNELS.SKILLS_GET_STATE, { cwd }),
+  skillsInstall: (payload) => ipcRenderer.invoke(CORE_CHANNELS.SKILLS_INSTALL, payload),
+  skillsUninstall: (payload) => ipcRenderer.invoke(CORE_CHANNELS.SKILLS_UNINSTALL, payload),
+  skillsMarketInstall: (payload) => ipcRenderer.invoke(CORE_CHANNELS.SKILLS_MARKET_INSTALL, payload),
   onSkillsInstallProgress: (callback) => {
     const handler = (_, data) => callback(data)
     ipcRenderer.on('skills-install-progress', handler)
@@ -130,10 +130,10 @@ function createAgentBridge(ipcRenderer) {
   claudeMemoryDelete: ({ cwd, filename, scope }) => ipcRenderer.invoke('claude-memory-delete', { cwd, filename, scope }),
   claudeMemoryGetInjectMode: () => ipcRenderer.invoke('claude-memory-get-inject-mode'),
   claudeMemorySetInjectMode: (mode) => ipcRenderer.invoke('claude-memory-set-inject-mode', mode),
-  localSearchCapability: () => ipcRenderer.invoke('local-search-capability'),
-  localSearchText: (payload) => ipcRenderer.invoke('local-search-text', payload),
-  localSearchFiles: (payload) => ipcRenderer.invoke('local-search-files', payload),
-  localSearchDiagnose: () => ipcRenderer.invoke('local-search-diagnose'),
+  localSearchCapability: () => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_CAPABILITY),
+  localSearchText: (payload) => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_TEXT, payload),
+  localSearchFiles: (payload) => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_FILES, payload),
+  localSearchDiagnose: () => ipcRenderer.invoke(CORE_CHANNELS.LOCAL_SEARCH_DIAGNOSE),
   onClaudeAgentMessage: (callback) => ipcRenderer.on('claude-agent-message', (_, data) => callback(data)),
   onClaudeAgentDone: (callback) => ipcRenderer.on('claude-agent-done', (_, data) => callback(data)),
   onClaudeAgentPermission: (callback) => ipcRenderer.on('claude-agent-permission', (_, data) => callback(data)),
@@ -158,7 +158,7 @@ function createAgentBridge(ipcRenderer) {
   claudeChat: (payload) => ipcRenderer.invoke('claude-chat', payload),
   claudeChatContinue: (payload) => ipcRenderer.invoke('claude-chat-continue', payload),
   claudeChatAbort: (payload) => ipcRenderer.invoke('claude-chat-abort', payload),
-  chatWebSearch: (payload) => ipcRenderer.invoke('chat-web-search', payload),
+  chatWebSearch: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_WEB_SEARCH, payload),
   onClaudeStreamChunk: (callback) => {
     const handler = (_, data) => callback(data)
     ipcRenderer.on(CLAUDE_CHANNELS.STREAM_CHUNK, handler)
@@ -292,9 +292,9 @@ function createAgentBridge(ipcRenderer) {
   // CodeHub SessionIndex (T184)
   loadCodehubSessionIndex: () => ipcRenderer.invoke(CORE_CHANNELS.LOAD_CODEHUB_SESSION_INDEX),
   // Home 页数据
-  loadRecentProject: () => ipcRenderer.invoke('home-get-recent-project'),
-  loadTodayStats: () => ipcRenderer.invoke('home-get-today-stats'),
-  loadTokenTrend: (days) => ipcRenderer.invoke('home-get-token-trend', days),
+  loadRecentProject: () => ipcRenderer.invoke(CORE_CHANNELS.HOME_GET_RECENT_PROJECT),
+  loadTodayStats: () => ipcRenderer.invoke(CORE_CHANNELS.HOME_GET_TODAY_STATS),
+  loadTokenTrend: (days) => ipcRenderer.invoke(CORE_CHANNELS.HOME_GET_TOKEN_TREND, days),
   // Locale
   loadLocale: () => ipcRenderer.invoke(CORE_CHANNELS.LOAD_LOCALE),
   saveLocale: (locale) => ipcRenderer.send(CORE_CHANNELS.SAVE_LOCALE, locale),

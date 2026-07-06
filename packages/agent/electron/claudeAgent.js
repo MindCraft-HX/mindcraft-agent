@@ -30,7 +30,7 @@ const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const { getProviders, setProviders } = require('./db/providerStorage')
-const { CLAUDE_CHANNELS } = require('../shared/ipcChannels')
+const { CLAUDE_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
   copySkillDirAtomic,
@@ -3669,12 +3669,12 @@ function setupClaudeHandlers() {
   })
 
   // ─── Skills 市场与管理 ──────────────────────────────────────────
-  ipcMain.handle('skills-get-catalog', async () => {
+  ipcMain.handle(CORE_CHANNELS.SKILLS_GET_CATALOG, async () => {
     const catalog = await fetchSkillsMarketplace()
     return { skills: catalog.skills || [], version: catalog.version }
   })
 
-  ipcMain.handle('skills-get-state', async (_, { cwd }) => {
+  ipcMain.handle(CORE_CHANNELS.SKILLS_GET_STATE, async (_, { cwd }) => {
     try {
       const catalog = await fetchSkillsMarketplace()
 
@@ -3743,7 +3743,7 @@ function setupClaudeHandlers() {
     return normalizeGithubSkillSource(item.gitUrl, item.subPath || '')
   }
 
-  ipcMain.handle('skills-install', async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
+  ipcMain.handle(CORE_CHANNELS.SKILLS_INSTALL, async (event, { skillName, scope, cwd, gitUrl, subPath }) => {
     try {
       const target = resolveSkillTargetDir({ agentName: 'claude', scope, cwd, skillName })
       const source = await resolveCatalogSkillSource(target.skillName)
@@ -3775,7 +3775,7 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle('skills-uninstall', async (_, { skillName, scope, cwd }) => {
+  ipcMain.handle(CORE_CHANNELS.SKILLS_UNINSTALL, async (_, { skillName, scope, cwd }) => {
     try {
       const target = resolveSkillTargetDir({ agentName: 'claude', scope, cwd, skillName })
 
@@ -3792,7 +3792,7 @@ function setupClaudeHandlers() {
   // ─── Skills 社区市场 ────────────────────────────────────────
   // 社区市场搜索已改为 renderer 直连 API，不再需要 IPC handler
 
-  ipcMain.handle('skills-market-install', async (event, { skillName, scope, cwd, gitUrl }) => {
+  ipcMain.handle(CORE_CHANNELS.SKILLS_MARKET_INSTALL, async (event, { skillName, scope, cwd, gitUrl }) => {
     try {
       const target = resolveSkillTargetDir({ agentName: 'claude', scope, cwd, skillName })
       const source = await resolveCatalogSkillSource(target.skillName)
