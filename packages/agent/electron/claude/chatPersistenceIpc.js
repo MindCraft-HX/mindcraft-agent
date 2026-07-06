@@ -8,6 +8,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { CORE_CHANNELS } = require('../../shared/ipcChannels');
 
 function registerChatPersistenceIpc(ipcMain, {
   CHAT_SESSIONS_DIR,
@@ -16,9 +17,9 @@ function registerChatPersistenceIpc(ipcMain, {
   writeChatIndexAsync,
   lt,
 }) {
-  ipcMain.handle('chat-list-sessions', () => readChatIndex());
+  ipcMain.handle(CORE_CHANNELS.CHAT_LIST_SESSIONS, () => readChatIndex());
 
-  ipcMain.handle('chat-get-session', (_, id) => {
+  ipcMain.handle(CORE_CHANNELS.CHAT_GET_SESSION, (_, id) => {
     const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`);
     try {
       if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -26,7 +27,7 @@ function registerChatPersistenceIpc(ipcMain, {
     return null;
   });
 
-  ipcMain.handle('chat-save-session', async (_, { id, data }) => {
+  ipcMain.handle(CORE_CHANNELS.CHAT_SAVE_SESSION, async (_, { id, data }) => {
     ensureChatSessionsDir();
     const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`);
     const tmp = file + '.tmp';
@@ -52,7 +53,7 @@ function registerChatPersistenceIpc(ipcMain, {
     return true;
   });
 
-  ipcMain.handle('chat-delete-session', async (_, id) => {
+  ipcMain.handle(CORE_CHANNELS.CHAT_DELETE_SESSION, async (_, id) => {
     const file = path.join(CHAT_SESSIONS_DIR, `${id}.json`);
     try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch (_) {}
     const idx = readChatIndex();
@@ -61,7 +62,7 @@ function registerChatPersistenceIpc(ipcMain, {
     return true;
   });
 
-  ipcMain.handle('chat-generate-title', async (_, { messages, provider, model }) => {
+  ipcMain.handle(CORE_CHANNELS.CHAT_GENERATE_TITLE, async (_, { messages, provider, model }) => {
     // 用首条用户消息的前 30 字符作为标题（fallback）
     const firstUser = messages?.find(m => m.role === 'user');
     const fallback = firstUser?.content

@@ -165,6 +165,13 @@ const CORE_CHANNELS = Object.freeze({
   LOG: 'log',
   NOTIFICATION_AUDIO_UNLOCK: 'notification-audio-unlock',
 
+  // Chat persistence (cross-agent session index)
+  CHAT_LIST_SESSIONS: 'chat-list-sessions',
+  CHAT_GET_SESSION: 'chat-get-session',
+  CHAT_SAVE_SESSION: 'chat-save-session',
+  CHAT_DELETE_SESSION: 'chat-delete-session',
+  CHAT_GENERATE_TITLE: 'chat-generate-title',
+
   // Auto-start on boot
   GET_LOGIN_ITEM: 'get-login-item-settings',
   SET_LOGIN_ITEM: 'set-login-item-settings',

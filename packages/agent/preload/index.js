@@ -180,11 +180,11 @@ function createAgentBridge(ipcRenderer) {
     return () => ipcRenderer.removeListener(CLAUDE_CHANNELS.STREAM_TOOL_INPUT, handler)
   },
   // 简易对话：会话管理
-  chatListSessions: () => ipcRenderer.invoke('chat-list-sessions'),
-  chatGetSession: (id) => ipcRenderer.invoke('chat-get-session', id),
-  chatSaveSession: (id, data) => ipcRenderer.invoke('chat-save-session', { id, data }),
-  chatDeleteSession: (id) => ipcRenderer.invoke('chat-delete-session', id),
-  chatGenerateTitle: (payload) => ipcRenderer.invoke('chat-generate-title', payload),
+  chatListSessions: () => ipcRenderer.invoke(CORE_CHANNELS.CHAT_LIST_SESSIONS),
+  chatGetSession: (id) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_GET_SESSION, id),
+  chatSaveSession: (id, data) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_SAVE_SESSION, { id, data }),
+  chatDeleteSession: (id) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_DELETE_SESSION, id),
+  chatGenerateTitle: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CHAT_GENERATE_TITLE, payload),
   // Codex Agent SDK
   codexAgentQuery: (payload) => ipcRenderer.invoke('codex-agent-query', payload),
   codexAgentAbort: (sessionId) => ipcRenderer.invoke('codex-agent-abort', sessionId),
