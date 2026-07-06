@@ -6,8 +6,21 @@ try {
   CODEX_CHANNELS = ipcChannels.CODEX_CHANNELS
 } catch (_) {
   CORE_CHANNELS = { LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index' }
-  CLAUDE_CHANNELS = {}
-  CODEX_CHANNELS = {}
+  // Fallback: hardcode streaming channel names so streaming push events
+  // survive a failed require of ../shared/ipcChannels (e.g. build artifact
+  // mismatch, bundler tree-shaking). Without these, ipcRenderer.on(undefined)
+  // silently drops all stream data.
+  CLAUDE_CHANNELS = {
+    STREAM_CHUNK: 'claude-stream-chunk',
+    STREAM_THINKING: 'claude-stream-thinking',
+    STREAM_TOOL_START: 'claude-stream-tool-start',
+    STREAM_TOOL_INPUT: 'claude-stream-tool-input',
+  }
+  CODEX_CHANNELS = {
+    STREAM_CHUNK: 'codex-stream-chunk',
+    STREAM_THINKING: 'codex-stream-thinking',
+    STREAM_TOOL_DELTA: 'codex-stream-tool-delta',
+  }
 }
 
 function createAgentBridge(ipcRenderer) {

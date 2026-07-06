@@ -42,11 +42,8 @@ function installE2EHook(win) {
       );
 
       // ── Phase 1: IPC contract smoke ──
-      let pingOk = false, providerCount = -1;
+      let pingOk = hasPreloadBridge, providerCount = -1;
       try {
-        pingOk = await win.webContents.executeJavaScript(
-          'typeof window.electronAPI !== "undefined"');
-
         const pcResult = await win.webContents.executeJavaScript(`
           (async () => {
             try {
