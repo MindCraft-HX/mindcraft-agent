@@ -192,8 +192,16 @@ function registerChatPersistenceIpc(ipcMain, {
       return false;
     }
 
-    // Write message bodies to JSONL file
-    writeMessages(userDataDir, id, data.messages || []);
+    // Write message bodies to JSONL file.
+    // If the filesystem write fails, remove the SQLite metadata row so
+    // the session doesn't end up in a half-saved state (metadata, no messages).
+    try {
+      writeMessages(userDataDir, id, data.messages || []);
+    } catch (e) {
+      console.error('[chatPersistence] writeMessages failed — rolling back metadata:', e.message);
+      deleteChatThread(db, id);
+      return false;
+    }
 
     // Persist sql.js in-memory DB to disk
     await persistDb();
