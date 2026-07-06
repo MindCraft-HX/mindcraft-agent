@@ -229,3 +229,69 @@ test('data survives sql.js export/import round-trip', async () => {
   assert.equal(thread.contextSummary, 'persist summary');
   db2.close();
 });
+
+// ---------------------------------------------------------------------------
+// (a) SAVE atomicity rollback pattern
+// ---------------------------------------------------------------------------
+
+test('SAVE rollback: upsert + deleteThread reverts to clean state', async () => {
+  const db = await createFreshDb();
+
+  // Simulate: upsertChatThread succeeded, writeMessages threw → rollback
+  upsertChatThread(db, {
+    id: 'rb1', title: 'Rollback Test', createdAt: 1000, updatedAt: 1000,
+  });
+  assert.notEqual(getChatThread(db, 'rb1'), null);
+
+  // Rollback — must be idempotent and clean
+  const delResult = deleteChatThread(db, 'rb1');
+  assert.equal(delResult.ok, true);
+  assert.equal(getChatThread(db, 'rb1'), null);
+
+  // Double-rollback must also be safe
+  const delResult2 = deleteChatThread(db, 'rb1');
+  assert.equal(delResult2.ok, true);
+  assert.equal(getChatThread(db, 'rb1'), null);
+
+  db.close();
+});
+
+test('SAVE rollback: list remains clean after rollback', async () => {
+  const db = await createFreshDb();
+
+  upsertChatThread(db, { id: 'k1', title: 'Keep', updatedAt: 1000, createdAt: 1000 });
+  upsertChatThread(db, { id: 'r1', title: 'Rollback', updatedAt: 2000, createdAt: 2000 });
+  assert.equal(listChatThreads(db).length, 2);
+
+  // Rollback r1 (simulate filesystem write failure)
+  deleteChatThread(db, 'r1');
+  const list = listChatThreads(db);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, 'k1');
+
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
+// (b) Partial migration — metadata exists, messages layer empty
+// ---------------------------------------------------------------------------
+
+test('getChatThread returns row even when messages directory absent', async () => {
+  const db = await createFreshDb();
+
+  upsertChatThread(db, {
+    id: 'pm1', title: 'Partial Migration', createdAt: 1000, updatedAt: 1000,
+    provider: 'claude', model: 'sonnet',
+  });
+
+  // Simulates: meta migration succeeded, messages.jsonl write failed
+  // The DAO should still return the metadata row — the IPC handler
+  // layer owns the "fall back to old session" logic.
+  const thread = getChatThread(db, 'pm1');
+  assert.notEqual(thread, null);
+  assert.equal(thread.id, 'pm1');
+  assert.equal(thread.title, 'Partial Migration');
+  assert.equal(thread.provider, 'claude');
+
+  db.close();
+});
