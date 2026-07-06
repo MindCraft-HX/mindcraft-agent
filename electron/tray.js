@@ -8,6 +8,7 @@
 
 const { Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const { CORE_CHANNELS } = require('../packages/agent/shared/ipcChannels');
 
 function createTray(win, iconDir) {
   const iconPath = path.join(iconDir, '../dist/logo-white.png');
@@ -28,7 +29,7 @@ function createTray(win, iconDir) {
       click: () => {
         win.show();
         setTimeout(() => {
-          win.webContents.send('open-tab-by-name', { type: 'settings' });
+          win.webContents.send(CORE_CHANNELS.OPEN_TAB_BY_NAME, { type: 'settings' });
         }, 0);
       },
     },

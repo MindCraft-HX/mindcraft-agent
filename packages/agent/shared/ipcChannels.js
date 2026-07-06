@@ -149,6 +149,23 @@ const CORE_CHANNELS = Object.freeze({
   RENAME_FILE_SYNC: 'rename-file-sync',
   READ_DIR_SYNC: 'read-dir-Sync',
   EXEC_CMD: 'exec-cmd',
+  OPEN_FILE_DIALOG: 'open-file-dialog',
+  OPEN_FILE_WITH_DEFAULT: 'open-file-with-default',
+  OPEN_FOLDER: 'open-folder',
+  OPEN_EMAIL: 'openEmail',
+  SELECT_AND_READ_FILE: 'select-and-read-file',
+  UNCOMPRESS_ZIP_FILE: 'unCompress-zip-file',
+
+  // Window / document
+  OPEN_DOCUMENT_CANDIDATE: 'open-document-candidate',
+  RESOLVE_DOCUMENT_CANDIDATE: 'resolve-document-candidate',
+  OPEN_CLAUDE_WIN: 'open-claude-win',
+  OPEN_CODEX_WIN: 'open-codex-win',
+  OPEN_EXTERNAL_WINDOW: 'open-external-window',
+  OPEN_MD_VIEWER: 'open-md-viewer',
+  OPEN_MD_WIN: 'open-md-win',
+  OPEN_SYSTEM_SETTINGS: 'open-system-settings',
+  OPEN_TAB_BY_NAME: 'open-tab-by-name',
 
   // Window management
   WINDOW_MINIMIZE: 'window-minimize',

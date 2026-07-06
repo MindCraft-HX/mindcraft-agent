@@ -1,4 +1,5 @@
 const { ipcMain } = require('electron')
+const { CORE_CHANNELS } = require('../packages/agent/shared/ipcChannels')
 
 let mainWin = null
 let mdViewerReady = false
@@ -47,7 +48,7 @@ function openMdInMain(payload) {
   mainWin.show()
   mainWin.focus()
 
-  mainWin.webContents.send('open-md-viewer')
+  mainWin.webContents.send(CORE_CHANNELS.OPEN_MD_VIEWER)
 }
 
 function registerMdViewerHandlers() {

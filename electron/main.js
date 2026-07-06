@@ -262,7 +262,7 @@ function createStore() {
 }
 
 //打开邮箱
-ipcMain.on("openEmail", (event, emailAddress) => {
+ipcMain.on(CORE_CHANNELS.OPEN_EMAIL, (event, emailAddress) => {
   const mailtoLink = `mailto:${emailAddress}`;
   shell.openExternal(mailtoLink);
 });
@@ -273,7 +273,7 @@ ipcMain.on("openEmail", (event, emailAddress) => {
 //   });
 // }
 
-ipcMain.handle('open-md-win', (_event, payload) => openMdInMain(payload))
+ipcMain.handle(CORE_CHANNELS.OPEN_MD_WIN, (_event, payload) => openMdInMain(payload))
 registerMdViewerHandlers()
 
 
@@ -305,8 +305,8 @@ app.whenReady().then(async () => {
   })
 
   registerAgentIPCs(ipcMain);
-  ipcMain.handle('open-claude-win', () => openClaudeWin({ initUrl, env: NODE_ENV }));
-  ipcMain.handle('open-codex-win', () => openCodexWin({ initUrl, env: NODE_ENV }));
+  ipcMain.handle(CORE_CHANNELS.OPEN_CLAUDE_WIN, () => openClaudeWin({ initUrl, env: NODE_ENV }));
+  ipcMain.handle(CORE_CHANNELS.OPEN_CODEX_WIN, () => openCodexWin({ initUrl, env: NODE_ENV }));
 
   // 通用目录选择（claude 和 codex 共用）
   const { dialog } = require('electron')

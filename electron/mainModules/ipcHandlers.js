@@ -10,7 +10,7 @@ const { CORE_CHANNELS } = require('../../packages/agent/shared/ipcChannels');
 
 function setupIpcHandlers(env, platform) {
   // 返回文件路径
-  ipcMain.handle("open-file-dialog", async (event, option) => {
+  ipcMain.handle(CORE_CHANNELS.OPEN_FILE_DIALOG, async (event, option) => {
     const dialogOption = {
       properties: [option.type === "file" ? "openFile" : "openDirectory"],
       filters: option.filters || []
@@ -23,7 +23,7 @@ function setupIpcHandlers(env, platform) {
     }
   });
   // 选择路径并读取文件
-  ipcMain.handle('select-and-read-file',async (event,options)=>{
+  ipcMain.handle(CORE_CHANNELS.SELECT_AND_READ_FILE,async (event,options)=>{
     try{
       const dialogOption = {
         properties:options&&options.properties?(options.properties):(options.type==='file'?["openFile"]:["openDirectory"]),
@@ -122,7 +122,7 @@ function setupIpcHandlers(env, platform) {
     return fs.readdirSync(dir, { withFileTypes: true });
   });
   ipcMain.handle(
-    "unCompress-zip-file",
+    CORE_CHANNELS.UNCOMPRESS_ZIP_FILE,
     async (event, file, unZipPath, zipFileNameEncoding) => {
       return await compressing.zip.uncompress(file, unZipPath, {
         zipFileNameEncoding: zipFileNameEncoding,
@@ -144,21 +144,21 @@ function setupIpcHandlers(env, platform) {
   });
 
   // 打开文件夹
-  ipcMain.handle("open-folder", async (event, folderPath) => {
+  ipcMain.handle(CORE_CHANNELS.OPEN_FOLDER, async (event, folderPath) => {
     const err = await shell.openPath(folderPath);
     return { ok: !err, error: err || '' };
   });
 
-  ipcMain.handle("open-file-with-default", async (_event, filePath) => {
+  ipcMain.handle(CORE_CHANNELS.OPEN_FILE_WITH_DEFAULT, async (_event, filePath) => {
     if (!filePath) return "missing-file-path";
     return shell.openPath(filePath);
   });
 
-  ipcMain.handle('resolve-document-candidate', async (_event, payload = {}) => {
+  ipcMain.handle(CORE_CHANNELS.RESOLVE_DOCUMENT_CANDIDATE, async (_event, payload = {}) => {
     return resolveCandidatePath(payload)
   })
 
-  ipcMain.handle('open-document-candidate', async (_event, payload = {}) => {
+  ipcMain.handle(CORE_CHANNELS.OPEN_DOCUMENT_CANDIDATE, async (_event, payload = {}) => {
     return openDocumentCandidate({
       ...payload,
       openMdPayload: async (docPayload) => {
@@ -187,7 +187,7 @@ function setupHostIpcHandlers() {
   });
 
   // Open OS system settings (privacy-microphone)
-  ipcMain.on('open-system-settings', () => {
+  ipcMain.on(CORE_CHANNELS.OPEN_SYSTEM_SETTINGS, () => {
     if (process.platform === 'win32') {
       exec('start ms-settings:privacy-microphone');
     } else if (process.platform === 'darwin') {
@@ -206,7 +206,7 @@ function setupHostIpcHandlers() {
       return false;
     }
   }
-  ipcMain.on('open-external-window', (event, arg) => {
+  ipcMain.on(CORE_CHANNELS.OPEN_EXTERNAL_WINDOW, (event, arg) => {
     event.preventDefault();
     if (!isHttpExternalUrl(arg)) return;
     shell.openExternal(String(arg).trim());

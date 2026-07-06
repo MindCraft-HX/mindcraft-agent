@@ -23,9 +23,9 @@ window.addEventListener("resize", () => {
 
 // 暴露
 contextBridge.exposeInMainWorld("electronAPI", {
-  selectAndReadFile: (option) => ipcRenderer.invoke("select-and-read-file",option),
+  selectAndReadFile: (option) => ipcRenderer.invoke(CORE_CHANNELS.SELECT_AND_READ_FILE,option),
   readFileByPath: (option) => ipcRenderer.invoke(CORE_CHANNELS.READ_FILE_BY_PATH,option),
-  openFileDialog: (option) => ipcRenderer.invoke("open-file-dialog", option), //上传文件 拿到路径的
+  openFileDialog: (option) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_FILE_DIALOG, option), //上传文件 拿到路径的
   readFileSync: (filePath) => ipcRenderer.invoke(CORE_CHANNELS.READ_FILE_SYNC, filePath),
   writeFileSync: (path, buffer) =>
     ipcRenderer.invoke(CORE_CHANNELS.WRITE_FILE_SYNC, path, buffer),
@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   pathBasename: (file) => path.basename(file),
   unCompressZipFile: (file, unCompressedPath, zipFileNameEncoding) =>
     ipcRenderer.invoke(
-      "unCompress-zip-file",
+      CORE_CHANNELS.UNCOMPRESS_ZIP_FILE,
       file,
       unCompressedPath,
       zipFileNameEncoding
@@ -63,15 +63,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // 文件/文件夹操作
-  openEmail: (emailAddress) => ipcRenderer.send("openEmail", emailAddress),
+  openEmail: (emailAddress) => ipcRenderer.send(CORE_CHANNELS.OPEN_EMAIL, emailAddress),
   openFolder: async (folderPath) =>
-    ipcRenderer.invoke("open-folder", folderPath),
-  openFileWithDefault: (filePath) => ipcRenderer.invoke("open-file-with-default", filePath),
+    ipcRenderer.invoke(CORE_CHANNELS.OPEN_FOLDER, folderPath),
+  openFileWithDefault: (filePath) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_FILE_WITH_DEFAULT, filePath),
 
   // 文档浏览
-  openMdWin: (payload) => ipcRenderer.invoke("open-md-win", payload),
-  resolveDocumentCandidate: (payload) => ipcRenderer.invoke('resolve-document-candidate', payload),
-  openDocumentCandidate: (payload) => ipcRenderer.invoke('open-document-candidate', payload),
+  openMdWin: (payload) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_MD_WIN, payload),
+  resolveDocumentCandidate: (payload) => ipcRenderer.invoke(CORE_CHANNELS.RESOLVE_DOCUMENT_CANDIDATE, payload),
+  openDocumentCandidate: (payload) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_DOCUMENT_CANDIDATE, payload),
   onMdContent: (callback) => {
     const handler = (_event, data) => callback(data)
     ipcRenderer.on('md-content', handler)
@@ -80,20 +80,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getPendingMdContent: () => ipcRenderer.invoke('md-viewer-ready'),
   onOpenMdViewer: (callback) => {
     const handler = () => callback()
-    ipcRenderer.on('open-md-viewer', handler)
-    return () => ipcRenderer.removeListener('open-md-viewer', handler)
+    ipcRenderer.on(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
   },
 
   // Agent 窗口
-  openClaudeWin: () => ipcRenderer.invoke('open-claude-win'),
-  openCodexWin: () => ipcRenderer.invoke('open-codex-win'),
+  openClaudeWin: () => ipcRenderer.invoke(CORE_CHANNELS.OPEN_CLAUDE_WIN),
+  openCodexWin: () => ipcRenderer.invoke(CORE_CHANNELS.OPEN_CODEX_WIN),
 
   // Agent bridge (来自 packages/agent/preload)
   ...createAgentBridge(ipcRenderer),
 
   // 通用窗口
-  openExternalWindow:(url) => ipcRenderer.send("open-external-window", url),
-  openSystemSettings: () => ipcRenderer.send("open-system-settings"),
+  openExternalWindow:(url) => ipcRenderer.send(CORE_CHANNELS.OPEN_EXTERNAL_WINDOW, url),
+  openSystemSettings: () => ipcRenderer.send(CORE_CHANNELS.OPEN_SYSTEM_SETTINGS),
 
 
   // 设置（原生 JSON 存储，替代 electron-conf）
@@ -104,7 +104,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getLoginItemSettings: () => ipcRenderer.invoke('get-login-item-settings'),
   setLoginItemSettings: (settings) => ipcRenderer.invoke('set-login-item-settings', settings),
   openTabByName: (callback) => {
-    ipcRenderer.on("open-tab-by-name", (event, progress) => {
+    ipcRenderer.on(CORE_CHANNELS.OPEN_TAB_BY_NAME, (event, progress) => {
       callback(progress);
     });
   },
