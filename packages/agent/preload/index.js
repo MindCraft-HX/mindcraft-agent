@@ -8,7 +8,7 @@ try {
   CORE_CHANNELS = { LOAD_CODEHUB_SESSION_INDEX: 'agent-load-codehub-session-index' }
   // Fallback: also include core channels used in this bridge
   // so ipcRenderer doesn't receive undefined channel names.
-  const _fallbackCore = {
+  const fallbackCore = {
     SKILLS_INSTALL_PROGRESS: 'skills-install-progress',
     GET_SESSION_DRAFT: 'agent-get-session-draft',
     SET_SESSION_DRAFT: 'agent-set-session-draft',
@@ -23,7 +23,7 @@ try {
     CONFIG_EXPORT_PREVIEW: 'config-export-preview',
     CONFIG_EXPORT_SAVE: 'config-export-save',
   }
-  Object.assign(CORE_CHANNELS, _fallbackCore)
+  Object.assign(CORE_CHANNELS, fallbackCore)
   // Fallback: hardcode streaming channel names so streaming push events
   // survive a failed require of ../shared/ipcChannels (e.g. build artifact
   // mismatch, bundler tree-shaking). Without these, ipcRenderer.on(undefined)
