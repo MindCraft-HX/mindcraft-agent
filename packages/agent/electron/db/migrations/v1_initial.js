@@ -262,20 +262,40 @@ function migrateV4(db, { userDataDir } = {}) {
             throw e;
           }
 
-          // Phase 3: filesystem writes (outside SQLite transaction)
+          // Phase 3: filesystem writes (outside SQLite transaction).
+          // If a write fails, remove its SQLite row so the session is not
+          // left in a half-migrated state (metadata present, no messages).
           const newMsgDir = path.join(userDataDir, 'simple-chat', 'threads');
           for (const { id, data } of sessionDataList) {
             const messages = Array.isArray(data.messages) ? data.messages : [];
+            let writeOk = true;
             if (messages.length > 0) {
-              const threadDir = path.join(newMsgDir, id);
-              if (!fs.existsSync(threadDir)) {
-                fs.mkdirSync(threadDir, { recursive: true });
+              try {
+                const threadDir = path.join(newMsgDir, id);
+                if (!fs.existsSync(threadDir)) {
+                  fs.mkdirSync(threadDir, { recursive: true });
+                }
+                const msgFile = path.join(threadDir, 'messages.jsonl');
+                const lines = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
+                fs.writeFileSync(msgFile, lines, 'utf8');
+              } catch (e) {
+                console.error('[migrateV4] filesystem write failed for session', id, ':', e.message);
+                writeOk = false;
+                // Remove the orphaned SQLite metadata row
+                try {
+                  db.run('DELETE FROM chat_threads WHERE id = ?', [String(data.id || id)]);
+                } catch (_) {}
               }
-              const msgFile = path.join(threadDir, 'messages.jsonl');
-              const lines = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
-              fs.writeFileSync(msgFile, lines, 'utf8');
             }
-            migrated++;
+            if (writeOk) migrated++;
+          }
+
+          // If we had sessions to migrate but every filesystem write failed,
+          // don't advance user_version — let the next run retry.
+          if (sessionDataList.length > 0 && migrated === 0) {
+            console.error('[migrateV4] all filesystem writes failed; user_version left at', currentVersion);
+            // Don't fall through to PRAGMA user_version = 4 below
+            return { ok: true, version: currentVersion, message: `v4 schema created but data migration failed entirely; will retry on next start`, migrated: 0 };
           }
         }
       } catch (e) {

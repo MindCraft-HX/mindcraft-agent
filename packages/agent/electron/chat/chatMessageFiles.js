@@ -16,6 +16,24 @@ const path = require('path');
 const fs = require('fs');
 
 /**
+ * Thread IDs must be alphanumeric with limited safe punctuation,
+ * max 128 chars. This blocks path traversal (../, /, \, null bytes).
+ */
+const SAFE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
+
+/**
+ * Validate a threadId before using it in any filesystem path.
+ * Returns false for empty, non-string, or dangerous values.
+ *
+ * @param {*} id
+ * @returns {boolean}
+ */
+function validateThreadId(id) {
+  if (!id || typeof id !== 'string') return false;
+  return SAFE_ID_RE.test(id);
+}
+
+/**
  * Get the directory for a thread's files.
  *
  * @param {string} userDataDir
@@ -23,7 +41,10 @@ const fs = require('fs');
  * @returns {string}
  */
 function getThreadDir(userDataDir, threadId) {
-  return path.join(userDataDir, 'simple-chat', 'threads', String(threadId));
+  if (!validateThreadId(threadId)) {
+    throw new Error(`Invalid threadId: ${String(threadId)}`);
+  }
+  return path.join(userDataDir, 'simple-chat', 'threads', threadId);
 }
 
 /**
@@ -104,6 +125,7 @@ function deleteThreadDir(userDataDir, threadId) {
 }
 
 module.exports = {
+  validateThreadId,
   getThreadDir,
   ensureThreadDir,
   readMessages,

@@ -15,7 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const { CORE_CHANNELS } = require('../../shared/ipcChannels');
 const { listChatThreads, getChatThread, upsertChatThread, deleteChatThread } = require('../db/dao/chatThreads');
-const { readMessages, writeMessages, deleteThreadDir } = require('../chat/chatMessageFiles');
+const { readMessages, writeMessages, deleteThreadDir, validateThreadId } = require('../chat/chatMessageFiles');
 
 /**
  * Fallback: read single session from old `{userData}/chat-sessions/<id>.json`.
@@ -92,18 +92,45 @@ function registerChatPersistenceIpc(ipcMain, {
       }
     }
 
+    // Sort merged list by updatedAt descending (most recent first)
+    sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
     return { sessions };
   });
 
   // ── GET ────────────────────────────────────────────────────────────────
 
   ipcMain.handle(CORE_CHANNELS.CHAT_GET_SESSION, async (_, id) => {
-    if (!id) return null;
+    if (!id || !validateThreadId(id)) {
+      console.warn('[chatPersistence] CHAT_GET_SESSION rejected invalid id:', id);
+      return null;
+    }
 
     const db = await getDb();
     const thread = getChatThread(db, id);
     if (thread) {
       const messages = readMessages(userDataDir, id);
+
+      // P1-2: If messages.jsonl is empty/missing but old session file still
+      // has content (partial migration), fall back to old messages.
+      if (messages.length === 0) {
+        const old = readOldSession(userDataDir, id);
+        if (old && Array.isArray(old.messages) && old.messages.length > 0) {
+          return {
+            id: thread.id,
+            title: thread.title,
+            createdAt: thread.createdAt,
+            updatedAt: thread.updatedAt,
+            provider: thread.provider,
+            model: thread.model,
+            thinkingLevel: thread.thinkingLevel,
+            webSearchEnabled: thread.webSearchEnabled,
+            contextSummary: thread.contextSummary,
+            messages: old.messages,
+          };
+        }
+      }
+
       return {
         id: thread.id,
         title: thread.title,
@@ -141,7 +168,10 @@ function registerChatPersistenceIpc(ipcMain, {
   // ── SAVE ───────────────────────────────────────────────────────────────
 
   ipcMain.handle(CORE_CHANNELS.CHAT_SAVE_SESSION, async (_, { id, data }) => {
-    if (!id) return false;
+    if (!id || !validateThreadId(id)) {
+      console.warn('[chatPersistence] CHAT_SAVE_SESSION rejected invalid id:', id);
+      return false;
+    }
 
     const db = await getDb();
 
@@ -174,7 +204,10 @@ function registerChatPersistenceIpc(ipcMain, {
   // ── DELETE ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(CORE_CHANNELS.CHAT_DELETE_SESSION, async (_, id) => {
-    if (!id) return false;
+    if (!id || !validateThreadId(id)) {
+      console.warn('[chatPersistence] CHAT_DELETE_SESSION rejected invalid id:', id);
+      return false;
+    }
 
     const db = await getDb();
 
