@@ -4326,25 +4326,17 @@ function setupCodexSdkHandlers() {
   })
 
   // Capture provider storage for system-level import IPC (T163/T174).
-  // Legacy sync wrapper: the async readProviders/writeProviders are the authority,
-  // but system import/export IPC expects sync deps.  Step 6 will switch those
-  // callers to use the repository directly.
+  // T195 Phase 1: write projection to ~/.codex/providers.json is stopped.
+  // Only read fallback remains — all writes go through SQLite.
   _codexProviderStorage = {
     readProviders: () => {
-      // Sync fallback: read legacy file directly; import IPC will be updated in Step 6
+      // Read legacy file as fallback; all writes go through SQLite authority.
       try {
         if (!fs.existsSync(PROVIDERS_FILE)) return null
         return JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'))
       } catch (_) { return null }
     },
-    writeProviders: (data) => {
-      try {
-        if (!fs.existsSync(CODEX_CONFIG_DIR)) fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true })
-        const tmp = `${PROVIDERS_FILE}.${process.pid}.tmp`
-        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-        fs.renameSync(tmp, PROVIDERS_FILE)
-      } catch (_) {}
-    },
+    // writeProviders: REMOVED (T195 Phase 1 — SQLite is the sole authority).
     readCodexConfigTomlRaw: () => fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : '',
     userDataDir: getMindCraftUserDataDir(),
   };

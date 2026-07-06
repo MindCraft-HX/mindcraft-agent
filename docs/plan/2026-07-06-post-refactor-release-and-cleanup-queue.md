@@ -160,6 +160,27 @@ Exit:
 - characterization tests cover current behavior
 - only then decide whether another extraction phase is justified
 
+### T195 ✅ 已完成 (2026-07-06)
+
+- CodeX sync `_codexProviderStorage.writeProviders` (→ `~/.codex/providers.json`) 已移除。
+- Claude `confSet('claudeProviders', ...)` 在 ACTIVATE_PROVIDER 中的写投影已停止。
+- 读回退保留 (readCodexProviders, confGet('claudeProviders')) — 作为恢复/回填窗口保留一个版本。
+- 兼容性注册表已更新。
+- `systemImportIpc.js` 中不再传入 `writeCodexProviders` dep（原本即为死代码，从未被调用）。
+- 契约测试 `claude-settings-boundary.test.cjs` 已更新：改用 `assert.doesNotMatch` 确保遗留写不再存在。
+
+### T196 ✅ 已完成 (2026-07-06)
+
+- `tests/e2e/smoke-boot.cjs`: 19/19 测试通过，覆盖 boot / preload bridge / settings sanitizer / session restore / provider CRUD / restart dedup。
+- 修复 `this.skip()` crash（node:test `before()` 不兼容）→ 改用 `t.skip(); return;`。
+- 修复 `os.tmpdir()` 环境耦合 → 改为 HOME 内隔离路径 `.mindcraft-e2e-empty-scan`。
+- `electron/e2eSmokeHook.js`: 主进程 E2E hook，提供 `__e2e_ping` / `__e2e_get_provider_count` 等测试点。
+
+### T197 ✅ 已完成 (2026-07-06)
+
+- 输出 `docs/agent-lifecycle-characterization.md`：完整映射 Claude/CodeX 的 6 个生命周期阶段（session start → stream loop → abort → done → metrics → cleanup）。
+- 核心结论：不合并流循环（SDK 接口差异太大）；`emitMetricsViaStore` 模式可提取为共享模块；CodeX `runId` 竞态防护更健壮，Claude 可考虑对齐。
+
 ## 6. What Not To Do Next
 
 - Do not start feature work on the current release candidate line.

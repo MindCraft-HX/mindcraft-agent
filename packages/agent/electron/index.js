@@ -37,7 +37,6 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
     if (claudeStorage && codexStorage) {
       const deps = {
         readCodexProviders: codexStorage.readProviders,
-        writeCodexProviders: codexStorage.writeProviders,
         claudeGetConfig: claudeStorage.confGet,
         claudeSetConfig: claudeStorage.confSet,
         userDataDir: claudeStorage.getMindCraftUserDataDir(),

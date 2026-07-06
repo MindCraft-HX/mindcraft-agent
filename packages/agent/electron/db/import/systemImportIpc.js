@@ -67,8 +67,7 @@ async function readClaudeFromRepo(deps) {
  *
  * @param {import('electron').IpcMain} ipcMain
  * @param {object} deps
- * @param {function(): object|null} deps.readCodexProviders — returns { providers: [...], activeIdx }
- * @param {function(object): void} deps.writeCodexProviders — writes { providers: [...], activeIdx }
+ * @param {function(): object|null} deps.readCodexProviders — returns { providers: [...], activeIdx } (read-only legacy fallback; writes go through SQLite)
  * @param {function(string, any): any} deps.claudeGetConfig — confGet from electron-conf (claude internalConf)
  * @param {function(string, any): void} deps.claudeSetConfig — confSet from electron-conf
  * @param {string} deps.userDataDir

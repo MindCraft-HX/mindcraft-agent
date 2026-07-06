@@ -149,27 +149,20 @@ describe('Electron E2E Boot Smoke (T196)', () => {
   let electronProcess;
   let readyData;
 
-  before(function () {
-    if (process.env.SKIP_E2E || process.env.CI) {
-      this.skip();
-      return;
-    }
-  });
-
   it('electron binary is available', () => {
     const bin = findElectronBinary();
     assert.ok(bin, 'electron binary not found in node_modules/.bin');
   });
 
-  it('app boots and signals readiness', async function () {
+  it('app boots and signals readiness', async function (t) {
     if (process.env.SKIP_E2E || process.env.CI) {
-      this.skip();
+      t.skip();
       return;
     }
 
     const electronBin = findElectronBinary();
     if (!electronBin) {
-      this.skip();
+      t.skip();
       return;
     }
 
@@ -204,8 +197,8 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     readyData = result.readyData;
   });
 
-  it('main window loads expected route', function () {
-    if (!readyData) { this.skip(); return; }
+  it('main window loads expected route', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.ok(readyData.route, 'should have route');
     const validRoutes = ['#/main/home', '#/main/codeHub', '#/main/claudeCode', '#/main/codex'];
     assert.ok(
@@ -214,8 +207,8 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     );
   });
 
-  it('preload bridge is intact', function () {
-    if (!readyData) { this.skip(); return; }
+  it('preload bridge is intact', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.hasPreloadBridge, true, 'window.electronAPI must exist');
     assert.ok(Array.isArray(readyData.preloadKeys), 'preloadKeys should be array');
 
@@ -231,75 +224,75 @@ describe('Electron E2E Boot Smoke (T196)', () => {
 
   // ── Phase 1: IPC contract smoke ──
 
-  it('Phase 1: preload bridge ping works', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 1: preload bridge ping works', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.pingOk, true, 'pingOk should be true');
   });
 
-  it('Phase 1: provider count is zero for fresh userData', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 1: provider count is zero for fresh userData', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.providerCount, 0,
       'providerCount should be 0 for fresh userData');
   });
 
   // ── Phase 2: Settings boundary ──
 
-  it('Phase 2: settings store is accessible', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 2: settings store is accessible', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.settingsLoaded, true, 'settingsLoaded should be true');
     assert.ok(Array.isArray(readyData.settingsKeys), 'settingsKeys should be array');
     assert.strictEqual(readyData.settingsKeys.length, 0,
       'settingsKeys should be empty for fresh userData');
   });
 
-  it('Phase 2: app version is defined', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 2: app version is defined', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.ok(typeof readyData.appVersion === 'string' && readyData.appVersion.length > 0,
       'appVersion should be non-empty string');
   });
 
   // ── Phase 3: Session restore ──
 
-  it('Phase 3: Claude session listing returns zero', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 3: Claude session listing returns zero', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.claudeSessionsCount, 0,
       'claudeSessionsCount should be 0 for empty userData');
   });
 
-  it('Phase 3: CodeX session listing returns zero', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 3: CodeX session listing returns zero', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.codexSessionsCount, 0,
       'codexSessionsCount should be 0 for empty userData');
   });
 
-  it('Phase 3: Claude scan finds seeded session', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 3: Claude scan finds seeded session', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.claudeSeededCount, 1,
       'should find exactly 1 seeded Claude session');
   });
 
-  it('Phase 3: CodeX scan finds seeded session', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 3: CodeX scan finds seeded session', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.codexSeededCount, 1,
       'should find exactly 1 seeded CodeX session');
   });
 
   // ── Phase 4: Provider CRUD smoke ──
 
-  it('Phase 4: provider CRUD roundtrip succeeds', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 4: provider CRUD roundtrip succeeds', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.providerRoundtripOk, true,
       'providerRoundtripOk should be true');
   });
 
-  it('Phase 4: initial provider count is zero', function () {
-    if (!readyData?.providerCrudDetail) { this.skip(); return; }
+  it('Phase 4: initial provider count is zero', function (t) {
+    if (!readyData?.providerCrudDetail) { t.skip(); return; }
     assert.strictEqual(readyData.providerCrudDetail.initialCount, 0,
       'initial provider count should be 0');
   });
 
-  it('Phase 4: write-then-delete is consistent', function () {
-    if (!readyData?.providerCrudDetail) { this.skip(); return; }
+  it('Phase 4: write-then-delete is consistent', function (t) {
+    if (!readyData?.providerCrudDetail) { t.skip(); return; }
     const d = readyData.providerCrudDetail;
     assert.strictEqual(d.afterWriteCount, 1, 'after write should be 1');
     assert.strictEqual(d.afterDeleteCount, 0, 'after delete should be 0');
@@ -307,8 +300,8 @@ describe('Electron E2E Boot Smoke (T196)', () => {
 
   // ── Phase 2b: Settings sanitizer ──
 
-  it('Phase 2b: sanitizer removes MindCraft fields from settings.json', function () {
-    if (!readyData?.sanitizerDetail) { this.skip(); return; }
+  it('Phase 2b: sanitizer removes MindCraft fields from settings.json', function (t) {
+    if (!readyData?.sanitizerDetail) { t.skip(); return; }
     const d = readyData.sanitizerDetail;
     assert.strictEqual(d.hasGitMirrorUrl, false,
       'gitMirrorUrl must NOT leak into settings.json');
@@ -318,8 +311,8 @@ describe('Electron E2E Boot Smoke (T196)', () => {
       'permissionPolicy must NOT leak into settings.json');
   });
 
-  it('Phase 2b: sanitizer preserves SDK-owned fields', function () {
-    if (!readyData?.sanitizerDetail) { this.skip(); return; }
+  it('Phase 2b: sanitizer preserves SDK-owned fields', function (t) {
+    if (!readyData?.sanitizerDetail) { t.skip(); return; }
     const d = readyData.sanitizerDetail;
     assert.strictEqual(d.modelPreserved, true,
       'model (SDK field) must be preserved in settings.json');
@@ -327,23 +320,23 @@ describe('Electron E2E Boot Smoke (T196)', () => {
       'skipWebFetchPreflight (SDK field) must be preserved in settings.json');
   });
 
-  it('Phase 2b: sanitizer roundtrip succeeds', function () {
-    if (!readyData) { this.skip(); return; }
+  it('Phase 2b: sanitizer roundtrip succeeds', function (t) {
+    if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.sanitizerOk, true,
       'sanitizerOk should be true');
   });
 
   // ── Phase 3b: Restart and verify no duplicates ──
 
-  it('Phase 3b: reboot preserves session count (no duplicates)', async function () {
+  it('Phase 3b: reboot preserves session count (no duplicates)', async function (t) {
     if (!readyData || process.env.SKIP_E2E || process.env.CI) {
-      this.skip();
+      t.skip();
       return;
     }
 
     const electronBin = findElectronBinary();
     if (!electronBin) {
-      this.skip();
+      t.skip();
       return;
     }
 

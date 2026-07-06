@@ -95,15 +95,17 @@ function installE2EHook(win) {
       const seedCodexCwd = process.env.MINDCRAFT_E2E_SEED_CODEX_CWD || '';
 
       try {
-        // Scan system temp dir for fresh-userData check
-        const os = require('os');
-        const tmpDir = os.tmpdir();
+        // Scan empty directory inside isolated home dir for fresh-userData check.
+        // Do NOT use os.tmpdir() — it's the system-wide temp dir and may
+        // contain sessions from other E2E runs or apps, making the assertion fragile.
+        const homeDir = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
+        const emptyScanDir = path.join(homeDir, '.mindcraft-e2e-empty-scan');
         claudeSessionsCount = await win.webContents.executeJavaScript(`
           (async () => {
             try {
               const api = window.electronAPI;
               if (!api?.claudeScanProjectsSessions) return -1;
-              const sessions = await api.claudeScanProjectsSessions(${JSON.stringify(tmpDir)});
+              const sessions = await api.claudeScanProjectsSessions(${JSON.stringify(emptyScanDir)});
               return Array.isArray(sessions) ? sessions.length : -1;
             } catch (e) { return -1; }
           })()`);
@@ -113,7 +115,7 @@ function installE2EHook(win) {
             try {
               const api = window.electronAPI;
               if (!api?.codexListSessionsByCwd) return -1;
-              const sessions = await api.codexListSessionsByCwd(${JSON.stringify(tmpDir)});
+              const sessions = await api.codexListSessionsByCwd(${JSON.stringify(emptyScanDir)});
               return Array.isArray(sessions) ? sessions.length : -1;
             } catch (e) { return -1; }
           })()`);

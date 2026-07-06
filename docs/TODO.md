@@ -11,10 +11,10 @@ Registered follow-ups:
 | ID | Category | Scope | Priority | Status |
 |----|----------|-------|----------|--------|
 | T193 | release/qa | Release stabilization window: current line only accepts smoke/build/P0-P1 fixes until package candidate passes manual smoke. | P1 | Registered |
-| T194 | architecture/ipc | IPC historical channel retirement plan: classify and migrate grandfathered channels by owner group; no bulk rename before T185. | P2 | Registered |
-| T195 | architecture/compat | T188 Phase 1: convert eligible legacy write projections to read-only fallback after the release window. | P2 | Registered |
-| T196 | test/e2e | Electron E2E smoke harness subset for boot, preload bridge, settings sanitizer, session restore, provider settings. | P2 | Registered |
-| T197 | architecture/agent | Agent lifecycle characterization before any further core loop extraction. | P2 | Registered |
+| T194 | architecture/ipc | **Phase 2 完成**：218 grandfathered 通道迁移 + 扫描器升级（`findConstantInvocations` 支持常量引用，272 preload / 244 main / 349 registered）+ preload fallback 收缩（仅保留 streaming push events）。Phase 3 baseline 清零待后续。 | P2 | Phase 2 ✅ |
+| T195 | architecture/compat | **T188 Phase 1 完成**：CodeX `~/.codex/providers.json` 写投影已停止（sync `writeProviders` 移除）；Claude `confSet('claudeProviders')` 写投影已停止。保留读回退。兼容性注册表已更新。 | P2 | ✅ 已完成 |
+| T196 | test/e2e | **Electron E2E smoke harness**：19/19 tests，覆盖 boot / preload / sanitizer / session restore / provider CRUD / restart dedup。已修复 `this.skip()` crash（node:test 兼容）和 `os.tmpdir()` 环境耦合。 | P2 | ✅ 已完成 |
+| T197 | architecture/agent | **✅ 已完成**：Agent lifecycle characterization — 映射 stream/abort/done/session map/metrics flush 生命周期。输出 `docs/agent-lifecycle-characterization.md`。结论：不合并流循环；可提取共享 emitMetricsViaStore 模式；CodeX runId 竞态防护更健壮。 | P2 | ✅ 已完成 |
 
 > 最后更新：2026-07-06
 > 历史归档：`docs/archive/todo-history.md`
@@ -272,6 +272,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 | 日期 | 分类 | 说明 |
 |------|------|------|
+| 2026-07-06 | test/e2e | **T196 Electron E2E smoke harness 完成**：19/19 tests，覆盖 Phase 0-4 + 2b sanitizer + 3b restart dedup。修复 E2E 隔离问题（HOME/USERPROFILE 覆盖），Phase 2b 验证 settings sanitizer 通过真实 Electron 链路，Phase 3/3b 验证 seed→scan→restart 无重复 session。入口：`tests/e2e/smoke-boot.cjs`。 |
 | 2026-07-05 | metrics | **T180 context authority 核心完成**：TurnStore 增加 `contextSource/contextAuthority`，新回合只继承同 session confirmed context，不继承上一轮 turn tokens；低权威/空 context 不覆盖强 context。 |
 | 2026-07-05 | architecture/perf | **T183 缓存治理主线完成**：完成缓存 inventory 和治理规则，新增 `createFileDerivedCache()` / `trackDedup()`，迁移 home/Claude/CodeX JSONL line + metrics aggregate 缓存，registry read cache 修复 stale cleanup，metrics aggregate dedup 增加 timeout 和 identity guard。 |
 | 2026-07-05 | perf/architecture | **T182 session scan 瘦身完成**：移除窗口 focus 自动扫描轮询，发送/done 边界即时更新排序和 fileSize，避免切换体验继续依赖后台 scan 顺手修正。 |

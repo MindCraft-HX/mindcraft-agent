@@ -2093,12 +2093,9 @@ function setupClaudeHandlers() {
     const requestedModel = typeof data?.model === 'string' ? data.model.trim() : ''
     const model = requestedModel || (tierModels[selectedTier] || '').trim() || fallbackModel[selectedTier]
 
-    // Write providers to SQLite via repository (with legacy projection to internalConf)
+    // Write providers to SQLite via repository (T195: legacy confSet projection removed)
     const wrote = await writeClaudeProviders({ providers, activeIdx })
     if (!wrote) return { ok: false, error: 'DB write failed', model }
-
-    // 立即同步 legacy projection，避免 model picker / runtime 继续读到旧 activeIdx。
-    confSet('claudeProviders', { providers, activeIdx })
 
     // tierModels 仍写入 internalConf（独立的配置，不通过 provider repository）
     internalConf.set('tierModels', tierModels)

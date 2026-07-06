@@ -1,6 +1,6 @@
 # MindCraft Agent 知识库
 
-> 最后更新：2026-07-05
+> 最后更新：2026-07-06
 > 定位：文档体系入口索引，覆盖所有活跃文档。过期/已完成的计划见 `archive/`。
 
 ---
@@ -10,6 +10,7 @@
 | 文档 | 说明 |
 |------|------|
 | [agent-architecture.md](./agent-architecture.md) | 架构契约：目录边界、运行时分层、数据归属、会话身份模型、Token Metrics 架构 |
+| [agent-lifecycle-characterization.md](./agent-lifecycle-characterization.md) | Agent 生命周期表征 (T197)：stream/abort/done/session map/metrics flush 完整映射，含差异对比与提取建议 |
 | [session-pitfalls.md](./session-pitfalls.md) | 跨 Agent 会话陷阱全景图，含排查决策树。**会话相关 bug 第一入口** |
 
 ## 专题
@@ -30,6 +31,9 @@
 | 架构健康 | [architecture-health-review-2026-06-28.md](./architecture-health-review-2026-06-28.md) | 全量架构审计：巨型文件、重复代码、IPC、依赖、测试，含优先级排序 |
 | 存储架构 | [STORAGE_ARCHITECTURE_ANALYSIS.md](./STORAGE_ARCHITECTURE_ANALYSIS.md) | SQLite 基础设施、CC Switch 导入、本地存储迁移与最终边界 |
 | 配置导入 | [T163-import-feature.md](./T163-import-feature.md) | 系统设置全局 CC Switch 导入、预览/提交边界、防污染规则 |
+| 配置导出 | [plan-export-cc-switch.md](./plan-export-cc-switch.md) | CC Switch 导出功能设计 |
+| 兼容性 | [compatibility-register.md](./compatibility-register.md) | Legacy 兼容性注册表：遗留路径、退出窗口、移除门控 |
+| Session | [session-instruction-cache-analysis.md](./session-instruction-cache-analysis.md) | Session Instruction 缓存机制分析 |
 
 ## 设计决策
 
@@ -46,7 +50,10 @@
 
 | 文档 | 说明 |
 |------|------|
-| [plan/2026-07-06-post-refactor-release-and-cleanup-queue.md](./plan/2026-07-06-post-refactor-release-and-cleanup-queue.md) | Post-refactor release gate and cleanup queue：当前发布线冻结新功能，后续清理按 T193-T197 分批推进 |
+| [plan/2026-07-06-post-refactor-release-and-cleanup-queue.md](./plan/2026-07-06-post-refactor-release-and-cleanup-queue.md) | Post-refactor release gate and cleanup queue：当前发布线冻结新功能，后续清理按 T193-T197 分批推进（全部已完成） |
+| [plan/2026-07-06-T197-agent-lifecycle-work-graph.md](./plan/2026-07-06-T197-agent-lifecycle-work-graph.md) | T197 Agent lifecycle work graph：stream/abort/done/session map/metrics flush 调用链 |
+| [plan/2026-07-06-T194-ipc-channel-classification.md](./plan/2026-07-06-T194-ipc-channel-classification.md) | T194 IPC 通道分类与迁移：218 grandfathered 通道归属划分、baseline 清零 |
+| [plan/2026-07-06-T187-phase0-inventory.md](./plan/2026-07-06-T187-phase0-inventory.md) | T187 Dead code Phase 0 清单：重构后死代码、孤岛业务线全量盘点 |
 | [plan/2026-07-05-legacy-compatibility-exit-plan.md](./plan/2026-07-05-legacy-compatibility-exit-plan.md) | T188 Legacy compatibility exit：provider projection、electron-conf、旧 IPC/窗口/API 的退出窗口 |
 | [plan/2026-07-05-dead-code-and-redundant-business-route-audit.md](./plan/2026-07-05-dead-code-and-redundant-business-route-audit.md) | T187 Dead code / redundant business route audit：重构后死代码、孤岛业务线、预加载 API 和依赖清理 |
 | [plan/2026-07-05-agent-core-lifecycle-boundary-audit.md](./plan/2026-07-05-agent-core-lifecycle-boundary-audit.md) | T186 Agent core 生命周期边界审计：stream/abort/done/session map 不为减行数强拆 |
@@ -55,11 +62,13 @@
 | [plan/2026-07-05-cache-governance-and-local-derived-data.md](./plan/2026-07-05-cache-governance-and-local-derived-data.md) | T183 Cache governance / local derived data：file-derived cache helper、registry read cache、in-flight dedup timeout |
 | [plan/2026-07-05-hot-path-governance-and-streaming-render.md](./plan/2026-07-05-hot-path-governance-and-streaming-render.md) | T181 CodeHub startup / activation chain：同步段治理、会话切换卡顿收口，streaming render 后续 |
 | [plan/2026-07-05-project-session-activation-work-graph.md](./plan/2026-07-05-project-session-activation-work-graph.md) | T179 Project / Session activation work graph：scan cache hit 去 registry 写副作用 |
+| [plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md](./plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md) | T180 Metrics 收口：context 权威来源、carry-forward、Claude/CodeX 首次 hydrate 对称性 |
 | [plan/2026-07-04-renderer-dom-layout-and-cache-governance.md](./plan/2026-07-04-renderer-dom-layout-and-cache-governance.md) | T177-P2 Renderer DOM/Layout/Paint 归因与缓存治理 |
 | [plan/2026-07-04-session-switch-background-task-latency.md](./plan/2026-07-04-session-switch-background-task-latency.md) | T177 Session 切换后台任务延迟：metrics 主进程阻塞诊断与修复 |
 | [plan/2026-07-04-large-session-rendering-performance.md](./plan/2026-07-04-large-session-rendering-performance.md) | T176 大 session 渲染卡顿：history tool 折叠、bash output 懒挂载、renderContent 证伪 |
+| [plan/2026-07-03-provider-storage-migration.md](./plan/2026-07-03-provider-storage-migration.md) | T174 Provider storage 迁移方案：SQLite 权威、legacy projection 策略 |
+| [plan/2026-07-03-provider-storage-handoff.md](./plan/2026-07-03-provider-storage-handoff.md) | T174 Provider storage 交接：实现细节、回退窗口、验收标准 |
 | [plan/2026-07-02-T172-session-switch-performance.md](./plan/2026-07-02-T172-session-switch-performance.md) | T172 Session switch 真优化：CodeX metrics 后台化，Claude Phase 2 跳过 |
-| [plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md](./plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md) | T180 Metrics 收口：context 权威来源、carry-forward、Claude/CodeX 首次 hydrate 对称性 |
 | [plan/2026-07-02-session-tab-switch-performance.md](./plan/2026-07-02-session-tab-switch-performance.md) | T170 Session / Tab 切换性能收口：scheduled refresh、cooldown、scroll restore |
 | [plan/2026-07-02-renderer-hot-path-performance.md](./plan/2026-07-02-renderer-hot-path-performance.md) | T169 Renderer 高频链路瘦身：ProjectTabs summary、CodeHub 白名单、saveHistory/textarea 优化 |
 | [plan/2026-07-01-session-registry-ownership-handoff.md](./plan/2026-07-01-session-registry-ownership-handoff.md) | T165 Session Registry ownership 交接：Phase 1 已完成、T167 覆盖优先、Phase 2 边界 |
@@ -96,6 +105,7 @@
 | [bugs/doc-link-navigation.md](./bugs/doc-link-navigation.md) | 文档链接跳转 |
 | [bugs/toolbar-disappearance.md](./bugs/toolbar-disappearance.md) | 工具栏消失 |
 | [bugs/ask-dialog-deactivate-failure.md](./bugs/ask-dialog-deactivate-failure.md) | Ask 弹窗失活失败 |
+| [bugs/claude-task-panel-update-loss.md](./bugs/claude-task-panel-update-loss.md) | Claude Task 面板更新丢失 |
 
 ## 质量
 
@@ -113,3 +123,5 @@
 | [tmp/](./tmp/) | 临时测试数据，不纳入 git |
 | `local/` `private/` | 不纳入 git 的私密/本地内容 |
 | [archive/](./archive/) | 已过期/已完成的计划与历史记录 |
+| [handover/](./handover/) | 交接文档（性能优化、架构迁移等） |
+| [plans/remaining-refactoring-roadmap.md](./plans/remaining-refactoring-roadmap.md) | 剩余重构路线图（跨阶段规划参考） |

@@ -62,7 +62,7 @@ test('claude memory inject mode is MindCraft-owned and persisted outside officia
   )
 })
 
-test('claude runtime uses effective active provider config and provider activation syncs settings.json', () => {
+test('claude provider activation syncs official runtime settings without legacy projection', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
 
   assert.match(
@@ -80,10 +80,17 @@ test('claude runtime uses effective active provider config and provider activati
     /function patchClaudeRuntimeSettings\(/,
     'expected shared official settings patch helper for provider activation/runtime sync',
   )
+  // T195 Phase 1: legacy confSet('claudeProviders', ...) write projection removed.
+  // Provider writes go through SQLite only; confGet('claudeProviders') remains as read fallback.
+  assert.doesNotMatch(
+    source,
+    /confSet\('claudeProviders', \{ providers, activeIdx \}\)/,
+    'T195: confSet claudeProviders legacy write projection must be removed',
+  )
   assert.match(
     source,
-    /ipcMain\.handle\(CLAUDE_CHANNELS\.ACTIVATE_PROVIDER[\s\S]*confSet\('claudeProviders', \{ providers, activeIdx \}\)[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(runtimeConfig\)\)/,
-    'expected provider activation to sync legacy projection and official runtime settings from active provider in main process',
+    /ipcMain\.handle\(CLAUDE_CHANNELS\.ACTIVATE_PROVIDER[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(runtimeConfig\)\)/,
+    'expected provider activation to sync official runtime settings from active provider in main process',
   )
 })
 
