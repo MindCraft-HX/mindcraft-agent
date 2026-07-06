@@ -200,6 +200,70 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     }
   });
 
+  // ── Phase 1: IPC contract smoke ──
+
+  it('Phase 1: preload bridge ping works', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.pingOk, true, 'pingOk should be true');
+  });
+
+  it('Phase 1: provider count is zero for fresh userData', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.providerCount, 0,
+      'providerCount should be 0 for fresh userData');
+  });
+
+  // ── Phase 2: Settings boundary ──
+
+  it('Phase 2: settings store is accessible', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.settingsLoaded, true, 'settingsLoaded should be true');
+    assert.ok(Array.isArray(readyData.settingsKeys), 'settingsKeys should be array');
+    assert.strictEqual(readyData.settingsKeys.length, 0,
+      'settingsKeys should be empty for fresh userData');
+  });
+
+  it('Phase 2: app version is defined', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.ok(typeof readyData.appVersion === 'string' && readyData.appVersion.length > 0,
+      'appVersion should be non-empty string');
+  });
+
+  // ── Phase 3: Session restore ──
+
+  it('Phase 3: Claude session listing returns zero', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.claudeSessionsCount, 0,
+      'claudeSessionsCount should be 0 for empty userData');
+  });
+
+  it('Phase 3: CodeX session listing returns zero', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.codexSessionsCount, 0,
+      'codexSessionsCount should be 0 for empty userData');
+  });
+
+  // ── Phase 4: Provider CRUD smoke ──
+
+  it('Phase 4: provider CRUD roundtrip succeeds', function () {
+    if (!readyData) { this.skip(); return; }
+    assert.strictEqual(readyData.providerRoundtripOk, true,
+      'providerRoundtripOk should be true');
+  });
+
+  it('Phase 4: initial provider count is zero', function () {
+    if (!readyData?.providerCrudDetail) { this.skip(); return; }
+    assert.strictEqual(readyData.providerCrudDetail.initialCount, 0,
+      'initial provider count should be 0');
+  });
+
+  it('Phase 4: write-then-delete is consistent', function () {
+    if (!readyData?.providerCrudDetail) { this.skip(); return; }
+    const d = readyData.providerCrudDetail;
+    assert.strictEqual(d.afterWriteCount, 1, 'after write should be 1');
+    assert.strictEqual(d.afterDeleteCount, 0, 'after delete should be 0');
+  });
+
   after(() => {
     // Ensure electron is killed
     try { if (electronProcess && !electronProcess.killed) electronProcess.kill(); } catch (_) {}

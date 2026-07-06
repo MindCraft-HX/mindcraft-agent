@@ -41,12 +41,145 @@ function installE2EHook(win) {
         'typeof window.electronAPI !== "undefined"'
       );
 
+      // ── Phase 1: IPC contract smoke ──
+      let pingOk = false, providerCount = -1;
+      try {
+        pingOk = await win.webContents.executeJavaScript(
+          'typeof window.electronAPI !== "undefined"');
+
+        const pcResult = await win.webContents.executeJavaScript(`
+          (async () => {
+            try {
+              const api = window.electronAPI;
+              if (!api) return { count: -1 };
+              const fn = api.claudeGetProviders || api.codexGetProviders;
+              if (!fn) return { count: -1 };
+              const data = await fn();
+              return { count: data?.providers?.length ?? 0 };
+            } catch (e) { return { count: -1, error: e.message }; }
+          })()`);
+        providerCount = pcResult.count;
+      } catch (e) { console.error('[e2e] Phase 1 error:', e.message); }
+
+      // ── Phase 2: Settings boundary ──
+      let settingsLoaded = false, settingsKeys = [];
+      let appVersion = null, diagnosticsEnabled = null;
+      try {
+        const allSettings = await win.webContents.executeJavaScript(`
+          (async () => {
+            try { return await window.electronAPI?.getSetting?.(null); }
+            catch (e) { return null; }
+          })()`);
+        settingsLoaded = allSettings !== null && typeof allSettings === 'object';
+        settingsKeys = settingsLoaded ? Object.keys(allSettings) : [];
+
+        appVersion = await win.webContents.executeJavaScript(`
+          (async () => {
+            try { return await window.electronAPI?.getAppVersion?.(); }
+            catch (e) { return null; }
+          })()`);
+
+        const diag = await win.webContents.executeJavaScript(`
+          (async () => {
+            try { return await window.electronAPI?.getDiagnosticsEnabled?.(); }
+            catch (e) { return null; }
+          })()`);
+        diagnosticsEnabled = diag?.enabled ?? null;
+      } catch (e) { console.error('[e2e] Phase 2 error:', e.message); }
+
+      // ── Phase 3: Session restore ──
+      const os = require('os');
+      const tmpDir = os.tmpdir();
+      let claudeSessionsCount = -1, codexSessionsCount = -1;
+      try {
+        claudeSessionsCount = await win.webContents.executeJavaScript(`
+          (async () => {
+            try {
+              const api = window.electronAPI;
+              if (!api?.claudeScanProjectsSessions) return -1;
+              const sessions = await api.claudeScanProjectsSessions(${JSON.stringify(tmpDir)});
+              return Array.isArray(sessions) ? sessions.length : -1;
+            } catch (e) { return -1; }
+          })()`);
+
+        codexSessionsCount = await win.webContents.executeJavaScript(`
+          (async () => {
+            try {
+              const api = window.electronAPI;
+              if (!api?.codexListSessionsByCwd) return -1;
+              const sessions = await api.codexListSessionsByCwd(${JSON.stringify(tmpDir)});
+              return Array.isArray(sessions) ? sessions.length : -1;
+            } catch (e) { return -1; }
+          })()`);
+      } catch (e) { console.error('[e2e] Phase 3 error:', e.message); }
+
+      // ── Phase 4: Provider CRUD smoke ──
+      let providerRoundtripOk = false;
+      let providerCrudDetail = { initialCount: -1, afterWriteCount: -1, afterDeleteCount: -1 };
+      try {
+        const crud = await win.webContents.executeJavaScript(`
+          (async () => {
+            const detail = { initialCount: -1, afterWriteCount: -1, afterDeleteCount: -1 };
+            try {
+              const api = window.electronAPI;
+              const mockProviders = [{ name: 'e2e_smoke', key: 'sk-mock', url: 'https://mock.example.com' }];
+
+              const getFn = api?.claudeGetProviders || api?.codexGetProviders;
+              const setFn = api?.claudeSetProviders || api?.codexSetProviders;
+              if (!getFn || !setFn) return { ok: false, detail, error: 'No provider API available' };
+
+              const initial = await getFn();
+              detail.initialCount = initial?.providers?.length ?? 0;
+
+              let writeResult = await setFn({ providers: mockProviders, activeIdx: 0 });
+              if (!writeResult?.ok) return { ok: false, detail, error: 'write failed' };
+
+              const afterWrite = await getFn();
+              detail.afterWriteCount = afterWrite?.providers?.length ?? 0;
+
+              const delResult = await setFn({ providers: [], activeIdx: -1 });
+              const afterDelete = await getFn();
+              detail.afterDeleteCount = afterDelete?.providers?.length ?? 0;
+
+              return { ok: detail.afterWriteCount === 1 && detail.afterDeleteCount === 0, detail };
+            } catch (e) { return { ok: false, detail, error: e.message }; }
+          })()`);
+        providerRoundtripOk = crud?.ok === true;
+        if (crud?.detail) providerCrudDetail = crud.detail;
+      } catch (e) { console.error('[e2e] Phase 4 error:', e.message); }
+
+      // ── Phases errored tracker ──
+      const phasesErrored = [];
+      if (!pingOk) phasesErrored.push('phase1:ping');
+      if (providerCount === -1) phasesErrored.push('phase1:providerCount');
+      if (!settingsLoaded) phasesErrored.push('phase2:settingsLoaded');
+      if (appVersion === null) phasesErrored.push('phase2:appVersion');
+      if (claudeSessionsCount === -1) phasesErrored.push('phase3:claudeSessions');
+      if (codexSessionsCount === -1) phasesErrored.push('phase3:codexSessions');
+      if (!providerRoundtripOk && providerCrudDetail.initialCount === -1) phasesErrored.push('phase4:providerCRUD');
+
       const signal = {
         mode,
         route,
         preloadKeys,
         hasPreloadBridge,
         timestamp: new Date().toISOString(),
+        // Phase 1
+        pingOk,
+        providerCount,
+        // Phase 2
+        settingsKeys,
+        settingsLoaded,
+        appVersion,
+        diagnosticsEnabled,
+        // Phase 3
+        claudeSessionsCount,
+        codexSessionsCount,
+        // Phase 4
+        providerRoundtripOk,
+        providerCrudDetail,
+        // meta
+        phasesErrored,
       };
 
       // Atomic write: write to temp then rename
