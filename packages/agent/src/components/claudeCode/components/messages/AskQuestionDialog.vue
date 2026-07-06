@@ -1,41 +1,39 @@
 <template>
-  <Teleport to="body">
-    <Transition name="ask-dialog-fade">
-      <div v-if="visible && currentQuestion" class="ask-dialog-overlay" :class="themeClass" @click.self="() => {}">
-        <div class="ask-dialog">
-          <div class="ask-dialog-header">
-            <span class="ask-dialog-title">{{ $t('agent.askTitle') }}</span>
-            <span class="ask-dialog-step">{{ currentIndex + 1 }} / {{ questions.length }}</span>
-            <span class="ask-dialog-close" @click="handleClose">✕</span>
+  <Transition name="ask-dialog-fade">
+    <div v-if="visible && currentQuestion" class="ask-dialog-overlay" :class="themeClass" @click.self="() => {}">
+      <div class="ask-dialog">
+        <div class="ask-dialog-header">
+          <span class="ask-dialog-title">{{ $t('agent.askTitle') }}</span>
+          <span class="ask-dialog-step">{{ currentIndex + 1 }} / {{ questions.length }}</span>
+          <span class="ask-dialog-close" @click="handleClose">✕</span>
+        </div>
+        <div class="ask-dialog-body">
+          <div class="ask-q-header" v-if="currentQuestion.header">{{ currentQuestion.header }}</div>
+          <div class="ask-q-prompt">{{ currentQuestion.prompt }}</div>
+          <div class="ask-q-options">
+            <button
+              v-for="(opt, oi) in currentQuestion.options"
+              :key="oi"
+              class="ask-q-option"
+              @click="selectOption(opt)"
+            >
+              <span class="opt-label">{{ opt.label }}</span>
+              <span v-if="opt.description" class="opt-desc">{{ opt.description }}</span>
+            </button>
           </div>
-          <div class="ask-dialog-body">
-            <div class="ask-q-header" v-if="currentQuestion.header">{{ currentQuestion.header }}</div>
-            <div class="ask-q-prompt">{{ currentQuestion.prompt }}</div>
-            <div class="ask-q-options">
-              <button
-                v-for="(opt, oi) in currentQuestion.options"
-                :key="oi"
-                class="ask-q-option"
-                @click="selectOption(opt)"
-              >
-                <span class="opt-label">{{ opt.label }}</span>
-                <span v-if="opt.description" class="opt-desc">{{ opt.description }}</span>
-              </button>
-            </div>
-            <div class="ask-q-custom">
-              <input
-                class="ask-q-input"
-                :placeholder="$t('agent.askPlaceholder')"
-                v-model="customText"
-                @keydown.enter.stop="submitCustom"
-              />
-              <button class="ask-q-send" @click="submitCustom">{{ $t('agent.send') }}</button>
-            </div>
+          <div class="ask-q-custom">
+            <input
+              class="ask-q-input"
+              :placeholder="$t('agent.askPlaceholder')"
+              v-model="customText"
+              @keydown.enter.stop="submitCustom"
+            />
+            <button class="ask-q-send" @click="submitCustom">{{ $t('agent.send') }}</button>
           </div>
         </div>
       </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </Transition>
 </template>
 
 <script setup>
@@ -84,9 +82,9 @@ defineExpose({ reset })
 
 <style scoped>
 .ask-dialog-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 9999;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;

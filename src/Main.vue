@@ -27,7 +27,7 @@
           <div class="sidebar-nav">
             <div
               class="sidebar-item"
-              :class="{ active: activeIndex === '/main/codeHub', 'has-notification': codehubHasNotification && activeIndex !== '/main/codeHub' }"
+              :class="{ active: activeIndex === '/main/codeHub', 'has-running': codehubHasRunning && activeIndex !== '/main/codeHub', 'has-notification': !codehubHasRunning && codehubHasNotification && activeIndex !== '/main/codeHub' }"
               @click="$router.push('/main/codeHub')"
               :title="$t('nav.project')"
             >
@@ -218,6 +218,8 @@ const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
 // 任务完成通知状态：由 codeHub 更新，用于侧边栏"项目"图标提醒
 const codehubHasNotification = ref(false);
+// session 运行中状态：由 codeHub 更新，用于侧边栏"项目"图标闪烁提醒
+const codehubHasRunning = ref(false);
 const pluginStore = usePluginStore();
 const { enabledPlugins } = storeToRefs(pluginStore);
 const claudeTheme = useClaudeThemeStore();
@@ -225,6 +227,7 @@ const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`);
 provide("settingsDrawer", settingsDrawer);
 provide("activeSetting", activeSetting);
 provide("codehubHasNotification", codehubHasNotification);
+provide("codehubHasRunning", codehubHasRunning);
 
 function openSettings() {
   sharedSettingsRef.value?.open()
@@ -433,23 +436,33 @@ window.electronAPI?.openTabByName?.((progress) => {
     }
   }
 
-  /* 任务完成通知：侧边栏图标脉冲 + 右上角小圆点 */
+  /* session 运行中通知：侧边栏图标快速闪烁 */
+  &.has-running {
+    color: var(--cc-warning, #e6a23c);
+    animation: sidebar-running-blink 0.7s ease-in-out infinite;
+    .sidebar-label { color: var(--cc-warning, #e6a23c); }
+  }
+
+  /* 任务完成通知：侧边栏图标脉冲 */
   &.has-notification {
     color: var(--cc-warning, #e6a23c);
     animation: sidebar-notify-pulse 1.6s ease-in-out infinite;
-
     .sidebar-label { color: var(--cc-warning, #e6a23c); }
+  }
 
-    &::after {
-      content: '';
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--cc-warning, #e6a23c);
-    }
+  /* 共享的右上角小圆点（has-running 闪烁，has-notification 静止） */
+  &.has-running::after, &.has-notification::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cc-warning, #e6a23c);
+  }
+  &.has-running::after {
+    animation: running-dot-blink 0.7s ease-in-out infinite;
   }
 
   .sidebar-icon-wrapper {
@@ -484,6 +497,16 @@ window.electronAPI?.openTabByName?.((progress) => {
     text-overflow: ellipsis;
     max-width: 56px;
   }
+}
+
+/* 侧边栏运行中快速闪烁动画 */
+@keyframes sidebar-running-blink {
+  0%, 100% { background: transparent; }
+  50% { background: var(--cc-warning-bg, rgba(230, 162, 60, 0.22)); }
+}
+@keyframes running-dot-blink {
+  0%, 100% { opacity: 0.3; transform: scale(0.7); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
 
 /* 侧边栏通知脉冲动画 */

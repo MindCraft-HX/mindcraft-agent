@@ -1676,14 +1676,23 @@ const { sidebarOpen } = useCodexTabs({
 })
 
 // Stream handler
-const codehubHasNotification = inject('codehubHasNotification', null)
-
-// ── 侧边栏「项目」通知指示器 ──
+// ── 侧边栏「项目」通知/运行指示器 ──
 // Phase 2: 复用统一 projectTabSummaries
+// 直接维护 Main.vue 提供的 codehubHasNotification / codehubHasRunning，
+// 确保 keep-alive 失活时仍能更新
+const codehubHasNotification = inject('codehubHasNotification', null)
+const codehubHasRunning = inject('codehubHasRunning', null)
 watch(
   () => projectTabSummaries.value.some(t => t.hasDoneNotification),
   (has) => {
     if (codehubHasNotification) codehubHasNotification.value = has
+  },
+  { immediate: true }
+)
+watch(
+  () => projectTabSummaries.value.some(t => t.runningCount > 0),
+  (has) => {
+    if (codehubHasRunning) codehubHasRunning.value = has
   },
   { immediate: true }
 )

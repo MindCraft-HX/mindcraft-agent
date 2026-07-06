@@ -64,7 +64,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 defineOptions({ name: 'mdViewer' })
 import { i18n } from '@/i18n'
@@ -122,12 +122,14 @@ function upsertTab(nextTab) {
   )
   if (idx < 0) {
     tabs.value.push(nextTab)
+    schedulePersist()
     return
   }
   tabs.value.splice(idx, 1, {
     ...tabs.value[idx],
     ...nextTab,
   })
+  schedulePersist()
 }
 
 function getPayloadKey(payload = {}) {
@@ -188,6 +190,92 @@ async function saveRecentDoc(payload = {}) {
     try { localStorage.removeItem('mindcraft_agent_recent_docs') } catch (_) {}
   } catch (_) {}
 }
+
+// ── Tab 持久化：重启后恢复已打开的文件列表 ──
+const DOC_TABS_STORE_KEY = 'openDocTabs'
+
+async function persistDocTabs() {
+  const tabsToSave = tabs.value
+    .filter(t => t.filePath)
+    .map(t => ({
+      id: t.id,
+      filePath: t.filePath,
+      name: t.name,
+      ext: t.ext,
+      viewerType: t.viewerType,
+    }))
+  try {
+    await window.electronAPI?.setSetting?.(DOC_TABS_STORE_KEY, {
+      tabs: tabsToSave,
+      activeTabId: activeTabId.value,
+    })
+  } catch (_) {}
+}
+
+let _persistTimer = null
+let _restoring = false
+function schedulePersist() {
+  if (_restoring) return   // 恢复期间跳过，避免写入刚读取的状态
+  clearTimeout(_persistTimer)
+  _persistTimer = setTimeout(persistDocTabs, 300)
+}
+
+async function restoreDocTabs() {
+  try {
+    const saved = await window.electronAPI?.getSetting?.(DOC_TABS_STORE_KEY)
+    if (!saved?.tabs?.length) return
+
+    // 添加 pending tabs（仅元信息，不加载内容）
+    for (const info of saved.tabs) {
+      const existing = findTabByFilePath(info.filePath)
+      if (existing) continue
+      tabs.value.push(createPendingDocumentTab({
+        id: info.id,
+        name: info.name,
+        filePath: info.filePath,
+        ext: info.ext,
+      }))
+    }
+
+    // 若 drainPendingPayloads 已经设置了 active tab 且不是 pending，尊重其选择不覆盖
+    const hadPriorActiveTab = activeTabId.value
+      && tabs.value.some(t => t.id === activeTabId.value && !t.isLoading)
+
+    if (hadPriorActiveTab) return
+
+    // 激活上次的 active tab 并加载内容
+    const targetId = (saved.activeTabId && tabs.value.find(t => t.id === saved.activeTabId))
+      ? saved.activeTabId
+      : tabs.value[0]?.id
+
+    if (targetId) {
+      const tab = tabs.value.find(t => t.id === targetId)
+      if (tab) {
+        _restoring = true
+        try {
+          activeTabId.value = tab.id
+          const payload = { filePath: tab.filePath, name: tab.name, id: tab.id }
+          const pending = applyPayloadSync(payload)
+          if (pending) await completePayloadAsync(payload, pending)
+        } finally {
+          _restoring = false
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+// 点击已恢复但未加载内容的 tab 时，懒加载文件内容
+watch(activeTabId, (newId) => {
+  if (_restoring || !newId) return   // 恢复期间跳过，避免双重加载
+  const tab = tabs.value.find(t => t.id === newId)
+  if (tab && tab.isLoading) {
+    const payload = { filePath: tab.filePath, name: tab.name, id: tab.id }
+    completePayloadAsync(payload, tab).catch(err =>
+      console.error('[mdViewer] lazy load failed:', err)
+    )
+  }
+})
 
 // 鍚屾搴旂敤 payload锛氱珛鍗冲垱寤?tab銆佹洿鏂?UI銆傝繑鍥為渶瑕佸紓姝ヨ鍙栫殑 pendingTab锛堟垨 null锛?
 function applyPayloadSync(payload = {}) {
@@ -294,6 +382,7 @@ function removeTab(id) {
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value[Math.max(0, idx - 1)]?.id || ''
   }
+  schedulePersist()
 }
 
 async function confirmOpenExternal(tab) {
@@ -342,6 +431,12 @@ async function drainPendingPayloads() {
 onMounted(async () => {
   window.electronAPI?.onMdContent?.(enqueuePayload)
   await drainPendingPayloads()
+  // 恢复上次打开的文档 tabs（在 drainPendingPayloads 之后，避免重复）
+  await restoreDocTabs()
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(_persistTimer)
 })
 
 onActivated(() => {

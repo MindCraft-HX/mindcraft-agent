@@ -727,9 +727,18 @@ provide('codehubSwitchToAgent', (agentKey) => {
 provide('codehubOpenSharedSettings', openSharedSettings)
 
 // ── 侧边栏「项目」通知指示器 ──
-// Main.vue 提供此 ref，codeHub 根据 unifiedTabs 中是否有 hasDoneNotification 来更新它
-// 当有后台项目完成任务时，侧边栏图标会脉冲提醒
+// Main.vue 提供这些 ref，codeHub 根据 unifiedTabs 状态来更新它们
+// runningCount > 0：侧边栏图标快速闪烁提醒（比 done 更紧急）
+// hasDoneNotification：侧边栏图标脉冲提醒（任务完成）
 const codehubHasNotification = inject('codehubHasNotification', null)
+const codehubHasRunning = inject('codehubHasRunning', null)
+watch(
+  () => unifiedTabs.value.some(t => t.runningCount > 0),
+  (has) => {
+    if (codehubHasRunning) codehubHasRunning.value = has
+  },
+  { immediate: true }
+)
 watch(
   () => unifiedTabs.value.some(t => t.hasDoneNotification),
   (has) => {

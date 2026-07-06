@@ -796,13 +796,22 @@ const projectTabSummaries = computed(() => {
 })
 
 // ── 侧边栏「项目」通知指示器 ──
-// 直接维护 Main.vue 提供的 codehubHasNotification，确保 keep-alive 失活时仍能更新
-// (codeHub 中的 computed+watch 在失活时会暂停，因此通知必须在这里直推)
+// 直接维护 Main.vue 提供的 codehubHasNotification / codehubHasRunning，
+// 确保 keep-alive 失活时仍能更新
+// (codeHub 中的 computed+watch 在失活时会暂停，因此必须在这里直推)
 const codehubHasNotification = inject('codehubHasNotification', null)
+const codehubHasRunning = inject('codehubHasRunning', null)
 watch(
   () => projectTabSummaries.value.some(t => t.hasDoneNotification),
   (has) => {
     if (codehubHasNotification) codehubHasNotification.value = has
+  },
+  { immediate: true }
+)
+watch(
+  () => projectTabSummaries.value.some(t => t.runningCount > 0),
+  (has) => {
+    if (codehubHasRunning) codehubHasRunning.value = has
   },
   { immediate: true }
 )
@@ -3887,6 +3896,7 @@ onUnmounted(() => {
   display: flex; flex-direction: column; width: 100%; height: 100%;
   background: var(--cc-bg); color: var(--cc-text); overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px;
+  position: relative;
 }
 
 /* ── 内容区域（侧边栏 + 主区域）─ */
