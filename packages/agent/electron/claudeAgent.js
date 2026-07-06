@@ -1685,26 +1685,7 @@ function setupClaudeHandlers() {
         patch = rest
         if (!Object.keys(patch).length) return { ok: true }
       }
-      const claudeDir = path.join(os.homedir(), '.claude')
-      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
-      const settingsPath = path.join(claudeDir, 'settings.json')
-      let existing = {}
-      if (fs.existsSync(settingsPath)) {
-        try { existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch (_) {}
-      }
-      const merged = sanitizeClaudeSettingsForWrite({ ...existing, ...patch }, {
-        preserveExistingInternal: true,
-      })
-      // 原子写入：先写临时文件，再 rename，防止并发写损坏
-      const tmp = `${settingsPath}.${process.pid}.tmp`
-      fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8')
-      try {
-        fs.renameSync(tmp, settingsPath)
-      } catch (_) {
-        fs.copyFileSync(tmp, settingsPath)
-        try { fs.unlinkSync(tmp) } catch (_) {}
-      }
-      return { ok: true }
+      return patchClaudeRuntimeSettings(patch)
     } catch (e) {
       return { ok: false, message: e?.message || String(e) }
     }
@@ -1882,6 +1863,44 @@ function setupClaudeHandlers() {
       providersState,
       activeProvider: active,
     }
+  }
+
+  function buildClaudeRuntimeSettingsPatch(runtimeConfig = {}) {
+    const selectedTier = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(runtimeConfig?.selectedTier)
+      ? runtimeConfig.selectedTier
+      : 'sonnet'
+    const env = {}
+    if (runtimeConfig?.apiKey) env.ANTHROPIC_AUTH_TOKEN = runtimeConfig.apiKey
+    if (runtimeConfig?.baseURL) env.ANTHROPIC_BASE_URL = runtimeConfig.baseURL
+    if (runtimeConfig?.tierModels?.haiku) env.ANTHROPIC_DEFAULT_HAIKU_MODEL = runtimeConfig.tierModels.haiku
+    if (runtimeConfig?.tierModels?.sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = runtimeConfig.tierModels.sonnet
+    if (runtimeConfig?.tierModels?.opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = runtimeConfig.tierModels.opus
+    if (runtimeConfig?.tierModels?.reasoning) env.ANTHROPIC_REASONING_MODEL = runtimeConfig.tierModels.reasoning
+    const patch = { model: selectedTier }
+    if (Object.keys(env).length) patch.env = env
+    return patch
+  }
+
+  function patchClaudeRuntimeSettings(patch = {}) {
+    const claudeDir = path.join(os.homedir(), '.claude')
+    if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true })
+    const settingsPath = path.join(claudeDir, 'settings.json')
+    let existing = {}
+    if (fs.existsSync(settingsPath)) {
+      try { existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch (_) {}
+    }
+    const merged = sanitizeClaudeSettingsForWrite({ ...existing, ...patch }, {
+      preserveExistingInternal: true,
+    })
+    const tmp = `${settingsPath}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8')
+    try {
+      fs.renameSync(tmp, settingsPath)
+    } catch (_) {
+      fs.copyFileSync(tmp, settingsPath)
+      try { fs.unlinkSync(tmp) } catch (_) {}
+    }
+    return { ok: true }
   }
 
   /**
@@ -2078,8 +2097,13 @@ function setupClaudeHandlers() {
     const wrote = await writeClaudeProviders({ providers, activeIdx })
     if (!wrote) return { ok: false, error: 'DB write failed', model }
 
+    // 立即同步 legacy projection，避免 model picker / runtime 继续读到旧 activeIdx。
+    confSet('claudeProviders', { providers, activeIdx })
+
     // tierModels 仍写入 internalConf（独立的配置，不通过 provider repository）
     internalConf.set('tierModels', tierModels)
+    const runtimeConfig = resolveEffectiveRuntimeConfig()
+    patchClaudeRuntimeSettings(buildClaudeRuntimeSettingsPatch(runtimeConfig))
 
     resetAgentRuntime('provider-activated')
     return { ok: true, model }
@@ -2596,7 +2620,7 @@ function setupClaudeHandlers() {
 
   ipcMain.handle('claude-agent-query', async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, modelTier: modelTierOverride, sessionInstruction }) => {
     const chatKey = sessionId
-    const runtime = readRuntimeConfigFromUserSettingsFile()
+    const runtime = resolveEffectiveRuntimeConfig()
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL
     const cliSessionIdForMeta = cliSessionIds.get(chatKey) || ''
@@ -2624,6 +2648,32 @@ function setupClaudeHandlers() {
       }
       if (text) blocks.push({ type: 'text', text })
       return blocks.length === 1 && blocks[0].type === 'text' ? text : blocks
+    }
+
+    async function finalizeReusedQueryFailure(existingSession, err) {
+      const runtimeSession = agentSessions.get(chatKey)
+      const sessionRef = runtimeSession || existingSession || {}
+      const sender = sessionRef.event?.sender || event.sender
+      const reason = resolveClaudeDoneReasonFromError(err)
+      const donePayload = buildClaudeAgentDonePayload({
+        sessionId,
+        cliSessionId: cliSessionIds.get(chatKey) || '',
+        cwd: sessionRef.cwd || cwd || '',
+        reason,
+      })
+
+      safeSend(sender, 'claude-agent-message', {
+        sessionId,
+        msg: {
+          type: 'system',
+          subtype: 'error',
+          message: { content: [{ type: 'text', text: lt('send.failed', { error: err?.message || err }) }] },
+        },
+      })
+      safeSend(sender, 'claude-agent-done', donePayload)
+      clearCurrentTurn(chatKey)
+      agentSessions.delete(chatKey)
+      pendingSessionMetaByChatKey.delete(chatKey)
     }
 
     // 复用仍在运行的 Query（首轮 result 后 SDK 可能仍保持会话，需要 streamInput 续写）
@@ -2658,14 +2708,7 @@ function setupClaudeHandlers() {
         try {
           await existing.query.streamInput((async function* () { yield userMsg })())
         } catch (err) {
-          const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
-          safeSend(sender,'claude-agent-message', {
-            sessionId,
-            msg: {
-              type: 'system',
-              message: { content: [{ type: 'text', text: lt('send.failed', { error: err?.message || err }) }] },
-            },
-          })
+          await finalizeReusedQueryFailure(existing, err)
         }
       })()
       return

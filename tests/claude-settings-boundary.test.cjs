@@ -62,6 +62,56 @@ test('claude memory inject mode is MindCraft-owned and persisted outside officia
   )
 })
 
+test('claude runtime uses effective active provider config and provider activation syncs settings.json', () => {
+  const source = fs.readFileSync(claudeAgentPath, 'utf8')
+
+  assert.match(
+    source,
+    /ipcMain\.handle\('claude-agent-query'[\s\S]*const runtime = resolveEffectiveRuntimeConfig\(\)/,
+    'expected claude-agent-query to use effective active provider runtime config',
+  )
+  assert.match(
+    source,
+    /function buildClaudeRuntimeSettingsPatch\(/,
+    'expected helper to build runtime settings patch from active provider config',
+  )
+  assert.match(
+    source,
+    /function patchClaudeRuntimeSettings\(/,
+    'expected shared official settings patch helper for provider activation/runtime sync',
+  )
+  assert.match(
+    source,
+    /ipcMain\.handle\('claude-activate-provider'[\s\S]*confSet\('claudeProviders', \{ providers, activeIdx \}\)[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(runtimeConfig\)\)/,
+    'expected provider activation to sync legacy projection and official runtime settings from active provider in main process',
+  )
+})
+
+test('claude reused query failures finalize the run instead of leaving session stuck in running state', () => {
+  const source = fs.readFileSync(claudeAgentPath, 'utf8')
+
+  assert.match(
+    source,
+    /async function finalizeReusedQueryFailure\(existingSession, err\)/,
+    'expected reused-query failure finalizer helper',
+  )
+  assert.match(
+    source,
+    /finalizeReusedQueryFailure\(existing, err\)/,
+    'expected reused-query streamInput catch to delegate to failure finalizer',
+  )
+  assert.match(
+    source,
+    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*safeSend\(sender, 'claude-agent-done', donePayload\)/,
+    'expected reused-query failure finalizer to emit claude-agent-done',
+  )
+  assert.match(
+    source,
+    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*clearCurrentTurn\(chatKey\)[\s\S]*agentSessions\.delete\(chatKey\)[\s\S]*pendingSessionMetaByChatKey\.delete\(chatKey\)/,
+    'expected reused-query failure finalizer to clear runtime state after terminal failure',
+  )
+})
+
 test('claude provider config editor keeps MindCraft app fields out of official config JSON', () => {
   const source = fs.readFileSync(claudeProviderFormPath, 'utf8')
 
