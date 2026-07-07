@@ -18,7 +18,7 @@
       <span
         v-if="m.contextWindow > 0 || compacting"
         class="sb-group sb-context-wrap"
-        :class="{ 'sb-warn': contextPct > 80, 'sb-compacting': compacting }"
+        :class="{ 'sb-warn': contextPct > 80, 'sb-compacting': compacting, 'sb-compact-disabled': compactDisabled }"
         @click="compactContext"
       >
         <svg class="sb-ring" :class="{ 'sb-ring-spin': compacting }" viewBox="0 0 24 24" width="16" height="16">
@@ -97,6 +97,7 @@ const props = defineProps({
   metrics: { type: Object, required: true },
   liveDurationMs: { type: Number, default: 0 },
   compacting: { type: Boolean, default: false },
+  compactDisabled: { type: Boolean, default: false },
   modelDisplay: { type: String, default: 'full' },
   compactTitleKey: { type: String, default: 'agent.compactTitle' },
   compactHintKey: { type: String, default: 'agent.compactHint' },
@@ -149,7 +150,7 @@ const displayDurationMs = computed(() => {
 const hasSpeed = computed(() => m.value.speedOutputPerSec > 0)
 
 function compactContext() {
-  if (props.compacting) return
+  if (props.compacting || props.compactDisabled) return
   emit('send-message', '/compact')
 }
 
@@ -280,7 +281,8 @@ function formatDuration(ms) {
   stroke: var(--cc-warning);
 }
 
-.sb-compacting {
+.sb-compacting,
+.sb-compact-disabled {
   cursor: default;
 }
 

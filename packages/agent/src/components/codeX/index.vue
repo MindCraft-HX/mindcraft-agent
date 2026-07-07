@@ -197,6 +197,7 @@
           :metrics="statusBarMetrics"
           :liveDurationMs="metricsLiveDurationMs"
           :compacting="statusBarMetrics.compacting"
+          :compact-disabled="true"  <!-- CodeX SDK 不支持手动 /compact，仅自动压缩 -->
           compact-hint-key="agent.codexAutoCompactDesc"
           compacting-key="agent.codexAutoCompacting"
           @send-message="sendFromStatusBar"
@@ -816,6 +817,7 @@ const SLASH_ROUTES = {
   '/plan': 'local',
   '/plugins': 'local',
   '/skills': 'local',
+  '/compact': 'local',
   '/init': 'inject',
   '/review': 'inject',
 }
@@ -845,6 +847,10 @@ function dispatchLocalSlashCommand(firstToken, fullText) {
     if (firstToken === '/model') { openModelPicker(); return { action: 'done' } }
     if (firstToken === '/plugins') { codexPluginsRef.value?.open?.(); return { action: 'done' } }
     if (firstToken === '/skills') { codexSkillsRef.value?.open?.(); return { action: 'done' } }
+    if (firstToken === '/compact') {
+      ElMessage.info({ message: t('agent.codexAutoCompactDesc'), showClose: true, duration: 4000 })
+      return { action: 'done' }
+    }
 
     // /plan — 切换计划模式，注入/移除 plan mode 指令
     if (firstToken === '/plan') {

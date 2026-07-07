@@ -15,6 +15,9 @@ const {
   V1_PROVIDER_DDL,
   IMPORT_RUNS_DDL,
   CHAT_THREADS_DDL,
+  SESSIONS_DDL,
+  SESSION_BINDINGS_DDL,
+  SESSION_RUNTIME_DDL,
   INDEXES,
   SCHEMA_VERSION,
 } = require('../schema');
@@ -47,6 +50,9 @@ function migrateV1(db) {
       // Skip indexes that belong to later migrations
       if (idx.includes('idx_providers_agent_sort')) continue;   // added in v2
       if (idx.includes('idx_chat_threads')) continue;           // added in v4
+      if (idx.includes('idx_sessions_')) continue;               // added in v5
+      if (idx.includes('idx_session_bindings_')) continue;       // added in v5
+      if (idx.includes('idx_session_runtime_')) continue;        // added in v5
       db.run(idx);
     }
 
@@ -314,11 +320,137 @@ function migrateV4(db, { userDataDir } = {}) {
 }
 
 /**
+ * v5 migration (T201): create sessions, session_bindings, session_runtime tables.
+ *
+ * These tables become the authoritative store for session identity and runtime
+ * metadata.  The old `session-registry/` JSON files remain as read-only fallback
+ * during one release window.
+ *
+ * Optionally backfills data from `{userData}/session-registry/sessions/*.json`.
+ * Source files are NEVER deleted.
+ *
+ * @param {import('sql.js').Database} db
+ * @param {object} [opts]
+ * @param {string} [opts.userDataDir]
+ * @returns {{ ok: boolean, version: number, message: string, backfilled?: number }}
+ */
+function migrateV5(db, { userDataDir } = {}) {
+  if (!db || typeof db.run !== 'function' || typeof db.exec !== 'function') {
+    return { ok: false, version: 0, message: 'Invalid db instance' };
+  }
+
+  const currentVersion = getDbVersion(db);
+
+  try {
+    if (currentVersion >= 5) {
+      return { ok: true, version: currentVersion, message: 'Already at v5, no migration needed', backfilled: 0 };
+    }
+    if (currentVersion < 4) {
+      return { ok: false, version: currentVersion, message: 'Must run migrateV4 before migrateV5' };
+    }
+
+    // Create tables
+    db.run(SESSIONS_DDL);
+    db.run(SESSION_BINDINGS_DDL);
+    db.run(SESSION_RUNTIME_DDL);
+
+    // Create indexes (only v5-specific ones)
+    for (const idx of INDEXES) {
+      if (idx.includes('idx_sessions_') || idx.includes('idx_session_bindings_') || idx.includes('idx_session_runtime_')) {
+        db.run(idx);
+      }
+    }
+
+    // Optional backfill from session-registry JSON files
+    let backfilled = 0;
+    if (userDataDir && typeof userDataDir === 'string') {
+      const registryDir = path.join(userDataDir, 'session-registry', 'sessions');
+      try {
+        if (fs.existsSync(registryDir)) {
+          const files = fs.readdirSync(registryDir).filter(f => f.endsWith('.json'));
+          for (const file of files) {
+            const filePath = path.join(registryDir, file);
+            let record;
+            try {
+              record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (_) { continue; }
+            if (!record || !record.chatKey) continue;
+
+            const chatKey = String(record.chatKey);
+            const agent = String(record.agent || '');
+            const projectId = String(record.projectId || '');
+            const cwd = String(record.cwd || '');
+            const title = String(record.title || '');
+            const titleSource = String(record.titleSource || '');
+            const description = String(record.description || '');
+            const metadataJson = JSON.stringify(record.metadata || {});
+            const createdAt = typeof record.createdAt === 'number' ? record.createdAt : 0;
+            const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : createdAt;
+
+            // INSERT OR IGNORE prevents overwriting existing rows (idempotent re-run)
+            db.run(
+              `INSERT OR IGNORE INTO sessions (chat_key, agent, project_id, cwd, title, title_source, description, metadata_json, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [chatKey, agent, projectId, cwd, title, titleSource, description, metadataJson, createdAt, updatedAt],
+            );
+
+            // Backfill provider binding
+            const provider = record.provider;
+            if (provider && (provider.cliSessionId || provider.filePath)) {
+              const providerKey = `${agent}::${provider.cliSessionId || provider.filePath}`;
+              db.run(
+                `INSERT OR IGNORE INTO session_bindings (chat_key, provider_key, cli_session_id, file_path, source, detached, resume_allowed, updated_at)
+                 VALUES (?, ?, ?, ?, 'scan', 0, ?, ?)`,
+                [
+                  chatKey,
+                  providerKey,
+                  String(provider.cliSessionId || ''),
+                  String(provider.filePath || ''),
+                  record.metadata?.resumeAllowed !== false ? 1 : 0,
+                  updatedAt,
+                ],
+              );
+            }
+
+            // Backfill runtime
+            const runtime = record.runtime;
+            if (runtime) {
+              db.run(
+                `INSERT OR IGNORE INTO session_runtime (chat_key, model, effort, model_tier, reasoning_effort, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                  chatKey,
+                  String(runtime.model || ''),
+                  runtime.effort || null,
+                  String(runtime.modelTier || ''),
+                  runtime.reasoningEffort || null,
+                  updatedAt,
+                ],
+              );
+            }
+
+            backfilled++;
+          }
+        }
+      } catch (e) {
+        console.error('[migrateV5] backfill error (non-fatal):', e.message);
+      }
+    }
+
+    db.run('PRAGMA user_version = 5');
+
+    return { ok: true, version: 5, message: `Migrated to v5; backfilled: ${backfilled} sessions`, backfilled };
+  } catch (e) {
+    return { ok: false, version: currentVersion, message: `Migration v5 failed: ${e.message}` };
+  }
+}
+
+/**
  * Run all migrations in order to bring the DB to the latest version.
  *
  * @param {import('sql.js').Database} db
  * @param {object} [opts]
- * @param {string} [opts.userDataDir] — required for v4 data migration
+ * @param {string} [opts.userDataDir] — required for v4/v5 data migration
  * @returns {{ ok: boolean, version: number, message: string }}
  */
 function runMigrations(db, opts = {}) {
@@ -331,7 +463,10 @@ function runMigrations(db, opts = {}) {
   const v3 = migrateV3(db);
   if (!v3.ok) return v3;
 
-  return migrateV4(db, opts);
+  const v4 = migrateV4(db, opts);
+  if (!v4.ok) return v4;
+
+  return migrateV5(db, opts);
 }
 
 /**
@@ -360,4 +495,4 @@ function parseJsonObject(str) {
   }
 }
 
-module.exports = { migrateV1, migrateV2, migrateV3, migrateV4, runMigrations, getDbVersion };
+module.exports = { migrateV1, migrateV2, migrateV3, migrateV4, migrateV5, runMigrations, getDbVersion };

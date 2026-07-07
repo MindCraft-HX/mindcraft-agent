@@ -96,10 +96,10 @@ test('runMigrations on fresh db creates latest schema', async () => {
 
   const result = runMigrations(db);
   assert.equal(result.ok, true);
-  assert.equal(result.version, 4);
+  assert.equal(result.version, 5);
 
   const version = getDbVersion(db);
-  assert.equal(version, 4);
+  assert.equal(version, 5);
 
   // Verify v2 columns exist
   const cols = db.exec('PRAGMA table_info(providers)');

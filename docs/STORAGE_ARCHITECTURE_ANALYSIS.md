@@ -1,6 +1,6 @@
 # MindCraft Storage Architecture Roadmap
 
-> Last updated: 2026-07-06  
+> Last updated: 2026-07-07  
 > Scope: SQLite foundation, CC Switch import, local storage migration, and final storage boundaries.
 
 ## 1. Decision
@@ -18,9 +18,9 @@ Current decision:
 | Official CLI directories | Do not replace. Continue using official paths only for official CLI/SDK data. |
 | Existing provider-page import UI | Keep the compact `Import` button style, but scope it to local CLI config import only. CC Switch must not live in a single-agent provider panel. |
 
-## 1.1 Current Implemented State After T174
+## 1.1 Current Implemented State After T174 / T175 / T198 / T199
 
-Provider storage is no longer a future-only design. The current implementation state is:
+The storage line is no longer just a roadmap. The current implementation state is:
 
 - Live schema version is v3 (`packages/agent/electron/db/schema.js`).
 - Provider repository lives at `packages/agent/electron/db/providerStorage/`.
@@ -34,14 +34,22 @@ Provider storage is no longer a future-only design. The current implementation s
 - Official runtime files are written only through explicit activation/repair adapters and must stay official-schema compatible.
 - Claude provider shape normalization is centralized in `packages/agent/electron/db/providerStorage/claudeShape.js`.
 - DB v3 performs one-time cleanup for historical Claude provider config pollution, moving MindCraft-only fields such as app locale, website, note, and permission policy into metadata where appropriate.
-- T174 intentionally did not migrate session registry, panel state, Simple Chat records, official transcripts, file blobs, or token metrics.
+- T175 is completed:
+  - Simple Chat metadata lives in SQLite `chat_threads`.
+  - Simple Chat message bodies live in `{userData}/simple-chat/threads/<threadId>/messages.jsonl`.
+  - Old `{userData}/chat-sessions/*.json` remains migration/fallback only.
+- T198 is completed:
+  - app-owned settings writes are routed through `packages/agent/electron/settingsFacade.js`.
+  - locale/theme/diagnostics/CodeX defaults/Claude app prefs no longer need scattered direct writes.
+- T199 is completed as audit only:
+  - `session-registry/`, `*-panel-state.json`, and renderer restore persistence ownership has been documented.
+  - No session/panel migration code shipped under T199.
+- Session registry, panel state, official transcripts, file blobs, and token metrics are still outside the finished DB migration scope.
 
 Known follow-up items:
 
 - T164 still owns visual drag-and-drop sorting; T174 only needs repository-level ordering correctness.
-- T175 still owns Simple Chat storage.
-- T198 should consolidate app-owned settings storage without reopening provider authority.
-- T199 should audit session/panel storage boundaries before any larger session metadata migration.
+- T201 should use the T199 audit to migrate session identity/runtime metadata into SQLite and shrink panel-state back to UI layout responsibility.
 - If future code calls repository `setActiveProvider()` directly, ensure it remains consistent with the no-legacy-write model; current UI paths mostly save through `setProviders()`, but the repository API should remain hard to misuse.
 
 ## 2. Current Problems
@@ -70,9 +78,9 @@ SQLite should become the authority for MindCraft-owned app data. It should not b
 | Data | Authority | Notes |
 |---|---|---|
 | Provider list, selected provider, import metadata | SQLite | Project only to official config files when required; do not restore legacy provider writes. |
-| App settings, diagnostics toggles, locale, theme | Single settings facade first; SQLite optional later | Device-local settings do not need forced DB migration if a single owner/facade is enough. |
-| Lightweight Chat threads and indexes | SQLite in a later phase | Message bodies should stay in userData files while using `sql.js`, unless a later native driver decision changes this. |
-| Lightweight Chat message bodies and attachments | userData files in a later phase | Prefer `{userData}/simple-chat/threads/<threadId>/messages.jsonl` plus attachment files; DB stores identity/index/summary only. |
+| App settings, diagnostics toggles, locale, theme | Settings facade now; SQLite optional later | T198 already removed scattered direct writes. Device-local settings do not need forced DB migration if a single owner/facade is enough. |
+| Lightweight Chat threads and indexes | SQLite | T175 completed this boundary with `chat_threads`. |
+| Lightweight Chat message bodies and attachments | userData files | T175 keeps message bodies in `{userData}/simple-chat/threads/<threadId>/messages.jsonl`. |
 | Session identity: `chatKey`, `cliSessionId`, `filePath`, title, cwd, runtime model | SQLite | Does not replace official transcript JSONL. |
 | Panel layout, expanded/collapsed UI, drafts | Panel state or later SQLite UI table | Must not own provider session identity. |
 | Claude/Codex transcripts | Official CLI directories | Read for history and mapping; do not add MindCraft sidecars. |
@@ -225,7 +233,9 @@ Targets:
 
 First fix should be a single settings facade even if SQLite is not fully active yet. This removes the current double-write risk without forcing every device-local preference into the DB.
 
-Execution entry: `docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md` (T198 section).
+Status: completed in T198.
+
+Execution record: `docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md` (historical planning), plus `packages/agent/electron/settingsFacade.js`.
 
 ### Phase 4: Session And Panel Metadata Migration
 
@@ -239,7 +249,9 @@ Rules:
 - `chatKey`, `cliSessionId`, and `filePath` must remain separate fields.
 - Any migration needs restore tests for crash recovery, stale panel-state sync, and provider scan adoption.
 
-Execution entry: `docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md` (T199 section).
+Status: not started as implementation. T199 only completed the audit and owner matrix.
+
+Next execution entry: `docs/plan/2026-07-07-T201-session-panel-storage-convergence.md`.
 
 Candidate tables:
 
@@ -306,7 +318,7 @@ CREATE TABLE import_runs (
 );
 ```
 
-There is no live Simple Chat schema in T174. Session and settings tables should be designed later, after provider/settings migration proves stable.
+There is now a live Simple Chat schema from T175 (`chat_threads`). Session metadata tables beyond Simple Chat should be designed under T201, after the ownership audit from T199.
 
 ## 6. SQLite Size And Maintenance Policy
 
@@ -339,9 +351,10 @@ Maintenance rules:
 | T159 | Storage architecture roadmap: SQLite foundation, local storage migration, final boundary contract. |
 | T162 | Import dialog and CC Switch provider import, implemented on top of the new provider/import storage path. |
 | T174 | Completed provider storage migration: SQLite authority, legacy fallback/backfill/projection, ordering, provider repository, and DB v3 cleanup for historical Claude provider pollution. |
-| T175 | Future lightweight Chat storage migration: SQLite thread/index metadata plus userData message files; not part of T174. |
-| T198 | App settings storage facade: consolidate app-owned settings out of scattered JSON + `electron-conf` entry points; provider authority is out of scope. |
-| T199 | Session/panel storage boundary audit: classify current authorities before any session metadata migration. |
+| T175 | Completed lightweight Chat storage migration: SQLite thread/index metadata plus userData message files. |
+| T198 | Completed app settings storage facade: consolidate app-owned settings out of scattered JSON + `electron-conf` entry points; provider authority stays out of scope. |
+| T199 | Completed session/panel storage boundary audit: classify current authorities before any session metadata migration. |
+| T201 | Next storage implementation task: move session identity/runtime metadata into SQLite, keep panel-state focused on UI layout, and unify restore authority. |
 
 ## 8. Open Questions
 
@@ -349,5 +362,5 @@ Maintenance rules:
 - Define the exact legacy provider read-fallback removal window after T195 ships in 1.2.x.
 - Decide whether repository-level `setActiveProvider()` should itself mark projection pending, even if current UI paths mostly go through full provider saves.
 - Implement T164 visual drag-and-drop sorting on top of existing repository order support.
-- Execute T175 Simple Chat metadata/file split without reopening provider storage.
-- Decide how far T198 should migrate device-local settings into SQLite versus a single JSON-backed facade.
+- Execute T201 without collapsing official transcript identity (`chatKey`, `cliSessionId`, `filePath`) into one field.
+- Decide whether T201 should also extract drafts out of session-registry JSON files, or leave draft extraction as a follow-up after session metadata authority is stable.

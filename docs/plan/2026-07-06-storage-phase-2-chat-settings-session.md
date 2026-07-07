@@ -1,8 +1,14 @@
 # Storage Phase 2: Chat, Settings, Session Boundaries
 
 > Date: 2026-07-06
-> Status: planning
-> Related: T174, T175, T188, T195, T198, T199
+> Status: historical planning document
+> Related: T174, T175, T188, T195, T198, T199, T201
+
+> Note:
+> - This document captured the pre-implementation split for T175 / T198 / T199.
+> - T175, T198, and T199 are now completed.
+> - Current state is tracked in `docs/STORAGE_ARCHITECTURE_ANALYSIS.md`.
+> - The next implementation task is `docs/plan/2026-07-07-T201-session-panel-storage-convergence.md`.
 
 ## 1. Current Assessment
 
