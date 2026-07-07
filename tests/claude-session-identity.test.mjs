@@ -9,6 +9,7 @@ import {
   isBoundClaudeChat,
   isDraftClaudeChat,
   isPendingClaudeSessionBindingCandidate,
+  shouldKeepClaudeChatWhenScanEmpty,
   usesLegacyCliSessionAsChatKey,
 } from '../packages/agent/src/components/claudeCode/utils/claudeSessionIdentity.mjs'
 
@@ -71,5 +72,37 @@ test('legacy CLI UUID used as renderer key is recognized for dedupe preference o
   assert.equal(usesLegacyCliSessionAsChatKey({
     sessionId: 'runtime-key',
     cliSessionId: '11111111-1111-1111-1111-111111111111',
+  }), false)
+})
+
+test('empty Claude scan retains only active draft, thinking chat, or pending adoption candidate', () => {
+  assert.equal(shouldKeepClaudeChatWhenScanEmpty({
+    id: 'draft-active',
+    sessionId: 'session-chat-1-1780000000000',
+    cliSessionId: '',
+    filePath: '',
+  }, { activeChatId: 'draft-active' }), true)
+
+  assert.equal(shouldKeepClaudeChatWhenScanEmpty({
+    id: 'thinking-chat',
+    sessionId: 'runtime-key',
+    cliSessionId: '11111111-1111-1111-1111-111111111111',
+    filePath: 'C:/repo/session.jsonl',
+    thinking: true,
+  }), true)
+
+  assert.equal(shouldKeepClaudeChatWhenScanEmpty({
+    id: 'pending-chat',
+    sessionId: 'session-chat-2-1780000000000',
+    cliSessionId: '',
+    filePath: '',
+    messages: [{ role: 'user', text: 'hello' }],
+  }), true)
+
+  assert.equal(shouldKeepClaudeChatWhenScanEmpty({
+    id: 'stale-bound',
+    sessionId: 'runtime-key',
+    cliSessionId: '11111111-1111-1111-1111-111111111111',
+    filePath: 'C:/repo/session.jsonl',
   }), false)
 })

@@ -27,9 +27,15 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
   const SLASH_REMOTE_REFRESH_DEBOUNCE_MS = 800
   const MODEL_PANEL_STATE_TTL_MS = 30_000
 
-  async function loadModelPanelState() {
+  function invalidateModelPanelStateCache() {
+    modelPanelStateCache = null
+    modelPanelStateCacheTime = 0
+  }
+
+  async function loadModelPanelState(opts = {}) {
     try {
-      if (modelPanelStateCache && Date.now() - modelPanelStateCacheTime < MODEL_PANEL_STATE_TTL_MS) {
+      const force = opts?.force === true
+      if (!force && modelPanelStateCache && Date.now() - modelPanelStateCacheTime < MODEL_PANEL_STATE_TTL_MS) {
         slashEffortLevel.value = modelPanelStateCache.effort
         slashModelName.value = modelPanelStateCache.modelName
         slashThinkingEnabled.value = modelPanelStateCache.thinking
@@ -198,6 +204,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
     slashEffortLevel,
     slashThinkingEnabled,
     refreshSlashCommands,
+    invalidateModelPanelStateCache,
     loadModelPanelState,
     setEffortLevel,
     toggleThinking,

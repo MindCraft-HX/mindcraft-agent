@@ -40,6 +40,16 @@ export function isPendingClaudeSessionBindingCandidate(chat) {
   return hasClaudeUserMessage(chat)
 }
 
+export function shouldKeepClaudeChatWhenScanEmpty(chat, { activeChatId = '' } = {}) {
+  if (!chat) return false
+  if (chat.id === activeChatId) {
+    return Boolean(chat.thinking) || isDraftClaudeChat(chat)
+  }
+  if (Boolean(chat.thinking)) return true
+  if (isDraftClaudeChat(chat)) return true
+  return isPendingClaudeSessionBindingCandidate(chat)
+}
+
 export function getClaudeChatBindingKey(chat) {
   const cliSessionId = getClaudeCliSessionId(chat)
   if (cliSessionId) return `sid:${cliSessionId}`

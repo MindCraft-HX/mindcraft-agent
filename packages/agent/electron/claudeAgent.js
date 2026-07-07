@@ -153,6 +153,7 @@ const claudeProjectJsonlListCache = new Map()
 const claudeSessionTitleCache = new Map()
 const _claudeScanCache = new Map() // cwd → { signature, result }
 const _pendingClaudeScans = new Map() // cwd → Promise<result[]>
+let claudeProvidersStateShadow = null
 
 function clearClaudeSessionScanCaches() {
   claudeProjectJsonlListCache.clear()
@@ -1428,6 +1429,36 @@ function setupClaudeHandlers() {
     } catch {}
   }
 
+  function normalizeClaudeProvidersState(payload) {
+    if (!payload || typeof payload !== 'object') return null
+    const providers = Array.isArray(payload.providers)
+      ? payload.providers.map((item) => (item && typeof item === 'object'
+        ? JSON.parse(JSON.stringify(item))
+        : item)).filter(Boolean)
+      : []
+    if (providers.length === 0) return { providers: [], activeIdx: -1 }
+    const activeIdx = Number.isInteger(payload.activeIdx) ? payload.activeIdx : 0
+    return {
+      providers,
+      activeIdx: activeIdx >= 0 && activeIdx < providers.length ? activeIdx : 0,
+    }
+  }
+
+  function setClaudeProvidersStateShadow(payload) {
+    claudeProvidersStateShadow = normalizeClaudeProvidersState(payload)
+    return claudeProvidersStateShadow
+  }
+
+  function getClaudeProvidersStateShadow() {
+    if (claudeProvidersStateShadow) return claudeProvidersStateShadow
+    const legacy = normalizeClaudeProvidersState(internalConf.get('claudeProviders', null))
+    if (legacy) {
+      claudeProvidersStateShadow = legacy
+      return legacy
+    }
+    return { providers: [], activeIdx: -1 }
+  }
+
   ipcMain.handle(CLAUDE_CHANNELS.GET_KEY, () => {
     let key = confGet('claudeApiKey', '')
     if (!key) {
@@ -1837,7 +1868,7 @@ function setupClaudeHandlers() {
    * 优先取 active provider，避免出现顶部字段与当前激活 provider 不一致。
    */
   function resolveEffectiveRuntimeConfig() {
-    const providersState = confGet('claudeProviders', { providers: [], activeIdx: -1 })
+    const providersState = getClaudeProvidersStateShadow()
     const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
     const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
     const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
@@ -2038,6 +2069,7 @@ function setupClaudeHandlers() {
         return readDevBootstrapClaudeProviders()
       }
       const payload = getProviders(db, 'claude', legacyReader)
+      setClaudeProvidersStateShadow(payload)
       if (payload.providers.length > 0) {
         await persistDb()
       }
@@ -2045,15 +2077,17 @@ function setupClaudeHandlers() {
     } catch (e) {
       console.error('[claude] readProviders error:', e.message)
       // Fallback: read legacy internalConf directly if DB path fails
-      return confGet('claudeProviders', null)
+      return setClaudeProvidersStateShadow(confGet('claudeProviders', null))
     }
   }
 
   async function writeClaudeProviders(data) {
     try {
       const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
-      const result = setProviders(db, 'claude', data || { providers: [], activeIdx: 0 })
+      const nextState = data || { providers: [], activeIdx: 0 }
+      const result = setProviders(db, 'claude', nextState)
       if (result.ok) {
+        setClaudeProvidersStateShadow(nextState)
         await persistDb()
       }
       return result.ok
@@ -2082,7 +2116,10 @@ function setupClaudeHandlers() {
     writeProviders: writeClaudeProviders,
   }
 
-  ipcMain.handle(CLAUDE_CHANNELS.GET_MODEL, () => readPrimaryModel())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_MODEL, async () => {
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
+    return readPrimaryModel()
+  })
   ipcMain.handle(CLAUDE_CHANNELS.SET_MODEL, (_, model) => { confSet('claudeModel', model); return true })
   ipcMain.handle(CLAUDE_CHANNELS.SET_KEY, (_, key) => { confSet('claudeApiKey', key); return true })
   ipcMain.handle(CLAUDE_CHANNELS.SET_BASE_URL, (_, url) => { confSet('claudeBaseURL', url); return true })
@@ -2186,7 +2223,7 @@ function setupClaudeHandlers() {
   }
 
   function readTierModelsFromConf() {
-    const providersState = confGet('claudeProviders', { providers: [], activeIdx: -1 })
+    const providersState = getClaudeProvidersStateShadow()
     const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
     const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
     const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
@@ -2221,7 +2258,10 @@ function setupClaudeHandlers() {
     return env
   }
 
-  ipcMain.handle(CLAUDE_CHANNELS.GET_TIER_MODELS, () => readTierModelsFromConf())
+  ipcMain.handle(CLAUDE_CHANNELS.GET_TIER_MODELS, async () => {
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
+    return readTierModelsFromConf()
+  })
   ipcMain.handle(CLAUDE_CHANNELS.SET_TIER_MODELS, (_, data) => {
     if (!data || typeof data !== 'object') return false
     return writeTierModelsToConf(data)
@@ -2384,7 +2424,7 @@ function setupClaudeHandlers() {
     const fromFile = readRuntimeConfigFromUserSettingsFile()
 
     // 优先读 UI 中激活的 provider（internalConf），再兜底 settings.json
-    const providersState = confGet('claudeProviders', { providers: [], activeIdx: -1 })
+    const providersState = getClaudeProvidersStateShadow()
     const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
     const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
     const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
@@ -2421,6 +2461,7 @@ function setupClaudeHandlers() {
   const MAX_THINKING_CHARS = 50_000 // thinking 内容上限 50K 字符（防止第三方 provider 发送过多 thinking）
 
   async function runClaudeChatStream(event, { chatId, messages, model, tools, tool_choice, max_tokens, thinking, system }) {
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
     const rt = readChatRuntimeConfig()
     if (!rt.apiKey) throw new Error(lt('api.noKey', { provider: 'Claude' }))
 
@@ -2639,6 +2680,7 @@ function setupClaudeHandlers() {
 
   ipcMain.handle(CLAUDE_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, modelTier: modelTierOverride, sessionInstruction }) => {
     const chatKey = sessionId
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
     const runtime = resolveEffectiveRuntimeConfig()
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL

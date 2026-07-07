@@ -387,6 +387,7 @@ import {
   getClaudeChatKey,
   getClaudeCliSessionId,
   getClaudeSessionFilePath,
+  shouldKeepClaudeChatWhenScanEmpty,
 } from './utils/claudeSessionIdentity.mjs'
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
@@ -2082,7 +2083,12 @@ async function refreshProjectSessionsInBackground(p) {
     const scanned = await window.electronAPI.claudeScanProjectsSessions(p.cwd)
     scanStop({ activationId: getActivationId() })
     if (!Array.isArray(scanned) || !scanned.length) {
-      if (!p.chats?.length) {
+      const retainedChats = (p.chats || []).filter(chat =>
+        shouldKeepClaudeChatWhenScanEmpty(chat, { activeChatId: activeChatId.value }),
+      )
+      if (retainedChats.length) {
+        p.chats = retainedChats
+      } else {
         const c = createChat()
         p.chats = [c]
         switchChat(p.chats[0].id)
@@ -2706,6 +2712,7 @@ const {
   slashEffortLevel,
   slashThinkingEnabled,
   refreshSlashCommands,
+  invalidateModelPanelStateCache,
   loadModelPanelState,
   setEffortLevel,
   toggleThinking,
@@ -2874,7 +2881,7 @@ function openSettings() {
   }
 }
 
-function handleProviderActivated() {
+async function handleProviderActivated() {
   // 遍历所有项目的所有对话，重置状态并重新注册 cliSessionId 映射
   // 主进程 resetAgentRuntime 已将 SDK 重置，但保留 cliSessionIds Map（见 claudeAgent.js 注释）
   // 这里需要为所有聊天恢复状态，而不只是活跃 tab
@@ -2899,9 +2906,34 @@ function handleProviderActivated() {
   if (!tab) return
   window.electronAPI?.claudeAgentAbort?.(tab.sessionId)
   // 同步更新状态栏模型显示
-  window.electronAPI?.claudeGetModel?.().then(m => {
-    metricsData.value.model = m
-  })
+  await loadClaudeModelDefaults()
+  invalidateModelPanelStateCache()
+
+  let selectedTier = ''
+  try {
+    selectedTier = normalizeClaudeModelTier(await window.electronAPI?.claudeGetSelectedTier?.())
+  } catch (_) {
+    selectedTier = ''
+  }
+
+  const nextModel = String(claudeDefaultModel.value || '').trim()
+  const nextEffort = normalizeClaudeEffort(claudeDefaultEffort.value) || 'medium'
+  const nextTier = selectedTier || normalizeClaudeModelTier(tab.modelTier) || 'sonnet'
+
+  for (const project of projects.value) {
+    if (!project?.chats) continue
+    for (const chat of project.chats) {
+      chat.model = nextModel
+      chat.effort = nextEffort
+      chat.modelTier = nextTier
+      persistClaudeTabMeta(chat, project)
+    }
+  }
+
+  await loadModelPanelState({ force: true })
+  slashModelName.value = nextModel || slashModelName.value
+  slashEffortLevel.value = nextEffort
+  metricsData.value.model = nextModel
   pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
   saveHistory()
 }
