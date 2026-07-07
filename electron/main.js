@@ -21,7 +21,7 @@ const path = require("path");
 const { exec } = require('child_process');
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require("../packages/agent/electron/diagnosticsFileUtils");
 const { CORE_CHANNELS } = require("../packages/agent/shared/ipcChannels");
-const { init: initSettingsFacade } = require("../packages/agent/electron/settingsFacade");
+const { init: initSettingsFacade, flush: flushSettings } = require("../packages/agent/electron/settingsFacade");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -92,6 +92,7 @@ let isQuittingForUpdate = false
 
 app.on('before-quit', () => {
   isAppQuitting = true
+  flushSettings()
 })
 
 // 单实例锁（仅生产模式，dev 模式允许多开调试）
@@ -240,6 +241,7 @@ let tray = null;
 function prepareForUpdateInstall() {
   isQuittingForUpdate = true
   isAppQuitting = true
+  flushSettings()
   try { globalShortcut.unregisterAll() } catch (_) {}
   try { resetCodexSdkRuntime?.() } catch (e) { console.warn('[main] reset codex runtime before update failed:', e?.message || e) }
   try {

@@ -442,9 +442,10 @@ function _reset() {
 }
 
 /**
- * Immediately flush pending writes to disk. For tests only.
+ * Immediately flush pending writes to disk.
+ * Call this on before-quit / prepareForUpdateInstall to avoid data loss.
  */
-function _flush() {
+function flush() {
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
   if (_cache) _write(_cache);
 }
@@ -466,8 +467,9 @@ module.exports = {
   getDiagnosticsClaudeFreeze,
   setDiagnosticsClaudeFreeze,
   getAll,
-  // test helpers
+  flush,
+  // test helpers (aliases for backward compat)
   _getCache,
   _reset,
-  _flush,
+  _flush: flush,
 };
