@@ -1,5 +1,14 @@
 const fs = require('fs')
 
+function stripMindcraftSessionInstruction(text) {
+  if (!text || typeof text !== 'string') return ''
+  return String(text)
+    .replace(/<mindcraft_session_instruction\b[^>]*>[\s\S]*?<\/mindcraft_session_instruction>/gi, '')
+    .replace(/<mindcraft_session_attachment\b[^>]*>[\s\S]*?<\/mindcraft_session_attachment>/gi, '')
+    .replace(/^\s*用户当前请求[:：]\s*/gim, '')
+    .trim()
+}
+
 function safeParseJson(line) {
   if (!line || !line.trim()) return null
   try {
@@ -61,12 +70,13 @@ function extractClaudeHeadCandidate(entry, ideFallbackRef) {
   if (entry.type !== 'user' || !entry.message) return ''
   const content = entry.message.content
   if (typeof content === 'string' && content.trim()) {
-    return clipTitle(content)
+    return clipTitle(stripMindcraftSessionInstruction(content))
   }
   if (!Array.isArray(content)) return ''
   const nonIdeText = content
     .filter(c => c && c.type === 'text' && c.text && !String(c.text).trim().startsWith('<ide_'))
-    .map(c => String(c.text).trim())
+    .map(c => stripMindcraftSessionInstruction(String(c.text || '')))
+    .filter(Boolean)
     .join('\n')
     .trim()
   if (nonIdeText) return clipTitle(nonIdeText)
@@ -81,7 +91,7 @@ function extractCodexHeadCandidate(entry) {
   if (!entry) return { meta: null, firstUserText: '', lastAgentText: '' }
   if (entry.type === 'session_meta' && entry.payload) return { meta: entry.payload, firstUserText: '', lastAgentText: '' }
   if (entry.type === 'event_msg' && entry.payload?.type === 'user_message') {
-    return { meta: null, firstUserText: String(entry.payload.message || ''), lastAgentText: '' }
+    return { meta: null, firstUserText: stripMindcraftSessionInstruction(String(entry.payload.message || '')), lastAgentText: '' }
   }
   if (entry.type === 'event_msg' && entry.payload?.type === 'agent_message') {
     return { meta: null, firstUserText: '', lastAgentText: String(entry.payload.message || '') }

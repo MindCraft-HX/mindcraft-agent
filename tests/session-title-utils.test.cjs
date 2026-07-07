@@ -52,9 +52,47 @@ function runCodexTailCustomTitleTest() {
   })
 }
 
+function runCodexInstructionOnlyTitleStrippedTest() {
+  const content = [
+    JSON.stringify({ type: 'session_meta', payload: { id: 'session-instruction-only', cwd: 'D:/repo', timestamp: '2026-07-02T00:00:00.000Z' } }),
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'user_message',
+        message: '<mindcraft_session_instruction>\n请在每句回复前加上 🦊\n</mindcraft_session_instruction>\n\n用户当前请求：\n好的，完成',
+      },
+    }),
+    '',
+  ].join('\n')
+  withTempFile(content, (filePath) => {
+    const result = extractCodexSessionSummary(filePath, () => ({ shouldDefer: false }))
+    assert.ok(result)
+    assert.equal(result.name, '好的，完成')
+  })
+}
+
+function runClaudeInstructionOnlyTitleStrippedTest() {
+  const content = [
+    JSON.stringify({
+      type: 'user',
+      message: {
+        content: '<mindcraft_session_instruction>\nignore me\n</mindcraft_session_instruction>\n\n用户当前请求：帮我看下错误',
+      },
+    }),
+    '',
+  ].join('\n')
+  withTempFile(content, (filePath) => {
+    const result = extractClaudeSessionTitle(filePath)
+    assert.equal(result.title, '帮我看下错误')
+    assert.equal(result.isCustomTitle, false)
+  })
+}
+
 function run() {
   runClaudeTailCustomTitleTest()
   runCodexTailCustomTitleTest()
+  runCodexInstructionOnlyTitleStrippedTest()
+  runClaudeInstructionOnlyTitleStrippedTest()
   console.log('session-title-utils tests passed')
 }
 
