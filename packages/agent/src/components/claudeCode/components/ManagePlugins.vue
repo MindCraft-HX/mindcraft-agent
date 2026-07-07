@@ -277,6 +277,7 @@ async function uninstallPlugin(plugin) {
     } else {
       plugin.installed = false
       plugin.enabled = true
+      emit('plugin-toggled')
       ElMessage.success(t('agent.uninstalledPlugin', { name: plugin.name }))
     }
   } catch (e) {
