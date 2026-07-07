@@ -796,7 +796,7 @@ async function readInstalledPlugins() {
     _installedPluginsCache = result  // 成功时更新缓存
     return result
   } catch (_) {
-    // CLI 失败时用缓存兜底，避免返回 [] 导致全部显示为"未安装"
+    console.warn('[claude] plugin list failed, returning stale cache');
     return _installedPluginsCache || []
   }
 }
@@ -1222,6 +1222,7 @@ function setupClaudeHandlers() {
     try {
       await execClaudeCli(['plugin', 'install', pluginId])
       _installedPluginsCache = null // 安装后清缓存，下次自动刷新
+      slashCommandsCache.clear() // 插件安装后刷新 slash command 缓存
       return { ok: true }
     } catch (e) {
       const errMsg = e?.stderr || e?.message || String(e)
@@ -1234,6 +1235,7 @@ function setupClaudeHandlers() {
     try {
       await execClaudeCli(['plugin', 'uninstall', pluginId])
       _installedPluginsCache = null
+      slashCommandsCache.clear() // 插件卸载后刷新 slash command 缓存
       return { ok: true }
     } catch (e) {
       const errMsg = e?.stderr || e?.message || String(e)
@@ -3740,6 +3742,7 @@ function setupClaudeHandlers() {
 
         _skillsStateCache = null
         resetSkillsMarketplaceCache()
+        slashCommandsCache.clear() // skill 安装后刷新 slash command 缓存
         return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
@@ -3762,6 +3765,7 @@ function setupClaudeHandlers() {
         fs.rmSync(target.targetDir, { recursive: true, force: true })
       }
       _skillsStateCache = null
+      slashCommandsCache.clear() // skill 卸载后刷新 slash command 缓存
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e?.message || String(e) }

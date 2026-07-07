@@ -4018,7 +4018,7 @@ function setupCodexSdkHandlers() {
       _codexInstalledPluginsCache = installed  // 成功时更新缓存
       return installed
     } catch (_) {
-      // CLI 失败时用缓存兜底，避免返回 [] 导致全部显示为"未安装"
+      console.warn('[codex] plugin list failed, returning stale cache');
       return _codexInstalledPluginsCache || []
     }
   }

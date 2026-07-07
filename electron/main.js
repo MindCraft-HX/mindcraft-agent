@@ -307,7 +307,7 @@ app.whenReady().then(async () => {
     // 通知渲染进程插件列表已就绪
     const plugins = getInstalledPlugins()
     BrowserWindow.getAllWindows().forEach(w => {
-      if (!w.isDestroyed()) w.webContents.send('plugin-registry-ready', plugins)
+      if (!w.isDestroyed()) w.webContents.send(CORE_CHANNELS.PLUGIN_REGISTRY_CHANGED, plugins)
     })
   })
 
