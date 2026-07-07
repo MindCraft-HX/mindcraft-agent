@@ -6,8 +6,10 @@ const {
   getSessionInstruction,
   setSessionDraft,
   setSessionInstruction,
-  setSessionTitle,
 } = require('./sessionRegistry')
+const { setSessionTitle } = require('./sessionRepository')
+const { getDb } = require('./db')
+const { getMindCraftUserDataDir } = require('./userDataPath')
 const { resolveAttachments, buildFullInstructionPrompt, ALLOWED_EXTENSIONS } = require('./sessionInstructionAttachments')
 const { perfStartIpc } = require('./shared/mainPerfProbe')
 
@@ -30,10 +32,13 @@ function registerSessionInstructionIpc(ipcMain) {
     }
   })
 
-  ipcMain.handle(CORE_CHANNELS.AGENT_SET_SESSION_TITLE, (_, payload = {}) => {
+  ipcMain.handle(CORE_CHANNELS.AGENT_SET_SESSION_TITLE, async (_, payload = {}) => {
     const stop = perfStartIpc(CORE_CHANNELS.AGENT_SET_SESSION_TITLE)
     try {
-      const result = setSessionTitle(payload.chatKey, payload.title, payload); stop(); return result
+      // T201: write session title through SQLite
+      let db = null
+      try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+      const result = setSessionTitle(db, payload.chatKey, payload.title, payload); stop(); return result
     } catch (err) {
       stop(); return { ok: false, error: err?.message || 'write failed' }
     }

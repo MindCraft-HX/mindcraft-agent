@@ -14,15 +14,15 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const {
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
-  attachRegistrySessionToScanSummary,
-  findRegistryRecordForProviderScan,
-  mergeRegistryFieldsIntoScanSummary,
-  ensureRegistryFromProviderScan,
   repairSessionRegistry,
-  setSessionTitle,
-  syncPanelStateSessions,
-  upsertRuntimeByProvider,
 } = require('./sessionRegistry')
+const {
+  findByProviderScan,
+  ensureFromProviderScan,
+  mergeRegistryFields,
+  upsertRuntimeByProvider,
+  setSessionTitle,
+} = require('./sessionRepository')
 const { buildFullInstructionPrompt } = require('./sessionInstructionAttachments')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
@@ -507,12 +507,16 @@ function buildClaudeAgentDonePayload({
 }
 
 /** 扫描项目根目录下所有 .jsonl 会话文件，返回带时间戳和标题的会话列表 */
-function scanCliSessionsForProject(cwd) {
+async function scanCliSessionsForProject(cwd) {
   const stop = perfStartIpc('claude-scan-sessions')
   const result = []
+  let db = null
   try {
     const projectDir = getClaudeProjectsRootDir(cwd)
     if (!fs.existsSync(projectDir)) { stop({ empty: 1 }); return result }
+
+    // T201: get SQLite db for session identity/runtime reads & writes
+    try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
 
     // 构建复合签名：目录签名 + 各文件 mtimeMs:size（T178 scan cache）
     const sigStop = perfStartIpc('claude-scan-signature')
@@ -531,15 +535,15 @@ function scanCliSessionsForProject(cwd) {
 
     const cached = _claudeScanCache.get(cwd)
     if (cached?.signature === signature) {
-      // T179-P1: cache hit — lookup registry record, merge-only (不写文件)
+      // T179-P1 / T201: cache hit — lookup SQLite record, merge-only
       const attachStop = perfStartIpc('claude-scan-attach')
       for (const raw of cached.rawSummaries) {
-        let record = findRegistryRecordForProviderScan('claude', raw, { cwd })
-        if (!record) {
+        let record = db ? findByProviderScan(db, 'claude', { cliSessionId: raw.cliSessionId, filePath: raw.filePath }) : null
+        if (!record && db) {
           // 合法异常：registry record 缺失，允许一次 repair 写
-          record = ensureRegistryFromProviderScan('claude', raw, { cwd })
+          record = ensureFromProviderScan(db, 'claude', raw, { cwd })
         }
-        const summary = mergeRegistryFieldsIntoScanSummary('claude', raw, record)
+        const summary = mergeRegistryFields('claude', raw, record)
         if (summary) result.push(summary)
       }
       attachStop({ sessions: result.length, cacheHit: 1 })
@@ -581,7 +585,7 @@ function scanCliSessionsForProject(cwd) {
       const titleResult = getCachedClaudeSessionTitle(file.filePath, file.fileSize, file.updatedAt)
       const title = titleResult?.title || ''
       const isCustomTitle = titleResult?.isCustomTitle || false
-      const meta = readClaudeSessionMetaByFilePath(file.filePath)
+      const meta = await readClaudeSessionMetaByFilePath(file.filePath)
       const raw = {
         // `id` is kept for renderer compatibility; new code should read cliSessionId.
         id: file.cliSessionId,
@@ -600,7 +604,9 @@ function scanCliSessionsForProject(cwd) {
         modelTier: meta.modelTier || null,
       }
       rawSummaries.push(raw)
-      const summary = attachRegistrySessionToScanSummary('claude', raw, { cwd })
+      // T201: ensure session record in SQLite, merge registry fields into summary
+      const record = db ? ensureFromProviderScan(db, 'claude', raw, { cwd }) : null
+      const summary = mergeRegistryFields('claude', raw, record)
       if (summary) result.push(summary)
     }
     attachStop({ sessions: result.length, cacheHit: 0 })
@@ -642,8 +648,18 @@ function getClaudeSessionMetaPath(cwd, cliSessionId) {
   return path.join(getClaudeProjectsRootDir(cwd), `${sessionId}.meta.json`)
 }
 
-function readClaudeSessionMetaByFilePath(filePath) {
+async function readClaudeSessionMetaByFilePath(filePath) {
   try {
+    // T201: try SQLite first for runtime metadata
+    try {
+      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const record = findByProviderScan(db, 'claude', { filePath })
+      if (record?.runtime) {
+        const registryMeta = compactClaudeSessionMeta(record.runtime)
+        if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
+      }
+    } catch (_) { /* fall through to legacy reads */ }
+
     const registryRecord = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     const registryMeta = compactClaudeSessionMeta(registryRecord?.runtime || {})
     if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
@@ -657,7 +673,17 @@ function readClaudeSessionMetaByFilePath(filePath) {
   }
 }
 
-function readClaudeSessionMeta(cwd, cliSessionId) {
+async function readClaudeSessionMeta(cwd, cliSessionId) {
+  // T201: try SQLite first for runtime metadata
+  try {
+    const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+    const record = findByProviderScan(db, 'claude', { cliSessionId })
+    if (record?.runtime) {
+      const registryMeta = compactClaudeSessionMeta(record.runtime)
+      if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
+    }
+  } catch (_) { /* fall through to legacy reads */ }
+
   const registryRecord = findSessionRecordByProvider({ agent: 'claude', cliSessionId }, sessionRegistryOptionsForTest || {})
   const registryMeta = compactClaudeSessionMeta(registryRecord?.runtime || {})
   if (registryMeta.model || registryMeta.effort || registryMeta.modelTier) return registryMeta
@@ -671,16 +697,17 @@ async function buildSessionInstructionPrompt(instruction = {}) {
   return buildFullInstructionPrompt(instruction)
 }
 
-function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePath } = {}) {
+async function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePath } = {}) {
   const meta = normalizeClaudeSessionMeta(data)
-  return upsertRuntimeByProvider({
+  let db = null
+  try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+  return upsertRuntimeByProvider(db, {
     agent: 'claude',
     chatKey,
-    cwd,
-    cliSessionId,
     filePath,
+    cliSessionId,
     runtime: meta,
-  }, sessionRegistryOptionsForTest || {})
+  })
 }
 
 function deleteClaudeSessionArtifacts(filePath) {
@@ -723,7 +750,7 @@ function readClaudeCodePanelState() {
     const raw = fs.readFileSync(fp, 'utf8')
     const state = normalizeState(JSON.parse(raw))
     if (!state) return null
-    syncPanelStateSessions('claude', { projects: state.projects || state.tabs || [] }, sessionRegistryOptionsForTest || {})
+    // T201: syncPanelStateSessions removed — session identity now lives in SQLite
     const repair = repairSessionRegistry(sessionRegistryOptionsForTest || {})
     if (repair?.changed && fs.existsSync(fp)) {
       const repaired = normalizeState(JSON.parse(fs.readFileSync(fp, 'utf8')))
@@ -755,9 +782,7 @@ function writeClaudeCodePanelState(payload) {
     fs.copyFileSync(tmp, fp)
     try { fs.unlinkSync(tmp) } catch (_) {}
   }
-  syncPanelStateSessions('claude', {
-    projects: projects || tabs || [],
-  })
+  // T201: syncPanelStateSessions removed — session identity now lives in SQLite
 }
 
 const CLAUDE_PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins')
@@ -964,13 +989,12 @@ function setupClaudeHandlers() {
     try {
       const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: sessionId }, sessionRegistryOptionsForTest || {})
       if (!record?.chatKey) return { success: false, error: 'registry session not found' }
-      const result = setSessionTitle(record.chatKey, title, {
-        ...(sessionRegistryOptionsForTest || {}),
+      // T201: write title through SQLite
+      let db = null
+      try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+      const result = setSessionTitle(db, record.chatKey, title, {
         agent: 'claude',
         cwd: cwd || record.cwd,
-        cliSessionId: record.provider?.cliSessionId || sessionId,
-        filePath: record.provider?.filePath,
-        runtime: record.runtime,
       })
       return { success: Boolean(result?.ok), error: result?.error }
     } catch (e) {

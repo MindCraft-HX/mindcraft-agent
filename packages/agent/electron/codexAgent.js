@@ -13,7 +13,8 @@ const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
-const { attachRegistrySessionToScanSummary, deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, findRegistryRecordForProviderScan, mergeRegistryFieldsIntoScanSummary, ensureRegistryFromProviderScan, repairSessionRegistry, restorePanelStateFromSessionRegistry, setSessionTitle, syncPanelStateSessions } = require('./sessionRegistry')
+const { deleteSessionRecordsByProvider, findSessionRecordByProvider, repairSessionRegistry, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
+const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle } = require('./sessionRepository')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -2104,9 +2105,17 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 }
 
 /** 按工作目录列出所有 Codex 会话历史 */
-function listSessionsByCwd(targetCwd) {
+async function listSessionsByCwd(targetCwd) {
   const stop = perfStartIpc('codex-list-sessions-by-cwd')
   const normalizedTarget = normalizeFsPath(targetCwd)
+
+  // T201: get SQLite db for session identity/runtime reads & writes
+  let db = null
+  try {
+    const { getDb } = require('./db')
+    const { getMindCraftUserDataDir } = require('./userDataPath')
+    db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+  } catch (_) {}
 
   // T178: scan cache — 用 tree signature 检测文件变更
   const sigStop = perfStartIpc('codex-scan-signature')
@@ -2114,16 +2123,15 @@ function listSessionsByCwd(targetCwd) {
   sigStop()
   const cached = _codexScanByCwdCache.get(normalizedTarget)
   if (cached?.treeSignature === treeSignature) {
-    // T179-P1: cache hit — lookup registry record, merge-only (不写文件)
+    // T179-P1 / T201: cache hit — lookup SQLite record, merge-only
     const attachStop = perfStartIpc('codex-scan-attach')
     const sessions = []
     for (const raw of cached.rawSummaries) {
-      let record = findRegistryRecordForProviderScan('codex', raw, { cwd: targetCwd })
-      if (!record) {
-        // 合法异常：registry record 缺失，允许一次 repair 写
-        record = ensureRegistryFromProviderScan('codex', raw, { cwd: targetCwd })
+      let record = db ? findByProviderScan(db, 'codex', { cliSessionId: raw.cliSessionId || raw.id, filePath: raw.filePath }) : null
+      if (!record && db) {
+        record = ensureFromProviderScan(db, 'codex', raw, { cwd: targetCwd })
       }
-      const attached = mergeRegistryFieldsIntoScanSummary('codex', raw, record)
+      const attached = mergeRegistryFields('codex', raw, record)
       if (attached) sessions.push(attached)
     }
     const result = sessions.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
@@ -2144,7 +2152,9 @@ function listSessionsByCwd(targetCwd) {
     if (!summary) continue
     if (normalizeFsPath(summary.cwd) === normalizedTarget) {
       rawSummaries.push(summary)
-      const attached = attachRegistrySessionToScanSummary('codex', summary, { cwd: targetCwd })
+      // T201: ensure session record in SQLite, merge registry fields
+      const record = db ? ensureFromProviderScan(db, 'codex', summary, { cwd: targetCwd }) : null
+      const attached = mergeRegistryFields('codex', summary, record)
       if (attached) sessions.push(attached)
     }
   }
@@ -3466,12 +3476,16 @@ function setupCodexSdkHandlers() {
     try {
       const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
       if (!record?.chatKey) return { success: false, error: 'registry session not found' }
-      const result = setSessionTitle(record.chatKey, title, {
+      // T201: write title through SQLite
+      let renameDb = null
+      try {
+        const { getDb } = require('./db')
+        const { getMindCraftUserDataDir } = require('./userDataPath')
+        renameDb = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      } catch (_) {}
+      const result = setSessionTitle(renameDb, record.chatKey, title, {
         agent: 'codex',
         cwd: record.cwd,
-        cliSessionId: record.provider?.cliSessionId || sessionId,
-        filePath: record.provider?.filePath,
-        runtime: record.runtime,
       })
       return { success: Boolean(result?.ok), error: result?.error }
     } catch (e) {
@@ -3845,7 +3859,7 @@ function setupCodexSdkHandlers() {
         if (candidate === LEGACY_PANEL_STATE_FILE && !fs.existsSync(PANEL_STATE_FILE)) {
           writePanelState(normalized)
         }
-        syncPanelStateSessions('codex', normalized)
+        // T201: syncPanelStateSessions removed — session identity now lives in SQLite
         const backfill = restorePanelStateFromSessionRegistry('codex', normalized)
         if (backfill?.changed) writePanelState(normalized)
         const repair = repairSessionRegistry()
@@ -3867,7 +3881,7 @@ function setupCodexSdkHandlers() {
       const tmp = `${PANEL_STATE_FILE}.${process.pid}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
       fs.renameSync(tmp, PANEL_STATE_FILE)
-      syncPanelStateSessions('codex', payload)
+      // T201: syncPanelStateSessions removed — session identity now lives in SQLite
     } catch (e) {
       console.warn('[codex] writePanelState failed:', e?.message || e, 'file=', PANEL_STATE_FILE)
     }

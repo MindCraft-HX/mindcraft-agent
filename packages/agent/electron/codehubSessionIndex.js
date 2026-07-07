@@ -14,7 +14,9 @@ const fs = require('fs')
 const path = require('path')
 const { app } = require('electron')
 const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
-const { listSessionRecords } = require('./sessionRegistry')
+const { getMindCraftUserDataDir } = require('./userDataPath')
+const { getDb } = require('./db')
+const { listSessions } = require('./sessionRepository')
 const { CORE_CHANNELS } = require('../shared/ipcChannels')
 
 // ---------------------------------------------------------------------------
@@ -78,11 +80,14 @@ function readCodexPanelState() {
  * This is read-only — it uses the exported listSessionRecords() which only
  * reads files from disk and never mutates the registry.
  */
-function buildRegistryProjectIndex() {
+async function buildRegistryProjectIndex() {
   const index = new Map()
   let records
   try {
-    records = listSessionRecords()
+    // T201: SQLite-first session list
+    let db = null
+    try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+    records = db ? listSessions(db) : []
   } catch (_) {
     return index
   }
@@ -229,14 +234,14 @@ function extractTabsFromPanelState(panelState, agentType, registryIndex, warning
  *   - tabs: lightweight tab items suitable for the unified tab bar
  *   - warnings: non-fatal issues encountered during loading
  */
-function loadCodehubSessionIndex() {
+async function loadCodehubSessionIndex() {
   const warnings = []
   const tabs = []
 
   // Phase 1: Read registry index for supplemental data
   let registryIndex
   try {
-    registryIndex = buildRegistryProjectIndex()
+    registryIndex = await buildRegistryProjectIndex()
   } catch (err) {
     warnings.push(`Failed to read session registry: ${err.message}`)
     registryIndex = new Map()
@@ -278,7 +283,7 @@ function loadCodehubSessionIndex() {
 function registerCodehubSessionIndexIpc(ipcMain) {
   ipcMain.handle(CORE_CHANNELS.LOAD_CODEHUB_SESSION_INDEX, async () => {
     try {
-      return loadCodehubSessionIndex()
+      return await loadCodehubSessionIndex()
     } catch (err) {
       console.error('[codehubSessionIndex] load failed:', err.message)
       return { ok: false, tabs: [], warnings: [err.message] }

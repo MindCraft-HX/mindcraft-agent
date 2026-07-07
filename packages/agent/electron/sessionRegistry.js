@@ -1,3 +1,33 @@
+/**
+ * Session Registry — legacy JSON-file-based session identity/runtime store.
+ *
+ * T201: Session identity & runtime have moved to SQLite (`mindcraft.db` via
+ * `sessionRepository.js`).  This module is retained for:
+ *
+ *  - Draft / instruction persistence (still JSON — unchanged)
+ *  - Read fallback during the compatibility window
+ *  - `repairSessionRegistry` (panel state chatKey repair — still operates on
+ *    JSON files; migration to SQLite is deferred)
+ *  - `restorePanelStateFromSessionRegistry` (Codex panel recovery)
+ *
+ * The following functions are DEPRECATED and delegated to sessionRepository:
+ *
+ *  - `syncPanelStateSessions`        → removed (identity now in SQLite)
+ *  - `findRegistryRecordForProviderScan` → sessionRepository.findByProviderScan
+ *  - `mergeRegistryFieldsIntoScanSummary` → sessionRepository.mergeRegistryFields
+ *  - `ensureRegistryFromProviderScan`     → sessionRepository.ensureFromProviderScan
+ *  - `attachRegistrySessionToScanSummary` → composed from the above
+ *  - `setSessionTitle`                    → sessionRepository.setSessionTitle
+ *  - `upsertRuntimeByProvider`            → sessionRepository.upsertRuntimeByProvider
+ *  - `listSessionRecords`       → sessionRepository.listSessions
+ *  - `findSessionRecordByProvider` → sessionRepository.getSession/findByProviderScan
+ *  - `resolveSessionByProvider`   → sessionRepository.findByProviderScan
+ *  - `upsertSessionRecord`        → sessionRepository.upsertSession
+ *  - `upsertRuntimeByProvider`    → sessionRepository.upsertRuntimeByProvider
+ *
+ * These functions remain as JSON fallback and for test backward-compat.
+ */
+
 const fs = require('fs')
 const path = require('path')
 const { getMindCraftUserDataDir } = require('./userDataPath')
