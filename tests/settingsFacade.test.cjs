@@ -440,3 +440,41 @@ test('_reset clears internal state', () => {
     rmDir(dir);
   }
 });
+
+// ---------------------------------------------------------------------------
+// P1 regression guard: debounce window → flush ensures durability
+// ---------------------------------------------------------------------------
+
+test('flush persists pending debounced writes before process exit', () => {
+  const dir = tmpDir();
+  try {
+    const facade = loadFacade();
+    facade.init(dir);
+    const fp = path.join(dir, 'app-settings.json');
+
+    // Set a value — _scheduleFlush starts a 50ms timer, does NOT write yet
+    facade.setTheme('dark');
+
+    // In-memory cache has the change immediately
+    assert.equal(facade.getTheme(), 'dark');
+
+    // Disk should NOT have the change yet (debounce hasn't fired)
+    const diskBefore = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    assert.equal(diskBefore.app?.theme, undefined,
+      'debounce gap: disk should not have the change before flush fires');
+
+    // Simulate before-quit: call flush()
+    facade.flush();
+
+    // Now disk MUST have the change
+    const diskAfter = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    assert.equal(diskAfter.app?.theme, 'dark',
+      'flush must persist pending writes to disk');
+
+    // Second call is idempotent (no timer to clear)
+    facade.flush();
+    assert.equal(facade.getTheme(), 'dark');
+  } finally {
+    rmDir(dir);
+  }
+});
