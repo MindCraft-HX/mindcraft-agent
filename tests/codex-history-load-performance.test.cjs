@@ -55,9 +55,12 @@ function runReadSessionFileRangeSkipsNoisyTailTest() {
   })
 }
 
-async function runListSessionsByCwdCachesSummariesTest() {
+async function runListSessionsByCwdCachesSummariesTest(userDataDir) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-history-perf-'))
   try {
+    // Isolate SQLite DB from production and from other tests
+    __test__.setSessionRegistryOptionsForTest({ userDataDir })
+
     const oldStatSync = fs.statSync
     const sessionsDir = path.join(dir, 'sessions')
     const dayDir = path.join(sessionsDir, '2026', '07', '01')
@@ -95,13 +98,17 @@ async function runListSessionsByCwdCachesSummariesTest() {
       __test__.clearCodexJsonlCaches()
     }
   } finally {
+    __test__.setSessionRegistryOptionsForTest(null)
     fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
-async function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
+async function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest(userDataDir) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-history-perf-'))
   try {
+    // Isolate SQLite DB from production and from other tests
+    __test__.setSessionRegistryOptionsForTest({ userDataDir })
+
     const sessionsDir = path.join(dir, 'sessions')
     const dayDir = path.join(sessionsDir, '2026', '07', '01')
     fs.mkdirSync(dayDir, { recursive: true })
@@ -138,11 +145,23 @@ async function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
 
     __test__.clearCodexJsonlCaches()
   } finally {
+    __test__.setSessionRegistryOptionsForTest(null)
     fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
+// Run sync tests immediately; async tests are sequenced via run()
 runReadSessionFileRangeSkipsNoisyTailTest()
-runListSessionsByCwdCachesSummariesTest()
-runListSessionsByCwdInvalidatesWhenJsonlGrowsTest()
-console.log('codex history load performance tests passed')
+
+async function run() {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-codex-test-'))
+  try {
+    await runListSessionsByCwdCachesSummariesTest(userDataDir)
+    await runListSessionsByCwdInvalidatesWhenJsonlGrowsTest(userDataDir)
+  } finally {
+    fs.rmSync(userDataDir, { recursive: true, force: true })
+  }
+  console.log('codex history load performance tests passed')
+}
+
+run()

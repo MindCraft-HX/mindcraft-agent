@@ -653,7 +653,7 @@ async function readClaudeSessionMetaByFilePath(filePath) {
   try {
     // T201: try SQLite first for runtime metadata
     try {
-      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
       const record = findByProviderScan(db, 'claude', { filePath })
       if (record?.runtime) {
         const registryMeta = compactClaudeSessionMeta(record.runtime)
@@ -677,7 +677,7 @@ async function readClaudeSessionMetaByFilePath(filePath) {
 async function readClaudeSessionMeta(cwd, cliSessionId) {
   // T201: try SQLite first for runtime metadata
   try {
-    const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+    const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
     const record = findByProviderScan(db, 'claude', { cliSessionId })
     if (record?.runtime) {
       const registryMeta = compactClaudeSessionMeta(record.runtime)

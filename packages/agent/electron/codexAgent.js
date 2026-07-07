@@ -396,6 +396,7 @@ function emitCodexMetricsViaStore(sender, sample, sessionId, model, extra = {}) 
 const CODEX_CONFIG_DIR = path.join(os.homedir(), '.codex')
 const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
 let SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
+let sessionRegistryOptionsForTest = null
 const CODEX_METRICS_POLL_INTERVAL_MS = 1000
 const CODEX_SESSION_LOAD_LOG_MAX_BYTES = DEFAULT_MAX_BYTES
 
@@ -2115,7 +2116,7 @@ async function listSessionsByCwd(targetCwd) {
   try {
     const { getDb } = require('./db')
     const { getMindCraftUserDataDir } = require('./userDataPath')
-    db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+    db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
   } catch (_) {}
 
   // T178: scan cache — 用 tree signature 检测文件变更
@@ -3425,7 +3426,7 @@ function setupCodexSdkHandlers() {
         removeStore(record.chatKey)
         // T201: also clean up SQLite
         let db = null
-        try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+        try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
         if (db) deleteSession(db, record.chatKey)
       }
       return true
@@ -3469,7 +3470,7 @@ function setupCodexSdkHandlers() {
         removeStore(chatKey)
         // T201: also clean up SQLite
         let db = null
-        try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+        try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
         if (db) deleteSession(db, chatKey)
       }
 
@@ -3490,7 +3491,7 @@ function setupCodexSdkHandlers() {
       // T201: look up by provider in SQLite first, fall back to JSON registry
       let db = null
       let record = null
-      try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+      try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
       if (db) record = findByProviderScan(db, 'codex', { cliSessionId: sessionId })
       if (!record?.chatKey) {
         record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
@@ -3865,7 +3866,7 @@ function setupCodexSdkHandlers() {
   async function readPanelState() {
     // T201: try SQLite restore before JSON fallback
     let db = null
-    try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+    try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
 
     for (const candidate of getCodexPanelStateReadCandidates()) {
       try {
@@ -3884,7 +3885,7 @@ function setupCodexSdkHandlers() {
         }
         // JSON registry fallback for pre-migration sessions not yet in SQLite
         const jsonBackfill = restorePanelStateFromSessionRegistry('codex', backfill.panelState || normalized)
-        if (jsonBackfill?.changed && !backfill?.changed) writePanelState(normalized)
+        if (jsonBackfill?.changed && !backfill?.changed) writePanelState(jsonBackfill.panelState)
         // TODO(T201.1): repairSessionRegistry still reads JSON registry files. Without
         // syncPanelStateSessions, panel-state-only sessions are invisible to repair.
         // Migrate repair to SQLite so it reads from the authoritative store.
@@ -3926,7 +3927,7 @@ function setupCodexSdkHandlers() {
 
   async function readProviders() {
     try {
-      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
       const legacyReader = () => {
         try {
           if (!fs.existsSync(PROVIDERS_FILE)) return null
@@ -3950,7 +3951,7 @@ function setupCodexSdkHandlers() {
 
   async function writeProviders(data) {
     try {
-      const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+      const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
       const result = setProviders(db, 'codex', data || { providers: [], activeIdx: 0 })
 
       if (result.ok) {
@@ -4436,5 +4437,8 @@ module.exports = {
       clearCodexJsonlCaches()
     },
     clearCodexJsonlCaches,
+    setSessionRegistryOptionsForTest: (options) => {
+      sessionRegistryOptionsForTest = options
+    },
   },
 }

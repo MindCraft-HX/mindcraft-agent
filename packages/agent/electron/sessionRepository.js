@@ -336,14 +336,21 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
  */
 function mergeRegistryFields(agent, scanSummary = {}, record = null) {
   if (!record) return scanSummary;
-  const merged = { ...scanSummary };
-  if (record.title && !merged.title) merged.title = record.title;
-  if (record.titleSource) merged.titleSource = record.titleSource;
-  if (!merged.model && record.runtime?.model) merged.model = record.runtime.model;
-  if (!merged.effort && record.runtime?.effort) merged.effort = record.runtime.effort;
-  if (!merged.modelTier && record.runtime?.modelTier) merged.modelTier = record.runtime.modelTier;
-  if (record.chatKey) merged.chatKey = record.chatKey;
-  return merged;
+  // Match legacy mergeRegistryFieldsIntoScanSummary contract:
+  // SQLite (registry) fields take priority over scan summary fields.
+  return {
+    ...scanSummary,
+    chatKey: record.chatKey || scanSummary.chatKey || '',
+    title: record.title || scanSummary.title || scanSummary.name || '',
+    name: record.title || scanSummary.name || scanSummary.title || '',
+    titleSource: record.titleSource || scanSummary.titleSource || '',
+    cliSessionId: record.provider?.cliSessionId || scanSummary.cliSessionId || scanSummary.id || '',
+    filePath: record.provider?.filePath || scanSummary.filePath || '',
+    model: record.runtime?.model || scanSummary.model || '',
+    effort: record.runtime?.effort || scanSummary.effort || '',
+    modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',
+    reasoningEffort: record.runtime?.reasoningEffort || scanSummary.reasoningEffort || '',
+  };
 }
 
 /**

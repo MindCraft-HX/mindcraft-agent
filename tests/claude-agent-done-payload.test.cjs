@@ -243,7 +243,7 @@ async function runScanSessionsIncludesMetaTest() {
   fs.rmSync(cwd, { recursive: true, force: true })
 }
 
-function run() {
+async function run() {
   runDonePayloadDefaultReasonTest()
   runDonePayloadFallbackPathTest()
   runDonePayloadExplicitReasonTest()
@@ -251,10 +251,10 @@ function run() {
   runDoneReasonFinalizationTest()
   runJsonlIntegrityFileTest()
   runJsonlIntegrityMultipleToolUseTest()
-  runDeleteSessionArtifactsDeletesMetaSidecarTest()
-  runSessionMetaReadWriteTest()
-  runSessionMetaLegacySidecarFallbackTest()
-  runScanSessionsIncludesMetaTest()
+  await runDeleteSessionArtifactsDeletesMetaSidecarTest()
+  await runSessionMetaReadWriteTest()
+  await runSessionMetaLegacySidecarFallbackTest()
+  await runScanSessionsIncludesMetaTest()
   console.log('claude agent done payload tests passed')
 }
 
