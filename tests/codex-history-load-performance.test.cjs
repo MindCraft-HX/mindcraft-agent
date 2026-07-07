@@ -55,8 +55,9 @@ function runReadSessionFileRangeSkipsNoisyTailTest() {
   })
 }
 
-function runListSessionsByCwdCachesSummariesTest() {
-  withTempDir((dir) => {
+async function runListSessionsByCwdCachesSummariesTest() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-history-perf-'))
+  try {
     const oldStatSync = fs.statSync
     const sessionsDir = path.join(dir, 'sessions')
     const dayDir = path.join(sessionsDir, '2026', '07', '01')
@@ -73,7 +74,7 @@ function runListSessionsByCwdCachesSummariesTest() {
     ])
 
     __test__.setSessionsDirForTest(sessionsDir)
-    __test__.listSessionsByCwd('D:/repo')
+    await __test__.listSessionsByCwd('D:/repo')
 
     let jsonlStatCount = 0
     fs.statSync = function patchedStatSync(target, ...args) {
@@ -82,7 +83,7 @@ function runListSessionsByCwdCachesSummariesTest() {
     }
 
     try {
-      const sessions = __test__.listSessionsByCwd('D:/repo')
+      const sessions = await __test__.listSessionsByCwd('D:/repo')
       assert.equal(sessions.length, 1)
       assert.equal(sessions[0].name, 'Cached title')
       // T183/T185: outer scan cache still skips JSONL parsing, but the scan
@@ -93,11 +94,14 @@ function runListSessionsByCwdCachesSummariesTest() {
       fs.statSync = oldStatSync
       __test__.clearCodexJsonlCaches()
     }
-  })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 }
 
-function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
-  withTempDir((dir) => {
+async function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-history-perf-'))
+  try {
     const sessionsDir = path.join(dir, 'sessions')
     const dayDir = path.join(sessionsDir, '2026', '07', '01')
     fs.mkdirSync(dayDir, { recursive: true })
@@ -114,7 +118,7 @@ function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
     ])
 
     __test__.setSessionsDirForTest(sessionsDir)
-    const before = __test__.listSessionsByCwd('D:/repo')
+    const before = await __test__.listSessionsByCwd('D:/repo')
     assert.equal(before.length, 1)
     assert.equal(before[0].name, 'Initial title')
     const beforeSize = before[0].fileSize
@@ -127,13 +131,15 @@ function runListSessionsByCwdInvalidatesWhenJsonlGrowsTest() {
     const later = new Date(Date.now() + 2000)
     fs.utimesSync(filePath, later, later)
 
-    const after = __test__.listSessionsByCwd('D:/repo')
+    const after = await __test__.listSessionsByCwd('D:/repo')
     assert.equal(after.length, 1)
     assert.ok(after[0].fileSize > beforeSize)
     assert.notEqual(after[0].updatedAt, before[0].updatedAt)
 
     __test__.clearCodexJsonlCaches()
-  })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 runReadSessionFileRangeSkipsNoisyTailTest()

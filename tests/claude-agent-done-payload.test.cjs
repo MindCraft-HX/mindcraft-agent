@@ -151,7 +151,7 @@ function runJsonlIntegrityMultipleToolUseTest() {
   fs.rmSync(dir, { recursive: true, force: true })
 }
 
-function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
+async function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-session-artifacts-'))
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-delete-userdata-'))
   const filePath = path.join(dir, '11111111-1111-1111-1111-111111111111.jsonl')
@@ -160,7 +160,7 @@ function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
   fs.writeFileSync(metaPath, '{"model":"claude-sonnet"}\n', 'utf8')
 
   __test__.setSessionRegistryOptionsForTest({ userDataDir })
-  assert.equal(__test__.deleteClaudeSessionArtifacts(filePath), true)
+  assert.equal(await __test__.deleteClaudeSessionArtifacts(filePath), true)
   assert.equal(fs.existsSync(filePath), false)
   assert.equal(fs.existsSync(metaPath), false)
 
@@ -169,18 +169,18 @@ function runDeleteSessionArtifactsDeletesMetaSidecarTest() {
   fs.rmSync(dir, { recursive: true, force: true })
 }
 
-function runSessionMetaReadWriteTest() {
+async function runSessionMetaReadWriteTest() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-cwd-'))
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-userdata-'))
   const cliSessionId = '22222222-2222-2222-2222-222222222222'
   __test__.setSessionRegistryOptionsForTest({ userDataDir })
 
-  assert.equal(__test__.writeClaudeSessionMeta(cwd, cliSessionId, {
+  assert.deepEqual(await __test__.writeClaudeSessionMeta(cwd, cliSessionId, {
     model: 'claude-sonnet-4-20250514',
     effort: 'max',
-  }, { chatKey: 'chat-key-222' }), true)
+  }, { chatKey: 'chat-key-222' }), { ok: true })
 
-  assert.deepEqual(__test__.readClaudeSessionMeta(cwd, cliSessionId), {
+  assert.deepEqual(await __test__.readClaudeSessionMeta(cwd, cliSessionId), {
     model: 'claude-sonnet-4-20250514',
     effort: 'xhigh',
   })
@@ -193,7 +193,7 @@ function runSessionMetaReadWriteTest() {
   fs.rmSync(cwd, { recursive: true, force: true })
 }
 
-function runSessionMetaLegacySidecarFallbackTest() {
+async function runSessionMetaLegacySidecarFallbackTest() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-legacy-cwd-'))
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-meta-legacy-userdata-'))
   const cliSessionId = '44444444-4444-4444-4444-444444444444'
@@ -203,7 +203,7 @@ function runSessionMetaLegacySidecarFallbackTest() {
   fs.writeFileSync(metaPath, JSON.stringify({ model: 'legacy-model', effort: 'max' }), 'utf8')
   __test__.setSessionRegistryOptionsForTest({ userDataDir })
 
-  assert.deepEqual(__test__.readClaudeSessionMeta(cwd, cliSessionId), {
+  assert.deepEqual(await __test__.readClaudeSessionMeta(cwd, cliSessionId), {
     model: 'legacy-model',
     effort: 'xhigh',
   })
@@ -214,7 +214,7 @@ function runSessionMetaLegacySidecarFallbackTest() {
   fs.rmSync(cwd, { recursive: true, force: true })
 }
 
-function runScanSessionsIncludesMetaTest() {
+async function runScanSessionsIncludesMetaTest() {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-scan-cwd-'))
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-scan-userdata-'))
   const cliSessionId = '33333333-3333-3333-3333-333333333333'
@@ -226,12 +226,12 @@ function runScanSessionsIncludesMetaTest() {
     message: { role: 'user', content: 'hello' },
   }) + '\n', 'utf8')
   __test__.setSessionRegistryOptionsForTest({ userDataDir })
-  assert.equal(__test__.writeClaudeSessionMeta(cwd, cliSessionId, {
+  assert.deepEqual(await __test__.writeClaudeSessionMeta(cwd, cliSessionId, {
     model: 'claude-opus-4-20250514',
     effort: 'high',
-  }, { chatKey: 'chat-key-333', filePath: payload.filePath }), true)
+  }, { chatKey: 'chat-key-333', filePath: payload.filePath }), { ok: true })
 
-  const sessions = __test__.scanCliSessionsForProject(cwd)
+  const sessions = await __test__.scanCliSessionsForProject(cwd)
   const session = sessions.find(s => s.cliSessionId === cliSessionId)
 
   assert.equal(session.model, 'claude-opus-4-20250514')

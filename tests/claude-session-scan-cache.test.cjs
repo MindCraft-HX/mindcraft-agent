@@ -14,8 +14,9 @@ function withTempDir(fn) {
   }
 }
 
-function runClaudeSessionScanCachesTitlesTest() {
-  withTempDir((dir) => {
+async function runClaudeSessionScanCachesTitlesTest() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-scan-cache-'))
+  try {
     const cwd = path.join(dir, 'repo')
     const oldReadFileSync = fs.readFileSync
     fs.mkdirSync(cwd, { recursive: true })
@@ -31,7 +32,7 @@ function runClaudeSessionScanCachesTitlesTest() {
     }) + '\n', 'utf8')
 
     __test__.clearClaudeSessionScanCaches()
-    const first = __test__.scanCliSessionsForProject(cwd)
+    const first = await __test__.scanCliSessionsForProject(cwd)
     assert.equal(first.length, 1)
     assert.equal(first[0].title, 'Cached Claude title')
 
@@ -42,7 +43,7 @@ function runClaudeSessionScanCachesTitlesTest() {
     }
 
     try {
-      const second = __test__.scanCliSessionsForProject(cwd)
+      const second = await __test__.scanCliSessionsForProject(cwd)
       assert.equal(second.length, 1)
       assert.equal(second[0].title, 'Cached Claude title')
       assert.equal(transcriptReadCount, 0)
@@ -50,7 +51,9 @@ function runClaudeSessionScanCachesTitlesTest() {
       fs.readFileSync = oldReadFileSync
       __test__.clearClaudeSessionScanCaches()
     }
-  })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 runClaudeSessionScanCachesTitlesTest()

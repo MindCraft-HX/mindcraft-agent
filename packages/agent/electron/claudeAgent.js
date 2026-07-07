@@ -22,6 +22,7 @@ const {
   mergeRegistryFields,
   upsertRuntimeByProvider,
   setSessionTitle,
+  deleteSession,
 } = require('./sessionRepository')
 const { buildFullInstructionPrompt } = require('./sessionInstructionAttachments')
 const { findLegacyUserData } = require('./findLegacyUserData')
@@ -700,7 +701,7 @@ async function buildSessionInstructionPrompt(instruction = {}) {
 async function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, filePath } = {}) {
   const meta = normalizeClaudeSessionMeta(data)
   let db = null
-  try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+  try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
   return upsertRuntimeByProvider(db, {
     agent: 'claude',
     chatKey,
@@ -710,13 +711,19 @@ async function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, f
   })
 }
 
-function deleteClaudeSessionArtifacts(filePath) {
+async function deleteClaudeSessionArtifacts(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return false
     const record = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     fs.unlinkSync(filePath)
     deleteSessionRecordsByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
-    if (record?.chatKey) removeStore(record.chatKey)
+    // T201: also clean up SQLite
+    if (record?.chatKey) {
+      removeStore(record.chatKey)
+      let db = null
+      try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+      if (db) deleteSession(db, record.chatKey)
+    }
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     try {
       if (metaPath !== filePath && fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
@@ -750,7 +757,10 @@ function readClaudeCodePanelState() {
     const raw = fs.readFileSync(fp, 'utf8')
     const state = normalizeState(JSON.parse(raw))
     if (!state) return null
-    // T201: syncPanelStateSessions removed — session identity now lives in SQLite
+    // T201: syncPanelStateSessions removed — session identity now lives in SQLite.
+    // TODO(T201.1): repairSessionRegistry still reads JSON registry files. Without
+    // syncPanelStateSessions, panel-state-only sessions are invisible to repair.
+    // Migrate repair to SQLite so it reads from the authoritative store.
     const repair = repairSessionRegistry(sessionRegistryOptionsForTest || {})
     if (repair?.changed && fs.existsSync(fp)) {
       const repaired = normalizeState(JSON.parse(fs.readFileSync(fp, 'utf8')))
@@ -987,11 +997,15 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.RENAME_SESSION, async (_, { sessionId, title, cwd }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
-      const record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: sessionId }, sessionRegistryOptionsForTest || {})
-      if (!record?.chatKey) return { success: false, error: 'registry session not found' }
-      // T201: write title through SQLite
+      // T201: look up by provider in SQLite first, fall back to JSON registry
       let db = null
+      let record = null
       try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+      if (db) record = findByProviderScan(db, 'claude', { cliSessionId: sessionId })
+      if (!record?.chatKey) {
+        record = findSessionRecordByProvider({ agent: 'claude', cliSessionId: sessionId }, sessionRegistryOptionsForTest || {})
+      }
+      if (!record?.chatKey) return { success: false, error: 'registry session not found' }
       const result = setSessionTitle(db, record.chatKey, title, {
         agent: 'claude',
         cwd: cwd || record.cwd,
@@ -2629,7 +2643,7 @@ function setupClaudeHandlers() {
     const apiKey = runtime.apiKey
     const baseURL = runtime.baseURL
     const cliSessionIdForMeta = cliSessionIds.get(chatKey) || ''
-    const sessionMeta = cliSessionIdForMeta ? readClaudeSessionMeta(cwd, cliSessionIdForMeta) : {}
+    const sessionMeta = cliSessionIdForMeta ? await readClaudeSessionMeta(cwd, cliSessionIdForMeta) : {}
     const requestedMeta = normalizeClaudeSessionMeta({
       model: modelOverride || sessionMeta.model || runtime.model,
       effort: effortOverride || sessionMeta.effort || readEffortLevel(),
@@ -3053,13 +3067,13 @@ function setupClaudeHandlers() {
               if (!cliSessionIds.has(chatKey)) {
                 cliSessionIds.set(chatKey, msg.session_id)
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
+                if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
                 safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.session_id })
               }
             } else if (msg?.uuid && !cliSessionIds.has(chatKey)) {
               cliSessionIds.set(chatKey, msg.uuid)
               const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-              if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
+              if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
               safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.uuid })
             }
             const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
@@ -3135,7 +3149,7 @@ function setupClaudeHandlers() {
                 cliSessionIds.set(chatKey, msg.session_id)
                 sessionModels.set(chatKey, model)
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
+                if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
               }
               // Phase 4：emitClaudeMetricsViaStore 已在 safeSend 前调用（TurnStore 已 finalize）
               resultReceived = true
@@ -3246,7 +3260,7 @@ function setupClaudeHandlers() {
                     finalCliSessionId = candidate.id
                     cliSessionIds.set(chatKey, finalCliSessionId)
                     const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                    if (pendingMeta) writeClaudeSessionMeta(s.cwd || resolvedCwd, finalCliSessionId, pendingMeta, { chatKey })
+                    if (pendingMeta) await writeClaudeSessionMeta(s.cwd || resolvedCwd, finalCliSessionId, pendingMeta, { chatKey })
                     console.log(`[Claude] fallback scan found cliSessionId: ${finalCliSessionId.slice(0,8)}...`)
                   }
                 }

@@ -4,6 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { getMindCraftUserDataDir } = require('./userDataPath')
+const { getDb } = require('./db')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
 const { beginTurn, submitSample, clearCurrentTurn, getCurrentSnapshot, getFinalSnapshot, removeStore, clearAllStores } = require('./tokenMetrics/turnStore')
@@ -14,7 +15,7 @@ const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('.
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
 const { deleteSessionRecordsByProvider, findSessionRecordByProvider, repairSessionRegistry, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
-const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle } = require('./sessionRepository')
+const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle, deleteSession, restorePanelState } = require('./sessionRepository')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -3414,13 +3415,19 @@ function setupCodexSdkHandlers() {
     finally { _pendingCodexScans.delete(normalizedTarget) }
   })
 
-  ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION_FILE, (_, { filePath }) => {
+  ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION_FILE, async (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return false
       const record = findSessionRecordByProvider({ agent: 'codex', filePath })
       fs.unlinkSync(filePath)
       deleteSessionRecordsByProvider({ agent: 'codex', filePath })
-      if (record?.chatKey) removeStore(record.chatKey)
+      if (record?.chatKey) {
+        removeStore(record.chatKey)
+        // T201: also clean up SQLite
+        let db = null
+        try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+        if (db) deleteSession(db, record.chatKey)
+      }
       return true
     } catch (e) {
       console.warn('[codex-delete-session-file] failed:', e?.message || e)
@@ -3440,7 +3447,7 @@ function setupCodexSdkHandlers() {
     }
   })
 
-  ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION, (_, payload = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION, async (_, payload = {}) => {
     try {
       const filePath = typeof payload?.filePath === 'string' ? payload.filePath : ''
       const cliSessionId = typeof payload?.cliSessionId === 'string' ? payload.cliSessionId : ''
@@ -3458,7 +3465,13 @@ function setupCodexSdkHandlers() {
         cliSessionId,
         chatKey,
       })
-      if (chatKey) removeStore(chatKey)
+      if (chatKey) {
+        removeStore(chatKey)
+        // T201: also clean up SQLite
+        let db = null
+        try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+        if (db) deleteSession(db, chatKey)
+      }
 
       return {
         ok: deletedTranscript || deletedRecords > 0,
@@ -3474,16 +3487,16 @@ function setupCodexSdkHandlers() {
   ipcMain.handle(CODEX_CHANNELS.RENAME_SESSION, async (_, { sessionId, title }) => {
     if (!sessionId || !title) return { success: false, error: 'missing sessionId or title' }
     try {
-      const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
+      // T201: look up by provider in SQLite first, fall back to JSON registry
+      let db = null
+      let record = null
+      try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+      if (db) record = findByProviderScan(db, 'codex', { cliSessionId: sessionId })
+      if (!record?.chatKey) {
+        record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: sessionId })
+      }
       if (!record?.chatKey) return { success: false, error: 'registry session not found' }
-      // T201: write title through SQLite
-      let renameDb = null
-      try {
-        const { getDb } = require('./db')
-        const { getMindCraftUserDataDir } = require('./userDataPath')
-        renameDb = await getDb({ userDataDir: getMindCraftUserDataDir() })
-      } catch (_) {}
-      const result = setSessionTitle(renameDb, record.chatKey, title, {
+      const result = setSessionTitle(db, record.chatKey, title, {
         agent: 'codex',
         cwd: record.cwd,
       })
@@ -3849,7 +3862,11 @@ function setupCodexSdkHandlers() {
     }
   }
 
-  function readPanelState() {
+  async function readPanelState() {
+    // T201: try SQLite restore before JSON fallback
+    let db = null
+    try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+
     for (const candidate of getCodexPanelStateReadCandidates()) {
       try {
         if (!fs.existsSync(candidate)) continue
@@ -3859,9 +3876,18 @@ function setupCodexSdkHandlers() {
         if (candidate === LEGACY_PANEL_STATE_FILE && !fs.existsSync(PANEL_STATE_FILE)) {
           writePanelState(normalized)
         }
-        // T201: syncPanelStateSessions removed — session identity now lives in SQLite
-        const backfill = restorePanelStateFromSessionRegistry('codex', normalized)
-        if (backfill?.changed) writePanelState(normalized)
+        // T201: restore from SQLite first (post-migration sessions), then JSON fallback
+        let backfill = { changed: false }
+        if (db) {
+          backfill = restorePanelState(db, 'codex', normalized)
+          if (backfill?.changed) writePanelState(backfill.panelState)
+        }
+        // JSON registry fallback for pre-migration sessions not yet in SQLite
+        const jsonBackfill = restorePanelStateFromSessionRegistry('codex', backfill.panelState || normalized)
+        if (jsonBackfill?.changed && !backfill?.changed) writePanelState(normalized)
+        // TODO(T201.1): repairSessionRegistry still reads JSON registry files. Without
+        // syncPanelStateSessions, panel-state-only sessions are invisible to repair.
+        // Migrate repair to SQLite so it reads from the authoritative store.
         const repair = repairSessionRegistry()
         if (repair?.changed) {
           const repairedPath = fs.existsSync(PANEL_STATE_FILE) ? PANEL_STATE_FILE : candidate

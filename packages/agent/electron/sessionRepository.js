@@ -187,6 +187,7 @@ function deleteSession(db, chatKey) {
  * @returns {{ ok: boolean }}
  */
 function setSessionTitle(db, chatKey, title, opts = {}) {
+  if (!db) return { ok: false, error: 'DB unavailable' };
   const dao = sessionsDao();
   const row = dao.getSession(db, chatKey);
   const record = row || { chatKey, createdAt: now() };
@@ -203,6 +204,24 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Build all candidate provider keys from scan info.  Both cliSessionId and
+ * filePath forms are emitted so the same session can be found regardless of
+ * which identifier the scan first discovered.
+ *
+ * @param {string} agent
+ * @param {object} scanInfo — { cliSessionId, filePath }
+ * @returns {string[]}
+ */
+function buildProviderKeys(agent, scanInfo = {}) {
+  const keys = [];
+  if (scanInfo.cliSessionId) keys.push(`${agent}::${scanInfo.cliSessionId}`);
+  if (scanInfo.filePath && scanInfo.filePath !== scanInfo.cliSessionId) {
+    keys.push(`${agent}::${scanInfo.filePath}`);
+  }
+  return keys;
+}
+
+/**
  * Resolve a session by provider keys (for use by provider scan).
  *
  * @param {import('sql.js').Database} db
@@ -213,12 +232,13 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
  */
 function findByProviderScan(db, agent, scanInfo = {}, opts = {}) {
   const dao = sessionsDao();
-  const providerKey = `${agent}::${scanInfo.cliSessionId || scanInfo.filePath || ''}`;
-  if (!providerKey || providerKey === `${agent}::`) return null;
-  const row = dao.findSessionByProviderKey(db, providerKey);
-  if (row) {
-    const runtime = dao.getSessionRuntime(db, row.chatKey);
-    return daoRowToRecord(row, row.provider, runtime);
+  const keys = buildProviderKeys(agent, scanInfo);
+  for (const providerKey of keys) {
+    const row = dao.findSessionByProviderKey(db, providerKey);
+    if (row) {
+      const runtime = dao.getSessionRuntime(db, row.chatKey);
+      return daoRowToRecord(row, row.provider, runtime);
+    }
   }
   return null;
 }
@@ -235,10 +255,15 @@ function findByProviderScan(db, agent, scanInfo = {}, opts = {}) {
  */
 function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
   const dao = sessionsDao();
-  const providerKey = `${agent}::${scanSummary.cliSessionId || scanSummary.filePath || ''}`;
-  if (!providerKey || providerKey === `${agent}::`) return null;
+  const keys = buildProviderKeys(agent, scanSummary);
+  if (!keys.length) return null;
 
-  let row = dao.findSessionByProviderKey(db, providerKey);
+  // Try all candidate keys to find an existing row
+  let row = null;
+  for (const key of keys) {
+    row = dao.findSessionByProviderKey(db, key);
+    if (row) break;
+  }
 
   // Build record from existing or create new
   const chatKey = row?.chatKey || `${agent}::scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -267,17 +292,19 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
   // Save
   dao.upsertSession(db, recordToDaoParams(record));
 
-  // Save binding
-  dao.upsertSessionBinding(db, {
-    chatKey: record.chatKey,
-    providerKey,
-    cliSessionId: scanSummary.cliSessionId || '',
-    filePath: scanSummary.filePath || '',
-    source: 'scan',
-    detached: false,
-    resumeAllowed: true,
-    updatedAt: nowTs,
-  });
+  // Save bindings for ALL provider keys (both cliSessionId and filePath)
+  for (const providerKey of keys) {
+    dao.upsertSessionBinding(db, {
+      chatKey: record.chatKey,
+      providerKey,
+      cliSessionId: scanSummary.cliSessionId || '',
+      filePath: scanSummary.filePath || '',
+      source: 'scan',
+      detached: false,
+      resumeAllowed: true,
+      updatedAt: nowTs,
+    });
+  }
 
   // Save runtime if present
   if (scanSummary.model || scanSummary.effort) {
@@ -473,6 +500,86 @@ function backfillFromRegistry(db, { userDataDir } = {}) {
   return { ok: true, count };
 }
 
+/**
+ * Restore panel state from SQLite.  Mirrors `restorePanelStateFromSessionRegistry`
+ * but reads from the authoritative SQLite store.  Ensures sessions created after
+ * T201 (which only write to SQLite) are visible in the panel.
+ *
+ * @param {import('sql.js').Database} db
+ * @param {string} agent
+ * @param {object} panelState
+ * @returns {{ changed: boolean, added: number, panelState: object }}
+ */
+function restorePanelState(db, agent, panelState) {
+  const dao = sessionsDao();
+  const rows = dao.listSessions(db);
+  if (!rows.length) return { changed: false, added: 0, panelState };
+
+  const projects = Array.isArray(panelState?.projects) ? panelState.projects.slice() : [];
+  let added = 0;
+
+  for (const row of rows) {
+    const binding = dao.listSessionBindings(db, row.chatKey)[0];
+    const runtime = dao.getSessionRuntime(db, row.chatKey);
+    const record = daoRowToRecord(row, binding, runtime);
+    if (record.agent !== agent) continue;
+
+    // Find matching project by cwd or projectId
+    let project = projects.find(p =>
+      (record.cwd && p.cwd === record.cwd) ||
+      (record.projectId && p.id === record.projectId)
+    );
+
+    if (!project) {
+      const baseId = record.projectId || `proj-sqlite-${projects.length + 1}`;
+      project = {
+        id: baseId,
+        name: record.cwd ? path.basename(record.cwd) || 'New Project' : 'New Project',
+        cwd: record.cwd || '',
+        cwdLocked: Boolean(record.cwd),
+        hasDoneNotification: false,
+        additionalDirectories: [],
+        chats: [],
+      };
+      projects.push(project);
+    }
+
+    if (!Array.isArray(project.chats)) project.chats = [];
+    if (project.chats.some(c => c.sessionId === record.chatKey)) continue;
+
+    // Build panel chat from record
+    const provider = record.provider || {};
+    const rt = record.runtime || {};
+    const fp = provider.filePath || '';
+    const fileExists = Boolean(fp && fs.existsSync(fp));
+    project.chats.push({
+      id: `chat-${record.chatKey}`,
+      name: record.title || 'New Chat',
+      sessionId: record.chatKey,
+      messages: [],
+      metrics: null,
+      model: rt.model || null,
+      reasoningEffort: rt.reasoningEffort || null,
+      sandboxMode: null,
+      networkAccessEnabled: null,
+      webSearchMode: null,
+      _thinkingStart: null,
+      _awaitingDone: false,
+      cliSessionId: provider.cliSessionId || null,
+      filePath: fp || null,
+      createdAt: record.createdAt || null,
+      updatedAt: record.updatedAt || null,
+      fileSize: fileExists ? fs.statSync(fp).size : null,
+      titleSource: record.titleSource || '',
+      _userRenamed: record.titleSource === 'user',
+      _resumeAllowed: !fp || fileExists,
+    });
+    added += 1;
+  }
+
+  return { changed: added > 0, added, panelState: { ...panelState, projects } };
+}
+
 module.exports = {
   listSessions,
   getSession,
@@ -483,6 +590,7 @@ module.exports = {
   ensureFromProviderScan,
   mergeRegistryFields,
   upsertRuntimeByProvider,
+  restorePanelState,
   getSessionDraft,
   setSessionDraft,
   clearSessionDraft,
