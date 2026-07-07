@@ -116,3 +116,54 @@ test('scan merge preserves restored non-resumable history tab omitted by transcr
 
   assert.deepEqual(merged.map(chat => chat.id), ['chat-scanned', 'chat-metadata-only'])
 })
+
+test('scan merge drops restored resumable history tab when transcript scan no longer returns it', () => {
+  const staleRestoredChat = {
+    id: 'chat-stale',
+    sessionId: 'codex-session-stale',
+    thinking: false,
+    _awaitingDone: false,
+    _restoredFromPanelState: true,
+    _resumeAllowed: true,
+    cliSessionId: 'thread-stale',
+    filePath: 'C:/Users/demo/.codex/sessions/missing.jsonl',
+  }
+
+  const merged = mergeScannedChatsPreservingRuntime([staleRestoredChat], [], {})
+
+  assert.deepEqual(merged.map(chat => chat.id), [])
+})
+
+test('scan merge drops active bound stale chat omitted by transcript scan', () => {
+  const staleActiveChat = {
+    id: 'chat-stale-active',
+    sessionId: 'codex-session-stale-active',
+    thinking: false,
+    _awaitingDone: false,
+    cliSessionId: 'thread-stale',
+    filePath: 'C:/Users/demo/.codex/sessions/missing.jsonl',
+  }
+
+  const merged = mergeScannedChatsPreservingRuntime([staleActiveChat], [], {
+    activeChatId: 'chat-stale-active',
+  })
+
+  assert.deepEqual(merged.map(chat => chat.id), [])
+})
+
+test('scan merge preserves active local draft omitted by transcript scan', () => {
+  const activeDraft = {
+    id: 'chat-active-draft',
+    sessionId: 'codex-session-chat-1-1781832434153',
+    thinking: false,
+    _awaitingDone: false,
+    cliSessionId: '',
+    filePath: '',
+  }
+
+  const merged = mergeScannedChatsPreservingRuntime([activeDraft], [], {
+    activeChatId: 'chat-active-draft',
+  })
+
+  assert.deepEqual(merged.map(chat => chat.id), ['chat-active-draft'])
+})

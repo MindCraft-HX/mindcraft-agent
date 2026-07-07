@@ -193,11 +193,12 @@
 
         <div v-if="dragging" class="drop-mask">{{ $t('agent.dragFile') }}</div>
         <ImageLightbox :src="imageLightboxSrc" @close="closeImageLightbox" />
+        <!-- CodeX SDK 不支持手动 /compact，仅自动压缩 -->
         <StatusBarMetrics
           :metrics="statusBarMetrics"
           :liveDurationMs="metricsLiveDurationMs"
           :compacting="statusBarMetrics.compacting"
-          :compact-disabled="true"  <!-- CodeX SDK 不支持手动 /compact，仅自动压缩 -->
+          :compact-disabled="true"
           compact-hint-key="agent.codexAutoCompactDesc"
           compacting-key="agent.codexAutoCompacting"
           @send-message="sendFromStatusBar"
@@ -1487,7 +1488,10 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
     nextChats.push(chat)
   }
 
-  proj.chats = nextChats.length ? sortChatsByRecency(nextChats) : proj.chats
+  const mergedChats = mergeScannedChatsPreservingRuntime(proj.chats, nextChats, {
+    activeChatId: activeChatId.value,
+  })
+  proj.chats = mergedChats.length ? sortChatsByRecency(mergedChats) : []
 
   if (!proj.chats.length) {
     const chat = createNewChat()
@@ -2027,11 +2031,16 @@ async function requestDeleteChat(chat) {
   if (!p) return
   discardMount(chat)
   const idx = p.chats.findIndex(c => c.id === chat.id)
+  if (idx < 0) return
   p.chats.splice(idx, 1)
   clearChatScroll(chat.id)
   if (activeChatId.value === chat.id) {
-    activeChatId.value = p.chats[idx]?.id || p.chats[idx - 1]?.id || null
-    if (!p.chats.length) newChat()
+    const nextChatId = p.chats[idx]?.id || p.chats[idx - 1]?.id || null
+    if (nextChatId) switchChat(nextChatId)
+    else {
+      activeChatId.value = null
+      newChat()
+    }
   }
   saveHistory({ immediate: true })
 }

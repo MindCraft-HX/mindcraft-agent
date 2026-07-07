@@ -524,26 +524,45 @@ function restorePanelState(db, agent, panelState) {
 
   const projects = Array.isArray(panelState?.projects) ? panelState.projects.slice() : [];
   let added = 0;
+  let repaired = 0;
 
   for (const row of rows) {
     const binding = dao.listSessionBindings(db, row.chatKey)[0];
     const runtime = dao.getSessionRuntime(db, row.chatKey);
     const record = daoRowToRecord(row, binding, runtime);
     if (record.agent !== agent) continue;
+    const recordCwd = String(record.cwd || '').trim();
+    const recordProjectId = String(record.projectId || '').trim();
 
     // Find matching project by cwd or projectId
     let project = projects.find(p =>
-      (record.cwd && p.cwd === record.cwd) ||
-      (record.projectId && p.id === record.projectId)
+      (recordCwd && p.cwd === recordCwd) ||
+      (recordProjectId && p.id === recordProjectId)
     );
 
+    if (project && recordCwd) {
+      const prevCwd = String(project.cwd || '').trim();
+      const prevLocked = Boolean(project.cwdLocked);
+      const nextName = path.basename(recordCwd) || 'New Project';
+      const shouldRepairCwd = !prevCwd || (recordProjectId && String(project.id || '').trim() === recordProjectId && prevCwd !== recordCwd);
+      if (shouldRepairCwd) {
+        project.cwd = recordCwd;
+        project.cwdLocked = true;
+        if (!project.name || project.name === 'New Project' || project.name === '新项目' || !prevCwd) {
+          project.name = nextName;
+        }
+        if (prevCwd !== recordCwd || !prevLocked) repaired += 1;
+      }
+    }
+
     if (!project) {
-      const baseId = record.projectId || `proj-sqlite-${projects.length + 1}`;
+      if (!recordCwd && !recordProjectId) continue;
+      const baseId = recordProjectId || `proj-sqlite-${projects.length + 1}`;
       project = {
         id: baseId,
-        name: record.cwd ? path.basename(record.cwd) || 'New Project' : 'New Project',
-        cwd: record.cwd || '',
-        cwdLocked: Boolean(record.cwd),
+        name: recordCwd ? path.basename(recordCwd) || 'New Project' : 'New Project',
+        cwd: recordCwd,
+        cwdLocked: Boolean(recordCwd),
         hasDoneNotification: false,
         additionalDirectories: [],
         chats: [],
@@ -559,6 +578,8 @@ function restorePanelState(db, agent, panelState) {
     const rt = record.runtime || {};
     const fp = provider.filePath || '';
     const fileExists = Boolean(fp && fs.existsSync(fp));
+    const resumeAllowed = provider.resumeAllowed !== false && (!fp || fileExists);
+    if (fp && !fileExists && !resumeAllowed) continue;
     project.chats.push({
       id: `chat-${record.chatKey}`,
       name: record.title || 'New Chat',
@@ -579,12 +600,12 @@ function restorePanelState(db, agent, panelState) {
       fileSize: fileExists ? fs.statSync(fp).size : null,
       titleSource: record.titleSource || '',
       _userRenamed: record.titleSource === 'user',
-      _resumeAllowed: !fp || fileExists,
+      _resumeAllowed: resumeAllowed,
     });
     added += 1;
   }
 
-  return { changed: added > 0, added, panelState: { ...panelState, projects } };
+  return { changed: added > 0 || repaired > 0, added, repaired, panelState: { ...panelState, projects } };
 }
 
 module.exports = {

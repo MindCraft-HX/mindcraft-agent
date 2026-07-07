@@ -3421,8 +3421,14 @@ function setupCodexSdkHandlers() {
       if (!filePath || !fs.existsSync(filePath)) return false
       const record = findSessionRecordByProvider({ agent: 'codex', filePath })
       fs.unlinkSync(filePath)
+      clearCodexJsonlCaches()
       deleteSessionRecordsByProvider({ agent: 'codex', filePath })
       if (record?.chatKey) {
+        detachCodexResumeMapping({
+          sessionId: record.chatKey,
+          cliSessionId: record.provider?.cliSessionId || '',
+          filePath,
+        })
         removeStore(record.chatKey)
         // T201: also clean up SQLite
         let db = null
@@ -3458,6 +3464,7 @@ function setupCodexSdkHandlers() {
       if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath)
         deletedTranscript = true
+        clearCodexJsonlCaches()
       }
 
       const deletedRecords = deleteSessionRecordsByProvider({
@@ -3467,6 +3474,7 @@ function setupCodexSdkHandlers() {
         chatKey,
       })
       if (chatKey) {
+        detachCodexResumeMapping({ sessionId: chatKey, cliSessionId, filePath })
         removeStore(chatKey)
         // T201: also clean up SQLite
         let db = null

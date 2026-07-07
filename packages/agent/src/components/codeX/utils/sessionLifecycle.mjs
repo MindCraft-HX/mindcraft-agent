@@ -43,6 +43,10 @@ export function mergeCodexUpdatedAt(localValue, providerValue) {
   return providerTime > localTime ? providerValue : localValue
 }
 
+function isBoundCodexChat(chat = {}) {
+  return Boolean(chat?.cliSessionId || chat?.filePath)
+}
+
 function clearRuntimeState(tab) {
   if (!tab) return tab
   delete tab[RUNTIME_FIELD]
@@ -234,10 +238,11 @@ export function mergeScannedChatsPreservingRuntime(existingChats = [], scannedCh
   const seen = new Set(next.map(chat => chat?.id).filter(Boolean))
   for (const chat of Array.isArray(existingChats) ? existingChats : []) {
     if (!chat?.id || seen.has(chat.id)) continue
-    const isUnboundRuntime = isCodexTurnLocked(chat) && !chat.cliSessionId && !chat.filePath
-    const isRestoredUnbound = Boolean(chat._restoredFromPanelState) && !chat.cliSessionId && !chat.filePath
+    const isRuntimeLocked = isCodexTurnLocked(chat)
+    const isUnboundDraft = chat.id === activeChatId && !isBoundCodexChat(chat)
+    const isRestoredUnbound = Boolean(chat._restoredFromPanelState) && !isBoundCodexChat(chat)
     const isRestoredNonResumable = Boolean(chat._restoredFromPanelState) && chat._resumeAllowed === false
-    if (chat.id === activeChatId || isUnboundRuntime || isRestoredUnbound || isRestoredNonResumable) {
+    if (isRuntimeLocked || isUnboundDraft || isRestoredUnbound || isRestoredNonResumable) {
       next.push(chat)
       seen.add(chat.id)
     }
