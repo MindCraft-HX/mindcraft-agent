@@ -219,18 +219,18 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 | 编号 | 分类 | 说明 | 优先级 | 状态 |
 |------|------|------|:------:|------|
-| T141 | refactor | **ClaudeCode Runtime / Metrics State Machine 重构**：thinking/_thinkingStart/currentAssistantId 生命周期写入口收敛到 `claudeRuntimeState.mjs`。详见 `docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md`。 | P0 | 🔄 已实现，待人工验收 |
-| T139 | perf | **界面卡顿性能优化**：第二轮已完成 Claude/CodeX projectTabs 派生状态优化、长历史 session 按页读取。详见 `docs/perf-audit-report.md`。 | P0 | 🔄 第二轮完成，待人工回归 |
-| T144 | bug | **Token Metrics 统计 BUG 修复**：问题已从"点状 bug"升级为"结构分叉"，后续不能继续靠零散 patch 维持。 | P1 | 🔧 进行中 |
-| T145 | feature | **Token 数据实时增长**：平滑数字计数已完成；剩余风险是 live 样本来源和 turn 归属收口。详见 `docs/token-metrics.md`。 | P1 | 🔧 进行中 |
+| T141 | refactor | **ClaudeCode Runtime / Metrics State Machine 重构**：thinking/_thinkingStart/currentAssistantId 生命周期写入口收敛到 `claudeRuntimeState.mjs`。详见 `docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md`。 | P0 | ✅ 已完成 |
+| T139 | perf | **界面卡顿性能优化**：第二轮已完成 Claude/CodeX projectTabs 派生状态优化、长历史 session 按页读取。详见 `docs/perf-audit-report.md`。 | P0 | ✅ 已完成 |
+| T144 | bug | **Token Metrics 统计 BUG 修复**：问题已从"点状 bug"升级为"结构分叉"，后续不能继续靠零散 patch 维持。 | P1 | ✅ 已完成 |
+| T145 | feature | **Token 数据实时增长**：平滑数字计数已完成；live 样本来源和 turn 归属已收口。详见 `docs/token-metrics.md`。 | P1 | ✅ 已完成 |
 | T180 | architecture/metrics | **Metrics context authority + renderer convergence**：`contextSource/contextAuthority`、new-turn carry-forward、低权威 context 防覆盖已落地；上一轮 `in/out/cache/duration` 不继承。Renderer 首次 hydrate 仍作为观察项，复发时按该文档继续收口。执行入口：`docs/plan/2026-07-05-metrics-context-authority-and-renderer-convergence.md`。 | P1 | ✅ 核心已完成，renderer 继续观察 |
 | T152 | refactor/bug | **Markdown 渲染与本地路径链接化收口**：Phase 1/2 已完成（共享 tokenizer + `markdown-it` 插件）；后续再推进 Agent 气泡全量切换到共享 renderer。详见 `docs/plan/2026-06-26-markdown-renderer-consolidation.md`。 | P1 | 🔄 Phase 1/2 完成 |
-| T148 | bug | **ClaudeCode 用户 bubble 混入内部 review/simplify meta prompt**：已在历史归一化与 panel-state restore 层过滤 `isMeta` 内部 user prompt。 | P1 | 🔄 已修复，待人工回归 |
-| T147 | bug | **CodeX 中间进度 assistant 文本偶发不渲染**：已补主进程规范化转发与历史解析兼容。 | P1 | 🔄 已修复，待回归 |
+| T148 | bug | **ClaudeCode 用户 bubble 混入内部 review/simplify meta prompt**：已在历史归一化与 panel-state restore 层过滤 `isMeta` 内部 user prompt。 | P1 | ✅ 已完成 |
+| T147 | bug | **CodeX 中间进度 assistant 文本偶发不渲染**：已补主进程规范化转发与历史解析兼容。 | P1 | ✅ 已完成 |
 | T140 | ux/refactor | **Agent running 中再次发送 / pending 输入可视化**：CodeX 增加 pending queue UI；ClaudeCode 让发送按钮状态与 Enter 行为一致。 | P1 | 📝 待方案 |
-| T165 | architecture/bug | **Session Registry ownership 收口**：Phase 1 完成（provider owner contract）；Phase 2a 完成（`mergeRuntime()` — panel source 只能补缺 runtime，不覆盖 `upsertRuntimeByProvider` 权威写入；Claude model/effort + CodeX reasoningEffort 测试覆盖）。T167 集成测试已就位（39 tests）。剩余：Electron E2E 真实验证 + 字段权威审计（title/instruction/metadata）。执行入口：`docs/plan/2026-07-01-session-registry-ownership-handoff.md`。 | P1 | 🔧 Phase 1 + 2a 完成；Electron E2E 待补 |
+| T165 | architecture/bug | **Session Registry ownership 收口**：Phase 1/2 与字段权威审计已完成；provider owner contract、runtime merge contract、Claude model/effort、CodeX reasoningEffort 和真实链路覆盖均已收口。执行入口：`docs/plan/2026-07-01-session-registry-ownership-handoff.md`。 | P1 | ✅ 已完成 |
 | T166 | architecture/test | **IPC registry 新增通道硬约束补齐**：现有 baseline 可发现未登记 channel，但后续新增 main/preload channel 仍需强制引用 `ipcChannels` 常量，避免字符串字面量绕过 registry；保留历史 channel 兼容，不做命名大一统。详见 `docs/plans/remaining-refactoring-roadmap.md#phase-cipc-registry-从软约束升级为新增通道硬约束`。 | P2 | 📝 待方案 |
-| T167 | test/architecture | **Session/Run 竞态 E2E 前置覆盖**：新增 3 个 sessionRegistry 集成测试文件（37 tests）：codexIntegration（15）、claudeIntegration（11）、panelLifecycle（11），覆盖 CodeX/Claude scan/done/restore 集成序列、panel cache 覆盖安全、删除一致性、跨 agent 隔离。已知缺口：runtime re-sync 被 panel 覆盖（T165 Phase 2 待收口）。Electron E2E（preload/main/renderer 真实链路）待补。详见 `docs/session-pitfalls.md`。 | P2 | ✅ 集成覆盖完成，Electron E2E 待补 |
+| T167 | test/architecture | **Session/Run 竞态 E2E 前置覆盖**：sessionRegistry 集成覆盖与 Electron E2E 真实链路覆盖已完成，覆盖 CodeX/Claude scan/done/restore、panel cache 覆盖安全、删除一致性和跨 agent 隔离。详见 `docs/session-pitfalls.md`。 | P2 | ✅ 已完成 |
 | T168 | refactor/bug | **CodeX event rendering contract 收口**：已完成 live stream + history mapper 修复：tool call 不渲染、assistant 空泡泡、`<thinking>tool call</thinking>` 泄漏、agent_message 覆盖 assistant 正文、shell history 输出缺失均有契约测试覆盖。详见 `docs/plan/2026-07-01-codex-event-rendering-contract.md`。 | P1 | ✅ 已完成 |
 | T169 | perf/refactor | **Renderer 高频链路性能瘦身**：已完成 Phase 0-5：开发态探针、ProjectTabs summary helper、provider summary 单一 computed、CodeHub `collectTabs` 白名单、`saveAsync` 去双重 clone、textarea autosize rAF 合并。不混入 CodeHub SessionIndex 大重构。详见 `docs/plan/2026-07-02-renderer-hot-path-performance.md`。 | P1 | ✅ 已完成 |
 | T170 | perf/ux | **Session / Tab 切换性能收口**：已完成切换链路探针、dev console 收口、共享 scheduled refresh、per-project cooldown、scroll restore atBottom/clamp 修复；保留 session scan 防御逻辑，不写 scroll 到 session registry。详见 `docs/plan/2026-07-02-session-tab-switch-performance.md`。 | P1 | ✅ 已完成 |
@@ -276,7 +276,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T160 | ux | **工具栏路径可点击打开**：`ClaudeToolbar.vue` + `CodexToolbar.vue` `.cwd-text` 已显示完整路径，点击 → `openFolder()` 在文件管理器打开，hover 下划线变色。 | P2 | ✅ 已完成 |
 | T161 | feature | **开机自动启动设置**：`ipcChannels.js` 注册 `GET_LOGIN_ITEM` / `SET_LOGIN_ITEM`；`SystemSettings.vue` 新增 Switch 开关，复用已有 `ss-switch` 模式。 | P2 | ✅ 已完成 |
 | T162 | feature | **配置导入弹窗 + CC Switch 导入**：由 T163 全量覆盖，入口已从单 Agent 配置页上移到系统设置全局导入。 | P2 | ✅ T163 已覆盖 |
-| T163 | feature/ux | **系统设置全局 CC Switch 导入**：在系统设置增加 `导入配置`，解析一个 CC Switch `.sql` 后按 CodeX/ClaudeCode 自动分流；预览里处理新增/覆盖/重命名/跳过、unsupported rows、防止未知字段污染 runtime config；active 按 agent 分组且默认不切换；保留各 Agent 配置页 `导入` 仅导本地 CLI 配置。详见 `docs/T163-import-feature.md`。 | P1 | 🔧 核心已完成，待人工验收 |
+| T163 | feature/ux | **系统设置全局 CC Switch 导入**：在系统设置增加 `导入配置`，解析一个 CC Switch `.sql` 后按 CodeX/ClaudeCode 自动分流；预览里处理新增/覆盖/重命名/跳过、unsupported rows、防止未知字段污染 runtime config；active 按 agent 分组且默认不切换；保留各 Agent 配置页 `导入` 仅导本地 CLI 配置。详见 `docs/T163-import-feature.md`。 | P1 | ✅ 已完成 |
 | T164 | ux | **Provider 排序拖拽**：从 T163 拆出。在 CodeX/ClaudeCode APISetting.vue provider 列表支持拖拽排序，持久化到 SQLite + legacy storage。 | P2 | 📝 待实现 |
 | T189 | feature/ux | **文档模块 tab 持久化**：每次重启后文档 tab 清空（`mdViewer` keep-alive 失活丢失 `tabs`/`activeTabId` ref）。已实现：通过 IPC `getSetting/setSetting('openDocTabs')` 持久化打开的文件列表和 activeTab，onMounted 恢复 pending tabs；非 active tab 点击时懒加载内容。涉及 `src/components/mdViewer/index.vue`。 | P1 | ✅ 已实施 |
 | T190 | feature/ux | **项目 session 运行时侧边栏闪烁高亮**：已实现：新增 `codehubHasRunning` ref，CodeHub watch `runningCount > 0` 推给 sidebar；Main.vue 新增 `has-running` class + `sidebar-running-blink` 动画（0.7s 快速闪烁），running 优先于 done 通知。涉及 `src/Main.vue`、`packages/agent/src/components/codeHub/index.vue`。 | P1 | ✅ 已实施 |
