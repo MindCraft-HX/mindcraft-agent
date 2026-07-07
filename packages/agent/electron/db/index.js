@@ -17,6 +17,7 @@ const { backupDb, readBackupBuffer } = require('./backup');
 const providerDao = require('./dao/providers');
 const importRunsDao = require('./dao/importRuns');
 const chatThreadsDao = require('./dao/chatThreads');
+const sessionsDao = require('./dao/sessions');
 
 let initSqlJs = null;
 
@@ -233,4 +234,5 @@ module.exports = {
   ...providerDao,
   ...importRunsDao,
   ...chatThreadsDao,
+  ...sessionsDao,
 };
