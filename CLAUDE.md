@@ -80,6 +80,7 @@ docs/            -> 项目知识库，默认纳入 git
 - in-flight dedup 优先复用 `trackDedup()` 或同等 identity guard + timeout cleanup；dedup 命中不能阻止 UI cache-first 展示。
 - cache hit 路径禁止写 registry、panel state、官方目录或触发重型 scan/IPC；scan cache 只能缓存 provider raw summary，registry 派生字段走独立 read/merge。
 - 禁止新增全局 Redis 式缓存服务，禁止把当前 live turn metrics 当历史缓存回灌。
+- **skill/plugin 操作后必须清除 slash command 缓存** — 失效矩阵和渲染层事件绑定见 `docs/skill-plugin-cache-invalidation.md`；新增 mutation handler 时参照 checklist，遗漏会导致"新增不显示 / 删除仍生效"回归。
 
 ## Token Metrics 红线
 
