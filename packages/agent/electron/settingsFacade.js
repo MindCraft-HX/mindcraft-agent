@@ -32,6 +32,18 @@ let _cache = null;
 /** Which namespaces have already been migrated from old backends */
 const _migrated = new Set();
 
+/** Debounce: avoid writing on every rapid setter call */
+let _flushTimer = null;
+const FLUSH_DELAY_MS = 50;
+
+function _scheduleFlush() {
+  if (_flushTimer) return; // already scheduled
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null;
+    _write(_cache);
+  }, FLUSH_DELAY_MS);
+}
+
 // ---------------------------------------------------------------------------
 // File I/O
 // ---------------------------------------------------------------------------
@@ -59,9 +71,12 @@ function _write(data) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const tmp = fp + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  // atomic rename (Windows-safe: remove target first)
-  if (fs.existsSync(fp)) fs.unlinkSync(fp);
-  fs.renameSync(tmp, fp);
+  try {
+    fs.renameSync(tmp, fp);
+  } catch (_) {
+    // rename failed (e.g. EXDEV cross-volume), fall back to copy + unlink
+    try { fs.copyFileSync(tmp, fp); fs.unlinkSync(tmp); } catch (_) {}
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -265,10 +280,7 @@ function _migrateNamespace(name, reader) {
   const existing = Object.keys(section).length;
 
   // If section has data (either pre-existing or migrated), skip
-  if (existing > 0) {
-    // Check if it's only the defaults we just set
-    // If section was empty before defaults, try migration
-  }
+  if (existing > 0) return;
 
   const oldValues = reader();
   if (!oldValues || Object.keys(oldValues).length === 0) return;
@@ -296,7 +308,7 @@ function setDiagnosticsEnabled(enabled) {
   const s = _ensureSection('diagnostics');
   s.enabled = Boolean(enabled);
   s.tokenMetricsDebug = Boolean(enabled); // keep the coupled behavior
-  _write(_cache);
+  _scheduleFlush();
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +323,7 @@ function getLocale() {
 function setLocale(loc) {
   const s = _ensureSection('app');
   s.locale = loc;
-  _write(_cache);
+  _scheduleFlush();
 }
 
 function getTheme() {
@@ -322,7 +334,7 @@ function getTheme() {
 function setTheme(name) {
   const s = _ensureSection('app');
   s.theme = name;
-  _write(_cache);
+  _scheduleFlush();
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +351,7 @@ function getCodexDefault(key) {
 function setCodexDefault(key, value) {
   const s = _ensureSection('codexDefaults');
   s[key] = value;
-  _write(_cache);
+  _scheduleFlush();
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +368,7 @@ function getClaudePref(key) {
 function setClaudePref(key, value) {
   const s = _ensureSection('claudePrefs');
   s[key] = value;
-  _write(_cache);
+  _scheduleFlush();
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +390,34 @@ function getMisc(key, defaultValue) {
 function setMisc(key, value) {
   const s = _ensureSection('misc');
   s[key] = value;
-  _write(_cache);
+  _scheduleFlush();
+}
+
+// ---------------------------------------------------------------------------
+// Public: Diagnostics sub-keys (claudeFreeze, etc.)
+// ---------------------------------------------------------------------------
+
+function getDiagnosticsClaudeFreeze() {
+  const s = _getSection('diagnostics');
+  return Boolean(s.claudeFreeze?.enabled);
+}
+
+function setDiagnosticsClaudeFreeze(enabled) {
+  const s = _ensureSection('diagnostics');
+  if (!s.claudeFreeze || typeof s.claudeFreeze !== 'object') {
+    s.claudeFreeze = {};
+  }
+  s.claudeFreeze.enabled = Boolean(enabled);
+  _scheduleFlush();
+}
+
+// ---------------------------------------------------------------------------
+// Public: Snapshot (for e2e smoke / full-settings clients)
+// ---------------------------------------------------------------------------
+
+function getAll() {
+  if (!_cache) _cache = _read();
+  return _cache || {};
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +438,15 @@ function _reset() {
   _dataDir = null;
   _cache = null;
   _migrated.clear();
+  if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+}
+
+/**
+ * Immediately flush pending writes to disk. For tests only.
+ */
+function _flush() {
+  if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  if (_cache) _write(_cache);
 }
 
 module.exports = {
@@ -415,7 +463,11 @@ module.exports = {
   setClaudePref,
   getMisc,
   setMisc,
+  getDiagnosticsClaudeFreeze,
+  setDiagnosticsClaudeFreeze,
+  getAll,
   // test helpers
   _getCache,
   _reset,
+  _flush,
 };

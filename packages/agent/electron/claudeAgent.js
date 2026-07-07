@@ -28,7 +28,7 @@ const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
-const { getClaudePref, setClaudePref } = require('./settingsFacade')
+const { getClaudePref, setClaudePref, getDiagnosticsClaudeFreeze, setDiagnosticsClaudeFreeze } = require('./settingsFacade')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const { getProviders, setProviders } = require('./db/providerStorage')
 const { CLAUDE_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
@@ -84,19 +84,12 @@ const {
 const { createClaudeBackgroundTaskTracker } = require('./claude/backgroundTaskTracker')
 
 function getClaudeFreezeDiagEnabled() {
-  const settings = readMindCraftSettings()
-  return Boolean(settings?.diagnostics?.claudeFreeze?.enabled)
+  return getDiagnosticsClaudeFreeze()
 }
 
 function setClaudeFreezeDiagEnabled(enabled) {
-  const settings = readMindCraftSettings()
-  if (!settings.diagnostics || typeof settings.diagnostics !== 'object') settings.diagnostics = {}
-  if (!settings.diagnostics.claudeFreeze || typeof settings.diagnostics.claudeFreeze !== 'object') {
-    settings.diagnostics.claudeFreeze = {}
-  }
-  settings.diagnostics.claudeFreeze.enabled = Boolean(enabled)
-  const settingsPath = writeMindCraftSettings(settings)
-  return { ok: true, enabled: Boolean(enabled), path: settingsPath }
+  setDiagnosticsClaudeFreeze(enabled)
+  return { ok: true, enabled: Boolean(enabled) }
 }
 
 function getClaudeFreezeDiagLogPath() {
@@ -837,20 +830,20 @@ function setupClaudeHandlers() {
     delete next.baseURL
     delete next.apiBaseUrl
     if (next.permissionPolicy !== undefined) {
-      if (!preserveExistingInternal || !internalConf.get('claudePermissionPolicy')) {
-        internalConf.set('claudePermissionPolicy', next.permissionPolicy)
+      if (!preserveExistingInternal || getClaudePref('permissionPolicy') === undefined) {
+        setClaudePref('permissionPolicy', next.permissionPolicy)
       }
       delete next.permissionPolicy
     }
     if (next.language && ['zh-CN', 'en-US'].includes(next.language)) {
-      if (!preserveExistingInternal || !internalConf.get('claudeLanguage')) {
-        internalConf.set('claudeLanguage', next.language)
+      if (!preserveExistingInternal || getClaudePref('language') === undefined) {
+        setClaudePref('language', next.language)
       }
       delete next.language
     }
     if (next.pathToClaudeCodeExecutable !== undefined) {
-      if (!preserveExistingInternal || !internalConf.get('claudeExecutablePath')) {
-        internalConf.set('claudeExecutablePath', next.pathToClaudeCodeExecutable)
+      if (!preserveExistingInternal || getClaudePref('executablePath') === undefined) {
+        setClaudePref('executablePath', next.pathToClaudeCodeExecutable)
       }
       delete next.pathToClaudeCodeExecutable
     }
@@ -1298,20 +1291,16 @@ function setupClaudeHandlers() {
   }
 
   /** 从全局 settings.json 读取配置（兼容旧键名） */
+  function _resolveFacadePref(facadeKey, internalKey, fallback) {
+    const fv = getClaudePref(facadeKey);
+    return fv !== undefined ? fv : internalConf.get(internalKey, fallback);
+  }
   function confGet(key, def) {
     const s = readSystemSettingsJson() || {}
 
     // T198: route internal-only prefs through settingsFacade first
-    if (key === 'claudePermissionPolicy') {
-      const fv = getClaudePref('permissionPolicy');
-      if (fv !== undefined) return fv;
-      return internalConf.get('claudePermissionPolicy', s.permissionPolicy || def)
-    }
-    if (key === 'claudeLanguage') {
-      const fv = getClaudePref('language');
-      if (fv !== undefined) return fv;
-      return internalConf.get('claudeLanguage', s.language || def)
-    }
+    if (key === 'claudePermissionPolicy') return _resolveFacadePref('permissionPolicy', 'claudePermissionPolicy', s.permissionPolicy || def)
+    if (key === 'claudeLanguage') return _resolveFacadePref('language', 'claudeLanguage', s.language || def)
     if (key === 'claudeModel') {
       const fv = getClaudePref('model');
       if (fv !== undefined && typeof fv === 'string' && fv.trim()) return fv.trim();
@@ -1319,11 +1308,7 @@ function setupClaudeHandlers() {
       const stored = internalConf.get('claudeModel', '')
       return (typeof stored === 'string' && stored.trim()) ? stored.trim() : def
     }
-    if (key === 'claudeExecutablePath') {
-      const fv = getClaudePref('executablePath');
-      if (fv !== undefined) return fv;
-      return internalConf.get('claudeExecutablePath', s.pathToClaudeCodeExecutable || '')
-    }
+    if (key === 'claudeExecutablePath') return _resolveFacadePref('executablePath', 'claudeExecutablePath', s.pathToClaudeCodeExecutable || '')
     if (key.startsWith('tierModels.')) {
       const tier = key.split('.')[1]
       const fv = getClaudePref('tierModels');
@@ -2167,7 +2152,7 @@ function setupClaudeHandlers() {
     const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
     const activeModels = active?.tierModels && typeof active.tierModels === 'object' ? active.tierModels : {}
     const settingsModels = readTierModelsFromSystemSettings()
-    const storedModels = internalConf.get('tierModels', {}) || {}
+    const storedModels = confGet('tierModels', {}) || {}
 
     const models = {
       haiku: String(activeModels.haiku || settingsModels.haiku || storedModels.haiku || '').trim(),

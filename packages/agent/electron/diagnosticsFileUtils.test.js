@@ -12,6 +12,7 @@ const {
   trimTextToMaxBytes,
   writeFileWithMaxBytes,
 } = require('./diagnosticsFileUtils')
+const { init: facadeInit, _reset: facadeReset, _flush: facadeFlush } = require('./settingsFacade')
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-diag-'))
@@ -47,35 +48,43 @@ test('writeFileWithMaxBytes caps artifact size', () => {
 
 test('diagnostics toggle defaults to disabled and persists in app settings', () => {
   const dir = makeTempDir()
-  const options = {
-    app: { getPath: () => dir },
-    homeDir: dir,
+  const fp = path.join(dir, 'app-settings.json')
+  try {
+    // T198: facade must be initialized for test isolation
+    facadeInit(dir)
+
+    assert.equal(getDiagnosticsEnabled(), false)
+
+    const result = setDiagnosticsEnabled(true)
+    assert.equal(result.enabled, true)
+    facadeFlush();
+    assert.equal(getDiagnosticsEnabled(), true)
+
+    const saved = JSON.parse(fs.readFileSync(fp, 'utf8'))
+    assert.equal(saved?.diagnostics?.enabled, true)
+    assert.equal(saved?.diagnostics?.tokenMetricsDebug, true)
+  } finally {
+    facadeReset()
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
   }
-
-  assert.equal(getDiagnosticsEnabled(options), false)
-
-  const result = setDiagnosticsEnabled(true, options)
-  assert.equal(result.enabled, true)
-  assert.equal(result.path, getMindCraftSettingsPath(options))
-  assert.equal(getDiagnosticsEnabled(options), true)
-
-  const saved = JSON.parse(fs.readFileSync(result.path, 'utf8'))
-  assert.equal(saved?.diagnostics?.enabled, true)
-  assert.equal(saved?.diagnostics?.tokenMetricsDebug, true)
 })
 
 test('diagnostics toggle only affects explicit opt-in writes', () => {
   const dir = makeTempDir()
-  const options = {
-    app: { getPath: () => dir },
-    homeDir: dir,
+  try {
+    // T198: facade must be initialized for test isolation
+    facadeInit(dir)
+
+    const defaultPath = path.join(dir, 'default.log')
+    const gatedPath = path.join(dir, 'gated.log')
+
+    appendLogLineWithRotation(defaultPath, 'default-on\n')
+    appendLogLineWithRotation(gatedPath, 'gated-off\n', { respectDiagnosticsToggle: true })
+
+    assert.equal(fs.existsSync(defaultPath), true)
+    assert.equal(fs.existsSync(gatedPath), false)
+  } finally {
+    facadeReset()
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
   }
-  const defaultPath = path.join(dir, 'default.log')
-  const gatedPath = path.join(dir, 'gated.log')
-
-  appendLogLineWithRotation(defaultPath, 'default-on\n', options)
-  appendLogLineWithRotation(gatedPath, 'gated-off\n', { ...options, respectDiagnosticsToggle: true })
-
-  assert.equal(fs.existsSync(defaultPath), true)
-  assert.equal(fs.existsSync(gatedPath), false)
 })

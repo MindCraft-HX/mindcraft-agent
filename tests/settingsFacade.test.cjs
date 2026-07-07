@@ -94,6 +94,7 @@ test('diagnostics: get/set round-trip', () => {
     assert.equal(facade.getDiagnosticsEnabled(), true);
 
     // Verify persistence
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.diagnostics.enabled, true);
     assert.equal(data.diagnostics.tokenMetricsDebug, true);
@@ -113,10 +114,12 @@ test('diagnostics: tokenMetricsDebug is coupled to enabled', () => {
     facade.init(dir);
 
     facade.setDiagnosticsEnabled(true);
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.diagnostics.tokenMetricsDebug, true);
 
     facade.setDiagnosticsEnabled(false);
+    facade._flush();
     const data2 = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data2.diagnostics.tokenMetricsDebug, false);
   } finally {
@@ -143,6 +146,7 @@ test('app locale: get/set round-trip', () => {
     assert.equal(facade.getLocale(), 'en');
 
     // Verify persistence
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.app.locale, 'en');
   } finally {
@@ -169,6 +173,7 @@ test('app theme: get/set round-trip', () => {
     assert.equal(facade.getTheme(), 'light');
 
     // Verify persistence
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.app.theme, 'light');
   } finally {
@@ -198,6 +203,7 @@ test('codexDefaults: get/set round-trip', () => {
     assert.equal(facade.getCodexDefault('defaultWebSearch'), 'always');
 
     // Verify persistence
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.codexDefaults.sandboxMode, 'danger-full-access');
     assert.equal(data.codexDefaults.defaultNetworkAccess, false);
@@ -235,6 +241,7 @@ test('claudePrefs: get/set round-trip', () => {
     assert.deepEqual(facade.getClaudePref('tierModels'), { haiku: 'h', sonnet: 's' });
 
     // Verify persistence
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.claudePrefs.permissionPolicy, 'always-allow');
     assert.equal(data.claudePrefs.language, 'en');
@@ -266,6 +273,7 @@ test('misc: get/set round-trip', () => {
     assert.deepEqual(facade.getMisc('recentDocs'), [{ path: '/a' }]);
 
     // Verify persistence
+    facade._flush();
     const data = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     assert.equal(data.misc.isUpdateAvailable, true);
     assert.deepEqual(data.misc.recentDocs, [{ path: '/a' }]);

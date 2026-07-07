@@ -6,10 +6,10 @@
  * app-settings.json. This module is now a thin proxy over the facade's
  * misc namespace.
  */
-const { getMisc, setMisc } = require('../../packages/agent/electron/settingsFacade')
+const { getMisc, setMisc, getAll } = require('../../packages/agent/electron/settingsFacade')
 
 function getSetting(key) {
-  if (!key) return getMisc(key, undefined)
+  if (!key) return getAll()
   return getMisc(key)
 }
 

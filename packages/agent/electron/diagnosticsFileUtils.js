@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const { getMindCraftUserDataDir } = require('./userDataPath')
+const { getDiagnosticsEnabled: facadeGet, setDiagnosticsEnabled: facadeSet } = require('./settingsFacade');
 
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024
 const DEFAULT_DIAGNOSTICS_ENABLED = false
@@ -36,13 +37,11 @@ function writeMindCraftSettings(settings, options = {}) {
 
 function getDiagnosticsEnabled(options = {}) {
   // T198: routed through settingsFacade
-  const { getDiagnosticsEnabled: facadeGet } = require('./settingsFacade');
   return facadeGet();
 }
 
 function setDiagnosticsEnabled(enabled, options = {}) {
   // T198: routed through settingsFacade
-  const { setDiagnosticsEnabled: facadeSet } = require('./settingsFacade');
   facadeSet(Boolean(enabled));
   return { ok: true, enabled: Boolean(enabled) };
 }
