@@ -45,8 +45,8 @@
           </div>
         </div>
         <APISetting ref="apiSettingRef" @providerActivated="handleProviderActivated"></APISetting>
-        <ManagePlugins ref="codexPluginsRef" api-prefix="codexPlugins" />
-        <ManageSkills ref="codexSkillsRef" api-prefix="codexSkills" :cwd="activeProject?.cwd || ''" />
+        <ManagePlugins ref="codexPluginsRef" api-prefix="codexPlugins" @plugin-toggled="refreshSlashCommands" />
+        <ManageSkills ref="codexSkillsRef" api-prefix="codexSkills" :cwd="activeProject?.cwd || ''" @skills-changed="refreshSlashCommands" />
 
         <CodexToolbar
           :cwd="activeProject?.cwd || ''"

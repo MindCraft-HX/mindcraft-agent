@@ -3715,6 +3715,7 @@ function setupCodexSdkHandlers() {
 
         _codexSkillsStateCache = null
         resetCodexSkillsMarketplaceCache()
+        codexSlashCommandsCache.clear()
         return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
@@ -3737,6 +3738,7 @@ function setupCodexSdkHandlers() {
         fs.rmSync(target.targetDir, { recursive: true, force: true })
       }
       _codexSkillsStateCache = null
+      codexSlashCommandsCache.clear()
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e?.message || String(e) }
@@ -3776,6 +3778,7 @@ function setupCodexSdkHandlers() {
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _codexSkillsStateCache = null
+        codexSlashCommandsCache.clear()
         return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
@@ -4039,6 +4042,7 @@ function setupCodexSdkHandlers() {
     try {
       await execCodexCli(['plugin', 'add', pluginId])
       _codexInstalledPluginsCache = null // 安装后清缓存
+      codexSlashCommandsCache.clear()
       return { ok: true }
     } catch (e) {
       const errMsg = e?.stderr || e?.message || String(e)
@@ -4051,6 +4055,7 @@ function setupCodexSdkHandlers() {
     try {
       await execCodexCli(['plugin', 'remove', pluginId])
       _codexInstalledPluginsCache = null
+      codexSlashCommandsCache.clear()
       return { ok: true }
     } catch (e) {
       const errMsg = e?.stderr || e?.message || String(e)
@@ -4064,6 +4069,7 @@ function setupCodexSdkHandlers() {
     try {
       await execCodexCli(['plugin', 'add', pluginId])
       _codexInstalledPluginsCache = null
+      codexSlashCommandsCache.clear()
       return { ok: true }
     } catch (e) {
       const errMsg = e?.stderr || e?.message || String(e)
@@ -4076,6 +4082,7 @@ function setupCodexSdkHandlers() {
     try {
       await execCodexCli(['plugin', 'remove', pluginId])
       _codexInstalledPluginsCache = null
+      codexSlashCommandsCache.clear()
       return { ok: true }
     } catch (e) {
       const errMsg = e?.stderr || e?.message || String(e)

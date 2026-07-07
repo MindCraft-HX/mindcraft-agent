@@ -3819,6 +3819,7 @@ function setupClaudeHandlers() {
         fs.rmSync(tmpDir, { recursive: true, force: true })
 
         _skillsStateCache = null
+        slashCommandsCache.clear() // 社区市场安装后刷新 slash command 缓存
         return { ok: true, path: target.targetDir, scope: target.scope }
       } catch (e) {
         try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
