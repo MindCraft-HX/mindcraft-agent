@@ -518,7 +518,7 @@ async function scanCliSessionsForProject(cwd) {
     if (!fs.existsSync(projectDir)) { stop({ empty: 1 }); return result }
 
     // T201: get SQLite db for session identity/runtime reads & writes
-    try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+    try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
 
     // 构建复合签名：目录签名 + 各文件 mtimeMs:size（T178 scan cache）
     const sigStop = perfStartIpc('claude-scan-signature')

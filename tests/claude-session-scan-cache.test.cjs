@@ -5,18 +5,12 @@ const path = require('path')
 
 const { __test__ } = require('../packages/agent/electron/claudeAgent.js')
 
-function withTempDir(fn) {
+async function runClaudeSessionScanCachesTitlesTest(userDataDir) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-scan-cache-'))
   try {
-    return fn(dir)
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-}
+    // Isolate SQLite DB from production and from other tests
+    __test__.setSessionRegistryOptionsForTest({ userDataDir })
 
-async function runClaudeSessionScanCachesTitlesTest() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-scan-cache-'))
-  try {
     const cwd = path.join(dir, 'repo')
     const oldReadFileSync = fs.readFileSync
     fs.mkdirSync(cwd, { recursive: true })
@@ -52,9 +46,19 @@ async function runClaudeSessionScanCachesTitlesTest() {
       __test__.clearClaudeSessionScanCaches()
     }
   } finally {
+    __test__.setSessionRegistryOptionsForTest(null)
     fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
-runClaudeSessionScanCachesTitlesTest()
-console.log('claude session scan cache tests passed')
+async function run() {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-claude-scan-test-'))
+  try {
+    await runClaudeSessionScanCachesTitlesTest(userDataDir)
+  } finally {
+    fs.rmSync(userDataDir, { recursive: true, force: true })
+  }
+  console.log('claude session scan cache tests passed')
+}
+
+run()
