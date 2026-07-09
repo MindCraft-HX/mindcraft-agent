@@ -102,10 +102,14 @@ const fileChanges = computed(() => {
   return []
 })
 
-const renderFileChanges = computed(() => fileChanges.value.map(fc => ({
-  ...fc,
-  _renderDiffLines: computeFileChangeDiffsSync(fc),
-})))
+// P1: 只读已计算的 diffLines / _diffHunks，不同步 parse
+// 同步 parse 由 computeFileChangeDiffs() 的 requestIdleCallback 写入 fc.diffLines
+const renderFileChanges = computed(() => fileChanges.value.map(fc => {
+  let lines = []
+  if (fc.diffLines?.length) lines = fc.diffLines
+  else if (fc._diffHunks?.length) lines = fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
+  return { ...fc, _renderDiffLines: lines }
+}))
 
 /** file_change: 从 _fileChanges 取 unified_diff 或 diffLines */
 const summaryText = computed(() => {
@@ -117,13 +121,13 @@ const summaryText = computed(() => {
   return ''
 })
 
+// P1: 只读已计算的 diffLines / _diffHunks，不同步 parse unified_diff
+// 同步 parse 只在 computeFileChangeDiffs() 的 requestIdleCallback 中执行
 const effectiveDiffLines = computed(() => {
   if (isFileChange.value && fileChanges.value.length > 0) {
     const fc = fileChanges.value[0]
     if (fc._diffHunks?.length) return fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
     if (fc.diffLines?.length) return fc.diffLines
-    if (fc.unified_diff) return parseUnifiedDiff(fc.unified_diff)
-    if (fc._oldStr || fc._newStr) return buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
     return []
   }
   // apply_patch: _diffHunks 有数据直接用
@@ -132,7 +136,7 @@ const effectiveDiffLines = computed(() => {
     if (fc._diffHunks?.length) return fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
     if (fc.diffLines?.length) return fc.diffLines
   }
-  // apply_patch 回退：从 msg.text 中解析 input 文本
+  // apply_patch 回退：从 msg.text 中解析 input 文本（历史数据兜底，不涉及 streaming）
   if (isApplyPatch.value && props.msg.text) {
     const input = extractApplyPatchInput(props.msg.text)
     if (input) {
@@ -322,7 +326,9 @@ function computeFileChangeDiffs() {
 
 onMounted(() => { computeDiff(); computeFileChangeDiffs() })
 watch(() => props.msg.expanded, (val) => { if (val) { computeDiff(); computeFileChangeDiffs() } })
-watch(() => props.msg.text, () => { computeDiff(); computeFileChangeDiffs() })
+// P1: msg.text watcher 已删除 — 对齐 ClaudeCode ToolWrite
+// file_change/apply_patch 数据在 _fileChanges，由下面签名 watcher 驱动
+// write/edit 的 _diffInput 在消息创建时已固定，不需要 per-chunk 重算
 watch(
   () => (props.msg._fileChanges || []).map(fc => [
     fc?.path || '',
