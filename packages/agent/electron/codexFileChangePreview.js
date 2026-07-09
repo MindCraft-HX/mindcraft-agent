@@ -1,6 +1,9 @@
 const fs = require('fs')
 const path = require('path')
-const { execFileSync } = require('child_process')
+const { execFileSync, execFile } = require('child_process')
+const { promisify } = require('util')
+
+const execFileAsync = promisify(execFile)
 
 const DEFAULT_MAX_DIFF_LINES = 400
 const DEFAULT_MAX_NEW_FILE_BYTES = 256 * 1024
@@ -157,6 +160,112 @@ function normalizeFileChangeItemPreviews(item, cwd, opts = {}) {
   return { ...item, changes }
 }
 
+// ── P0: 异步 preview（非阻塞，用于 streaming 热路径） ──
+
+async function runGitAsync(cwd, args, timeout = DEFAULT_GIT_TIMEOUT_MS) {
+  try {
+    const { stdout } = await execFileAsync('git', args, {
+      cwd: path.resolve(cwd),
+      encoding: 'utf8',
+      timeout,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return stdout
+  } catch (_) {
+    return null
+  }
+}
+
+async function generateSinglePreviewAsync(change, cwd, timeout) {
+  if (change.unified_diff) return change
+  if (change._noDiffReason) return change
+
+  const rel = resolveProjectRelativePath(cwd, change.path)
+  if (!rel) return { ...change, _noDiffReason: 'outside_workspace' }
+
+  // Try unstaged diff
+  const unstaged = await runGitAsync(cwd, ['diff', '--', rel], timeout)
+  if (unstaged) return { ...change, unified_diff: trimUnifiedDiff(unstaged), _diffSource: 'git' }
+
+  // Try staged diff
+  const staged = await runGitAsync(cwd, ['diff', '--cached', '--', rel], timeout)
+  if (staged) return { ...change, unified_diff: trimUnifiedDiff(staged), _diffSource: 'git' }
+
+  // Check if git-ignored
+  const ignored = await runGitAsync(cwd, ['check-ignore', '-q', '--', rel], timeout)
+  if (ignored !== null) return { ...change, _noDiffReason: 'ignored_file' }
+
+  // Check if tracked (tracked but no diff → no changes)
+  const tracked = await runGitAsync(cwd, ['ls-files', '--error-unmatch', '--', rel], timeout)
+  if (tracked !== null) return { ...change, _noDiffReason: 'tracked_without_diff' }
+
+  // New untracked file
+  const abs = path.resolve(cwd, rel)
+  try {
+    const stat = fs.statSync(abs)
+    if (!stat.isFile()) return { ...change, _noDiffReason: 'not_file' }
+    if (stat.size > DEFAULT_MAX_NEW_FILE_BYTES) return { ...change, _noDiffReason: 'file_too_large' }
+
+    const buffer = fs.readFileSync(abs)
+    if (!isTextBuffer(buffer)) return { ...change, _noDiffReason: 'binary_file' }
+
+    const diff = buildNewFileUnifiedDiff(rel, buffer.toString('utf8'))
+    return { ...change, unified_diff: diff, _diffSource: 'new_file' }
+  } catch (_) {
+    return { ...change, _noDiffReason: 'file_missing' }
+  }
+}
+
+/**
+ * P0: 异步生成 file_change 的 diff preview，不阻塞主进程 event loop。
+ *
+ * - 最多 maxConcurrent 个文件并发
+ * - 单文件 perFileTimeout ms 超时 → _noDiffReason: 'preview_timeout'
+ * - 已有 unified_diff 或 _noDiffReason 的 change 跳过
+ *
+ * @param {Array} changes file_change item 的 changes 数组
+ * @param {string} cwd
+ * @param {{ maxConcurrent?: number, perFileTimeout?: number }} [opts]
+ * @returns {Promise<Array>} 富化后的 changes（保留原始 change 的所有字段）
+ */
+async function generateFileChangePreviewsAsync(changes, cwd, opts = {}) {
+  if (!Array.isArray(changes) || !changes.length) return changes
+
+  const maxConcurrent = opts.maxConcurrent || 2
+  const perFileTimeout = opts.perFileTimeout || 500
+
+  const enriched = [...changes]
+  const pending = []
+  for (let i = 0; i < changes.length; i++) {
+    if (!changes[i].unified_diff && !changes[i]._noDiffReason) {
+      pending.push(i)
+    }
+  }
+
+  if (!pending.length) return enriched
+
+  for (let b = 0; b < pending.length; b += maxConcurrent) {
+    const batch = pending.slice(b, b + maxConcurrent)
+    const tasks = batch.map(i => {
+      const p = generateSinglePreviewAsync(changes[i], cwd, perFileTimeout)
+      const timeoutP = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('preview_timeout')), perFileTimeout + 100)
+      )
+      return Promise.race([p, timeoutP]).catch(() => ({
+        ...changes[i],
+        _noDiffReason: 'preview_timeout',
+      }))
+    })
+    const results = await Promise.all(tasks)
+    for (let j = 0; j < batch.length; j++) {
+      enriched[batch[j]] = results[j]
+    }
+  }
+
+  return enriched
+}
+
 module.exports = {
   DEFAULT_GIT_TIMEOUT_MS,
   DEFAULT_MAX_DIFF_LINES,
@@ -169,6 +278,7 @@ module.exports = {
   buildNewFileUnifiedDiff,
   normalizeFileChangePreview,
   normalizeFileChangeItemPreviews,
+  generateFileChangePreviewsAsync,
   __test__: {
     isTextBuffer,
     isGitIgnored,

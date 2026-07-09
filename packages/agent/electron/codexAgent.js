@@ -19,7 +19,7 @@ const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSess
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
-const { normalizeFileChangeItemPreviews } = require('./codexFileChangePreview')
+const { normalizeFileChangeItemPreviews, generateFileChangePreviewsAsync } = require('./codexFileChangePreview')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
 const { getToolActivityLabel, buildHistoryToolMessage } = require('../src/components/codeX/utils/codexUiEventMapper.cjs')
 const {
@@ -3006,7 +3006,25 @@ function setupCodexSdkHandlers() {
                 }
               }
               if (forwardItem?.type === 'file_change') {
-                forwardItem = normalizeFileChangeItemPreviews(forwardItem, resolvedCwd)
+                // P0: 先发轻量版（无 diff preview）不等 git，避免 execFileSync 阻塞主进程 event loop
+                const rawChanges = [...(forwardItem.changes || [])]
+                const baseItem = { ...forwardItem }
+
+                const lightChanges = rawChanges.map(c => {
+                  const lc = { ...c }
+                  if (!lc.unified_diff && !lc._noDiffReason) lc._diffPending = true
+                  return lc
+                })
+                forwardItem = { ...forwardItem, changes: lightChanges }
+
+                // 后台异步生成 diff preview，完成后补发 item.updated
+                generateFileChangePreviewsAsync(rawChanges, resolvedCwd)
+                  .then(enrichedChanges => {
+                    const updatedItem = { ...baseItem, changes: enrichedChanges }
+                    const s = codexSessions.get(sessionId)?.event?.sender || event.sender
+                    safeSend(s, CODEX_CHANNELS.AGENT_MESSAGE, { sessionId, msg: { type: 'item.updated', item: updatedItem } })
+                  })
+                  .catch(() => {})
               }
               if (item?.type === 'patch_apply_end' || forwardItem?.type === 'file_change') {
                 if (CODEX_DEBUG) {
