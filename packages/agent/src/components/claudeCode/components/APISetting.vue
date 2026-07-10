@@ -464,9 +464,21 @@ async function openSettings() {
         if (!sUrl && sj.apiBaseUrl) sUrl = sj.apiBaseUrl
 
         let sModel = sj.model || sj.defaultModel || ''
-        if (sModel && !sSonnet && sModel.includes('sonnet')) sSonnet = sModel
-        if (sModel && !sOpus && sModel.includes('opus')) sOpus = sModel
-        if (sModel && !sHaiku && sModel.includes('haiku')) sHaiku = sModel
+        // T198: sj.model 可能是实际模型 ID（新格式）或 tier 名（旧格式）
+        if (sModel && !['haiku', 'sonnet', 'opus', 'reasoning'].includes(sModel)) {
+          // 新格式：实际模型 ID — 与 env 分级模型比较以确定所属 tier
+          const envHaiku = sj.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL || ''
+          const envSonnet = sj.env?.ANTHROPIC_DEFAULT_SONNET_MODEL || ''
+          const envOpus = sj.env?.ANTHROPIC_DEFAULT_OPUS_MODEL || ''
+          if (sModel === envSonnet && !sSonnet) sSonnet = sModel
+          else if (sModel === envOpus && !sOpus) sOpus = sModel
+          else if (sModel === envHaiku && !sHaiku) sHaiku = sModel
+        } else {
+          // 旧格式：tier 名 — 使用子串匹配
+          if (sModel && !sSonnet && sModel.includes('sonnet')) sSonnet = sModel
+          if (sModel && !sOpus && sModel.includes('opus')) sOpus = sModel
+          if (sModel && !sHaiku && sModel.includes('haiku')) sHaiku = sModel
+        }
 
           if (sKey || sUrl) {
             settingsForm.value.providers = [{
@@ -548,7 +560,8 @@ async function applyAndActivate(activeIdx, opts = {}) {
     await window.electronAPI?.claudeSetEffortLevel?.(settingsEffortLevel.value)
     if (writeSettings && activeP?.config) {
       // Only patch official runtime fields; provider key/url stay in MindCraft storage.
-      const patch = { model: settingsSelectedTierKey.value }
+      // T198: 写入实际模型 ID（非 tier 名），确保 SDK 直接使用正确模型
+      const patch = { model: targetModel || settingsSelectedTierKey.value }
       if (activeP.config.env) patch.env = JSON.parse(JSON.stringify(activeP.config.env))
       await window.electronAPI?.claudePatchSettingsJson?.(patch)
       fullSettingsJson.value = { ...fullSettingsJson.value, ...patch }
@@ -844,8 +857,16 @@ async function activateProviderByIdx(i) {
       reasoning: (activeP.tierModels.reasoning || '').trim(),
     }
   }
-  if (activeP?.config?.model && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(activeP.config.model)) {
-    settingsSelectedTierKey.value = activeP.config.model
+  // T198: config.model 现为实际模型 ID，需反向匹配以恢复正确的 tier
+  if (activeP?.config?.model) {
+    if (['haiku', 'sonnet', 'opus', 'reasoning'].includes(activeP.config.model)) {
+      settingsSelectedTierKey.value = activeP.config.model
+    } else {
+      const env = activeP.config.env || {}
+      if (env.ANTHROPIC_DEFAULT_SONNET_MODEL === activeP.config.model) settingsSelectedTierKey.value = 'sonnet'
+      else if (env.ANTHROPIC_DEFAULT_OPUS_MODEL === activeP.config.model) settingsSelectedTierKey.value = 'opus'
+      else if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL === activeP.config.model) settingsSelectedTierKey.value = 'haiku'
+    }
   }
   const ok = await applyAndActivate(i, { writeSettings: true })
   if (ok) emit('providerActivated')
@@ -916,9 +937,21 @@ async function importFromFile(i) {
     let sOpus = sj.env?.ANTHROPIC_DEFAULT_OPUS_MODEL || ''
     const sReasoning = sj.env?.ANTHROPIC_REASONING_MODEL || ''
     let sModel = sj.model || sj.defaultModel || ''
-    if (sModel && !sSonnet && sModel.includes('sonnet')) sSonnet = sModel
-    if (sModel && !sOpus && sModel.includes('opus')) sOpus = sModel
-    if (sModel && !sHaiku && sModel.includes('haiku')) sHaiku = sModel
+    // T198: sj.model 可能是实际模型 ID（新格式）或 tier 名（旧格式）
+    if (sModel && !['haiku', 'sonnet', 'opus', 'reasoning'].includes(sModel)) {
+      // 新格式：实际模型 ID — 与 env 分级模型比较以确定所属 tier
+      const envHaiku = sj.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL || ''
+      const envSonnet = sj.env?.ANTHROPIC_DEFAULT_SONNET_MODEL || ''
+      const envOpus = sj.env?.ANTHROPIC_DEFAULT_OPUS_MODEL || ''
+      if (sModel === envSonnet && !sSonnet) sSonnet = sModel
+      else if (sModel === envOpus && !sOpus) sOpus = sModel
+      else if (sModel === envHaiku && !sHaiku) sHaiku = sModel
+    } else {
+      // 旧格式：tier 名 — 使用子串匹配
+      if (sModel && !sSonnet && sModel.includes('sonnet')) sSonnet = sModel
+      if (sModel && !sOpus && sModel.includes('opus')) sOpus = sModel
+      if (sModel && !sHaiku && sModel.includes('haiku')) sHaiku = sModel
+    }
     if (!sKey && !sUrl) { ElMessage.warning(t('settings.importNoApiKey')); return }
     const p = settingsForm.value.providers[i]
     p.key = sKey
@@ -927,9 +960,16 @@ async function importFromFile(i) {
     p.tierModels = { haiku: sHaiku, sonnet: sSonnet, opus: sOpus, reasoning: sReasoning }
     const isActive = i === settingsForm.value.activeIdx
     if (isActive) {
-      const tierFromConfig = typeof sj.model === 'string' && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model)
+      // T198: sj.model 现为实际模型 ID，反向匹配 env 分级模型以确定 tier
+      let tierFromConfig = typeof sj.model === 'string' && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model)
         ? sj.model
         : ''
+      if (!tierFromConfig && typeof sj.model === 'string' && sj.model.trim()) {
+        const env = sj.env || {}
+        if (env.ANTHROPIC_DEFAULT_SONNET_MODEL === sj.model) tierFromConfig = 'sonnet'
+        else if (env.ANTHROPIC_DEFAULT_OPUS_MODEL === sj.model) tierFromConfig = 'opus'
+        else if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL === sj.model) tierFromConfig = 'haiku'
+      }
       if (tierFromConfig) settingsSelectedTierKey.value = tierFromConfig
       settingsTierModels.value = {
         haiku: sHaiku.trim(),

@@ -23,7 +23,7 @@ SDK 版本：@anthropic-ai/claude-agent-sdk v0.2.117
 | 字段 | 值 | SDK Settings interface | 判定 |
 |------|-----|------------------------|------|
 | `env.*` | API keys/URLs | ✅ | SDK 字段 |
-| `model` | `"sonnet"` | ✅ | SDK 字段（tier 别名） |
+| `model` | `"sonnet"` | ✅ | SDK 字段。⚠️ T198 解耦：现写入实际模型 ID（如 `deepseek-v4-pro`），非 tier 名（`sonnet/haiku/opus`）。tier 追踪移至 `app-settings.json` 的 `claudePrefs.selectedTier` |
 | `enabledPlugins` | `{...}` | ✅ | SDK 字段 |
 | `skipWebFetchPreflight` | `true` | ✅ | SDK 字段 |
 | `language` | `"zh-CN"` | ✅ 字段存在 (L4509) | **语义冲突：SDK 用它做 Claude 回复语言 + 语音听写语言，App 用它做 UI 语言** |

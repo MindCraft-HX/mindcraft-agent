@@ -358,13 +358,13 @@ function setCodexDefault(key, value) {
 // Public: Claude internal prefs
 // ---------------------------------------------------------------------------
 
-/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'} key */
+/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'|'selectedTier'} key */
 function getClaudePref(key) {
   const s = _getSection('claudePrefs');
   return s[key];
 }
 
-/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'} key */
+/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'|'selectedTier'} key */
 function setClaudePref(key, value) {
   const s = _ensureSection('claudePrefs');
   s[key] = value;

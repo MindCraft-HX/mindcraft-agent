@@ -1372,6 +1372,10 @@ function setupClaudeHandlers() {
     if (key === 'claudeBaseURL') return s.env?.ANTHROPIC_BASE_URL || s.apiBaseUrl || def
     if (key === 'claudeEffortLevel') return s.effortLevel || def
     if (key === 'claudeSelectedTier') {
+      // 优先从 settingsFacade 读取 tier（T198：与 settings.json model 字段解耦）
+      const stored = getClaudePref('selectedTier')
+      if (stored && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(stored)) return stored
+      // 兜底：从 settings.json model 推断（向后兼容旧版本未迁移到 settingsFacade 的场景）
       const raw = (typeof s.model === 'string' ? s.model : 'sonnet').toLowerCase()
       return ['haiku', 'sonnet', 'opus', 'reasoning'].includes(raw) ? raw : 'sonnet'
     }
@@ -1413,8 +1417,11 @@ function setupClaudeHandlers() {
       s.env.ANTHROPIC_BASE_URL = val
     } else if (key === 'claudeEffortLevel') s.effortLevel = val
     else if (key === 'claudeSelectedTier') {
-      // tier 写入顶层 model
-      s.model = val
+      // 主存储：tier 存 settingsFacade（T198 解耦）
+      setClaudePref('selectedTier', val)
+      // settings.json model 字段写入实际模型 ID（非 tier 名），确保 SDK 直接使用正确模型
+      const tierModels = getClaudePref('tierModels') || {}
+      s.model = tierModels[val] || val
     } else if (key === 'claudeModels') { s.models = val }
     else if (key === 'claudeProviders') { internalConf.set('claudeProviders', val); return }
     else return
@@ -1839,16 +1846,14 @@ function setupClaudeHandlers() {
       const sj = readSystemSettingsJson()
       if (sj) {
         const env = sj.env && typeof sj.env === 'object' ? sj.env : {}
-        const tierKey = typeof sj.model === 'string' && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model)
-          ? sj.model
-          : 'sonnet'
+        // T198: tier 已从 confGet 正确解析（settingsFacade 优先），无需从 sj.model 重新推导
         const envMap = {
           haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
           sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
           opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL,
           reasoning: env.ANTHROPIC_REASONING_MODEL,
         }
-        model = String(envMap[tierKey] || sj.defaultModel || '').trim()
+        model = String(envMap[tier] || sj.defaultModel || '').trim()
       }
     }
     return model || null
@@ -1902,15 +1907,13 @@ function setupClaudeHandlers() {
         const envKey = sj.env?.ANTHROPIC_AUTH_TOKEN || ''
         const envUrl = sj.env?.ANTHROPIC_BASE_URL || ''
         const env = sj.env && typeof sj.env === 'object' ? sj.env : {}
-        const tierKey = typeof sj.model === 'string' && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model)
-          ? sj.model
-          : 'sonnet'
+      // T198: selectedTier 已从 settingsFacade 正确解析，无需从 sj.model 重新推导
         const envModel = String({
           haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
           sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
           opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL,
           reasoning: env.ANTHROPIC_REASONING_MODEL,
-        }[tierKey] || '').trim()
+        }[selectedTier] || '').trim()
         // 兜底：从顶级字段读取
         const topKey = sj.primaryApiKey || sj.apiKey || ''
         const topUrl = sj.baseURL || sj.apiBaseUrl || ''
@@ -1954,7 +1957,9 @@ function setupClaudeHandlers() {
     if (runtimeConfig?.tierModels?.sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = runtimeConfig.tierModels.sonnet
     if (runtimeConfig?.tierModels?.opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = runtimeConfig.tierModels.opus
     if (runtimeConfig?.tierModels?.reasoning) env.ANTHROPIC_REASONING_MODEL = runtimeConfig.tierModels.reasoning
-    const patch = { model: selectedTier }
+    // 写入实际模型 ID 而非 tier 名（T198 解耦：SDK 直接使用实际模型，不依赖内部 tier 映射）
+    const actualModel = runtimeConfig?.model || runtimeConfig?.tierModels?.[selectedTier] || selectedTier
+    const patch = { model: actualModel }
     if (Object.keys(env).length) patch.env = env
     return patch
   }
@@ -2007,7 +2012,9 @@ function setupClaudeHandlers() {
       opus: String(env.ANTHROPIC_DEFAULT_OPUS_MODEL || '').trim(),
       reasoning: String(env.ANTHROPIC_REASONING_MODEL || '').trim(),
     }
+    // T198: sj.model 现为实际模型 ID（非 tier 名），优先使用；兜底按 tierKey 取分级模型
     const model = String(
+      (typeof sj.model === 'string' && sj.model.trim() && !['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model) ? sj.model : '') ||
       tierMap[tierKey] ||
       env.ANTHROPIC_MODEL ||
       sj.defaultModel ||
@@ -2190,12 +2197,8 @@ function setupClaudeHandlers() {
     return { ok: true, model }
   })
   ipcMain.handle(CLAUDE_CHANNELS.GET_SELECTED_TIER, () => {
-    // 从 ~/.claude/settings.json 读取默认 tier（SDK 原生路径）
-    const sj = readSystemSettingsJson()
-    if (sj && typeof sj.model === 'string' && ['haiku','sonnet','opus','reasoning'].includes(sj.model)) {
-      return sj.model
-    }
-    return 'sonnet'
+    // 统一通过 confGet 读取 tier（settingsFacade 优先，settings.json 兜底）
+    return confGet('claudeSelectedTier', 'sonnet')
   })
   ipcMain.handle(CLAUDE_CHANNELS.SET_SELECTED_TIER, (_, tier) => {
     const valid = ['haiku', 'sonnet', 'opus', 'reasoning']
@@ -3500,10 +3503,17 @@ function setupClaudeHandlers() {
     }
     const apiKey = String(env.ANTHROPIC_AUTH_TOKEN || sj?.primaryApiKey || sj?.apiKey || '').trim()
     let baseURL = String(env.ANTHROPIC_BASE_URL || sj?.baseURL || sj?.apiBaseUrl || '').trim()
-    // settings.json 顶层 model 在本项目约定为 tier（sonnet/opus/...），因此此处不读取 env.ANTHROPIC_MODEL。
+    // T198: sj.model 现为实际模型 ID（非 tier 名）；兼容旧格式（tier 名）通过反向匹配 env 分级模型
     let model = ''
-    const tierKey = sj?.model && ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sj.model) ? sj.model : 'sonnet'
-    model = (tierFromEnv[tierKey] || '').trim()
+    const sjModel = typeof sj?.model === 'string' ? sj.model.trim() : ''
+    const isTierName = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(sjModel)
+    if (isTierName) {
+      // 旧格式：sj.model 是 tier 名 → 按 env 分级模型查找
+      model = (tierFromEnv[sjModel] || '').trim()
+    } else if (sjModel) {
+      // 新格式（T198）：sj.model 是实际模型 ID → 直接使用
+      model = sjModel
+    }
     if (!model) model = String(sj?.defaultModel || '').trim()
     if (!model) model = (tierFromEnv.sonnet || fallbackModel.sonnet || '').trim()
     if (baseURL && !baseURL.endsWith('/')) baseURL += '/'
