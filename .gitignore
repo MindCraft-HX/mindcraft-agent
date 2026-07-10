@@ -54,6 +54,9 @@ docs/local/
 docs/private/
 docs/tmp/
 
+# 市场宣发材料（不提交到代码仓库）
+docs/marketing/
+
 # 本地个人覆盖（不提交）；AGENTS.md / CLAUDE.md 是项目规则，需提交
 CLAUDE.local.md
 AGENTS.local.md
