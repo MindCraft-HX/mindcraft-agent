@@ -551,11 +551,15 @@ export function useCodexAgentStream({
     if (matchedExisting) {
       const mergeProps = handler.mergeProps(item, matchedExisting)
       const status = handler.status(item, isFinal)
+      // 非终态更新（如 P0 异步 diff preview 补发的 item.updated）不应把终端状态打回 running
+      const finalStatus = (!isFinal && (matchedExisting.status === 'done' || matchedExisting.status === 'error'))
+        ? matchedExisting.status
+        : status
       Object.assign(matchedExisting, {
         ...mergeProps,
         rawType: matchedExisting.rawType || item.type || matchedExisting.toolName || toolName,
         activityLabel: matchedExisting.activityLabel || getActivityLabel(matchedExisting.toolName || toolName),
-        status,
+        status: finalStatus,
       })
       return
     }

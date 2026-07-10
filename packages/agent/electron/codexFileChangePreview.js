@@ -234,6 +234,7 @@ async function generateFileChangePreviewsAsync(changes, cwd, opts = {}) {
 
   const maxConcurrent = opts.maxConcurrent || 2
   const perFileTimeout = opts.perFileTimeout || 500
+  const maxPreviewChanges = opts.maxPreviewChanges || DEFAULT_MAX_PREVIEW_CHANGES
 
   const enriched = [...changes]
   const pending = []
@@ -241,6 +242,12 @@ async function generateFileChangePreviewsAsync(changes, cwd, opts = {}) {
     if (!changes[i].unified_diff && !changes[i]._noDiffReason) {
       pending.push(i)
     }
+  }
+
+  // Cap previews at maxPreviewChanges to avoid excessive git subprocesses
+  const skipped = pending.splice(maxPreviewChanges)
+  for (const i of skipped) {
+    enriched[i] = { ...changes[i], _noDiffReason: 'preview_limit' }
   }
 
   if (!pending.length) return enriched

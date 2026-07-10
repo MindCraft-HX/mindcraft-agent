@@ -276,7 +276,7 @@ function computeDiff() {
   if (typeof requestIdleCallback !== 'undefined') {
     requestIdleCallback(() => {
       if (!m.diffLines?.length) m.diffLines = buildDiffLinesEnhanced(inp.oldStr, inp.newStr)
-    })
+    }, { timeout: 200 })
   } else {
     setTimeout(() => {
       if (!m.diffLines?.length) m.diffLines = buildDiffLinesEnhanced(inp.oldStr, inp.newStr)
@@ -294,7 +294,7 @@ function computeFileChangeDiffs() {
       if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(() => {
           if (!fc.diffLines?.length) fc.diffLines = parseUnifiedDiff(fc.unified_diff)
-        })
+        }, { timeout: 200 })
       } else {
         setTimeout(() => {
           if (!fc.diffLines?.length) fc.diffLines = parseUnifiedDiff(fc.unified_diff)
@@ -304,7 +304,7 @@ function computeFileChangeDiffs() {
       if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(() => {
           if (!fc.diffLines?.length) fc.diffLines = fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
-        })
+        }, { timeout: 200 })
       } else {
         setTimeout(() => {
           if (!fc.diffLines?.length) fc.diffLines = fc._diffHunks.map(h => ({ type: 'hunk', del: h.del || [], add: h.add || [] }))
@@ -314,7 +314,7 @@ function computeFileChangeDiffs() {
       if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(() => {
           if (!fc.diffLines?.length) fc.diffLines = buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
-        })
+        }, { timeout: 200 })
       } else {
         setTimeout(() => {
           if (!fc.diffLines?.length) fc.diffLines = buildDiffLinesEnhanced(fc._oldStr, fc._newStr)
