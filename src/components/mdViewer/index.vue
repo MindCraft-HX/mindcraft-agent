@@ -6,7 +6,6 @@
     data-path-context-source="document-viewer"
     @dragover.prevent
     @drop.prevent="onDrop"
-    @keydown="onDocKeydown"
   >
     <div class="doc-toolbar">
       <div class="doc-toolbar-left">
@@ -18,7 +17,7 @@
       </div>
     </div>
 
-    <!-- D3: 自定义标签栏支持拖拽排序 + 键盘导航 + 无障碍 -->
+    <!-- 自定义标签栏支持拖拽排序 + 键盘导航 + 无障碍 -->
     <div v-if="tabs.length" class="doc-tabs-bar" role="tablist" aria-label="文档标签页">
       <div class="doc-tabs">
         <div
@@ -47,7 +46,7 @@
       </div>
     </div>
 
-    <div v-if="currentTab" class="doc-body" :class="{ 'is-loading': currentTab.isLoading }">
+    <div v-if="currentTab" ref="docBodyRef" class="doc-body" :class="{ 'is-loading': currentTab.isLoading }">
       <component
         :is="currentViewer"
         :key="currentViewerKey"
@@ -96,12 +95,13 @@ const VIEWER_MAP = {
 
 const tabs = ref([])
 const activeTabId = ref('')
+const docBodyRef = ref(null)
 const seenPayloadKeys = new Map()
 const MAX_SEEN_PAYLOAD_KEYS = 200
-// D2: 每个文档标签页的滚动位置记忆
+// 每个文档标签页的滚动位置记忆
 const tabScrollTops = new Map()
 
-// D3: 标签页拖拽排序
+// 标签页拖拽排序
 const dragIndex = ref(-1)
 const dragOverIndex = ref(-1)
 
@@ -135,7 +135,7 @@ function onTabDrop(e, toIndex) {
   reorderTabs(fromIndex, toIndex)
 }
 
-// D3: 键盘导航 — Left/Right 箭头切换标签页，Home/End 跳到首/尾
+// 键盘导航 — Left/Right 箭头切换标签页，Home/End 跳到首/尾
 function onTabKeydown(e, idx) {
   let targetIdx = -1
   if (e.key === 'ArrowLeft') {
@@ -161,10 +161,14 @@ function onTabKeydown(e, idx) {
   }
 }
 
-// D3: Ctrl+Tab / Ctrl+Shift+Tab 全局切换文档标签页
-function onDocKeydown(e) {
+// Ctrl+Tab / Ctrl+Shift+Tab 切换文档标签页（文档级事件监听）
+// .doc-viewer div 没有 tabindex 无法获得焦点，键盘事件收不到
+const _isDocActive = ref(false)
+function onDocGlobalKeydown(e) {
+  if (!_isDocActive.value) return
   if (!e.ctrlKey || e.key !== 'Tab' || tabs.value.length < 2) return
   e.preventDefault()
+  e.stopPropagation()
   const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
   const next = e.shiftKey
     ? (idx > 0 ? idx - 1 : tabs.value.length - 1)
@@ -284,6 +288,7 @@ async function saveRecentDoc(payload = {}) {
 const DOC_TABS_STORE_KEY = 'openDocTabs'
 
 async function persistDocTabs() {
+  // 只持久化有 filePath 的 tab（聊天内联文档没有 filePath，重启后无法恢复内容，保留空 tab 无意义）
   const tabsToSave = tabs.value
     .filter(t => t.filePath)
     .map(t => ({
@@ -293,7 +298,7 @@ async function persistDocTabs() {
       ext: t.ext,
       viewerType: t.viewerType,
     }))
-  // D4: 持久化滚动位置（仅保留仍然存在的 tab）
+  // 持久化滚动位置（仅保留仍然存在的 tab）
   const tabIdSet = new Set(tabs.value.map(t => t.id))
   const scrollTops = {}
   for (const [id, top] of tabScrollTops) {
@@ -307,7 +312,9 @@ async function persistDocTabs() {
       activeTabId: activeTabId.value,
       scrollTops,
     })
-  } catch (_) {}
+  } catch (e) {
+    console.error('[docPersist] persistDocTabs failed:', e)
+  }
 }
 
 let _persistTimer = null
@@ -323,7 +330,7 @@ async function restoreDocTabs() {
     const saved = await window.electronAPI?.getSetting?.(DOC_TABS_STORE_KEY)
     if (!saved?.tabs?.length) return
 
-    // D4: 恢复滚动位置（在创建 tab 之前填充 Map，后续 watch/restoreDocTabScroll 会用到）
+    // 恢复滚动位置（在创建 tab 之前填充 Map，后续 watch/restoreDocTabScroll 会用到）
     if (saved.scrollTops && !Array.isArray(saved.scrollTops)) {
       for (const [id, top] of Object.entries(saved.scrollTops)) {
         if (typeof top === 'number' && top >= 0) {
@@ -333,22 +340,33 @@ async function restoreDocTabs() {
     }
 
     // 添加 pending tabs（仅元信息，不加载内容）
+    // 同时按 filePath 和 id 去重（内联文档没有 filePath）
     for (const info of saved.tabs) {
       const existing = findTabByFilePath(info.filePath)
+        || tabs.value.find(t => t.id === info.id)
       if (existing) continue
-      tabs.value.push(createPendingDocumentTab({
-        id: info.id,
-        name: info.name,
-        filePath: info.filePath,
-        ext: info.ext,
-      }))
+      // 恢复出来的 tab 先不显示 loading，避免所有标签都转圈
+      // 点击时再 lazy load
+      tabs.value.push({
+        ...createPendingDocumentTab({
+          id: info.id,
+          name: info.name,
+          filePath: info.filePath,
+          ext: info.ext,
+        }),
+        isLoading: false,
+      })
     }
 
     // 若 drainPendingPayloads 已经设置了 active tab 且不是 pending，尊重其选择不覆盖
     const hadPriorActiveTab = activeTabId.value
       && tabs.value.some(t => t.id === activeTabId.value && !t.isLoading)
 
-    if (hadPriorActiveTab) return
+    if (hadPriorActiveTab) {
+      // 仍然触发持久化以确保当前 tabs 被保存
+      schedulePersist()
+      return
+    }
 
     // 激活上次的 active tab 并加载内容
     const targetId = (saved.activeTabId && tabs.value.find(t => t.id === saved.activeTabId))
@@ -360,35 +378,58 @@ async function restoreDocTabs() {
       if (tab) {
         _restoring = true
         try {
-          activeTabId.value = tab.id
-          const payload = { filePath: tab.filePath, name: tab.name, id: tab.id }
-          const pending = applyPayloadSync(payload)
-          if (pending) await completePayloadAsync(payload, pending)
+          // 只有有 filePath 的 tab 才能重新加载文件内容
+          // 内联文档（聊天内容）无法恢复，标记为过期
+          if (!tab.filePath) {
+            upsertTab({ ...tab, isLoading: false })
+            activeTabId.value = tab.id
+          } else {
+            activeTabId.value = tab.id
+            const payload = { filePath: tab.filePath, name: tab.name, id: tab.id }
+            const pending = applyPayloadSync(payload)
+            if (pending) await completePayloadAsync(payload, pending)
+          }
         } finally {
           _restoring = false
-          // D4: 恢复完成后主动恢复滚动位置（watch 因 _restoring 守卫跳过了 restoreDocTabScroll）
-          if (activeTabId.value) restoreDocTabScroll(activeTabId.value)
+          // 恢复完成后延迟恢复滚动（等待 DOM 渲染 docBodyRef）
+          if (activeTabId.value) {
+            nextTick(() => restoreDocTabScroll(activeTabId.value))
+          }
         }
       }
     }
-    // D4: 恢复完成后触发持久化（upsertTab 的 schedulePersist 在 _restoring 期间被拦住了）
+    // 恢复完成后触发持久化（upsertTab 的 schedulePersist 在 _restoring 期间被拦住了）
     schedulePersist()
-  } catch (_) {}
+  } catch (e) {
+    console.error('[docPersist] restoreDocTabs error:', e)
+  }
 }
 
-// D2: 保存旧标签页滚动位置，切换后恢复新标签页位置
+// 保存旧标签页滚动位置，切换后恢复新标签页位置
 // 同时处理懒加载：点击已恢复但未加载内容的 tab 时，懒加载文件内容
 watch(activeTabId, (newId, oldId) => {
   // 保存旧标签页的滚动位置
   if (oldId && oldId !== newId) {
     saveCurrentTabScroll(oldId)
-    // D4: 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
+    // 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
     persistDocTabs()
   }
 
   if (_restoring || !newId) return
   const tab = tabs.value.find(t => t.id === newId)
-  if (tab && tab.isLoading) {
+  if (!tab) return
+  // 恢复出来的空 tab（isLoading=false 但无内容）点击时 lazy load
+  const needsLazyLoad = tab.filePath
+    && !tab.isLoading
+    && !tab.isLoadError
+    && tab.text === ''
+    && tab.binary === null
+  if (tab.isLoading || needsLazyLoad) {
+    // 内联文档（无 filePath）无法重新加载内容，直接清 loading
+    if (!tab.filePath) {
+      upsertTab({ ...tab, isLoading: false })
+      return
+    }
     const payload = { filePath: tab.filePath, name: tab.name, id: tab.id }
     completePayloadAsync(payload, tab)
       .then(() => { restoreDocTabScroll(newId) })
@@ -399,25 +440,35 @@ watch(activeTabId, (newId, oldId) => {
   }
 })
 
-// D2: 恢复标签页的滚动位置
+// 恢复标签页的滚动位置
 function restoreDocTabScroll(tabId) {
   if (!tabId) return
   const saved = tabScrollTops.get(tabId)
   if (saved == null) return
-  const body = document.querySelector('.doc-body')
+  const body = docBodyRef.value
   if (!body) return
-  requestAnimationFrame(() => {
-    // rAF 内重新查询确保 viewer 已渲染挂载（DOM 可能在 guard 后被替换）
-    const el = document.querySelector('.doc-body')
-    if (el) el.scrollTop = Math.max(0, saved)
+  // nextTick (Vue DOM 更新) + rAF (浏览器绘制) 确保 viewer 渲染后高度稳定
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const el = docBodyRef.value
+      if (!el) return
+      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+      el.scrollTop = Math.min(saved, maxScroll)
+    })
   })
 }
 
-// D4: 保存指定标签页的当前滚动位置到 Map（不持久化，由调用方决定何时 persist）
+// 保存指定标签页的当前滚动位置到 Map（不持久化，由调用方决定何时 persist）
 function saveCurrentTabScroll(tabId) {
   if (!tabId) return
-  const body = document.querySelector('.doc-body')
-  if (body) tabScrollTops.set(tabId, body.scrollTop)
+  const body = docBodyRef.value
+  if (!body) return
+  const top = body.scrollTop
+  // keep-alive 切出后 DOM 已销毁（scrollHeight=0），不要覆盖已有的正确值
+  if (body.scrollHeight === 0 && body.clientHeight === 0 && tabScrollTops.has(tabId)) {
+    return
+  }
+  tabScrollTops.set(tabId, top)
 }
 
 // 鍚屾搴旂敤 payload锛氱珛鍗冲垱寤?tab銆佹洿鏂?UI銆傝繑鍥為渶瑕佸紓姝ヨ鍙栫殑 pendingTab锛堟垨 null锛?
@@ -499,14 +550,19 @@ async function openFile() {
 }
 
 async function onDrop(event) {
+  event.preventDefault()
+  event.stopPropagation()
   const files = [...(event.dataTransfer?.files || [])]
   for (const file of files) {
-    if (file.path) {
-      const payload = { name: file.name, filePath: file.path }
+    // 优先用 Electron webUtils 获取真实路径（支持 dev 模式）
+    const filePath = window.electronAPI?.getPathForFile?.(file)
+    if (filePath) {
+      const payload = { name: file.name, filePath }
       const pendingTab = applyPayloadSync(payload)
       if (pendingTab) await completePayloadAsync(payload, pendingTab)
       continue
     }
+    // 无路径文件（浏览器网页拖拽等）作为一次性内联文档打开，不持久化
     const ext = (file.name.split('.').pop() || '').toLowerCase()
     if (ext === 'pdf') {
       const arrayBuffer = await file.arrayBuffer()
@@ -522,7 +578,7 @@ function removeTab(id) {
   const idx = tabs.value.findIndex(tab => tab.id === id)
   if (idx < 0) return
   tabs.value.splice(idx, 1)
-  // D2: 清理被删除标签页的滚动位置
+  // 清理被删除标签页的滚动位置
   tabScrollTops.delete(id)
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value[Math.max(0, idx - 1)]?.id || ''
@@ -575,37 +631,37 @@ async function drainPendingPayloads() {
 
 onMounted(async () => {
   window.electronAPI?.onMdContent?.(enqueuePayload)
+  // Ctrl+Tab 全局快捷键（文档级监听，不依赖 div 获得焦点）
+  document.addEventListener('keydown', onDocGlobalKeydown)
   await drainPendingPayloads()
   // 恢复上次打开的文档 tabs（在 drainPendingPayloads 之后，避免重复）
   await restoreDocTabs()
 })
 
 onBeforeUnmount(() => {
-  // D4: 关闭应用前保存滚动位置
+  document.removeEventListener('keydown', onDocGlobalKeydown)
   saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
   clearTimeout(_persistTimer)
 })
 
-// D4: 路由离开时保存当前标签页滚动位置
+// 路由离开时保存当前标签页滚动位置
 onDeactivated(() => {
+  _isDocActive.value = false
   saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
 })
 
 onActivated(() => {
+  _isDocActive.value = true
   void drainPendingPayloads()
-  // D4: keep-alive 切回时恢复滚动位置
+  // keep-alive 切回时恢复滚动位置
   if (activeTabId.value) restoreDocTabScroll(activeTabId.value)
 })
 </script>
 
 <style scoped>
 .doc-viewer {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
   --doc-bg: var(--cc-bg, #ffffff);
   --doc-paper: var(--cc-bg-secondary, #ffffff);
   --doc-line: var(--cc-border-medium, #e5e7eb);
@@ -707,7 +763,7 @@ onActivated(() => {
   font-size: 12px;
 }
 
-/* D3: 自定义标签栏（替代 el-tabs）支持拖拽排序 */
+/* 自定义标签栏（替代 el-tabs）支持拖拽排序 */
 .doc-tabs-bar {
   flex-shrink: 0;
   display: flex;

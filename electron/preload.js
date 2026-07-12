@@ -1,5 +1,5 @@
 // preload.js
-const { ipcRenderer, contextBridge, clipboard } = require("electron");
+const { ipcRenderer, contextBridge, clipboard, webUtils } = require("electron");
 const path = require("path");
 const os = require("os");
 const { createAgentBridge } = require("../packages/agent/preload");
@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openFolder: async (folderPath) =>
     ipcRenderer.invoke(CORE_CHANNELS.OPEN_FOLDER, folderPath),
   openFileWithDefault: (filePath) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_FILE_WITH_DEFAULT, filePath),
+  // 从 HTML5 File 对象获取真实文件路径（Electron 28+ webUtils API）
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   // 文档浏览
   openMdWin: (payload) => ipcRenderer.invoke(CORE_CHANNELS.OPEN_MD_WIN, payload),
