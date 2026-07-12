@@ -90,6 +90,9 @@ const tabs = ref([])
 const activeTabId = ref('')
 const seenPayloadKeys = new Map()
 const MAX_SEEN_PAYLOAD_KEYS = 200
+// D2: 每个文档标签页的滚动位置记忆
+const tabScrollTops = new Map()
+let _activeTabIdOld = ''
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
@@ -265,17 +268,43 @@ async function restoreDocTabs() {
   } catch (_) {}
 }
 
-// 点击已恢复但未加载内容的 tab 时，懒加载文件内容
-watch(activeTabId, (newId) => {
-  if (_restoring || !newId) return   // 恢复期间跳过，避免双重加载
+// D2: 保存旧标签页滚动位置，切换后恢复新标签页位置
+// 同时处理懒加载：点击已恢复但未加载内容的 tab 时，懒加载文件内容
+watch(activeTabId, (newId, oldId) => {
+  // 保存旧标签页的滚动位置
+  if (oldId && oldId !== newId) {
+    const body = document.querySelector('.doc-body')
+    if (body) tabScrollTops.set(oldId, body.scrollTop)
+    _activeTabIdOld = oldId
+  }
+
+  if (_restoring || !newId) return
   const tab = tabs.value.find(t => t.id === newId)
   if (tab && tab.isLoading) {
     const payload = { filePath: tab.filePath, name: tab.name, id: tab.id }
-    completePayloadAsync(payload, tab).catch(err =>
-      console.error('[mdViewer] lazy load failed:', err)
-    )
+    completePayloadAsync(payload, tab)
+      .then(() => { restoreDocTabScroll(newId) })
+      .catch(err => console.error('[mdViewer] lazy load failed:', err))
+  } else {
+    // 已加载的标签页直接恢复滚动位置
+    restoreDocTabScroll(newId)
   }
 })
+
+// D2: 恢复标签页的滚动位置
+function restoreDocTabScroll(tabId) {
+  if (!tabId) return
+  const saved = tabScrollTops.get(tabId)
+  if (saved == null || saved <= 0) return
+  // 需要等 viewer 渲染完成再恢复
+  const body = document.querySelector('.doc-body')
+  if (!body) return
+  // 延迟到下一个渲染周期确保内容已挂载
+  requestAnimationFrame(() => {
+    const el = document.querySelector('.doc-body')
+    if (el) el.scrollTop = saved
+  })
+}
 
 // 鍚屾搴旂敤 payload锛氱珛鍗冲垱寤?tab銆佹洿鏂?UI銆傝繑鍥為渶瑕佸紓姝ヨ鍙栫殑 pendingTab锛堟垨 null锛?
 function applyPayloadSync(payload = {}) {
@@ -379,6 +408,8 @@ function removeTab(id) {
   const idx = tabs.value.findIndex(tab => tab.id === id)
   if (idx < 0) return
   tabs.value.splice(idx, 1)
+  // D2: 清理被删除标签页的滚动位置
+  tabScrollTops.delete(id)
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value[Math.max(0, idx - 1)]?.id || ''
   }
