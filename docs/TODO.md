@@ -317,6 +317,6 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 
 | ID | Category | Scope | Priority | Status |
 |----|----------|-------|----------|--------|
-| D1 | bug/ux | 文档↔项目切换时聊天自动滚到底部：`onDeactivated` 保存 `saveChatScroll`，`onActivated` 用 `restoreChatScroll` 替代强制 `scrollToBottom`。修复 claudeCode + codeX 双端。 | P0 | ✅ 已完成 |
-| D2 | ux | 文档标签页滚动位置记忆：mdViewer 切换标签后回来滚动位置丢失。需为每个 tab 维护 scrollTop 映射。 | P2 | 待实现 |
-| D3 | ux | 文档标签页拖拽排序：mdViewer 用 el-tabs 无拖拽排序，ProjectTabs 有。仿照实现。 | P3 | 待实现 |
+| D1 | bug/ux | 文档↔项目切换时聊天自动滚到底部：`onDeactivated` 保存 `saveChatScroll`，`onActivated` 用 `restoreChatScroll` 替代强制 `scrollToBottom`。修复 claudeCode + codeX 双端。 | P0 | ✅ ecf1d05 |
+| D2 | ux | 文档标签页滚动位置记忆：新增 `tabScrollTops` Map，切换标签前保存 `.doc-body.scrollTop`，切换后 `requestAnimationFrame` 恢复。懒加载 tab 等 `completePayloadAsync` 完成后再恢复。 | P2 | ✅ 0425641 |
+| D3 | ux | 文档标签页拖拽排序：自定义标签栏替代 `el-tabs`，仿 ProjectTabs 拖拽模式，支持重排序 + 视觉反馈。 | P3 | ✅ d5e17a1 |
