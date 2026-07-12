@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 defineOptions({ name: 'mdViewer' })
 import { i18n } from '@/i18n'
@@ -281,10 +281,18 @@ async function persistDocTabs() {
       ext: t.ext,
       viewerType: t.viewerType,
     }))
+  // D4: 持久化滚动位置（仅保留仍然存在的 tab）
+  const scrollTops = {}
+  for (const [id, top] of tabScrollTops) {
+    if (tabs.value.some(t => t.id === id)) {
+      scrollTops[id] = top
+    }
+  }
   try {
     await window.electronAPI?.setSetting?.(DOC_TABS_STORE_KEY, {
       tabs: tabsToSave,
       activeTabId: activeTabId.value,
+      scrollTops,
     })
   } catch (_) {}
 }
@@ -301,6 +309,15 @@ async function restoreDocTabs() {
   try {
     const saved = await window.electronAPI?.getSetting?.(DOC_TABS_STORE_KEY)
     if (!saved?.tabs?.length) return
+
+    // D4: 恢复滚动位置（在创建 tab 之前填充 Map，后续 watch/restoreDocTabScroll 会用到）
+    if (saved.scrollTops) {
+      for (const [id, top] of Object.entries(saved.scrollTops)) {
+        if (typeof top === 'number' && top >= 0) {
+          tabScrollTops.set(id, top)
+        }
+      }
+    }
 
     // 添加 pending tabs（仅元信息，不加载内容）
     for (const info of saved.tabs) {
@@ -348,7 +365,11 @@ watch(activeTabId, (newId, oldId) => {
   // 保存旧标签页的滚动位置
   if (oldId && oldId !== newId) {
     const body = document.querySelector('.doc-body')
-    if (body) tabScrollTops.set(oldId, body.scrollTop)
+    if (body) {
+      tabScrollTops.set(oldId, body.scrollTop)
+      // D4: 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
+      persistDocTabs()
+    }
   }
 
   if (_restoring || !newId) return
@@ -539,7 +560,22 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // D4: 关闭应用前保存滚动位置
+  if (activeTabId.value) {
+    const body = document.querySelector('.doc-body')
+    if (body) tabScrollTops.set(activeTabId.value, body.scrollTop)
+  }
+  persistDocTabs()
   clearTimeout(_persistTimer)
+})
+
+// D4: 路由离开时保存当前标签页滚动位置
+onDeactivated(() => {
+  if (activeTabId.value) {
+    const body = document.querySelector('.doc-body')
+    if (body) tabScrollTops.set(activeTabId.value, body.scrollTop)
+  }
+  persistDocTabs()
 })
 
 onActivated(() => {
