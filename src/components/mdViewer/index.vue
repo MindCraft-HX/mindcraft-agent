@@ -17,27 +17,30 @@
       </div>
     </div>
 
-    <el-tabs
-      v-if="tabs.length"
-      v-model="activeTabId"
-      type="card"
-      closable
-      class="doc-tabs"
-      @tab-remove="removeTab"
-    >
-      <el-tab-pane
-        v-for="tab in tabs"
-        :key="tab.id"
-        :name="tab.id"
-      >
-        <template #label>
+    <!-- D3: 自定义标签栏支持拖拽排序 -->
+    <div v-if="tabs.length" class="doc-tabs-bar">
+      <div class="doc-tabs">
+        <div
+          v-for="(tab, idx) in tabs"
+          :key="tab.id"
+          class="doc-tab"
+          :class="{ active: tab.id === activeTabId, 'drag-over': dragOverIndex === idx, dragging: dragIndex === idx }"
+          draggable="true"
+          @click="activeTabId = tab.id"
+          @dragstart="onTabDragStart($event, idx)"
+          @dragover.prevent="onTabDragOver($event, idx)"
+          @dragleave="onTabDragLeave"
+          @dragend="onTabDragEnd($event)"
+          @drop="onTabDrop($event, idx)"
+        >
           <span class="doc-tab-label">
             <el-icon v-if="tab.isLoading" class="doc-tab-loading"><Loading /></el-icon>
             <span class="doc-tab-text">{{ tab.name }}</span>
           </span>
-        </template>
-      </el-tab-pane>
-    </el-tabs>
+          <button class="doc-tab-close" type="button" @click.stop="removeTab(tab.id)">×</button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="currentTab" class="doc-body" :class="{ 'is-loading': currentTab.isLoading }">
       <component
@@ -93,6 +96,51 @@ const MAX_SEEN_PAYLOAD_KEYS = 200
 // D2: 每个文档标签页的滚动位置记忆
 const tabScrollTops = new Map()
 let _activeTabIdOld = ''
+
+// D3: 标签页拖拽排序
+const dragIndex = ref(-1)
+const dragOverIndex = ref(-1)
+
+function onTabDragStart(e, index) {
+  dragIndex.value = index
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', String(index))
+  if (e.target) e.target.style.opacity = '0.45'
+}
+
+function onTabDragOver(e, index) {
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'move'
+  dragOverIndex.value = index
+}
+
+function onTabDragLeave() {
+  dragOverIndex.value = -1
+}
+
+function onTabDragEnd(e) {
+  if (e.target) e.target.style.opacity = ''
+  dragIndex.value = -1
+  dragOverIndex.value = -1
+}
+
+function onTabDrop(e, toIndex) {
+  e.preventDefault()
+  const fromIndex = dragIndex.value
+  if (e.target) e.target.style.opacity = ''
+  dragIndex.value = -1
+  dragOverIndex.value = -1
+  if (fromIndex < 0 || fromIndex === toIndex) return
+  reorderTabs(fromIndex, toIndex)
+}
+
+function reorderTabs(fromIndex, toIndex) {
+  const arr = [...tabs.value]
+  const [moved] = arr.splice(fromIndex, 1)
+  arr.splice(toIndex, 0, moved)
+  tabs.value = arr
+  schedulePersist()
+}
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
@@ -578,43 +626,91 @@ onActivated(() => {
   font-size: 12px;
 }
 
-.doc-tabs {
+/* D3: 自定义标签栏（替代 el-tabs）支持拖拽排序 */
+.doc-tabs-bar {
   flex-shrink: 0;
-  padding: 0 16px;
+  display: flex;
+  align-items: center;
   background: var(--cc-bg-secondary, rgba(255, 255, 255, 0.88));
+  border-bottom: 1px solid var(--doc-line);
+  padding: 0 12px;
+  min-height: 36px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  user-select: none;
 }
 
-.doc-tabs :deep(.el-tabs__header) {
-  margin: 0;
-  border-bottom-color: var(--doc-line);
+.doc-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
 }
 
-.doc-tabs :deep(.el-tabs__nav) {
-  border-color: var(--doc-line);
-}
-
-.doc-tabs :deep(.el-tabs__item) {
-  color: var(--doc-muted);
-  border-left-color: var(--doc-line);
+.doc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px 0 12px;
+  border-right: 1px solid var(--doc-line);
   background: var(--doc-paper);
-}
-
-.doc-tabs :deep(.el-tabs__item:hover),
-.doc-tabs :deep(.el-tabs__item.is-active) {
-  color: var(--doc-accent);
-}
-
-.doc-tabs :deep(.el-tabs__item.is-active) {
-  background: var(--doc-bg);
-}
-
-.doc-tabs :deep(.el-tabs__item .is-icon-close) {
   color: var(--doc-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 200px;
+  transition: background 0.12s, color 0.12s;
 }
 
-.doc-tabs :deep(.el-tabs__item .is-icon-close:hover) {
+.doc-tab:hover {
+  background: var(--cc-bg-hover, rgba(0, 0, 0, 0.04));
+  color: var(--doc-text);
+}
+
+.doc-tab.active {
+  background: var(--doc-bg);
   color: var(--doc-accent);
-  background: var(--cc-bg-hover, transparent);
+  font-weight: 600;
+  border-bottom: 2px solid var(--doc-accent);
+  position: relative;
+  z-index: 1;
+}
+
+.doc-tab.dragging {
+  opacity: 0.35;
+}
+
+.doc-tab.drag-over {
+  border-left: 2px solid var(--doc-accent);
+  background: var(--cc-primary-bg, rgba(37, 99, 235, 0.08));
+}
+
+.doc-tab-close {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--doc-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+
+.doc-tab:hover .doc-tab-close {
+  color: var(--doc-text);
+}
+
+.doc-tab-close:hover {
+  background: var(--cc-bg-hover, rgba(0, 0, 0, 0.08));
+  color: var(--doc-accent);
 }
 
 .doc-tab-label {
