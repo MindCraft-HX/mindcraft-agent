@@ -282,9 +282,10 @@ async function persistDocTabs() {
       viewerType: t.viewerType,
     }))
   // D4: 持久化滚动位置（仅保留仍然存在的 tab）
+  const tabIdSet = new Set(tabs.value.map(t => t.id))
   const scrollTops = {}
   for (const [id, top] of tabScrollTops) {
-    if (tabs.value.some(t => t.id === id)) {
+    if (tabIdSet.has(id)) {
       scrollTops[id] = top
     }
   }
@@ -311,7 +312,7 @@ async function restoreDocTabs() {
     if (!saved?.tabs?.length) return
 
     // D4: 恢复滚动位置（在创建 tab 之前填充 Map，后续 watch/restoreDocTabScroll 会用到）
-    if (saved.scrollTops) {
+    if (saved.scrollTops && !Array.isArray(saved.scrollTops)) {
       for (const [id, top] of Object.entries(saved.scrollTops)) {
         if (typeof top === 'number' && top >= 0) {
           tabScrollTops.set(id, top)
@@ -353,6 +354,8 @@ async function restoreDocTabs() {
           if (pending) await completePayloadAsync(payload, pending)
         } finally {
           _restoring = false
+          // D4: 恢复完成后主动恢复滚动位置（watch 因 _restoring 守卫跳过了 restoreDocTabScroll）
+          if (activeTabId.value) restoreDocTabScroll(activeTabId.value)
         }
       }
     }
@@ -364,12 +367,9 @@ async function restoreDocTabs() {
 watch(activeTabId, (newId, oldId) => {
   // 保存旧标签页的滚动位置
   if (oldId && oldId !== newId) {
-    const body = document.querySelector('.doc-body')
-    if (body) {
-      tabScrollTops.set(oldId, body.scrollTop)
-      // D4: 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
-      persistDocTabs()
-    }
+    saveCurrentTabScroll(oldId)
+    // D4: 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
+    persistDocTabs()
   }
 
   if (_restoring || !newId) return
@@ -397,6 +397,13 @@ function restoreDocTabScroll(tabId) {
     const el = document.querySelector('.doc-body')
     if (el) el.scrollTop = Math.max(0, saved)
   })
+}
+
+// D4: 保存指定标签页的当前滚动位置到 Map（不持久化，由调用方决定何时 persist）
+function saveCurrentTabScroll(tabId) {
+  if (!tabId) return
+  const body = document.querySelector('.doc-body')
+  if (body) tabScrollTops.set(tabId, body.scrollTop)
 }
 
 // 鍚屾搴旂敤 payload锛氱珛鍗冲垱寤?tab銆佹洿鏂?UI銆傝繑鍥為渶瑕佸紓姝ヨ鍙栫殑 pendingTab锛堟垨 null锛?
@@ -561,25 +568,21 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   // D4: 关闭应用前保存滚动位置
-  if (activeTabId.value) {
-    const body = document.querySelector('.doc-body')
-    if (body) tabScrollTops.set(activeTabId.value, body.scrollTop)
-  }
+  saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
   clearTimeout(_persistTimer)
 })
 
 // D4: 路由离开时保存当前标签页滚动位置
 onDeactivated(() => {
-  if (activeTabId.value) {
-    const body = document.querySelector('.doc-body')
-    if (body) tabScrollTops.set(activeTabId.value, body.scrollTop)
-  }
+  saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
 })
 
 onActivated(() => {
   void drainPendingPayloads()
+  // D4: keep-alive 切回时恢复滚动位置
+  if (activeTabId.value) restoreDocTabScroll(activeTabId.value)
 })
 </script>
 
