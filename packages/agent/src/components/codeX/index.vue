@@ -213,7 +213,7 @@
 
 <script setup>
 
-import { ref, computed, onMounted, onUnmounted, onActivated, nextTick, watch, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, nextTick, watch, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Conf } from 'electron-conf/renderer'
@@ -3215,9 +3215,14 @@ defineExpose({
   ready: isReady,
 })
 
+// D1: 离开当前页面时保存聊天滚动位置
+onDeactivated(() => {
+  if (activeChatId.value) saveChatScroll(activeChatId.value)
+})
+
 onActivated(() => {
-  // keep-alive 恢复后滚动到底部：ResizeObserver 不触发，需手动滚到底
-  nextTick(() => smartScrollBottom())
+  // D1: 恢复之前保存的聊天滚动位置（如果之前不在底部则回到原位置，否则滚到底）
+  nextTick(() => { if (activeChatId.value) restoreChatScroll(activeChatId.value) })
 })
 
 onUnmounted(() => {

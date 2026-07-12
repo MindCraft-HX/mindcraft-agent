@@ -310,3 +310,13 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | 2026-06-24 | bug | **更新/安装流程修复**：下载进度条优化 + `quitAndInstall()` 分离进程启动安装器。 |
 | 2026-06-24 | refactor | **Agent 架构重构 PR1-PR3 完成**：Agent Registry / Agent Protocol / Agent Client；通知音迁移；旧通道保留兼容。 |
 | 2026-06-21 | feature | **CodeX 多模型选择器**：SelectModel 去硬编码，ProviderForm 新增备选模型输入框。详见 `docs/plan/2026-06-21-codex-multi-model-selector.md`。 |
+
+---
+
+## 2026-07-12 文档查看器 (mdViewer) 问题修复
+
+| ID | Category | Scope | Priority | Status |
+|----|----------|-------|----------|--------|
+| D1 | bug/ux | 文档↔项目切换时聊天自动滚到底部：`onDeactivated` 保存 `saveChatScroll`，`onActivated` 用 `restoreChatScroll` 替代强制 `scrollToBottom`。修复 claudeCode + codeX 双端。 | P0 | ✅ 已完成 |
+| D2 | ux | 文档标签页滚动位置记忆：mdViewer 切换标签后回来滚动位置丢失。需为每个 tab 维护 scrollTop 映射。 | P2 | 待实现 |
+| D3 | ux | 文档标签页拖拽排序：mdViewer 用 el-tabs 无拖拽排序，ProjectTabs 有。仿照实现。 | P3 | 待实现 |

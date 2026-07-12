@@ -3712,6 +3712,8 @@ async function checkFirstTimeSetup() {
 // keep-alive 失活时关闭弹窗但不自动应答（保留 pending 状态）
 // 用户回来时看到蓝色 pending-dot + 消息卡"等待回答中"，手动点击"回答"按钮重新打开
 onDeactivated(() => {
+  // D1: 保存当前聊天滚动位置，切到文档/其他页面后再回来时恢复
+  if (activeChatId.value) saveChatScroll(activeChatId.value)
   if (askDialogVisible.value) {
     _hadAskDialogOnDeactivate.value = true
     askDialogVisible.value = false
@@ -3726,8 +3728,8 @@ onActivated(() => {
   _hadAskDialogOnDeactivate.value = false
   _hadPlanReviewOnDeactivate.value = false
   // 不自动恢复弹窗：用户通过蓝色 pending-dot + 消息感知，手动点击"回答"按钮打开
-  // 恢复后滚动到底部：keep-alive 恢复时 ResizeObserver 不触发，需手动滚到底
-  nextTick(() => scrollToBottomActive(true))
+  // D1: 恢复之前保存的聊天滚动位置（如果之前不在底部则回到原位置，否则滚到底）
+  nextTick(() => { if (activeChatId.value) restoreChatScroll(activeChatId.value) })
 })
 
 onMounted(() => {
