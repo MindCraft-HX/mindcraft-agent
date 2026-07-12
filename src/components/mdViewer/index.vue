@@ -17,27 +17,31 @@
       </div>
     </div>
 
-    <!-- D3: 自定义标签栏支持拖拽排序 -->
-    <div v-if="tabs.length" class="doc-tabs-bar">
+    <!-- D3: 自定义标签栏支持拖拽排序 + 键盘导航 + 无障碍 -->
+    <div v-if="tabs.length" class="doc-tabs-bar" role="tablist" aria-label="文档标签页">
       <div class="doc-tabs">
         <div
           v-for="(tab, idx) in tabs"
           :key="tab.id"
           class="doc-tab"
           :class="{ active: tab.id === activeTabId, 'drag-over': dragOverIndex === idx, dragging: dragIndex === idx }"
+          role="tab"
+          :aria-selected="tab.id === activeTabId ? 'true' : 'false'"
+          :tabindex="tab.id === activeTabId ? 0 : -1"
           draggable="true"
           @click="activeTabId = tab.id"
+          @keydown="onTabKeydown($event, idx)"
           @dragstart="onTabDragStart($event, idx)"
           @dragover.prevent="onTabDragOver($event, idx)"
           @dragleave="onTabDragLeave"
-          @dragend="onTabDragEnd($event)"
+          @dragend="onTabDragEnd"
           @drop="onTabDrop($event, idx)"
         >
           <span class="doc-tab-label">
             <el-icon v-if="tab.isLoading" class="doc-tab-loading"><Loading /></el-icon>
             <span class="doc-tab-text">{{ tab.name }}</span>
           </span>
-          <button class="doc-tab-close" type="button" @click.stop="removeTab(tab.id)">×</button>
+          <button class="doc-tab-close" type="button" @click.stop="removeTab(tab.id)" :tabindex="-1">×</button>
         </div>
       </div>
     </div>
@@ -67,7 +71,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 defineOptions({ name: 'mdViewer' })
 import { i18n } from '@/i18n'
@@ -95,7 +99,6 @@ const seenPayloadKeys = new Map()
 const MAX_SEEN_PAYLOAD_KEYS = 200
 // D2: 每个文档标签页的滚动位置记忆
 const tabScrollTops = new Map()
-let _activeTabIdOld = ''
 
 // D3: 标签页拖拽排序
 const dragIndex = ref(-1)
@@ -105,7 +108,6 @@ function onTabDragStart(e, index) {
   dragIndex.value = index
   e.dataTransfer.effectAllowed = 'move'
   e.dataTransfer.setData('text/plain', String(index))
-  if (e.target) e.target.style.opacity = '0.45'
 }
 
 function onTabDragOver(e, index) {
@@ -118,8 +120,7 @@ function onTabDragLeave() {
   dragOverIndex.value = -1
 }
 
-function onTabDragEnd(e) {
-  if (e.target) e.target.style.opacity = ''
+function onTabDragEnd() {
   dragIndex.value = -1
   dragOverIndex.value = -1
 }
@@ -127,11 +128,36 @@ function onTabDragEnd(e) {
 function onTabDrop(e, toIndex) {
   e.preventDefault()
   const fromIndex = dragIndex.value
-  if (e.target) e.target.style.opacity = ''
   dragIndex.value = -1
   dragOverIndex.value = -1
   if (fromIndex < 0 || fromIndex === toIndex) return
   reorderTabs(fromIndex, toIndex)
+}
+
+// D3: 键盘导航 — Left/Right 箭头切换标签页，Home/End 跳到首/尾
+function onTabKeydown(e, idx) {
+  let targetIdx = -1
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    targetIdx = idx > 0 ? idx - 1 : tabs.value.length - 1
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    targetIdx = idx < tabs.value.length - 1 ? idx + 1 : 0
+  } else if (e.key === 'Home') {
+    e.preventDefault()
+    targetIdx = 0
+  } else if (e.key === 'End') {
+    e.preventDefault()
+    targetIdx = tabs.value.length - 1
+  }
+  if (targetIdx >= 0 && tabs.value[targetIdx]) {
+    activeTabId.value = tabs.value[targetIdx].id
+    // 聚焦新标签页以便继续键盘导航
+    nextTick(() => {
+      const tabEl = document.querySelector('.doc-tab[aria-selected="true"]')
+      if (tabEl) tabEl.focus()
+    })
+  }
 }
 
 function reorderTabs(fromIndex, toIndex) {
@@ -323,7 +349,6 @@ watch(activeTabId, (newId, oldId) => {
   if (oldId && oldId !== newId) {
     const body = document.querySelector('.doc-body')
     if (body) tabScrollTops.set(oldId, body.scrollTop)
-    _activeTabIdOld = oldId
   }
 
   if (_restoring || !newId) return
@@ -343,14 +368,13 @@ watch(activeTabId, (newId, oldId) => {
 function restoreDocTabScroll(tabId) {
   if (!tabId) return
   const saved = tabScrollTops.get(tabId)
-  if (saved == null || saved <= 0) return
-  // 需要等 viewer 渲染完成再恢复
+  if (saved == null) return
   const body = document.querySelector('.doc-body')
   if (!body) return
-  // 延迟到下一个渲染周期确保内容已挂载
   requestAnimationFrame(() => {
+    // rAF 内重新查询确保 viewer 已渲染挂载（DOM 可能在 guard 后被替换）
     const el = document.querySelector('.doc-body')
-    if (el) el.scrollTop = saved
+    if (el) el.scrollTop = Math.max(0, saved)
   })
 }
 
@@ -679,7 +703,7 @@ onActivated(() => {
 }
 
 .doc-tab.dragging {
-  opacity: 0.35;
+  opacity: 0.45;
 }
 
 .doc-tab.drag-over {
