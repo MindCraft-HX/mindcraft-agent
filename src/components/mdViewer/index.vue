@@ -6,6 +6,7 @@
     data-path-context-source="document-viewer"
     @dragover.prevent
     @drop.prevent="onDrop"
+    @keydown="onDocKeydown"
   >
     <div class="doc-toolbar">
       <div class="doc-toolbar-left">
@@ -158,6 +159,17 @@ function onTabKeydown(e, idx) {
       if (tabEl) tabEl.focus()
     })
   }
+}
+
+// D3: Ctrl+Tab / Ctrl+Shift+Tab 全局切换文档标签页
+function onDocKeydown(e) {
+  if (!e.ctrlKey || e.key !== 'Tab' || tabs.value.length < 2) return
+  e.preventDefault()
+  const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
+  const next = e.shiftKey
+    ? (idx > 0 ? idx - 1 : tabs.value.length - 1)
+    : (idx < tabs.value.length - 1 ? idx + 1 : 0)
+  if (tabs.value[next]) activeTabId.value = tabs.value[next].id
 }
 
 function reorderTabs(fromIndex, toIndex) {
@@ -359,6 +371,8 @@ async function restoreDocTabs() {
         }
       }
     }
+    // D4: 恢复完成后触发持久化（upsertTab 的 schedulePersist 在 _restoring 期间被拦住了）
+    schedulePersist()
   } catch (_) {}
 }
 
@@ -588,6 +602,10 @@ onActivated(() => {
 
 <style scoped>
 .doc-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
   --doc-bg: var(--cc-bg, #ffffff);
   --doc-paper: var(--cc-bg-secondary, #ffffff);
   --doc-line: var(--cc-border-medium, #e5e7eb);
