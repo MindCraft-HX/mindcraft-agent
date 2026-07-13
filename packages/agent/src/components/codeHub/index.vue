@@ -816,6 +816,12 @@ watch(
   overflow-x: auto; overflow-y: hidden;
   padding: 0 4px; gap: 0;
   flex-shrink: 0; user-select: none;
+  -webkit-app-region: drag;
+}
+.codehub-tab,
+.codehub-tab-close,
+.codehub-tab-add {
+  -webkit-app-region: no-drag;
 }
 .codehub-tab {
   display: inline-flex; align-items: center; gap: 6px;

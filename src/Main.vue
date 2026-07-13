@@ -291,7 +291,7 @@ window.electronAPI?.openTabByName?.((progress) => {
 .content-layout::before {
   content: '';
   display: block;
-  height: 18px;
+  height: 8px;
   margin-right: 90px;
   flex-shrink: 0;
   -webkit-app-region: drag;

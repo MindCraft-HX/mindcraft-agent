@@ -142,6 +142,7 @@ function onDrop(e, toIndex) {
   overflow-x: auto; overflow-y: hidden; user-select: none; flex-shrink: 0;
   padding: 0 4px;
   gap: 6px;
+  -webkit-app-region: drag;
 }
 
 .project-tabs {
@@ -165,6 +166,7 @@ function onDrop(e, toIndex) {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  -webkit-app-region: no-drag;
   min-width: 92px;
   max-width: 220px;
   transition: background 0.12s, color 0.12s;
@@ -252,6 +254,7 @@ function onDrop(e, toIndex) {
   justify-content: center;
   flex: 0 0 auto;
   transition: background 0.12s, color 0.12s;
+  -webkit-app-region: no-drag;
 }
 .project-tab:hover .project-tab-close { color: var(--cc-text-tertiary); }
 .project-tab-close:hover { background: var(--cc-bg); color: var(--cc-btn-text-hover); }
@@ -288,6 +291,7 @@ function onDrop(e, toIndex) {
   cursor: pointer; display: flex; align-items: center;
   justify-content: center; margin-left: 4px; margin-right: 4px;
   flex-shrink: 0; transition: all 0.1s;
+  -webkit-app-region: no-drag;
 }
 .add-project-btn:hover { background: var(--cc-menu-hover); color: var(--cc-primary); }
 

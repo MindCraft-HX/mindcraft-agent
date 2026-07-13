@@ -67,6 +67,7 @@ body{
 }
 
 /* 窗口拖拽期间只关闭已知重效果，避免全局 * 选择器给整棵 DOM 带来样式匹配开销 */
+html.is-window-dragging .doc-toolbar,
 html.is-window-dragging .theme-picker-popover,
 html.is-window-dragging .locale-picker-popover,
 html.is-window-dragging .selection-copy-btn,

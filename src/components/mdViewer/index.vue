@@ -733,6 +733,7 @@ onActivated(() => {
   background: var(--cc-bg-elevated, rgba(255, 255, 255, 0.92));
   backdrop-filter: blur(12px);
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .doc-toolbar-left,
@@ -741,6 +742,11 @@ onActivated(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+/* no-drag: toolbar buttons (el-button needs :deep() in scoped style) */
+.doc-toolbar-left :deep(.el-button) {
+  -webkit-app-region: no-drag;
 }
 
 .doc-type {
@@ -773,6 +779,7 @@ onActivated(() => {
   padding: 0 12px;
   min-height: 36px;
   overflow-x: auto;
+  -webkit-app-region: drag;
   overflow-y: hidden;
   user-select: none;
 }
@@ -795,6 +802,7 @@ onActivated(() => {
   color: var(--doc-muted);
   cursor: pointer;
   user-select: none;
+  -webkit-app-region: no-drag;
   white-space: nowrap;
   min-width: 0;
   max-width: 200px;
@@ -833,6 +841,7 @@ onActivated(() => {
   color: var(--doc-muted);
   cursor: pointer;
   display: inline-flex;
+  -webkit-app-region: no-drag;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;

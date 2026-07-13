@@ -246,6 +246,7 @@ function imgPreviewSrc(img) {
   border-bottom: 1px solid var(--cc-border, #2a2a2a);
   background: var(--cc-bg-deepest, #0d1117);
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .chat-title {
@@ -283,6 +284,7 @@ function imgPreviewSrc(img) {
   cursor: pointer;
   transition: all 0.12s;
   white-space: nowrap;
+  -webkit-app-region: no-drag;
 
   &:hover:not(:disabled) {
     border-color: var(--cc-primary, #c6613f);
