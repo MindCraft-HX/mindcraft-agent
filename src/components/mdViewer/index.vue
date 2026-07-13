@@ -15,6 +15,7 @@
         <span class="doc-type">{{ currentTab.ext ? `.${currentTab.ext}` : 'file' }}</span>
         <span class="doc-path" :title="currentTab.filePath || currentTab.name">{{ currentTab.filePath || currentTab.name }}</span>
       </div>
+      <div class="drag-spacer"></div>
     </div>
 
     <!-- 自定义标签栏支持拖拽排序 + 键盘导航 + 无障碍 -->
@@ -44,6 +45,7 @@
           <button class="doc-tab-close" type="button" @click.stop="removeTab(tab.id)" :tabindex="-1">×</button>
         </div>
       </div>
+      <div class="drag-spacer"></div>
     </div>
 
     <div v-if="currentTab" ref="docBodyRef" class="doc-body" :class="{ 'is-loading': currentTab.isLoading }">
@@ -724,9 +726,10 @@ onActivated(() => {
 }
 
 .doc-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--doc-line);
@@ -742,6 +745,9 @@ onActivated(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+.doc-toolbar-right {
+  margin-left: auto;
 }
 
 /* no-drag: toolbar buttons (el-button needs :deep() in scoped style) */
@@ -771,6 +777,7 @@ onActivated(() => {
 
 /* 自定义标签栏（替代 el-tabs）支持拖拽排序 */
 .doc-tabs-bar {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;

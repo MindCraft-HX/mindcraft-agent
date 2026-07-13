@@ -287,11 +287,11 @@ window.electronAPI?.openTabByName?.((progress) => {
   -webkit-app-region: no-drag;
 }
 
-/* === 内容区顶部拖拽区（::before 伪元素，无独立背景，渐变由 content-layout 统一控制） === */
+/* === 内容区顶部拖拽区 === */
 .content-layout::before {
   content: '';
   display: block;
-  height: 8px;
+  height: 10px;
   margin-right: 90px;
   flex-shrink: 0;
   -webkit-app-region: drag;

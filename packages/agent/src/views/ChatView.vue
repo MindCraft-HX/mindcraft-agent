@@ -34,6 +34,7 @@
             :title="$t('chat.compress')"
           >{{ $t('chat.compressShort') }}</button>
         </div>
+        <div class="drag-spacer"></div>
       </div>
 
       <!-- 消息列表 -->
@@ -239,9 +240,10 @@ function imgPreviewSrc(img) {
 }
 
 .chat-topbar {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 10px 16px;
   border-bottom: 1px solid var(--cc-border, #2a2a2a);
   background: var(--cc-bg-deepest, #0d1117);
@@ -263,6 +265,7 @@ function imgPreviewSrc(img) {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .chat-summary-indicator {

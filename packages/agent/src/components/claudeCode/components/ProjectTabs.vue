@@ -35,6 +35,7 @@
     <button class="add-project-btn" @click="$emit('newProject')" :title="$t('codehub.newTab')">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
     </button>
+    <div class="drag-spacer"></div>
 
     <!-- 右键菜单 -->
     <div v-if="contextMenuVisible" class="context-menu" :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }">
@@ -137,6 +138,7 @@ function onDrop(e, toIndex) {
 
 <style scoped>
 .project-tabs-bar {
+  position: relative;
   display: flex; align-items: center; background: var(--cc-bg-tertiary);
   border-bottom: 1px solid var(--cc-border); min-height: 32px; height: 32px;
   overflow-x: auto; overflow-y: hidden; user-select: none; flex-shrink: 0;
@@ -144,7 +146,6 @@ function onDrop(e, toIndex) {
   gap: 6px;
   -webkit-app-region: drag;
 }
-
 .project-tabs {
   display: flex;
   align-items: center;

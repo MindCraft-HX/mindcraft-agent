@@ -66,6 +66,16 @@ body{
   }
 }
 
+/* Drag spacer：放在 header/tab 栏末尾，右侧 90px no-drag 给窗口按钮让位 */
+.drag-spacer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 90px;
+  -webkit-app-region: no-drag;
+}
+
 /* 窗口拖拽期间只关闭已知重效果，避免全局 * 选择器给整棵 DOM 带来样式匹配开销 */
 html.is-window-dragging .doc-toolbar,
 html.is-window-dragging .theme-picker-popover,
