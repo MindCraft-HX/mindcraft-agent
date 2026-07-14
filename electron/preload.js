@@ -85,6 +85,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
     return () => ipcRenderer.removeListener(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
   },
+  onEditorOpenSearch: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on(CORE_CHANNELS.EDITOR_OPEN_SEARCH, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.EDITOR_OPEN_SEARCH, handler)
+  },
+  setEditorSearchEnabled: (enabled) => ipcRenderer.send(CORE_CHANNELS.EDITOR_SEARCH_ENABLED, Boolean(enabled)),
 
   // Agent 窗口
   openClaudeWin: () => ipcRenderer.invoke(CORE_CHANNELS.OPEN_CLAUDE_WIN),
@@ -133,13 +139,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   clipboard: () => clipboard,
 
   // 页面搜索
-  sendSearchPage: (info) => ipcRenderer.send(CORE_CHANNELS.SEARCH_PAGE, info),
-  closeSearchPage: (info) => ipcRenderer.send(CORE_CHANNELS.CLOSE_SEARCH_PAGE, info),
-  foundInPage: (callback) => {
-    ipcRenderer.on(CORE_CHANNELS.FOUND_IN_PAGE, (event, progress) => {
-      callback(progress);
-    });
-  },
 
   // 任务栏
   flashTaskbar: () => ipcRenderer.invoke(CORE_CHANNELS.FLASH_TASKBAR),

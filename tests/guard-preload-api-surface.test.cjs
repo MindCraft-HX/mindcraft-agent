@@ -39,9 +39,6 @@ const T188_GATED = [
 const SUPPORTED_APIS = [
   'openExternalWindow',
   'openSystemSettings',
-  'sendSearchPage',
-  'closeSearchPage',
-  'foundInPage',
   'openMdWin',
   'openFolder',
   'openFileWithDefault',

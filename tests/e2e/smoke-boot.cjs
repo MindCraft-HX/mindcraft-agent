@@ -214,7 +214,7 @@ describe('Electron E2E Boot Smoke (T196)', () => {
 
     // These are the critical APIs that must exist
     const critical = ['openExternalWindow', 'openFolder', 'openFileWithDefault',
-                      'openMdWin', 'sendSearchPage', 'selectAndReadFile'];
+                      'openMdWin', 'selectAndReadFile'];
     for (const key of critical) {
       if (!readyData.preloadKeys.includes(key)) {
         console.warn(`[e2e] preload key "${key}" not found — may be intentionally removed`);

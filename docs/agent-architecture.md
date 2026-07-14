@@ -272,7 +272,6 @@ App 专属字段必须写入 MindCraft 自有配置，例如 `claude-internal.js
 | 告警 | 初步归类 |
 |------|----------|
 | `ReferenceError: scrollBottom is not defined` | renderer 组件事件 handler 作用域/命名问题，优先查对应 `index.vue` 完整函数 |
-| `MaxListenersExceededWarning: search-page/stop-search/close-search-page` | host Electron IPC listener 注册泄漏，优先查 `electron/searchView/**` |
 | `[codex-proxy] stream: natural end (no [DONE])` | 上游 SSE 自然结束，需结合后续 `turn.completed` 判断，不等于错误 |
 | Vue `Unhandled error during execution of component event handler` | 通常是 handler 内异常的外层表现，先定位后续具体 error |
 

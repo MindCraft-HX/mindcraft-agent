@@ -32,9 +32,6 @@
 | `openCodexWin` | ✅ L89 | ✅ L304 | **NONE found** | 🟡 Dead, gated by T188 product decision |
 | `openExternalWindow` | ✅ | ✅ | Active (agent settings, mdViewer) | ✅ Keep |
 | `openSystemSettings` | ✅ | ✅ | Needs verification | 🟡 Verify before touch |
-| `sendSearchPage` | ✅ L91 | ✅ | search.html | ✅ Keep (supported subsystem) |
-| `closeSearchPage` | ✅ L92 | ✅ | search.html | ✅ Keep |
-| `foundInPage` | ✅ L93 | ✅ | search.html | ✅ Keep |
 | `load-locale` / `save-locale` | — (agent ipc) | ✅ | Active | ✅ Keep |
 
 ### Security Note
@@ -164,7 +161,6 @@ All IPC channels are registered through `packages/agent/shared/ipcChannels.js`. 
 | Area | Reason |
 |---|---|
 | `src/utils/MarkdownIt.js` | Active mdViewer renderer |
-| `electron/searchView/**` | Supported host subsystem |
 | Lightweight Chat (`/main/chat`) | Active route |
 | All T188 compatibility paths | `docs/compatibility-register.md` |
 | T184 SessionIndex files | Separate active implementation |

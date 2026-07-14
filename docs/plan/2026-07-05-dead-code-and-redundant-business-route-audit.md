@@ -91,23 +91,6 @@ Recommended action:
 2. If no supported feature uses them, remove preload exposure and main handlers together.
 3. If a feature still needs them, replace with a narrow `openExternalWindow` / mdViewer / plugin-view API.
 
-### 2.4 Search BrowserView
-
-`electron/searchView/**` is still wired:
-
-- `electron/main.js` calls `initCodeWin()`.
-- `electron/preload.js` exposes `sendSearchPage`, `closeSearchPage`, `foundInPage`.
-- `electron/searchView/search.html` uses these APIs.
-
-This is not dead by static evidence. However it is an old BrowserView subsystem with IPC listener lifecycle risk. Keep it out of deletion candidates unless a product decision removes in-page search.
-
-→ **Registered as supported host subsystem. Not a deletion candidate.** This section stays in the audit only to prevent it from being flagged again in future scans.
-
-Follow-up:
-
-- Replace with a simpler in-window search path in a later release.
-- Add listener lifecycle checks for `search-page`, `close-search-page`, `found-in-page`.
-
 ### 2.5 Lightweight Chat
 
 `/main/chat` and `packages/agent/src/views/ChatView.vue` are active in router and sidebar. This is not dead code.
@@ -151,7 +134,6 @@ These may look redundant but should not be deleted under T187:
 | T184 SessionIndex files | Actively being implemented separately. |
 | T185/T186 docs | Newly registered architecture follow-ups. |
 | `src/utils/MarkdownIt.js` | Active mdViewer renderer and tests depend on it. |
-| `electron/searchView/**` | Still wired through main/preload/search.html. |
 | lightweight Chat | Active route and product scope. |
 | legacy provider projection | Belongs to T188 compatibility exit window. |
 | stream/abort/done/session map logic | Belongs to T186 lifecycle audit, not dead-code cleanup. |

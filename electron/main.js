@@ -59,7 +59,6 @@ const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/e
 const { openClaudeWin } = require("./claudeWindow/index.js");
 const { openCodexWin } = require("./codexWindow/index.js");
 
-const { initCodeWin } = require("./searchView/index.js");
 const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
 
 // ---- Extracted Phase 7 modules ----
@@ -150,6 +149,11 @@ function createWindow() {
   });
   ipcMain.on(CORE_CHANNELS.WINDOW_CLOSE, () => win?.close());
   ipcMain.handle(CORE_CHANNELS.WINDOW_IS_MAXIMIZED, () => win?.isMaximized() ?? false);
+  ipcMain.on(CORE_CHANNELS.EDITOR_SEARCH_ENABLED, (event, enabled) => {
+    if (BrowserWindow.fromWebContents(event.sender) === win) {
+      win._editorSearchEnabled = Boolean(enabled)
+    }
+  })
 
   // ── 窗口拖拽性能优化（extracted to dragPerformance.js）──
   const { clearDragState } = setupDragOptimization(win)
@@ -229,22 +233,10 @@ function createWindow() {
       return
     }
 
-    // Ctrl+F / Ctrl+H：阻止 Electron 内置查找，转发给渲染进程的 CodeMirror
-    if ((key === 'F' || key === 'H') && ctrlOrMeta && !input.shift && !input.alt) {
-      // sendInputEvent 同步触发 before-input-event → 无限递归
-      // 用 _searchForwardGuard 防重入：首次拦截，重入放行
-      if (win._searchForwardGuard) {
-        win._searchForwardGuard = false
-        return
-      }
+    // An active CodeMirror owns Ctrl+F/H for the whole document editor surface.
+    if (win._editorSearchEnabled && (key === 'F' || key === 'H') && ctrlOrMeta && !input.shift && !input.alt) {
       event.preventDefault()
-      win._searchForwardGuard = true
-      setTimeout(() => { win._searchForwardGuard = false }, 500)
-      win.webContents.sendInputEvent({
-        type: 'keyDown',
-        keyCode: input.keyCode,
-        modifiers: input.control ? ['control'] : ['meta'],
-      })
+      win.webContents.send(CORE_CHANNELS.EDITOR_OPEN_SEARCH)
       return
     }
 
@@ -364,7 +356,6 @@ app.whenReady().then(async () => {
 
   win.once("ready-to-show", () => {
     win.show();
-    initCodeWin({win, NODE_ENV})
   })
 
   app.on("activate", function () {

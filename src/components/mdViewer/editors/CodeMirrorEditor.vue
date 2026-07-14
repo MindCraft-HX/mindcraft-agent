@@ -3,14 +3,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, onActivated, onDeactivated, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { EditorView, keymap, lineNumbers, highlightSpecialChars, drawSelection } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { history, redo, undo } from '@codemirror/commands'
 import { closeBracketsKeymap, closeBrackets } from '@codemirror/autocomplete'
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
-import { highlightSelectionMatches, openSearchPanel, findNext, findPrevious, closeSearchPanel } from '@codemirror/search'
+import { highlightSelectionMatches, openSearchPanel, findNext, findPrevious, closeSearchPanel, search } from '@codemirror/search'
 import { getLanguageExtension } from '../codeMirrorHelper.mjs'
 
 // ── VSCode Dark+ 风格高亮（通过 CSS 变量自动适配 4 套主题） ──
@@ -61,14 +61,7 @@ let editorView = null
 function buildExtensions() {
   const exts = [
     lineNumbers(),
-    foldGutter({
-      markerDOM: (open) => {
-        const span = document.createElement('span')
-        span.className = 'cm-fold-icon'
-        span.textContent = open ? '⌄' : '›'
-        return span
-      },
-    }),
+    foldGutter({ openText: '▾', closedText: '▸' }),
     highlightSpecialChars(),
     drawSelection(),
     history(),
@@ -77,6 +70,7 @@ function buildExtensions() {
     closeBrackets(),
     indentOnInput(),
     syntaxHighlighting(customHighlightStyle),
+    search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([
       ...closeBracketsKeymap,
@@ -167,10 +161,25 @@ watch(() => props.wrapLines, () => {
 })
 
 onMounted(() => {
+  window.electronAPI?.setEditorSearchEnabled?.(true)
   nextTick(() => createEditor())
 })
 
+onActivated(() => {
+  window.electronAPI?.setEditorSearchEnabled?.(true)
+})
+
+onDeactivated(() => {
+  window.electronAPI?.setEditorSearchEnabled?.(false)
+})
+
+const removeEditorSearchListener = window.electronAPI?.onEditorOpenSearch?.(() => {
+  if (editorView) openSearchPanel(editorView)
+})
+
 onBeforeUnmount(() => {
+  removeEditorSearchListener?.()
+  window.electronAPI?.setEditorSearchEnabled?.(false)
   if (editorView) {
     editorView.destroy()
     editorView = null
@@ -263,9 +272,8 @@ defineExpose({ focus, getEditorView })
 
 /* ── 折叠 gutter（chevron 图标） ── */
 .cm-editor-host :deep(.cm-foldGutter) {
-  width: 20px;
+  width: 24px;
 }
-/* 覆盖 CM6 默认 ::before 三角箭头，用 markerDOM 的 text chevron 替代 */
 .cm-editor-host :deep(.cm-foldGutter .cm-gutterElement) {
   display: flex;
   align-items: center;
@@ -275,27 +283,18 @@ defineExpose({ focus, getEditorView })
   border: none !important;
   outline: none !important;
   cursor: pointer;
-  opacity: 0.45;
-  transition: opacity 0.12s;
-}
-.cm-editor-host :deep(.cm-foldGutter .cm-gutterElement::before) {
-  content: none !important;
+  border-radius: 3px;
+  color: var(--cc-text-dim, #94a3b8);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.72;
+  transition: background-color 0.12s, color 0.12s, opacity 0.12s;
 }
 .cm-editor-host :deep(.cm-foldGutter .cm-gutterElement:hover) {
-  opacity: 0.8;
-  background: transparent !important;
+  opacity: 1;
+  background: color-mix(in srgb, var(--cc-primary, #60a5fa) 14%, transparent) !important;
   outline: none !important;
-}
-
-/* ── 折叠图标（markerDOM 返回的 span） ── */
-.cm-editor-host :deep(.cm-fold-icon) {
-  font-size: 13px;
-  line-height: 1;
-  color: var(--cc-text-dim, #64748b);
-  user-select: none;
-  pointer-events: none;
-}
-.cm-editor-host :deep(.cm-foldGutter .cm-gutterElement:hover .cm-fold-icon) {
   color: var(--cc-text, #e2e8f0);
 }
 
@@ -335,19 +334,70 @@ defineExpose({ focus, getEditorView })
 .cm-editor-host :deep(.cm-panels) {
   background: var(--cc-bg-deepest, var(--cc-bg, #0a0a0a));
   color: var(--cc-text, #e2e8f0);
-  border-color: var(--cc-border-medium, rgba(148, 163, 184, 0.14));
+  border-bottom: 1px solid var(--cc-border-medium, rgba(148, 163, 184, 0.14));
 }
-.cm-editor-host :deep(.cm-panels .cm-button) {
-  background: var(--cc-primary, #2563eb);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
+.cm-editor-host :deep(.cm-panel.cm-search) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  overflow-x: auto;
+  font-size: 11px;
 }
-.cm-editor-host :deep(.cm-panels input) {
+.cm-editor-host :deep(.cm-panels .cm-textfield) {
+  box-sizing: border-box;
+  min-width: 132px;
+  height: 24px;
+  margin: 0;
+  padding: 3px 8px;
   background: var(--cc-bg-code-deep, var(--cc-bg, #111827));
   color: var(--cc-text, #e2e8f0);
-  border: 1px solid var(--cc-border-medium, rgba(148, 163, 184, 0.2));
-  border-radius: 6px;
-  padding: 4px 8px;
+  border: 1px solid var(--cc-border-medium, rgba(148, 163, 184, 0.26));
+  border-radius: 4px;
+  font: inherit;
+}
+.cm-editor-host :deep(.cm-panels .cm-textfield:focus) {
+  outline: none;
+  border-color: var(--cc-primary, #60a5fa);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc-primary, #60a5fa) 40%, transparent);
+}
+.cm-editor-host :deep(.cm-panels .cm-button) {
+  height: 22px;
+  margin: 0;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--cc-text-dim, #94a3b8);
+  border: 1px solid var(--cc-border-medium, rgba(148, 163, 184, 0.22));
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.cm-editor-host :deep(.cm-panels .cm-button:hover) {
+  color: var(--cc-text, #e2e8f0);
+  border-color: var(--cc-primary, #60a5fa);
+}
+.cm-editor-host :deep(.cm-panel.cm-search label) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--cc-text-dim, #94a3b8);
+  white-space: nowrap;
+  font-size: 10px;
+}
+.cm-editor-host :deep(.cm-panel.cm-search input[type='checkbox']) {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--cc-primary, #60a5fa);
+}
+.cm-editor-host :deep(.cm-panel.cm-search [name='close']) {
+  margin-left: auto;
+  min-width: 24px;
+  padding: 0;
+  border: 0;
+  font-size: 16px;
+  line-height: 18px;
 }
 </style>

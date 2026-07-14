@@ -326,9 +326,6 @@ const CORE_CHANNELS = Object.freeze({
   LOCAL_SEARCH_TEXT: 'local-search-text',
   LOCAL_SEARCH_FILES: 'local-search-files',
   LOCAL_SEARCH_DIAGNOSE: 'local-search-diagnose',
-  SEARCH_PAGE: 'search-page',
-  CLOSE_SEARCH_PAGE: 'close-search-page',
-  STOP_SEARCH: 'stop-search',
 
   // Session instruction
   GET_SESSION_INSTRUCTION: 'get-session-instruction',
@@ -433,9 +430,10 @@ const CORE_CHANNELS = Object.freeze({
   SAVE_THEME: 'save-theme',
   FLASH_TASKBAR: 'flash-taskbar',
   APPEND_TASK_LOG: 'append-task-log',
-  FOUND_IN_PAGE: 'found-in-page',
   MD_CONTENT: 'md-content',
   MD_VIEWER_READY: 'md-viewer-ready',
+  EDITOR_OPEN_SEARCH: 'editor-open-search',
+  EDITOR_SEARCH_ENABLED: 'editor-search-enabled',
 });
 
 /**
