@@ -100,7 +100,6 @@
         @update:editorText="onEditorChange(activeTabId, $event)"
         @update:dirty="(dirty) => { if (!dirty) markClean(activeTabId, currentTab?.text || '') }"
         @update:modelValue="onEditorChange(activeTabId, $event)"
-        @change="onEditorChange(activeTabId, $event)"
       />
       <div v-if="currentTab.isLoading" class="doc-loading-mask">
         <div class="doc-loading-card">
@@ -227,8 +226,8 @@ const _isDocActive = ref(false)
 function onDocGlobalKeydown(e) {
   if (!_isDocActive.value) return
 
-  // Ctrl+S 保存
-  if (e.ctrlKey && !e.shiftKey && !e.metaKey && e.key === 's') {
+    // Ctrl+S / Cmd+S 保存
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 's') {
     e.preventDefault()
     e.stopPropagation()
     saveCurrentTab()
@@ -281,7 +280,6 @@ const currentViewerProps = computed(() => {
     editMode: mode,
     isEditable: editable,
     editorText: state?.text ?? tab.text,
-    isDirty: state?.isDirty ?? false,
   }
 })
 const currentContextDir = computed(() => {
@@ -770,7 +768,10 @@ async function saveCurrentTab() {
 
   try {
     const encoder = new TextEncoder()
-    await window.electronAPI?.writeFileSync?.(tab.filePath, encoder.encode(state.text))
+    const result = await window.electronAPI?.writeFileSync?.(tab.filePath, encoder.encode(state.text))
+    if (result === undefined && !window.electronAPI) {
+      throw new Error('electronAPI unavailable')
+    }
     markClean(activeTabId.value, state.text)
     ElMessage.success(i18n.global.t('doc.saved'))
   } catch (err) {

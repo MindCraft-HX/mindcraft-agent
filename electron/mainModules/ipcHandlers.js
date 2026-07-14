@@ -98,7 +98,9 @@ function setupIpcHandlers(env, platform) {
   });
 
   ipcMain.handle(CORE_CHANNELS.WRITE_FILE_SYNC, async (event, path, data) => {
-    fs.writeFileSync(path, data);
+    // IPC 结构化克隆后 data 可能是 Uint8Array（非 Node Buffer），
+    // Buffer.from 确保 fs.writeFileSync 收到正确的二进制数据
+    fs.writeFileSync(path, Buffer.from(data));
   });
   ipcMain.handle(CORE_CHANNELS.UNLINK_FILE_SYNC, async (event, path) => {
     fs.unlinkSync(path);

@@ -7,7 +7,7 @@
     <!-- 编辑 / 分屏模式：MarkdownEditor -->
     <template v-else>
       <MarkdownEditor
-        :text="text"
+        :text="editorText || text"
         :ext="ext"
         :file-path="filePath"
         :edit-mode="editMode"
@@ -29,6 +29,7 @@ const props = defineProps({
   editMode: { type: String, default: 'preview-only' },
   ext: { type: String, default: 'md' },
   filePath: { type: String, default: '' },
+  editorText: { type: String, default: '' },
 })
 
 defineEmits(['update:editorText', 'update:dirty'])

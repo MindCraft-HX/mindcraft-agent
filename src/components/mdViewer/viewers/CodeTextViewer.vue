@@ -191,6 +191,13 @@ const VIRTUAL_SCROLL_LINE_THRESHOLD = 800
 
 const editorRef = ref(null)
 const editorText = ref(props.text || '')
+
+// 异步文件加载完成后同步 editorText（否则编辑器显示空白）
+watch(() => props.text, (newText) => {
+  if (editorText.value === '' && newText) {
+    editorText.value = newText
+  }
+}, { immediate: true })
 const wrapLines = ref(false)
 const pendingHighlight = ref(false)
 const searchQuery = ref('')

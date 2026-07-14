@@ -239,9 +239,10 @@ function createWindow() {
       }
       event.preventDefault()
       win._searchForwardGuard = true
+      setTimeout(() => { win._searchForwardGuard = false }, 500)
       win.webContents.sendInputEvent({
         type: 'keyDown',
-        keyCode: input.key,
+        keyCode: input.keyCode,
         modifiers: input.control ? ['control'] : ['meta'],
       })
       return
