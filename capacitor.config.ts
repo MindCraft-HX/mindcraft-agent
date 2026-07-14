@@ -1,8 +1,8 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.mindcraft.app',
-  appName: 'MindCraft',
+  appId: 'com.genitop.mindcraft.agent',
+  appName: 'MindCraft-Agent',
   webDir: 'dist',
   server: {
     androidScheme: 'https'

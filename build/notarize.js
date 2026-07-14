@@ -10,9 +10,9 @@ exports.default = async function notarizing (context) {
   // 您的苹果开发者帐户的用户名
   let appleId = "sales@genitop.com"
 
-  // 应用程序专用密码，每次打包之前需要重新生成,公证完成密码即失效
+      // 应用程序专用密码，每次打包之前需要重新生成,公证完成密码即失效
   // https://account.apple.com/account/manage?ntoDisabled=true
-  let appleIdPassword = "dqhh-sxxq-iqki-ekgz" 
+  let appleIdPassword = "mmlh-ecym-nwzd-vkdy"
   // 您要公证的团队ID
   let teamId = "NL954GZL79"
   console.log("appPath ",appPath)

@@ -3,8 +3,8 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "predev": "node -e \"var c=require('child_process');try{var o=c.execSync('netstat -ano|findstr :16288|findstr LISTENING',{encoding:'utf8'});o.split(/\\r?\\n/).filter(Boolean).forEach(l=>{var p=l.trim().split(/\\s+/).pop();if(/^\\d+$/.test(p))try{c.execSync('taskkill /F /PID '+p)}catch(e){}})}catch(e){};console.log('predev done')\"",
-    "test": "node --test packages/agent/electron/pluginState.test.js packages/agent/electron/skillsSecurity.test.js packages/agent/electron/skillsCatalogCache.test.js packages/agent/electron/userDataPath.test.js packages/agent/electron/codexRuntimeConfig.test.js packages/agent/electron/codexPanelStatePaths.test.js packages/agent/electron/codexFileChangePreview.test.js packages/agent/electron/codex/fileChangeEventReducer.test.js packages/agent/electron/codex/historyToolCallCollector.test.js packages/agent/electron/sessionRegistry.test.js packages/agent/electron/sessionRegistry.codexIntegration.test.js packages/agent/electron/sessionRegistry.claudeIntegration.test.js packages/agent/electron/sessionRegistry.panelLifecycle.test.js packages/agent/electron/db/db.test.js tests/document-locator.test.cjs tests/codex-provider-toml.test.mjs tests/codex-model-slots.test.mjs tests/local-path-tokenizer.test.mjs tests/markdown-it-local-link.test.mjs tests/agent-markdown-render.test.mjs tests/codex-empty-draft-parity.test.cjs tests/agent-public-renderer-boundary.test.cjs tests/agent-runtime-boundary.test.cjs tests/agent-shared-entrypoints.test.cjs tests/agent-shared-imports.test.cjs tests/agent-vue-import-boundary.test.cjs tests/claude-meta-user-prompt.test.mjs tests/claude-background-task-tracker.test.cjs tests/claude-task-notification-stream.test.mjs tests/codex-visible-user-message.test.mjs tests/codex-event-rendering-contract.test.mjs tests/codex-stream-rendering-contract.test.mjs tests/codex-ui-event-mapper.test.mjs tests/codex-agent-done-reason.test.mjs tests/codex-file-change-history-convergence.test.cjs tests/history-hydration-authority.test.mjs tests/diff-split-view-template.test.cjs tests/chat-scroll-state.test.mjs tests/scheduled-session-refresh.test.mjs tests/panel-composable-chain.test.mjs tests/metrics-dedup-helper.test.mjs tests/skill-plugin-cache-clear.test.cjs tests/git-workspace-parser.test.cjs tests/guard-git-workspace-boundary.test.cjs tests/unified-diff-parser.test.mjs tests/git-changes-request-guard.test.mjs",
+    "predev": "node build/kill-port.js",
+    "test": "node --test packages/agent/electron/pluginState.test.js packages/agent/electron/skillsSecurity.test.js packages/agent/electron/skillsCatalogCache.test.js packages/agent/electron/userDataPath.test.js packages/agent/electron/codexRuntimeConfig.test.js packages/agent/electron/codexPanelStatePaths.test.js packages/agent/electron/codexFileChangePreview.test.js packages/agent/electron/sessionRegistry.test.js packages/agent/electron/sessionRegistry.codexIntegration.test.js packages/agent/electron/sessionRegistry.claudeIntegration.test.js packages/agent/electron/sessionRegistry.panelLifecycle.test.js packages/agent/electron/db/db.test.js tests/document-locator.test.cjs tests/codex-provider-toml.test.mjs tests/codex-model-slots.test.mjs tests/local-path-tokenizer.test.mjs tests/markdown-it-local-link.test.mjs tests/agent-markdown-render.test.mjs tests/codex-empty-draft-parity.test.cjs tests/agent-public-renderer-boundary.test.cjs tests/agent-runtime-boundary.test.cjs tests/agent-shared-entrypoints.test.cjs tests/agent-shared-imports.test.cjs tests/agent-vue-import-boundary.test.cjs tests/claude-meta-user-prompt.test.mjs tests/claude-background-task-tracker.test.cjs tests/claude-task-notification-stream.test.mjs tests/codex-visible-user-message.test.mjs tests/codex-event-rendering-contract.test.mjs tests/codex-stream-rendering-contract.test.mjs tests/codex-ui-event-mapper.test.mjs tests/codex-agent-done-reason.test.mjs tests/history-hydration-authority.test.mjs tests/diff-split-view-template.test.cjs tests/chat-scroll-state.test.mjs tests/scheduled-session-refresh.test.mjs tests/panel-composable-chain.test.mjs tests/metrics-dedup-helper.test.mjs tests/skill-plugin-cache-clear.test.cjs",
     "test:undef": "eslint --no-warn-ignored packages/agent/electron/codexAgent.js packages/agent/electron/claudeAgent.js packages/agent/electron/shared/ packages/agent/electron/claude/ packages/agent/electron/codex/",
     "test:contract": "npm run test:undef && node tests/run-contract-tests.cjs contract",
     "test:all": "npm run test:undef && node tests/run-contract-tests.cjs all",
@@ -42,7 +42,6 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
     "@DatatracCorporation/markdown-it-mermaid": "npm:@datatraccorporation/markdown-it-mermaid@^0.5.0",
-    "@openai/codex": "^0.135.0",
     "@openai/codex-sdk": "^0.135.0",
     "axios": "^1.5.1",
     "codemirror": "^6.0.2",
@@ -70,6 +69,7 @@
     "echarts": "^5.4.3",
     "electron": "^36.2.0",
     "electron-builder": "^24.6.4",
+    "electron-packager": "^17.1.2",
     "element-plus": "^2.9.0",
     "eslint": "^9.39.4",
     "form-data": "^4.0.0",
@@ -142,9 +142,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "packages/agent/**/*",
-      "!node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**",
-      "!node_modules/@openai/codex-win32-x64/**"
+      "packages/agent/**/*"
     ],
     "directories": {
       "output": "dist_electron"
