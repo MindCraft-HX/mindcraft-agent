@@ -474,6 +474,26 @@ onBeforeUnmount(() => {
     resizeObserver = null
   }
 })
+
+function getScrollTop() {
+  const editorScroll = editorRef.value?.getEditorView?.()?.scrollDOM
+  return editorScroll?.scrollTop ?? scrollContainer.value?.scrollTop ?? 0
+}
+
+function setScrollTop(top) {
+  const nextTop = Math.max(0, Number(top) || 0)
+  const editorScroll = editorRef.value?.getEditorView?.()?.scrollDOM
+  if (editorScroll) {
+    editorScroll.scrollTop = nextTop
+    return
+  }
+  if (scrollContainer.value) {
+    scrollContainer.value.scrollTop = nextTop
+    handleScroll()
+  }
+}
+
+defineExpose({ getScrollTop, setScrollTop })
 </script>
 
 <style scoped>

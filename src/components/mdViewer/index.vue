@@ -93,6 +93,7 @@
         ),
       }">
       <component
+        ref="viewerRef"
         :is="currentViewer"
         :key="currentViewerKey"
         v-bind="currentViewerProps"
@@ -133,7 +134,7 @@ import UnsupportedViewer from './viewers/UnsupportedViewer.vue'
 import { createDocumentTab } from './documentPayload.mjs'
 import { createPendingDocumentTab, finalizeDocumentTab } from './documentTabs.mjs'
 import { isEditableFile, EDIT_MODE } from './editState.mjs'
-import { usesDocumentBodyScroll } from './documentScrollPolicy.mjs'
+import { getDocumentTabScrollOwner } from './documentScrollPolicy.mjs'
 
 const VIEWER_MAP = {
   markdown: MarkdownViewer,
@@ -146,6 +147,7 @@ const VIEWER_MAP = {
 const tabs = ref([])
 const activeTabId = ref('')
 const docBodyRef = ref(null)
+const viewerRef = ref(null)
 const seenPayloadKeys = new Map()
 const MAX_SEEN_PAYLOAD_KEYS = 200
 // 每个文档标签页的滚动位置记忆
@@ -255,8 +257,8 @@ function reorderTabs(fromIndex, toIndex) {
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
-function usesCurrentDocumentBodyScroll(tab) {
-  return usesDocumentBodyScroll(tab, getCurrentEditMode(tab?.id))
+function getCurrentDocumentTabScrollOwner(tab) {
+  return getDocumentTabScrollOwner(tab, getCurrentEditMode(tab?.id))
 }
 const currentViewerKey = computed(() => {
   const tab = currentTab.value
@@ -552,15 +554,21 @@ watch(activeTabId, async (newId, oldId) => {
 function restoreDocTabScroll(tabId) {
   if (!tabId) return
   const tab = tabs.value.find(item => item.id === tabId)
-  if (!usesCurrentDocumentBodyScroll(tab)) return
+  const scrollOwner = getCurrentDocumentTabScrollOwner(tab)
+  if (!scrollOwner) return
   const saved = tabScrollTops.get(tabId)
   if (saved == null) return
   nextTick(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const activeTab = tabs.value.find(item => item.id === tabId)
+        if (activeTabId.value !== tabId || getCurrentDocumentTabScrollOwner(activeTab) !== scrollOwner) return
+        if (scrollOwner === 'code-viewer') {
+          viewerRef.value?.setScrollTop?.(saved)
+          return
+        }
         const el = docBodyRef.value
-        if (activeTabId.value !== tabId || !usesCurrentDocumentBodyScroll(activeTab) || !el) return
+        if (!el) return
         const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
         el.scrollTop = Math.min(saved, maxScroll)
       })
@@ -572,7 +580,13 @@ function restoreDocTabScroll(tabId) {
 function saveCurrentTabScroll(tabId) {
   if (!tabId) return
   const tab = tabs.value.find(item => item.id === tabId)
-  if (!usesCurrentDocumentBodyScroll(tab)) return
+  const scrollOwner = getCurrentDocumentTabScrollOwner(tab)
+  if (!scrollOwner) return
+  if (scrollOwner === 'code-viewer') {
+    const top = viewerRef.value?.getScrollTop?.()
+    if (Number.isFinite(top) && top >= 0) tabScrollTops.set(tabId, top)
+    return
+  }
   const body = docBodyRef.value
   if (!body) return
   const top = body.scrollTop
