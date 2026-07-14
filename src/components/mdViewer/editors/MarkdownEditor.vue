@@ -50,8 +50,14 @@ const emit = defineEmits(['update:editorText', 'update:dirty'])
 const editorRef = ref(null)
 const editorText = ref(props.text || '')
 
-// 预览 HTML（实时从 editorText 计算）
-const previewHtml = computed(() => renderHtml(editorText.value || ''))
+// 预览 HTML — debounce 避免每次按键都同步阻塞渲染整篇文档
+const debouncedText = ref(editorText.value || '')
+let _renderTimer = null
+watch(editorText, (val) => {
+  clearTimeout(_renderTimer)
+  _renderTimer = setTimeout(() => { debouncedText.value = val }, 150)
+})
+const previewHtml = computed(() => renderHtml(debouncedText.value || ''))
 
 // 初始化 editorText（仅在 text 变化且非用户编辑中时同步）
 watch(() => props.text, (newText) => {
