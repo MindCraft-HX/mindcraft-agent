@@ -133,6 +133,7 @@ import UnsupportedViewer from './viewers/UnsupportedViewer.vue'
 import { createDocumentTab } from './documentPayload.mjs'
 import { createPendingDocumentTab, finalizeDocumentTab } from './documentTabs.mjs'
 import { isEditableFile, EDIT_MODE } from './editState.mjs'
+import { usesDocumentBodyScroll } from './documentScrollPolicy.mjs'
 
 const VIEWER_MAP = {
   markdown: MarkdownViewer,
@@ -254,6 +255,9 @@ function reorderTabs(fromIndex, toIndex) {
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
+function usesCurrentDocumentBodyScroll(tab) {
+  return usesDocumentBodyScroll(tab, getCurrentEditMode(tab?.id))
+}
 const currentViewerKey = computed(() => {
   const tab = currentTab.value
   if (!tab) return ''
@@ -547,17 +551,19 @@ watch(activeTabId, async (newId, oldId) => {
 // 恢复标签页的滚动位置
 function restoreDocTabScroll(tabId) {
   if (!tabId) return
+  const tab = tabs.value.find(item => item.id === tabId)
+  if (!usesCurrentDocumentBodyScroll(tab)) return
   const saved = tabScrollTops.get(tabId)
   if (saved == null) return
-  const body = docBodyRef.value
-  if (!body) return
-  // nextTick (Vue DOM 更新) + rAF (浏览器绘制) 确保 viewer 渲染后高度稳定
   nextTick(() => {
     requestAnimationFrame(() => {
-      const el = docBodyRef.value
-      if (!el) return
-      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
-      el.scrollTop = Math.min(saved, maxScroll)
+      requestAnimationFrame(() => {
+        const activeTab = tabs.value.find(item => item.id === tabId)
+        const el = docBodyRef.value
+        if (activeTabId.value !== tabId || !usesCurrentDocumentBodyScroll(activeTab) || !el) return
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+        el.scrollTop = Math.min(saved, maxScroll)
+      })
     })
   })
 }
@@ -565,6 +571,8 @@ function restoreDocTabScroll(tabId) {
 // 保存指定标签页的当前滚动位置到 Map（不持久化，由调用方决定何时 persist）
 function saveCurrentTabScroll(tabId) {
   if (!tabId) return
+  const tab = tabs.value.find(item => item.id === tabId)
+  if (!usesCurrentDocumentBodyScroll(tab)) return
   const body = docBodyRef.value
   if (!body) return
   const top = body.scrollTop
@@ -747,8 +755,12 @@ function markClean(tabId, savedText) {
 
 function setEditMode(tabId, mode) {
   if (!tabId || !mode) return
+  if (getCurrentEditMode(tabId) === mode) return
+  if (activeTabId.value === tabId) saveCurrentTabScroll(tabId)
   tabEditModes[tabId] = mode
-  // 模式切换时触发 viewer 重建（通过 currentViewerKey）
+  if (mode === EDIT_MODE.PREVIEW_ONLY && activeTabId.value === tabId) {
+    restoreDocTabScroll(tabId)
+  }
 }
 
 function getCurrentEditMode(tabId) {
@@ -840,9 +852,8 @@ onBeforeUnmount(() => {
 })
 
 // 路由离开时保存当前标签页滚动位置
-onDeactivated(async () => {
+onDeactivated(() => {
   _isDocActive.value = false
-  await confirmDiscardEdits(activeTabId.value)
   saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
 })
