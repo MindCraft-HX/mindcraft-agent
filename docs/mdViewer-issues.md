@@ -255,6 +255,15 @@ Verification:
 - `npm test`
 - `node --test tests/agent-public-renderer-boundary.test.cjs tests/markdown-it-local-link.test.mjs tests/md-routing.test.cjs tests/document-locator.test.cjs tests/document-tabs.test.mjs tests/document-viewer-registry.test.mjs tests/document-link-click-context.test.cjs tests/agent-markdown-render.test.mjs`
 
+## External Markdown file association (2026-07-14)
+
+The Windows installer associates `.md` and `.markdown` with MindCraft-Agent. The main process must consume the file path both from the first process `process.argv` and from the existing process `second-instance` command line. The path is queued until the main renderer is ready, then routed through `openMdInMain()` so the document viewer receives the normal pending payload.
+
+Verification:
+- `node --test tests/file-association.test.cjs tests/md-routing.test.cjs`
+- Start with the app closed, then double-click an associated Markdown file.
+- With the app already open, double-click a second Markdown file and confirm it opens as the active document tab.
+
 Residual notes:
 - Full `node --test tests/*.test.*` still has unrelated pre-existing failures in other suites.
 - HTML/PDF iframe content keeps its own document background; only the mdViewer shell is theme-aware.

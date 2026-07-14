@@ -58,6 +58,7 @@ const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: regi
 const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
 const { openClaudeWin } = require("./claudeWindow/index.js");
 const { openCodexWin } = require("./codexWindow/index.js");
+const { findAssociatedMarkdownPath } = require('./fileAssociation');
 
 const { openMdInMain, setMainWindow, registerMdViewerHandlers } = require("./mdRouting.js");
 
@@ -88,6 +89,22 @@ if (process.env.VITE_DEV_SERVER_URL) {
 let win = null
 let isAppQuitting = false
 let isQuittingForUpdate = false
+let mainRendererReady = false
+const pendingAssociatedMarkdownPaths = []
+
+function queueAssociatedMarkdown(commandLine) {
+  const filePath = findAssociatedMarkdownPath(commandLine, { existsSync: fs.existsSync })
+  if (!filePath || pendingAssociatedMarkdownPaths.includes(filePath)) return
+  pendingAssociatedMarkdownPaths.push(filePath)
+}
+
+function openQueuedAssociatedMarkdown() {
+  if (!mainRendererReady || !win || win.isDestroyed()) return
+  while (pendingAssociatedMarkdownPaths.length) {
+    const filePath = pendingAssociatedMarkdownPaths.shift()
+    openMdInMain({ filePath, name: path.basename(filePath) })
+  }
+}
 
 app.on('before-quit', () => {
   isAppQuitting = true
@@ -101,14 +118,18 @@ if (NODE_ENV !== 'development') {
     app.quit();
   } else {
     app.on("second-instance", (_event, _commandLine, _workingDirectory) => {
+      queueAssociatedMarkdown(_commandLine)
       if (win) {
         if (win.isMinimized()) win.restore();
         win.show();
         win.focus();
       }
+      openQueuedAssociatedMarkdown()
     });
   }
 }
+
+queueAssociatedMarkdown(process.argv)
 
 function createWindow() {
   win = new BrowserWindow({
@@ -356,6 +377,8 @@ app.whenReady().then(async () => {
 
   win.once("ready-to-show", () => {
     win.show();
+    mainRendererReady = true
+    openQueuedAssociatedMarkdown()
   })
 
   app.on("activate", function () {
