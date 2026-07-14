@@ -23,6 +23,17 @@
       <div class="code-loading-subtext">{{ $t('doc.loadingCodeHint') }}</div>
     </div>
 
+    <div v-else-if="isEditable" class="code-surface code-surface--editor" :class="{ 'wrap-lines': wrapLines }">
+      <CodeMirrorEditor
+        ref="editorRef"
+        :model-value="editorText"
+        :ext="ext"
+        :file-path="filePath"
+        :wrap-lines="wrapLines"
+        @update:model-value="onEditorInput"
+      />
+    </div>
+
     <div v-else class="code-surface" :class="{ 'wrap-lines': wrapLines }">
       <div class="code-surface-toolbar">
         <div class="code-surface-hints">
@@ -142,9 +153,11 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+
+const CodeMirrorEditor = defineAsyncComponent(() => import('../editors/CodeMirrorEditor.vue'))
 
 const { t } = useI18n()
 import { highlight } from '@mindcraft/agent/render'
@@ -168,11 +181,16 @@ const props = defineProps({
   name: { type: String, default: '' },
   ext: { type: String, default: '' },
   isLoading: { type: Boolean, default: false },
+  isEditable: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['update:modelValue', 'change'])
 
 const ROW_HEIGHT = 22
 const VIRTUAL_SCROLL_LINE_THRESHOLD = 800
 
+const editorRef = ref(null)
+const editorText = ref(props.text || '')
 const wrapLines = ref(false)
 const pendingHighlight = ref(false)
 const searchQuery = ref('')
@@ -268,6 +286,12 @@ function formatBytes(bytes = 0) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function onEditorInput(newText) {
+  editorText.value = newText
+  emit('update:modelValue', newText)
+  emit('change', newText)
 }
 
 function toggleWrap() {
@@ -450,6 +474,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 .code-meta {
@@ -621,6 +646,34 @@ onBeforeUnmount(() => {
   color: var(--doc-code-surface-text, #e2e8f0);
   overflow: hidden;
   box-shadow: 0 24px 48px var(--doc-code-surface-shadow, rgba(15, 23, 42, 0.14));
+}
+
+.code-surface--editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.code-surface--editor > :deep(.cm-editor-host) {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
+.code-surface--editor > :deep(.cm-editor-host) .cm-editor {
+  background: transparent;
+}
+
+.code-surface--editor > :deep(.cm-editor-host) .cm-gutters {
+  background: var(--doc-code-gutter-bg, rgba(2, 6, 23, 0.96));
+  border-right: 1px solid var(--doc-code-gutter-border, rgba(148, 163, 184, 0.14));
+}
+
+.code-surface--editor > :deep(.cm-editor-host) .cm-activeLineGutter,
+.code-surface--editor > :deep(.cm-editor-host) .cm-activeLine {
+  background: var(--doc-code-line-active-bg, rgba(96, 165, 250, 0.14));
 }
 
 .code-surface-toolbar,

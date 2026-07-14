@@ -218,15 +218,37 @@ function createWindow() {
     win.webContents.openDevTools({ mode: 'detach' })
   }
   win.webContents.on('before-input-event', (event, input) => {
-    // Ctrl+Shift+I / Cmd+Shift+I：打开 DevTools（所有环境）
     // input.key 在不同平台可能返回大小写不一致，统一用大写比较
     const key = (input.key || '').toUpperCase()
-    if (key === 'I' && input.shift && (input.control || input.meta) && !input.alt) {
+    const ctrlOrMeta = input.control || input.meta
+
+    // Ctrl+Shift+I / Cmd+Shift+I：打开 DevTools（所有环境）
+    if (key === 'I' && input.shift && ctrlOrMeta && !input.alt) {
       win.webContents.openDevTools({ mode: 'detach' })
       event.preventDefault()
+      return
     }
+
+    // Ctrl+F / Ctrl+H：阻止 Electron 内置查找，转发给渲染进程的 CodeMirror
+    if ((key === 'F' || key === 'H') && ctrlOrMeta && !input.shift && !input.alt) {
+      // sendInputEvent 同步触发 before-input-event → 无限递归
+      // 用 _searchForwardGuard 防重入：首次拦截，重入放行
+      if (win._searchForwardGuard) {
+        win._searchForwardGuard = false
+        return
+      }
+      event.preventDefault()
+      win._searchForwardGuard = true
+      win.webContents.sendInputEvent({
+        type: 'keyDown',
+        keyCode: input.key,
+        modifiers: input.control ? ['control'] : ['meta'],
+      })
+      return
+    }
+
     // 开发模式额外：Ctrl+R / Cmd+R 刷新页面
-    if (NODE_ENV === 'development' && key === 'R' && (input.control || input.meta) && !input.shift && !input.alt) {
+    if (NODE_ENV === 'development' && key === 'R' && ctrlOrMeta && !input.shift && !input.alt) {
       win.reload()
       event.preventDefault()
     }

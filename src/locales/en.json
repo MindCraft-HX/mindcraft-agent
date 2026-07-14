@@ -859,7 +859,17 @@
 		"loadingCodeHint": "Building code framework first, then applying syntax highlighting.",
 		"highlightBusy": "Highlighting…",
 		"foldable": "Foldable",
-		"highlighting": "Text framework displayed, applying syntax highlighting…"
+		"highlighting": "Text framework displayed, applying syntax highlighting…",
+		"edit": "Edit",
+		"preview": "Preview",
+		"split": "Split",
+		"save": "Save",
+		"saved": "Saved",
+		"saveFailed": "Save failed",
+		"unsavedChanges": "Unsaved Changes",
+		"discardEditsConfirm": "You have unsaved changes. Discard them?",
+		"cannotSaveNoPath": "Cannot save: missing file path",
+		"toggleEditMode": "Toggle edit/preview mode"
 	},
 	"float": {
 		"selectModel": "Select Model",

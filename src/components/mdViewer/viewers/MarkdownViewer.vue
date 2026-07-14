@@ -1,14 +1,37 @@
 <template>
-  <div class="viewer-markdown markdown-body" v-html="html"></div>
+  <div class="viewer-markdown" :class="{ 'markdown-body': editMode === 'preview-only' }">
+    <!-- 仅预览模式：现有只读行为 -->
+    <template v-if="editMode === 'preview-only'">
+      <div v-html="html"></div>
+    </template>
+    <!-- 编辑 / 分屏模式：MarkdownEditor -->
+    <template v-else>
+      <MarkdownEditor
+        :text="text"
+        :ext="ext"
+        :file-path="filePath"
+        :edit-mode="editMode"
+        @update:editor-text="$emit('update:editorText', $event)"
+        @update:dirty="$emit('update:dirty', $event)"
+      />
+    </template>
+  </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { renderHtml } from '@/utils/MarkdownIt.js'
+
+const MarkdownEditor = defineAsyncComponent(() => import('../editors/MarkdownEditor.vue'))
 
 const props = defineProps({
   text: { type: String, default: '' },
+  editMode: { type: String, default: 'preview-only' },
+  ext: { type: String, default: 'md' },
+  filePath: { type: String, default: '' },
 })
+
+defineEmits(['update:editorText', 'update:dirty'])
 
 const html = computed(() => renderHtml(props.text || ''))
 </script>
@@ -18,6 +41,15 @@ const html = computed(() => renderHtml(props.text || ''))
   line-height: 1.8;
   font-size: 15px;
   color: var(--doc-text);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 编辑/分屏模式撑满高度 */
+.viewer-markdown > :deep(.md-editor) {
+  flex: 1;
+  min-height: 0;
 }
 
 .viewer-markdown:deep(h1),

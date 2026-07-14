@@ -859,7 +859,17 @@
 		"loadingCodeHint": "首屏先建立代码框架，再补全高亮细节。",
 		"highlightBusy": "高亮优化中",
 		"foldable": "可折叠",
-		"highlighting": "已先展示文本框架，正在补全语法高亮…"
+		"highlighting": "已先展示文本框架，正在补全语法高亮…",
+		"edit": "编辑",
+		"preview": "预览",
+		"split": "分屏",
+		"save": "保存",
+		"saved": "已保存",
+		"saveFailed": "保存失败",
+		"unsavedChanges": "未保存的修改",
+		"discardEditsConfirm": "有未保存的修改，确定放弃？",
+		"cannotSaveNoPath": "无法保存：缺少文件路径",
+		"toggleEditMode": "切换编辑/预览模式"
 	},
 	"float": {
 		"selectModel": "请选择模型",

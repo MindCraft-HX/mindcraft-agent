@@ -10,6 +10,43 @@
     <div class="doc-toolbar">
       <div class="doc-toolbar-left">
         <el-button :icon="FolderOpened" type="primary" size="small" @click="openFile">{{ $t('doc.openFile') }}</el-button>
+        <!-- MD 编辑/预览模式切换（分段控制器） -->
+        <div
+          v-if="currentTab && isEditableFile(currentTab) && currentTab.viewerType === 'markdown'"
+          class="toolbar-segment"
+        >
+          <button
+            class="toolbar-segment-btn"
+            :class="{ 'is-active': getCurrentEditMode(activeTabId) === EDIT_MODE.PREVIEW_ONLY }"
+            @click="setEditMode(activeTabId, EDIT_MODE.PREVIEW_ONLY)"
+          >
+            {{ $t('doc.preview') }}
+          </button>
+          <button
+            class="toolbar-segment-btn"
+            :class="{ 'is-active': getCurrentEditMode(activeTabId) === EDIT_MODE.EDIT_ONLY }"
+            @click="setEditMode(activeTabId, EDIT_MODE.EDIT_ONLY)"
+          >
+            {{ $t('doc.edit') }}
+          </button>
+          <button
+            class="toolbar-segment-btn"
+            :class="{ 'is-active': getCurrentEditMode(activeTabId) === EDIT_MODE.SPLIT }"
+            @click="setEditMode(activeTabId, EDIT_MODE.SPLIT)"
+          >
+            {{ $t('doc.split') }}
+          </button>
+        </div>
+        <!-- 保存 (仅可编辑文件) -->
+        <button
+          v-if="currentTab && isEditableFile(currentTab)"
+          class="toolbar-btn toolbar-btn-save"
+          :class="{ 'is-dirty': editStates[activeTabId]?.isDirty }"
+          :disabled="!editStates[activeTabId]?.isDirty"
+          @click="saveCurrentTab"
+        >
+          {{ $t('doc.save') }}
+        </button>
       </div>
       <div class="doc-toolbar-right" v-if="currentTab">
         <span class="doc-type">{{ currentTab.ext ? `.${currentTab.ext}` : 'file' }}</span>
@@ -48,12 +85,22 @@
       <div class="drag-spacer"></div>
     </div>
 
-    <div v-if="currentTab" ref="docBodyRef" class="doc-body" :class="{ 'is-loading': currentTab.isLoading }">
+    <div v-if="currentTab" ref="docBodyRef" class="doc-body" :class="{
+        'is-loading': currentTab.isLoading,
+        'is-editor': currentTab && isEditableFile(currentTab) && (
+          currentTab.viewerType === 'code' ||
+          (tabEditModes[currentTab.id] || EDIT_MODE.PREVIEW_ONLY) !== EDIT_MODE.PREVIEW_ONLY
+        ),
+      }">
       <component
         :is="currentViewer"
         :key="currentViewerKey"
         v-bind="currentViewerProps"
         @openExternal="confirmOpenExternal(currentTab)"
+        @update:editorText="onEditorChange(activeTabId, $event)"
+        @update:dirty="(dirty) => { if (!dirty) markClean(activeTabId, currentTab?.text || '') }"
+        @update:modelValue="onEditorChange(activeTabId, $event)"
+        @change="onEditorChange(activeTabId, $event)"
       />
       <div v-if="currentTab.isLoading" class="doc-loading-mask">
         <div class="doc-loading-card">
@@ -73,7 +120,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 defineOptions({ name: 'mdViewer' })
 import { i18n } from '@/i18n'
@@ -86,6 +133,7 @@ import PdfViewer from './viewers/PdfViewer.vue'
 import UnsupportedViewer from './viewers/UnsupportedViewer.vue'
 import { createDocumentTab } from './documentPayload.mjs'
 import { createPendingDocumentTab, finalizeDocumentTab } from './documentTabs.mjs'
+import { isEditableFile, EDIT_MODE } from './editState.mjs'
 
 const VIEWER_MAP = {
   markdown: MarkdownViewer,
@@ -102,6 +150,16 @@ const seenPayloadKeys = new Map()
 const MAX_SEEN_PAYLOAD_KEYS = 200
 // 每个文档标签页的滚动位置记忆
 const tabScrollTops = new Map()
+
+// 编辑状态：{ [tabId]: { text: string, isDirty: boolean } }
+// 用普通 reactive 对象而非 Map，Vue 3 模板对对象属性的访问才能正确追踪依赖
+const editStates = reactive({})
+
+// 每个 tab 的编辑模式（仅 markdown）：preview-only | edit-only | split
+const tabEditModes = reactive({})
+
+// 防止 activeTabId watcher 在取消切换时重入
+let _watcherLock = false
 
 // 标签页拖拽排序
 const dragIndex = ref(-1)
@@ -168,6 +226,15 @@ function onTabKeydown(e, idx) {
 const _isDocActive = ref(false)
 function onDocGlobalKeydown(e) {
   if (!_isDocActive.value) return
+
+  // Ctrl+S 保存
+  if (e.ctrlKey && !e.shiftKey && !e.metaKey && e.key === 's') {
+    e.preventDefault()
+    e.stopPropagation()
+    saveCurrentTab()
+    return
+  }
+
   if (!e.ctrlKey || e.key !== 'Tab' || tabs.value.length < 2) return
   e.preventDefault()
   e.stopPropagation()
@@ -188,17 +255,35 @@ function reorderTabs(fromIndex, toIndex) {
 
 const currentTab = computed(() => tabs.value.find(tab => tab.id === activeTabId.value) || null)
 const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 'unsupported'] || UnsupportedViewer)
-const currentViewerKey = computed(() => currentTab.value
-  ? `${currentTab.value.id}:${currentTab.value.viewerType}:${currentTab.value.filePath || currentTab.value.name}`
-  : '')
-const currentViewerProps = computed(() => currentTab.value ? {
-  text: currentTab.value.text,
-  binary: currentTab.value.binary,
-  filePath: currentTab.value.filePath,
-  name: currentTab.value.name,
-  ext: currentTab.value.ext,
-  isLoading: currentTab.value.isLoading,
-} : {})
+const currentViewerKey = computed(() => {
+  const tab = currentTab.value
+  if (!tab) return ''
+  const mode = tabEditModes[tab.id] || ''
+  const editable = editStates[tab.id] ? 'edit' : ''
+  return `${tab.id}:${tab.viewerType}:${tab.filePath || tab.name}:${editable}:${mode}`
+})
+const currentViewerProps = computed(() => {
+  const tab = currentTab.value
+  if (!tab) return {}
+  const editable = isEditableFile(tab)
+  const mode = editable && tab.viewerType === 'markdown'
+    ? (tabEditModes[tab.id] || EDIT_MODE.PREVIEW_ONLY)
+    : EDIT_MODE.PREVIEW_ONLY
+  const state = editStates[tab.id]
+  return {
+    text: tab.text,
+    binary: tab.binary,
+    filePath: tab.filePath,
+    name: tab.name,
+    ext: tab.ext,
+    isLoading: tab.isLoading,
+    // 编辑相关
+    editMode: mode,
+    isEditable: editable,
+    editorText: state?.text ?? tab.text,
+    isDirty: state?.isDirty ?? false,
+  }
+})
 const currentContextDir = computed(() => {
   const filePath = currentTab.value?.filePath || ''
   if (!filePath || typeof window === 'undefined' || !window.electronAPI?.pathDirname) return ''
@@ -409,9 +494,22 @@ async function restoreDocTabs() {
 
 // 保存旧标签页滚动位置，切换后恢复新标签页位置
 // 同时处理懒加载：点击已恢复但未加载内容的 tab 时，懒加载文件内容
-watch(activeTabId, (newId, oldId) => {
-  // 保存旧标签页的滚动位置
+watch(activeTabId, async (newId, oldId) => {
+  // 防止取消切换时 watcher 重入（activeTabId.value = oldId 会再次触发）
+  if (_watcherLock) {
+    _watcherLock = false
+    return
+  }
+  // 脏保护：切换离开旧 tab 时确认
   if (oldId && oldId !== newId) {
+    const ok = await confirmDiscardEdits(oldId)
+    if (!ok) {
+      // 用户取消，恢复旧 tab
+      await nextTick()
+      _watcherLock = true
+      activeTabId.value = oldId
+      return
+    }
     saveCurrentTabScroll(oldId)
     // 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
     persistDocTabs()
@@ -420,6 +518,12 @@ watch(activeTabId, (newId, oldId) => {
   if (_restoring || !newId) return
   const tab = tabs.value.find(t => t.id === newId)
   if (!tab) return
+
+  // 初始化或检查编辑状态
+  if (!tab.isLoading && tab.text) {
+    initEditState(tab)
+  }
+
   // 恢复出来的空 tab（isLoading=false 但无内容）点击时 lazy load
   const needsLazyLoad = tab.filePath
     && !tab.isLoading
@@ -517,6 +621,8 @@ async function completePayloadAsync(payload = {}, pendingTab) {
     if (activeTabId.value === pendingTab.id) {
       activeTabId.value = completedTab.id
     }
+    // 文件加载完成，初始化编辑状态
+    initEditState(completedTab)
     saveRecentDoc(ready)
   } catch (error) {
     const errorTab = {
@@ -576,12 +682,18 @@ async function onDrop(event) {
   }
 }
 
-function removeTab(id) {
+async function removeTab(id) {
+  // 脏保护
+  const ok = await confirmDiscardEdits(id)
+  if (!ok) return
+
   const idx = tabs.value.findIndex(tab => tab.id === id)
   if (idx < 0) return
   tabs.value.splice(idx, 1)
-  // 清理被删除标签页的滚动位置
+  // 清理被删除标签页的滚动位置和编辑状态
   tabScrollTops.delete(id)
+  delete editStates[id]
+  delete tabEditModes[id]
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value[Math.max(0, idx - 1)]?.id || ''
   }
@@ -605,6 +717,85 @@ async function confirmOpenExternal(tab) {
       ElMessage.warning(result)
     }
   } catch (_) {}
+}
+
+// ── 编辑状态管理 ──
+function initEditState(tab) {
+  if (!isEditableFile(tab)) return
+  if (!editStates[tab.id]) {
+    editStates[tab.id] = { text: tab.text || '', isDirty: false }
+  }
+  if (!tabEditModes[tab.id]) {
+    tabEditModes[tab.id] = EDIT_MODE.PREVIEW_ONLY
+  }
+}
+
+function onEditorChange(tabId, newText) {
+  const state = editStates[tabId]
+  if (!state) return
+  state.text = newText
+  const tab = tabs.value.find(t => t.id === tabId)
+  state.isDirty = newText !== (tab?.text || '')
+}
+
+function markClean(tabId, savedText) {
+  const state = editStates[tabId]
+  if (!state) return
+  state.text = savedText
+  state.isDirty = false
+  const tab = tabs.value.find(t => t.id === tabId)
+  if (tab) tab.text = savedText
+}
+
+function setEditMode(tabId, mode) {
+  if (!tabId || !mode) return
+  tabEditModes[tabId] = mode
+  // 模式切换时触发 viewer 重建（通过 currentViewerKey）
+}
+
+function getCurrentEditMode(tabId) {
+  return tabEditModes[tabId] || EDIT_MODE.PREVIEW_ONLY
+}
+
+// ── 保存 ──
+async function saveCurrentTab() {
+  if (!activeTabId.value) return
+  const tab = tabs.value.find(t => t.id === activeTabId.value)
+  if (!tab?.filePath) {
+    ElMessage.warning(i18n.global.t('doc.cannotSaveNoPath'))
+    return
+  }
+  const state = editStates[activeTabId.value]
+  if (!state?.isDirty) return
+
+  try {
+    const encoder = new TextEncoder()
+    await window.electronAPI?.writeFileSync?.(tab.filePath, encoder.encode(state.text))
+    markClean(activeTabId.value, state.text)
+    ElMessage.success(i18n.global.t('doc.saved'))
+  } catch (err) {
+    ElMessage.error(`${i18n.global.t('doc.saveFailed')}: ${err?.message || err}`)
+  }
+}
+
+// ── 脏保护 ──
+async function confirmDiscardEdits(tabId) {
+  const state = editStates[tabId]
+  if (!state?.isDirty) return true
+  try {
+    await ElMessageBox.confirm(
+      i18n.global.t('doc.discardEditsConfirm'),
+      i18n.global.t('doc.unsavedChanges'),
+      { confirmButtonText: i18n.global.t('common.ok'), cancelButtonText: i18n.global.t('common.cancel'), type: 'warning' }
+    )
+    // 回退到原始内容，而非用编辑后的文本覆盖
+    const tab = tabs.value.find(t => t.id === tabId)
+    state.text = tab?.text || ''
+    state.isDirty = false
+    return true
+  } catch (_) {
+    return false
+  }
 }
 
 // 涓茶鍖?payload 寮傛澶勭悊锛岄槻姝㈠苟鍙戞枃浠惰鍙栫珵鎬?
@@ -648,8 +839,9 @@ onBeforeUnmount(() => {
 })
 
 // 路由离开时保存当前标签页滚动位置
-onDeactivated(() => {
+onDeactivated(async () => {
   _isDocActive.value = false
+  await confirmDiscardEdits(activeTabId.value)
   saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
 })
@@ -753,6 +945,86 @@ onActivated(() => {
 /* no-drag: toolbar buttons (el-button needs :deep() in scoped style) */
 .doc-toolbar-left :deep(.el-button) {
   -webkit-app-region: no-drag;
+}
+
+/* 工具栏通用按钮 */
+.toolbar-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--doc-line, #d4deea);
+  border-radius: 8px;
+  background: var(--doc-paper, #f8fafc);
+  color: var(--doc-text, #334155);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-btn:hover {
+  border-color: var(--doc-accent, #2563eb);
+  background: var(--cc-primary-bg, #eff6ff);
+  color: var(--doc-accent, #1d4ed8);
+}
+
+.toolbar-btn.is-active {
+  border-color: var(--doc-accent, #2563eb);
+  background: var(--doc-accent, #2563eb);
+  color: #ffffff;
+}
+
+/* 分段控制器：预览/编辑/分屏 */
+.toolbar-segment {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--doc-line, #d4deea);
+  border-radius: 8px;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-segment-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--doc-line, #d4deea);
+  background: var(--doc-paper, #f8fafc);
+  color: var(--doc-muted, #64748b);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.toolbar-segment-btn:last-child {
+  border-right: none;
+}
+
+.toolbar-segment-btn:hover:not(.is-active) {
+  background: var(--cc-primary-bg, #eff6ff);
+  color: var(--doc-accent, #2563eb);
+}
+
+.toolbar-segment-btn.is-active {
+  background: var(--doc-accent, #2563eb);
+  color: #ffffff;
+}
+
+.toolbar-btn-save.is-dirty {
+  border-color: var(--doc-accent, #f59e0b);
+  background: var(--doc-accent, #fef3c7);
+  color: #92400e;
+}
+
+.toolbar-btn-save.is-dirty:hover {
+  background: #fde68a;
+}
+
+.toolbar-btn-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .doc-type {
@@ -895,6 +1167,20 @@ onActivated(() => {
   box-sizing: border-box;
   color: var(--doc-text);
   background: var(--doc-paper);
+}
+
+/* 编辑器模式：撑满 + 隐藏外层滚动（编辑器自行管理滚动） */
+.doc-body.is-editor {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  max-width: none;
+}
+
+.doc-body.is-editor > :deep(*) {
+  flex: 1;
+  min-height: 0;
 }
 
 .doc-loading-mask {
