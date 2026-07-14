@@ -504,6 +504,9 @@ watch(activeTabId, async (newId, oldId) => {
   }
   // 脏保护：切换离开旧 tab 时确认
   if (oldId && oldId !== newId) {
+    // Capture the old preview position before async confirmation yields.
+    saveCurrentTabScroll(oldId)
+    persistDocTabs()
     const ok = await confirmDiscardEdits(oldId)
     if (!ok) {
       // 用户取消，恢复旧 tab
@@ -512,9 +515,6 @@ watch(activeTabId, async (newId, oldId) => {
       activeTabId.value = oldId
       return
     }
-    saveCurrentTabScroll(oldId)
-    // 标签切换时持久化滚动位置（离散用户动作，直接写不防抖）
-    persistDocTabs()
   }
 
   if (_restoring || !newId) return
