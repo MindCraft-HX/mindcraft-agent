@@ -1,43 +1,25 @@
 'use strict';
 
 /**
- * ClaudeCode Environment — SDK loading, system binary discovery, env helpers.
+ * ClaudeCode 环境 — SDK 加载、系统二进制发现、环境变量辅助。
  *
- * Extracted from claudeAgent.js (Phase 5 leaf-module split).
- * Manages internal mutable caches (_systemClaudePath, sdkModulePromise).
+ * 从 claudeAgent.js 提取（Phase 5 叶子模块拆分）。
+ * 管理内部可变缓存（_systemClaudePath, sdkModulePromise）。
  */
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { execSync, execFileSync } = require('child_process');
 const { augmentEnvWithBundledRg } = require('../localSearch');
+const { getEnvWithNodePath, resolveLoginShellPath, getCommonGlobalBinDirs } = require('../shared/shellPathHelper');
 
 // ---- Internal mutable state ----
 
 let sdkModulePromise = null;
 let _systemClaudePath = undefined;
 let installingClaudeCode = false;
-let _claudeConfRef = null; // set externally by setupClaudeHandlers
-
-// ---- Public API ----
-
+let _claudeConfRef = null; // 由 setupClaudeHandlers 注入
 /** 构建包含系统 Node.js 路径的 env 对象（打包后 PATH 可能缺失 node/npm） */
-function getEnvWithNodePath() {
-  const env = { ...process.env };
-  const nodeDirs = [
-    path.dirname(process.execPath),
-    'C:\\Program Files\\nodejs',
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm'),
-  ];
-  const existingPaths = (env.PATH || env.Path || '').split(path.delimiter).filter(Boolean);
-  const merged = [...nodeDirs, ...existingPaths];
-  const uniquePaths = [...new Set(merged)];
-  env.PATH = uniquePaths.join(path.delimiter);
-  env.Path = env.PATH;
-  return env;
-}
-
 /** 缓存系统 claude 路径，避免每次 query 都重新检测 */
 async function findSystemClaude() {
   if (_systemClaudePath !== undefined) return _systemClaudePath;
@@ -114,6 +96,8 @@ async function findSystemClaude() {
       }
       return null;
     }
+    // macOS/Linux: 可执行文件无扩展名（如 claude Mach-O binary）
+    if (isExecutableHealthy(p)) { _systemClaudePath = p; return p; }
     return null;
   };
 
@@ -141,7 +125,27 @@ async function findSystemClaude() {
     try {
       const result = execSync('which claude', { encoding: 'utf8', timeout: 5000 }).trim();
       if (tryPath(result)) return _systemClaudePath;
+    } catch (_) {
+      // 打包后 shell profile 不加载，`which` 找不到 claude，降级到 login shell PATH 和已知目录
+    }
+    // Fallback A: 通过 login shell 获取完整 PATH 重试
+    try {
+      const loginPath = resolveLoginShellPath();
+      if (loginPath) {
+        const result = execSync('which claude', { encoding: 'utf8', timeout: 5000, env: { ...process.env, PATH: loginPath } }).trim();
+        if (tryPath(result)) return _systemClaudePath;
+      }
     } catch (_) {}
+    // Fallback B: 遍历常见安装目录（Homebrew / npm prefix / nvm / fnm / volta 等，由 getCommonGlobalBinDirs 填充）
+    const commonBinDirs = getCommonGlobalBinDirs();
+    for (const dir of commonBinDirs) {
+      if (tryPath(path.join(dir, 'claude'))) return _systemClaudePath;
+    }
+    // Fallback C: 直接查 npm 全局安装的真实路径（符号链接缺失时兜底）
+    const moduleDirs = commonBinDirs.filter(d => d.includes('node_modules') && !d.endsWith('bin'));
+    for (const dir of moduleDirs) {
+      if (tryPath(path.join(dir, '@anthropic-ai', 'claude-code', 'bin', 'claude'))) return _systemClaudePath;
+    }
   }
 
   _systemClaudePath = null;

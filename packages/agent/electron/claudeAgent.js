@@ -66,6 +66,7 @@ const {
 } = require('./shared/skills/marketplace')
 const { scanSkillsDirs } = require('./shared/skills/scanner')
 const { createCliExecutor } = require('./shared/cliExecutor')
+const { getFullEnv } = require('./shared/shellPathHelper')
 
 // ---- ClaudeCode IPC leaf modules (R09 main handler setup split) ----
 const { registerClaudeLeafIpcs } = require('./claude/index');
@@ -1587,10 +1588,11 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.BROWSE_EXECUTABLE, async () => {
     const result = await dialog.showOpenDialog({
       title: lt('dialog.selectExe'),
+      defaultPath: os.homedir(),
       filters: process.platform === 'win32'
         ? [{ name: 'Executable', extensions: ['exe'] }]
         : [{ name: 'All Files', extensions: ['*'] }],
-      properties: ['openFile'],
+      properties: ['openFile', 'showHiddenFiles'],
     })
     if (result.canceled || !result.filePaths.length) return null
     return result.filePaths[0]
@@ -1602,7 +1604,7 @@ function setupClaudeHandlers() {
 
     // 检测 Node.js
     try {
-      const env = getEnvWithNodePath()
+      const env = getFullEnv()
       const nodeVer = (await new Promise((resolve, reject) => {
         exec('node --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
           if (err) reject(err); else resolve(stdout)
@@ -1618,7 +1620,7 @@ function setupClaudeHandlers() {
 
     // 检测 npm
     try {
-      const env = getEnvWithNodePath()
+      const env = getFullEnv()
       const npmVer = (await new Promise((resolve, reject) => {
         exec('npm --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
           if (err) reject(err); else resolve(stdout)
@@ -1667,12 +1669,12 @@ function setupClaudeHandlers() {
     if (isInstallingClaudeCode()) return { success: false, message: lt('install.inProgress') }
     setInstallingClaudeCode(true)
     try {
-      // 先终止可能占用 claude.exe 的进程，避免 EBUSY
-      try { execSync('taskkill /IM claude.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
-      // 如果之前有旧版 SDK 捆绑的 claude 在运行，也杀掉
-      try { execSync('taskkill /IM claude-agent-sdk-win32-x64.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {}
+      // 先终止可能占用 claude.exe 的进程，避免 EBUSY（仅 Windows）
+      if (process.platform === 'win32') { try { execSync('taskkill /IM claude.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {} }
+      // 如果之前有旧版 SDK 捆绑的 claude 在运行，也杀掉（仅 Windows）
+      if (process.platform === 'win32') { try { execSync('taskkill /IM claude-agent-sdk-win32-x64.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }) } catch (_) {} }
 
-      const env = getEnvWithNodePath()
+      const env = getFullEnv()
       await new Promise((resolve, reject) => {
         exec('npm install -g @anthropic-ai/claude-code', {
           encoding: 'utf8',
