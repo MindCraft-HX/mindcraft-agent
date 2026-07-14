@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const NODE_ENV = process.env.NODE_ENV || "development";
-const NODE_PLATFORM = process.env.NODE_PLATFORM || "WIN";
+const NODE_PLATFORM = process.env.NODE_PLATFORM || (process.platform === 'darwin' ? 'IOS' : 'WIN');
 const VERSION = process.env.npm_config_setv
 
 updatePackJson()

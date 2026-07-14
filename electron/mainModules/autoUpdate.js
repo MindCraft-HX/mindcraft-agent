@@ -23,15 +23,19 @@ function sendStatus(win, status) {
   }
 }
 
-function setupAutoUpdater(env, win, { beforeInstall } = {}) {
+function getDefaultUpdateUrl(env, platform) {
+  if (env === 'development' || env === 'testing') {
+    return platform === 'IOS' ? 'http://localhost:8091/mac' : 'http://localhost:8091/win'
+  }
+  const base = 'https://download.mindcraft.com.cn/MindCraft-Agent/installer'
+  return platform === 'IOS' ? `${base}/mac` : `${base}/win`
+}
+
+function setupAutoUpdater(env, platform, win, { beforeInstall } = {}) {
   let activeCheckId = 0
   let updateCheckTimeout = null
   let updateCheckInFlight = false
-  let updateUrl = 'https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/'
-
-  if (env === 'development' || env === 'testing') {
-    updateUrl = 'http://localhost:8091/win'
-  }
+  let updateUrl = getDefaultUpdateUrl(env, platform)
 
   autoUpdater.setFeedURL(updateUrl)
   autoUpdater.autoDownload = false

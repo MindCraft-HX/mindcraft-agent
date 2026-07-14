@@ -34,9 +34,7 @@
   "files": [
     "dist/**/*",
     "electron/**/*",
-    "packages/agent/**/*",
-    "!node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**",
-    "!node_modules/@openai/codex-win32-x64/**"
+    "packages/agent/**/*"
   ],
   "directories": {
     "output": "dist_electron"

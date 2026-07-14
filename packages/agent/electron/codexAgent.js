@@ -60,8 +60,12 @@ const {
 // ---- CodeX Environment (extracted leaf module, Phase 5) ----
 const {
   findGlobalCodexPath,
+  getConfiguredCodexPath,
+  isExecutableHealthy,
   loadCodexSdk,
   resetCodexSdkPromise,
+  clearGlobalCodexPathCache,
+  setCodexConfRef,
   isInstallingCodex,
   setInstallingCodex,
 } = require('./codex/environment')
@@ -409,6 +413,8 @@ const _codexCfg = createCodexConfigManager({
   Conf,
   normalizeReasoningEffort: normalizeCodexReasoningEffort,
 })
+const codexRuntimeConf = new Conf({ name: 'mindcraft-codex' })
+setCodexConfRef(codexRuntimeConf)
 
 const {
   readCodexProvidersConfig,
@@ -558,9 +564,12 @@ function extractSlashCommandsFromText(text) {
   return Array.from(map.values())
 }
 
-/** 路径标准化：统一反斜杠、小写、去尾斜杠，用于跨平台路径匹配 */
+/** 路径标准化：统一为当前平台分隔符、小写、去尾斜杠，用于跨平台路径匹配 */
 function normalizeFsPath(p) {
-  return String(p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
+  let normalized = String(p || '').replace(/[/\\]+/g, path.sep)
+  // 去除尾部连续分隔符
+  while (normalized.endsWith(path.sep)) normalized = normalized.slice(0, -path.sep.length)
+  return normalized.toLowerCase()
 }
 
 /** 递归遍历目录收集所有文件路径 */
@@ -3702,6 +3711,9 @@ function setupCodexSdkHandlers() {
     configTomlFile: CONFIG_TOML_FILE,
     loadCodexSdk,
     findGlobalCodexPath,
+    getConfiguredExecutablePath: getConfiguredCodexPath,
+    isExecutableHealthy,
+    clearGlobalCodexPathCache,
     isInstallingCodex,
     setInstallingCodex,
     resetCodexSdkPromise,
@@ -3711,6 +3723,7 @@ function setupCodexSdkHandlers() {
     readProviders,
     writeProviders,
     readCodexConfigTomlRaw: () => fs.existsSync(CONFIG_TOML_FILE) ? fs.readFileSync(CONFIG_TOML_FILE, 'utf8') : '',
+    onCodexExecutablePathChanged: () => clearGlobalCodexPathCache(),
   })
 
   // 面板状态持久化：MindCraft 自有 UI 状态写入 userData；旧 ~/.codex 文件只作为迁移 fallback。

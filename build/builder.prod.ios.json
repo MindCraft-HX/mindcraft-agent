@@ -1,9 +1,9 @@
 {
-  "appId": "com.mindcraft.agent",
+  "appId": "com.genitop.mindcraft.agent",
   "productName": "MindCraft-Agent",
   "copyright": "Copyright © 2025 GENITOP",
   "releaseInfo": {
-    "releaseNotesFile": "release/release-1.0.12.md"
+    "releaseNotesFile": "release/release-1.2.6.md"
   },
   "extraMetadata": {
     "mode": "production",
@@ -17,6 +17,20 @@
       "dmg",
       "zip",
       "dir"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown 文件",
+        "description": "Markdown Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown 文件",
+        "description": "Markdown Document",
+        "role": "Editor"
+      }
     ]
   },
   "nsis": {
@@ -34,11 +48,19 @@
       "filter": [
         "**/*"
       ]
+    },
+    {
+      "from": "./tools/rg",
+      "to": "tools/rg",
+      "filter": [
+        "**/*"
+      ]
     }
   ],
   "files": [
     "dist/**/*",
     "electron/**/*",
+    "packages/agent/**/*",
     "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**",
     "!node_modules/@openai/codex-darwin-*/**"
   ],

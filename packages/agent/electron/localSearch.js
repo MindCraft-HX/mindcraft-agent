@@ -1,6 +1,6 @@
 const fs = require('fs')
 const path = require('path')
-const { execFile } = require('child_process')
+const { execFile, execSync } = require('child_process')
 const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
 const { CORE_CHANNELS } = require('../shared/ipcChannels')
@@ -12,11 +12,15 @@ const DEFAULT_FILE_ENUM_LIMIT = 5000
 let cachedCapability = null
 
 function getBundledRgPath() {
-  if (process.platform !== 'win32') return ''
+  const platformDir = {
+    win32: path.join('win-x64', 'rg.exe'),
+    darwin: path.join(`darwin-${process.arch === 'arm64' ? 'arm64' : 'x64'}`, 'rg'),
+  }[process.platform]
+  if (!platformDir) return ''
   const appRoot = path.resolve(__dirname, '..', '..', '..')
   const candidates = [
-    process.resourcesPath ? path.join(process.resourcesPath, 'tools', 'rg', 'win-x64', 'rg.exe') : '',
-    path.join(appRoot, 'tools', 'rg', 'win-x64', 'rg.exe'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'tools', 'rg', platformDir) : '',
+    path.join(appRoot, 'tools', 'rg', platformDir),
   ]
   return candidates.find(candidate => candidate && fs.existsSync(candidate)) || ''
 }
@@ -95,6 +99,80 @@ async function probePowerShell() {
   }
 }
 
+/** 探测系统 find+grep（macOS/Linux 后备搜索方案） */
+async function probeSystemFindGrep() {
+  if (process.platform === 'win32') return { available: false, source: '' }
+  try {
+    const { cmd } = resolveWhereCommand('grep')
+    await execFileAsync(cmd, ['--version'], {
+      encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return { available: true, source: 'find+grep' }
+  } catch (_) {
+    return { available: false, source: '' }
+  }
+}
+
+/** 使用 find+grep 执行文本搜索（macOS/Linux 后备） */
+async function runFindGrepTextSearch(options = {}) {
+  const resolvedCwd = path.resolve(options.cwd || process.cwd())
+  const pattern = String(options.query || '')
+  const maxResults = Number.isFinite(options.maxResults) ? options.maxResults : DEFAULT_MAX_RESULTS
+  // grep -r -n --ignore-case <pattern> . 简单位搜索
+  // 输出格式: filepath:line:content
+  const { stdout } = await execFileAsync('grep', [
+    '-r', '-n', '--ignore-case',
+    pattern,
+    '.',
+  ], {
+    cwd: resolvedCwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    maxBuffer: 10 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const lines = String(stdout || '').split(/\r?\n/).filter(Boolean)
+  const results = lines.slice(0, maxResults).map(line => {
+    // 解析 grep 输出: filepath:line:content
+    const firstColon = line.indexOf(':')
+    if (firstColon < 0) return null
+    const secondColon = line.indexOf(':', firstColon + 1)
+    if (secondColon < 0) return null
+    return {
+      filePath: path.resolve(resolvedCwd, line.slice(0, firstColon)),
+      line: parseInt(line.slice(firstColon + 1, secondColon), 10) || 0,
+      column: 1,
+      text: line.slice(secondColon + 1),
+    }
+  }).filter(Boolean)
+  return {
+    results,
+    truncated: lines.length > maxResults,
+  }
+}
+
+/** 使用 find 枚举文件（macOS/Linux 后备） */
+async function runFindFiles(options = {}) {
+  const resolvedCwd = path.resolve(options.cwd || process.cwd())
+  const maxResults = Number.isFinite(options.maxResults) ? options.maxResults : DEFAULT_FILE_ENUM_LIMIT
+  const { stdout } = await execFileAsync('find', [
+    '.', '-type', 'f',
+  ], {
+    cwd: resolvedCwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    maxBuffer: 10 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const allFiles = String(stdout || '').split(/\r?\n/).map(f => f.trim()).filter(Boolean)
+  // 去掉 ./ 前缀
+  const files = allFiles.map(f => f.startsWith('./') ? f.slice(2) : f)
+  return {
+    files: files.slice(0, maxResults),
+    truncated: files.length > maxResults,
+  }
+}
+
 function pickSearchBackend(state) {
   if (state?.bundled?.available) {
     return {
@@ -102,7 +180,7 @@ function pickSearchBackend(state) {
       backend: 'bundled-rg',
       version: state.bundled.version || '',
       source: state.bundled.path || '',
-      fallbackAvailable: Boolean(state?.powershell?.available),
+      fallbackAvailable: Boolean(state?.findGrep?.available || state?.powershell?.available),
     }
   }
   if (state?.system?.available) {
@@ -111,6 +189,15 @@ function pickSearchBackend(state) {
       backend: 'system-rg',
       version: state.system.version || '',
       source: state.system.path || '',
+      fallbackAvailable: Boolean(state?.findGrep?.available || state?.powershell?.available),
+    }
+  }
+  if (state?.findGrep?.available) {
+    return {
+      available: true,
+      backend: 'system-find',
+      version: '',
+      source: 'find+grep',
       fallbackAvailable: Boolean(state?.powershell?.available),
     }
   }
@@ -127,6 +214,7 @@ async function detectLocalSearchBackend() {
   const state = {
     bundled: await probeBundledRg(),
     system: await probeSystemRg(),
+    findGrep: await probeSystemFindGrep(),
     powershell: await probePowerShell(),
   }
   return pickSearchBackend(state)
@@ -336,6 +424,17 @@ async function searchText(options = {}) {
         error: null,
       }
     }
+    if (capability.backend === 'system-find') {
+      const { results, truncated } = await runFindGrepTextSearch(options)
+      return {
+        ok: true,
+        backend: 'system-find',
+        fallbackUsed: true,
+        results,
+        truncated,
+        error: null,
+      }
+    }
     const { results, truncated } = await runPowerShellTextSearch(options)
     return {
       ok: true,
@@ -347,7 +446,7 @@ async function searchText(options = {}) {
     }
   } catch (error) {
     const command = capability.backend === 'powershell' ? 'powershell.exe' : capability.source
-    return buildSearchError('search failed', capability.backend, command, error, capability.backend === 'powershell')
+    return buildSearchError('search failed', capability.backend, command, error, capability.backend !== 'bundled-rg')
   }
 }
 
@@ -434,6 +533,19 @@ async function listFiles(options = {}) {
         error: null,
       }
     }
+    if (capability.backend === 'system-find') {
+      const { files, truncated } = await runFindFiles(fileOptions)
+      const suggestions = suggestFilePaths(files, options.query || '', suggestionLimit)
+      return {
+        ok: true,
+        backend: 'system-find',
+        fallbackUsed: true,
+        files,
+        suggestions,
+        truncated,
+        error: null,
+      }
+    }
     const { files, truncated } = await runPowerShellFiles(fileOptions)
     const suggestions = suggestFilePaths(files, options.query || '', suggestionLimit)
     return {
@@ -450,7 +562,7 @@ async function listFiles(options = {}) {
     return {
       ok: false,
       backend: capability.backend,
-      fallbackUsed: capability.backend === 'powershell',
+      fallbackUsed: capability.backend !== 'bundled-rg',
       files: [],
       suggestions: [],
       truncated: false,
@@ -475,6 +587,7 @@ function registerLocalSearchIpc(ipcMain) {
     capability: await getLocalSearchCapability(true),
     bundledPath: getBundledRgPath(),
     systemPath: await getSystemRgPath(),
+    findGrep: await probeSystemFindGrep(),
     powershell: await probePowerShell(),
   }))
 }

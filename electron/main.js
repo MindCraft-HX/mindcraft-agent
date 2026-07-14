@@ -34,7 +34,7 @@ if(!app.isPackaged) {
 } else {
     NODE_ENV = packageJson.mode
 }
-const NODE_PLATFORM = packageJson.platform || "WIN"
+const NODE_PLATFORM = packageJson.platform || (process.platform === 'darwin' ? 'IOS' : 'WIN')
 
 function configureUserDataPath() {
   const override = String(process.env.MINDCRAFT_USER_DATA_DIR || '').trim()
@@ -327,7 +327,7 @@ app.whenReady().then(async () => {
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM);
   setupHostIpcHandlers();
-  setupAutoUpdater(NODE_ENV, win, { beforeInstall: prepareForUpdateInstall }); //更新文件
+  setupAutoUpdater(NODE_ENV, NODE_PLATFORM, win, { beforeInstall: prepareForUpdateInstall }); //更新文件
 
   // T196 E2E smoke hook — no-op unless MINDCRAFT_E2E_TEST env is set
   const { installE2EHook } = require('./e2eSmokeHook');

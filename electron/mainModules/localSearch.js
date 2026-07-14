@@ -9,11 +9,15 @@ const DEFAULT_FILE_ENUM_LIMIT = 5000
 let cachedCapability = null
 
 function getBundledRgPath() {
-  if (process.platform !== 'win32') return ''
+  const platformDir = {
+    win32: path.join('win-x64', 'rg.exe'),
+    darwin: path.join(`darwin-${process.arch === 'arm64' ? 'arm64' : 'x64'}`, 'rg'),
+  }[process.platform]
+  if (!platformDir) return ''
   const appRoot = path.resolve(__dirname, '..', '..')
   const candidates = [
-    process.resourcesPath ? path.join(process.resourcesPath, 'tools', 'rg', 'win-x64', 'rg.exe') : '',
-    path.join(appRoot, 'tools', 'rg', 'win-x64', 'rg.exe'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'tools', 'rg', platformDir) : '',
+    path.join(appRoot, 'tools', 'rg', platformDir),
   ]
   return candidates.find(candidate => candidate && fs.existsSync(candidate)) || ''
 }
@@ -91,6 +95,71 @@ function probePowerShell() {
   }
 }
 
+/** 探测系统 find+grep（macOS/Linux 后备搜索方案） */
+function probeSystemFindGrep() {
+  if (process.platform === 'win32') return { available: false, source: '' }
+  try {
+    const { cmd } = resolveWhereCommand('grep')
+    execFileSync(cmd, ['--version'], {
+      encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return { available: true, source: 'find+grep' }
+  } catch (_) {
+    return { available: false, source: '' }
+  }
+}
+
+/** 使用 find+grep 执行文本搜索（macOS/Linux 后备） */
+function runFindGrepTextSearch(options = {}) {
+  const resolvedCwd = path.resolve(options.cwd || process.cwd())
+  const pattern = String(options.query || '')
+  const maxResults = Number.isFinite(options.maxResults) ? options.maxResults : DEFAULT_MAX_RESULTS
+  const stdout = execFileSync('grep', [
+    '-r', '-n', '--ignore-case',
+    pattern,
+    '.',
+  ], {
+    cwd: resolvedCwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    maxBuffer: 10 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const lines = String(stdout || '').split(/\r?\n/).filter(Boolean)
+  const results = lines.slice(0, maxResults).map(line => {
+    const firstColon = line.indexOf(':')
+    if (firstColon < 0) return null
+    const secondColon = line.indexOf(':', firstColon + 1)
+    if (secondColon < 0) return null
+    return {
+      filePath: path.resolve(resolvedCwd, line.slice(0, firstColon)),
+      line: parseInt(line.slice(firstColon + 1, secondColon), 10) || 0,
+      column: 1,
+      text: line.slice(secondColon + 1),
+    }
+  }).filter(Boolean)
+  return { results, truncated: lines.length > maxResults }
+}
+
+/** 使用 find 枚举文件（macOS/Linux 后备） */
+function runMainFindFiles(options = {}) {
+  const resolvedCwd = path.resolve(options.cwd || process.cwd())
+  const maxResults = Number.isFinite(options.maxResults) ? options.maxResults : DEFAULT_FILE_ENUM_LIMIT
+  const stdout = execFileSync('find', ['.', '-type', 'f'], {
+    cwd: resolvedCwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    maxBuffer: 10 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const allFiles = String(stdout || '').split(/\r?\n/).map(f => f.trim()).filter(Boolean)
+  const files = allFiles.map(f => f.startsWith('./') ? f.slice(2) : f)
+  return {
+    files: files.slice(0, maxResults),
+    truncated: files.length > maxResults,
+  }
+}
+
 function pickSearchBackend(state) {
   if (state?.bundled?.available) {
     return {
@@ -98,7 +167,7 @@ function pickSearchBackend(state) {
       backend: 'bundled-rg',
       version: state.bundled.version || '',
       source: state.bundled.path || '',
-      fallbackAvailable: Boolean(state?.powershell?.available),
+      fallbackAvailable: Boolean(state?.findGrep?.available || state?.powershell?.available),
     }
   }
   if (state?.system?.available) {
@@ -107,6 +176,15 @@ function pickSearchBackend(state) {
       backend: 'system-rg',
       version: state.system.version || '',
       source: state.system.path || '',
+      fallbackAvailable: Boolean(state?.findGrep?.available || state?.powershell?.available),
+    }
+  }
+  if (state?.findGrep?.available) {
+    return {
+      available: true,
+      backend: 'system-find',
+      version: '',
+      source: 'find+grep',
       fallbackAvailable: Boolean(state?.powershell?.available),
     }
   }
@@ -123,6 +201,7 @@ function detectLocalSearchBackend() {
   const state = {
     bundled: probeBundledRg(),
     system: probeSystemRg(),
+    findGrep: probeSystemFindGrep(),
     powershell: probePowerShell(),
   }
   return pickSearchBackend(state)
@@ -331,6 +410,17 @@ function searchText(options = {}) {
         error: null,
       }
     }
+    if (capability.backend === 'system-find') {
+      const { results, truncated } = runFindGrepTextSearch(options)
+      return {
+        ok: true,
+        backend: 'system-find',
+        fallbackUsed: true,
+        results,
+        truncated,
+        error: null,
+      }
+    }
     const { results, truncated } = runPowerShellTextSearch(options)
     return {
       ok: true,
@@ -342,7 +432,7 @@ function searchText(options = {}) {
     }
   } catch (error) {
     const command = capability.backend === 'powershell' ? 'powershell.exe' : capability.source
-    return buildSearchError('search failed', capability.backend, command, error, capability.backend === 'powershell')
+    return buildSearchError('search failed', capability.backend, command, error, capability.backend !== 'bundled-rg')
   }
 }
 
@@ -428,6 +518,19 @@ function listFiles(options = {}) {
         error: null,
       }
     }
+    if (capability.backend === 'system-find') {
+      const { files, truncated } = runMainFindFiles(fileOptions)
+      const suggestions = suggestFilePaths(files, options.query || '', suggestionLimit)
+      return {
+        ok: true,
+        backend: 'system-find',
+        fallbackUsed: true,
+        files,
+        suggestions,
+        truncated,
+        error: null,
+      }
+    }
     const { files, truncated } = runPowerShellFiles(fileOptions)
     const suggestions = suggestFilePaths(files, options.query || '', suggestionLimit)
     return {
@@ -444,7 +547,7 @@ function listFiles(options = {}) {
     return {
       ok: false,
       backend: capability.backend,
-      fallbackUsed: capability.backend === 'powershell',
+      fallbackUsed: capability.backend !== 'bundled-rg',
       files: [],
       suggestions: [],
       truncated: false,
