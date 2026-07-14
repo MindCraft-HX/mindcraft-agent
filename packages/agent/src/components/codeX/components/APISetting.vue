@@ -109,6 +109,19 @@
             <div v-if="envStatus.codex?.installed && envStatus.codex.path" class="env-path-hint">
               {{ $t('agent.path') }}{{ envStatus.codex.path }}
             </div>
+            <div v-else-if="envStatus.codex?.path" class="env-path-hint">
+              {{ $t('agent.path') }}{{ envStatus.codex.path }}
+            </div>
+            <div class="env-path-row">
+              <input
+                class="env-path-input"
+                v-model="customExePath"
+                :placeholder="envStatus?.codex?.path || $t('settings.manualPath')"
+                @keyup.enter="saveExecutablePath"
+              />
+              <button class="env-path-btn" @click="browseExecutable" :title="$t('settings.browse')">{{ $t('settings.browse') }}</button>
+              <button class="env-path-btn save" @click="saveExecutablePath" :title="$t('common.save')">{{ $t('common.save') }}</button>
+            </div>
           </template>
           <template v-else>
             <span class="env-item err">{{ $t('settings.detectFailed') }}</span>
@@ -193,6 +206,7 @@ const envInstalling = ref(false)
 const envCheckingUpdate = ref(false)
 const envUpdateAvailable = ref(false)
 const envLatestVersion = ref('')
+const customExePath = ref('')
 const validatingIdx = ref(-1)
 const settingsForm = ref({ providers: [], selectedIdx: -1, activeIdx: -1 })
 const currentProvider = ref(null)
@@ -209,9 +223,24 @@ async function checkEnvironment() {
   try {
     const res = await window.electronAPI?.codexCheckEnvironment?.()
     envStatus.value = res || null
+    customExePath.value = envStatus.value?.codex?.path || await window.electronAPI?.codexGetExecutablePath?.() || ''
   } catch (e) {
     envStatus.value = { node: { installed: false, version: null, compatible: false }, npm: { installed: false, version: null }, codex: { installed: false, path: null } }
   } finally { envChecking.value = false }
+}
+
+async function browseExecutable() {
+  const p = await window.electronAPI?.codexBrowseExecutable?.()
+  if (p) {
+    customExePath.value = p
+    await window.electronAPI?.codexSetExecutablePath?.(p)
+    await checkEnvironment()
+  }
+}
+
+async function saveExecutablePath() {
+  await window.electronAPI?.codexSetExecutablePath?.(customExePath.value)
+  await checkEnvironment()
 }
 
 async function installCodex() {
@@ -221,8 +250,13 @@ async function installCodex() {
     if (result?.success) {
       await checkEnvironment()
       const ver = envStatus.value?.codex?.version
-      if (ver) {
+      const installedPath = result?.path || envStatus.value?.codex?.path || ''
+      if (ver && installedPath) {
+        ElMessage.success(`${t('settings.codexInstallSuccess', { version: ver.replace(/^v/, '').split(/\s/)[0] })}\n${t('agent.path')}${installedPath}`)
+      } else if (ver) {
         ElMessage.success(t('settings.codexInstallSuccess', { version: ver.replace(/^v/, '').split(/\s/)[0] }))
+      } else if (installedPath) {
+        ElMessage.success(`${t('settings.codexInstallSuccessRefresh')}\n${t('agent.path')}${installedPath}`)
       } else {
         ElMessage.success(t('settings.codexInstallSuccessRefresh'))
       }
@@ -269,9 +303,15 @@ async function checkForUpdate() {
             envUpdateAvailable.value = false
             envLatestVersion.value = ''
             const newVer = envStatus.value?.codex?.version
-            if (newVer) {
+            const installedPath = result?.path || envStatus.value?.codex?.path || ''
+            if (newVer && installedPath) {
+              const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
+              ElMessage.success(`${t('settings.codexUpdatedTo', { version: shortVer })}\n${t('agent.path')}${installedPath}`)
+            } else if (newVer) {
               const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
               ElMessage.success(t('settings.codexUpdatedTo', { version: shortVer }))
+            } else if (installedPath) {
+              ElMessage.success(`${t('settings.codexUpdateCompleteRefresh')}\n${t('agent.path')}${installedPath}`)
             } else {
               ElMessage.success(t('settings.codexUpdateCompleteRefresh'))
             }
@@ -739,6 +779,28 @@ function closeSettings() {
 @keyframes env-spin { to { transform: rotate(360deg); } }
 .env-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .env-path-hint { font-size: 11px; color: var(--cc-text-dim); }
+.env-path-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.env-path-input {
+  flex: 1;
+  min-width: 240px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--cc-border-strong);
+  background: var(--cc-bg-elevated);
+  color: var(--cc-text);
+  font-size: 12px;
+}
+.env-path-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--cc-border-strong);
+  background: var(--cc-bg-elevated);
+  color: var(--cc-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.env-path-btn:hover { color: var(--cc-text); border-color: var(--cc-text-dim); }
+.env-path-btn.save { color: var(--cc-info); border-color: var(--cc-info); }
 .env-item {
   display: flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px;
   &.ok { color: var(--cc-success); background: var(--cc-success-bg); }

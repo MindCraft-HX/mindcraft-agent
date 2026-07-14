@@ -161,7 +161,9 @@ const CODEX_CHANNELS = Object.freeze({
   GET_API_FORMAT: 'codex-get-api-format',
   SET_API_FORMAT: 'codex-set-api-format',
   GET_BASE_URL: 'codex-get-base-url',
+  GET_EXECUTABLE_PATH: 'codex-get-executable-path',
   SET_BASE_URL: 'codex-set-base-url',
+  SET_EXECUTABLE_PATH: 'codex-set-executable-path',
   GET_DEFAULT_NETWORK_ACCESS: 'codex-get-default-network-access',
   SET_DEFAULT_NETWORK_ACCESS: 'codex-set-default-network-access',
   GET_DEFAULT_WEB_SEARCH: 'codex-get-default-web-search',
@@ -252,6 +254,7 @@ const CODEX_CHANNELS = Object.freeze({
   WRITE_CONFIG_TOML: 'codex-write-config-toml',
   REPAIR_CONFIG_TOML: 'codex-repair-config-toml',
   IMPORT_LEGACY_CONFIG: 'codex-import-legacy-config',
+  BROWSE_EXECUTABLE: 'codex-browse-executable',
 
   // Git
   RUN_GIT_DIFF: 'codex-run-git-diff',

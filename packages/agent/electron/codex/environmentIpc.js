@@ -3,17 +3,21 @@
 const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
 
 /**
- * CodeX environment check / install / directory IPC handlers.
+ * CodeX 环境检测 / 安装 / 目录选择 IPC 处理。
  *
- * Extracted from codexAgent.js (R09 main handler setup split).
+ * 从 codexAgent.js 提取（R09 主处理器拆分）。
  */
 
 const { exec, execFile, execSync } = require('child_process');
 const { dialog } = require('electron');
+const { getFullEnv } = require('../shared/shellPathHelper');
 
 function registerEnvironmentIpc(ipcMain, {
   loadCodexSdk,
   findGlobalCodexPath,
+  getConfiguredExecutablePath,
+  isExecutableHealthy,
+  clearGlobalCodexPathCache,
   isInstallingCodex,
   setInstallingCodex,
   resetCodexSdkPromise,
@@ -22,8 +26,9 @@ function registerEnvironmentIpc(ipcMain, {
   ipcMain.handle(CODEX_CHANNELS.CHECK_ENVIRONMENT, async () => {
     const result = { node: null, npm: null, codex: null };
     try {
+      const env = getFullEnv();
       const ver = (await new Promise((resolve, reject) => {
-        exec('node --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
+        exec('node --version', { encoding: 'utf8', timeout: 5000, windowsHide: true, env }, (err, stdout) => {
           if (err) reject(err); else resolve(stdout);
         });
       })).trim();
@@ -32,28 +37,27 @@ function registerEnvironmentIpc(ipcMain, {
       result.node = { installed: true, version: ver, compatible: major >= 18 };
     } catch (_) { result.node = { installed: false, version: null, compatible: false }; }
     try {
+      const env = getFullEnv();
       const ver = (await new Promise((resolve, reject) => {
-        exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true }, (err, stdout) => {
+        exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true, env }, (err, stdout) => {
           if (err) reject(err); else resolve(stdout);
         });
       })).trim();
       result.npm = { installed: true, version: ver };
     } catch (_) { result.npm = { installed: false, version: null }; }
     try {
-      const { Codex } = await loadCodexSdk();
-      const c = new Codex({ codexPathOverride: findGlobalCodexPath() });
-      const codexPath = c.exec?.executablePath || null;
+      const fullEnv = getFullEnv();
+      const configuredPath = typeof getConfiguredExecutablePath === 'function'
+        ? String(getConfiguredExecutablePath() || '').trim()
+        : '';
+      const detectedPath = findGlobalCodexPath() || '';
+      const codexPath = configuredPath || detectedPath || null;
+      const installed = !!(codexPath && typeof isExecutableHealthy === 'function' && isExecutableHealthy(codexPath, fullEnv));
+
+      // 保留 SDK 加载，避免后续首次使用时才暴露缺依赖问题。
+      await loadCodexSdk();
+
       let codexVersion = null;
-      try {
-        const output = await new Promise((resolve, reject) => {
-          exec('npm list -g @openai/codex --depth=0', { encoding: 'utf8', timeout: 10000, windowsHide: true }, (err, stdout) => {
-            if (err) reject(err);
-            else resolve(stdout);
-          });
-        });
-        const match = output.match(/@openai\/codex@(\S+)/);
-        if (match) codexVersion = match[1];
-      } catch (_) {}
       if (!codexVersion && codexPath) {
         try {
           const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath);
@@ -69,8 +73,17 @@ function registerEnvironmentIpc(ipcMain, {
           })).trim();
         } catch (_) {}
       }
-      result.codex = { installed: !!codexPath, path: codexPath, version: codexVersion };
-    } catch (_) { result.codex = { installed: false, path: null, version: null }; }
+      result.codex = { installed, path: codexPath, version: codexVersion };
+    } catch (_) {
+      const configuredPath = typeof getConfiguredExecutablePath === 'function'
+        ? String(getConfiguredExecutablePath() || '').trim()
+        : '';
+      result.codex = {
+        installed: !!(configuredPath && typeof isExecutableHealthy === 'function' && isExecutableHealthy(configuredPath)),
+        path: configuredPath || null,
+        version: null,
+      };
+    }
     return result;
   });
 
@@ -102,9 +115,10 @@ function registerEnvironmentIpc(ipcMain, {
     if (isInstallingCodex()) return { success: false, message: lt('install.inProgress') };
     setInstallingCodex(true);
     try {
-      try { execSync('taskkill /IM codex.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }); } catch (_) {}
+      if (process.platform === 'win32') { try { execSync('taskkill /IM codex.exe /F', { encoding: 'utf8', timeout: 5000, windowsHide: true }); } catch (_) {} }
+      const env = getFullEnv();
       await new Promise((resolve, reject) => {
-        exec('npm install -g @openai/codex', { encoding: 'utf8', timeout: 180000, stdio: 'pipe', windowsHide: true }, (err, stdout, stderr) => {
+        exec('npm install -g @openai/codex', { encoding: 'utf8', timeout: 180000, stdio: 'pipe', windowsHide: true, env }, (err, stdout, stderr) => {
           if (err) reject(Object.assign(err, { stdout, stderr }));
           else resolve(stdout);
         });
@@ -113,7 +127,11 @@ function registerEnvironmentIpc(ipcMain, {
         if (k.includes('codex-sdk')) delete require.cache[k];
       });
       resetCodexSdkPromise();
-      return { success: true };
+      clearGlobalCodexPathCache();
+      const installedPath = typeof getConfiguredExecutablePath === 'function'
+        ? String(getConfiguredExecutablePath() || '').trim() || findGlobalCodexPath() || null
+        : findGlobalCodexPath() || null;
+      return { success: true, path: installedPath };
     } catch (e) {
       return { success: false, message: e?.stderr || e?.message || String(e) };
     } finally {

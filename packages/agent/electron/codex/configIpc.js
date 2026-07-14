@@ -3,16 +3,17 @@
 const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
 
 /**
- * CodeX config/settings IPC handlers — key, model, base URL, reasoning effort,
- * API format, sandbox mode, project settings, default network/web-search.
+ * CodeX 配置 / 设置 IPC 处理器：key、model、base URL、reasoning effort、
+ * API format、sandbox mode、project settings、默认 network / web-search。
  *
- * Extracted from codexAgent.js (R09 main handler setup split).
- * TOML file read/write/repair added in Batch 5c.
+ * 从 codexAgent.js 中拆出（R09 主处理器拆分）。
+ * TOML 文件的读取 / 写入 / 修复逻辑在 Batch 5c 加入。
  */
 
 const { Conf } = require('electron-conf');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { getCodexDefault, setCodexDefault } = require('../settingsFacade');
 const { appendPreservedCodexConfigSections } = require('./configTomlPreserve');
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('../db/import/index');
@@ -31,6 +32,7 @@ function registerConfigIpc(ipcMain, {
   readProviders,
   writeProviders,
   readCodexConfigTomlRaw,
+  onExecutablePathChanged,
 }) {
   // ---- API Key ----
   ipcMain.handle(CODEX_CHANNELS.GET_KEY, () => {
@@ -50,6 +52,45 @@ function registerConfigIpc(ipcMain, {
   ipcMain.handle(CODEX_CHANNELS.SET_BASE_URL, (_, url) => {
     try { const c = new Conf({ name: 'mindcraft-codex' }); const r = c.get('runtime') || {}; r.baseURL = url; c.set('runtime', r); } catch (_) {}
     return true;
+  });
+
+  // ---- Executable Path ----
+  ipcMain.handle(CODEX_CHANNELS.GET_EXECUTABLE_PATH, () => {
+    try {
+      const c = new Conf({ name: 'mindcraft-codex' });
+      return String(c.get('codexExecutablePath', '') || '').trim();
+    } catch (_) { return ''; }
+  });
+  ipcMain.handle(CODEX_CHANNELS.SET_EXECUTABLE_PATH, (_, p) => {
+    try {
+      const c = new Conf({ name: 'mindcraft-codex' });
+      const val = String(p || '').trim();
+      c.set('codexExecutablePath', val);
+      if (typeof onExecutablePathChanged === 'function') onExecutablePathChanged(val);
+      return true;
+    } catch (_) { return false; }
+  });
+  ipcMain.handle(CODEX_CHANNELS.BROWSE_EXECUTABLE, async () => {
+    const { dialog } = require('electron');
+    const { execSync } = require('child_process');
+    // 默认定位到 npm 全局 root，少点十几层目录
+    let defaultPath = os.homedir();
+    try {
+      const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 3000 }).trim();
+      if (globalRoot && fs.existsSync(globalRoot)) {
+        defaultPath = globalRoot;
+      }
+    } catch (_) {}
+    const result = await dialog.showOpenDialog({
+      title: 'Select Codex executable',
+      defaultPath,
+      filters: process.platform === 'win32'
+        ? [{ name: 'Executable', extensions: ['exe', 'cmd', 'bat'] }]
+        : [{ name: 'All Files', extensions: ['*'] }],
+      properties: ['openFile', 'showHiddenFiles'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
   });
 
   // ---- Model ----

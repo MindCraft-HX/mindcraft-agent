@@ -1,64 +1,179 @@
 'use strict';
 
 /**
- * CodeX Environment — SDK loading, global binary path discovery.
+ * CodeX 环境模块：负责 SDK 加载与全局二进制路径探测。
  *
- * Extracted from codexAgent.js (Phase 5 leaf-module split).
- * Manages internal mutable caches (_globalCodexPath, codexModulePromise).
+ * 从 codexAgent.js 中拆出（Phase 5 叶子模块拆分）。
+ * 维护内部可变缓存（_globalCodexPath、codexModulePromise）。
  */
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { getEnvWithNodePath, resolveLoginShellPath, getCommonGlobalBinDirs } = require('../shared/shellPathHelper');
 
-// ---- Internal mutable state ----
+// ---- 内部可变状态 ----
 
 let codexModulePromise = null;
 let installingCodex = false;
+let _codexConfRef = null;
 
-/** Cached global codex binary path (null = not found, undefined = not yet probed) */
+/** 缓存的全局 codex 二进制路径（null=未找到，undefined=尚未探测） */
 let _globalCodexPath = undefined;
 
-// ---- Public API ----
+function isExecutableHealthy(exePath, env) {
+  if (!exePath || !fs.existsSync(exePath)) return false;
+  try {
+    const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(exePath);
+    const cmd = isCmdShim ? 'cmd.exe' : exePath;
+    const args = isCmdShim ? ['/c', exePath, '--version'] : ['--version'];
+    execFileSync(cmd, args, {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: env || undefined,
+    });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function getConfiguredCodexPath() {
+  if (!_codexConfRef) return '';
+  try {
+    return String(_codexConfRef.get('codexExecutablePath', '') || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+// ---- 对外 API ----
 
 /** 打包后 SDK 的 createRequire 从 asar 内出发，搜不到全局安装的 codex。
  *  手动查找全局 codex 二进制路径，通过 codexPathOverride 传给 SDK。
- *  开发模式或未找到时返回 null，SDK 走自身 findCodexPath()。 */
+ *  不缓存结果，每次调用重新扫描，确保安装后能立即检测到。 */
 function findGlobalCodexPath() {
   if (_globalCodexPath !== undefined) return _globalCodexPath;
 
-  try {
-    const tripleMap = { win32: 'pc-windows-msvc', darwin: 'apple-darwin', linux: 'unknown-linux-musl' };
-    const arch = process.arch === 'x64' ? 'x86_64' : process.arch;
-    const triple = `${arch}-${tripleMap[process.platform] || 'unknown-linux-musl'}`;
-    const suffixByTriple = {
-      'x86_64-pc-windows-msvc': 'win32-x64', 'aarch64-pc-windows-msvc': 'win32-arm64',
-      'x86_64-apple-darwin': 'darwin-x64', 'aarch64-apple-darwin': 'darwin-arm64',
-      'x86_64-unknown-linux-musl': 'linux-x64', 'aarch64-unknown-linux-musl': 'linux-arm64',
-    };
-    const suffix = suffixByTriple[triple];
-    if (suffix) {
-      const binName = process.platform === 'win32' ? 'codex.exe' : 'codex';
-      const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim();
-      if (globalRoot) {
-        const candidates = [
-          path.join(globalRoot, '@openai', 'codex', 'node_modules', `@openai/codex-${suffix}`, 'vendor', triple, 'bin', binName),
-          path.join(globalRoot, `@openai/codex-${suffix}`, 'vendor', triple, 'bin', binName),
-        ];
-        for (const p of candidates) {
-          if (fs.existsSync(p)) { _globalCodexPath = p; return p; }
-        }
+  if (_codexConfRef) {
+    try {
+      const custom = getConfiguredCodexPath();
+      if (custom && isExecutableHealthy(custom)) {
+        _globalCodexPath = custom;
+        return custom;
+      }
+    } catch (_) {}
+  }
+
+  const suffixByTriple = {
+    'x86_64-pc-windows-msvc': 'win32-x64', 'aarch64-pc-windows-msvc': 'win32-arm64',
+    'x86_64-apple-darwin': 'darwin-x64', 'aarch64-apple-darwin': 'darwin-arm64',
+    'x86_64-unknown-linux-musl': 'linux-x64', 'aarch64-unknown-linux-musl': 'linux-arm64',
+  };
+  const tripleMap = { win32: 'pc-windows-msvc', darwin: 'apple-darwin', linux: 'unknown-linux-musl' };
+  const arch = process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : process.arch;
+  const triple = `${arch}-${tripleMap[process.platform] || 'unknown-linux-musl'}`;
+  const suffix = suffixByTriple[triple];
+  if (!suffix) return null;
+
+  const binName = process.platform === 'win32' ? 'codex.exe' : 'codex';
+
+  /** 在指定根目录下查找 codex 二进制 */
+  const tryRoot = (root) => {
+    if (!root || !fs.existsSync(root)) return null;
+    const candidates = [
+      path.join(root, '@openai', 'codex', 'node_modules', `@openai/codex-${suffix}`, 'vendor', triple, 'bin', binName),
+      path.join(root, `@openai/codex-${suffix}`, 'vendor', triple, 'bin', binName),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  };
+
+  if (process.platform === 'darwin') {
+    const macCandidates = [
+      '/opt/homebrew/bin/codex',
+      '/usr/local/bin/codex',
+    ];
+    for (const candidate of macCandidates) {
+      if (isExecutableHealthy(candidate)) {
+        _globalCodexPath = candidate;
+        return candidate;
       }
     }
-  } catch (_) { /* npm 不可用，尝试下一级 fallback */ }
+    try {
+      const direct = execSync('which codex', { encoding: 'utf8', timeout: 5000 }).trim();
+      if (direct && isExecutableHealthy(direct)) {
+        _globalCodexPath = direct;
+        return direct;
+      }
+    } catch (_) {}
+    try {
+      const loginPath = resolveLoginShellPath();
+      if (loginPath) {
+        const loginEnv = { ...process.env, PATH: loginPath, Path: loginPath };
+        const direct = execSync('which codex', {
+          encoding: 'utf8',
+          timeout: 5000,
+          env: loginEnv,
+        }).trim();
+        if (direct && isExecutableHealthy(direct, loginEnv)) {
+          _globalCodexPath = direct;
+          return direct;
+        }
+      }
+    } catch (_) {}
+  }
 
-  // Fallback: 通过 where/which 在 PATH 中查找 codex（Windows 可能返回 .cmd shim）
+  // 1. npm root -g（标准 npm 安装）
   try {
-    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
-    const result = execSync(`${whichCmd} codex`, { encoding: 'utf8', timeout: 5000 }).trim();
-    const lines = result.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length > 0) { _globalCodexPath = lines[0]; return _globalCodexPath; }
+    const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim();
+    const found = tryRoot(globalRoot);
+    if (found) {
+      _globalCodexPath = found;
+      return found;
+    }
+  } catch (_) {
+    // npm 可能不在 PATH 上（打包后场景）
+  }
+
+  // 2. 使用 getEnvWithNodePath 增强 PATH 后重试
+  try {
+    const env = getEnvWithNodePath();
+    const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000, env }).trim();
+    const found = tryRoot(globalRoot);
+    if (found) {
+      _globalCodexPath = found;
+      return found;
+    }
   } catch (_) {}
+
+  // 3. 用 login-shell PATH 重试
+  try {
+    const loginPath = resolveLoginShellPath();
+    if (loginPath) {
+      const env = { ...process.env, PATH: loginPath, Path: loginPath };
+      const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000, env }).trim();
+      const found = tryRoot(globalRoot);
+      if (found) {
+        _globalCodexPath = found;
+        return found;
+      }
+    }
+  } catch (_) {}
+
+  // 4. 直接检查已知的 npm global root 目录
+  const commonRoots = getCommonGlobalBinDirs().filter(d => d.includes('node_modules'));
+  for (const root of commonRoots) {
+    const found = tryRoot(root);
+    if (found) {
+      _globalCodexPath = found;
+      return found;
+    }
+  }
 
   _globalCodexPath = null;
   return null;
@@ -80,9 +195,17 @@ function resetCodexSdkPromise() {
 /** 重置全局路径缓存（主要用于测试） */
 function clearGlobalCodexPathCache() {
   _globalCodexPath = undefined;
+  // 同时清除 Conf 实例的内部缓存，确保下次 get() 从文件重新读取
+  if (_codexConfRef) {
+    try { _codexConfRef._store = null; } catch (_) {}
+  }
 }
 
-// ---- install guard (mutable flag shared with install handler) ----
+function setCodexConfRef(ref) {
+  _codexConfRef = ref;
+}
+
+// ---- 安装状态保护（与安装处理器共享） ----
 
 function isInstallingCodex() {
   return installingCodex;
@@ -94,9 +217,12 @@ function setInstallingCodex(v) {
 
 module.exports = {
   findGlobalCodexPath,
+  getConfiguredCodexPath,
+  isExecutableHealthy,
   loadCodexSdk,
   resetCodexSdkPromise,
   clearGlobalCodexPathCache,
+  setCodexConfRef,
   isInstallingCodex,
   setInstallingCodex,
 };
