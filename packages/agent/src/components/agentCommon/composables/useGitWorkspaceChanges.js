@@ -41,8 +41,13 @@ export function useGitWorkspaceChanges(onError) {
   let listRequestId = 0;
   let diffGeneration = 0;  // increments on refresh, stale diff responses discarded
 
-  /** Dedup in-flight diff requests: identity → { promise, generation } */
+  /** Dedup in-flight diff requests: identity → { promise, generation, token } */
   const inflightDiffs = new Map();
+
+  /** Concurrency limiter: max 2 concurrent git diff IPC calls */
+  let activeDiffRequests = 0;
+  const MAX_CONCURRENT_DIFFS = 2;
+  const diffWaitQueue = [];  // resolve functions queued for slots
 
   // ── Actions ──
 
@@ -133,9 +138,9 @@ export function useGitWorkspaceChanges(onError) {
     if (inflightDiffs.has(identity)) {
       const inflight = inflightDiffs.get(identity);
       if (inflight.generation === diffGeneration) {
+        expandedEntryId.value = entry.id;  // set immediately, don't steal later selection
         try {
           await inflight.promise;
-          expandedEntryId.value = entry.id;
         } catch (_) {}
         return;
       }
@@ -143,14 +148,23 @@ export function useGitWorkspaceChanges(onError) {
       inflightDiffs.delete(identity);
     }
 
-    // Start loading
+    // Start loading (UI intent registered immediately)
     diffLoading.value = { ...diffLoading.value, [identity]: true };
     expandedEntryId.value = entry.id;
 
     const gen = diffGeneration;
-    const token = {};  // unique object for safe cleanup — prevents cross-gen interference
+    const token = {};  // unique object + settled flag for safe cleanup
 
     const promise = (async () => {
+      // Wait for concurrency slot (max 2 concurrent git diff IPC calls)
+      await _acquireDiffSlot();
+
+      // Guard: request may have been cancelled (timeout/refresh) while waiting for slot
+      if (token.settled || gen !== diffGeneration) {
+        _releaseDiffSlot();
+        return;
+      }
+
       try {
         const api = window.electronAPI;
         if (!api || !api.gitGetFileDiff) {
@@ -159,11 +173,10 @@ export function useGitWorkspaceChanges(onError) {
 
         const result = await api.gitGetFileDiff(cwd, entry.relativePath, entry.changeKind);
 
-        // Stale guard: discard result if generation changed (refresh happened)
-        if (gen !== diffGeneration) return;
+        // Guard: request settled or generation changed
+        if (token.settled || gen !== diffGeneration) return;
 
         if (result.errorCode) {
-          // Don't cache error results — allows retry on next toggle
           diffErrors.value = { ...diffErrors.value, [identity]: result.errorCode };
         } else {
           diffCache.value = { ...diffCache.value, [identity]: result };
@@ -175,11 +188,12 @@ export function useGitWorkspaceChanges(onError) {
           }
         }
       } catch (err) {
-        if (gen !== diffGeneration) return;
+        if (token.settled || gen !== diffGeneration) return;
         diffErrors.value = { ...diffErrors.value, [identity]: 'GIT_COMMAND_FAILED' };
         if (onError) onError(err);
       } finally {
-        // Only clean up OUR entry — token guards against cross-gen overwrite
+        token.settled = true;
+        _releaseDiffSlot();
         const existing = inflightDiffs.get(identity);
         if (existing && existing.token === token) {
           diffLoading.value = { ...diffLoading.value, [identity]: false };
@@ -191,15 +205,37 @@ export function useGitWorkspaceChanges(onError) {
     inflightDiffs.set(identity, { promise, generation: gen, token });
 
     // Timeout cleanup: don't let hung requests block retry forever.
-    // Token guard ensures we don't delete a newer generation's entry.
+    // Sets settled flag so late-arriving results are discarded; clears loading state.
     const timer = setTimeout(() => {
       const existing = inflightDiffs.get(identity);
       if (existing && existing.token === token) {
+        token.settled = true;
+        diffLoading.value = { ...diffLoading.value, [identity]: false };
         inflightDiffs.delete(identity);
       }
     }, 30000);
-    // Clear timeout when request settles (avoid leaking timers)
     promise.finally(() => clearTimeout(timer));
+  }
+
+  // ── Semaphore helpers ──
+
+  function _acquireDiffSlot() {
+    if (activeDiffRequests < MAX_CONCURRENT_DIFFS) {
+      activeDiffRequests++;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      diffWaitQueue.push(resolve);
+    });
+  }
+
+  function _releaseDiffSlot() {
+    activeDiffRequests--;
+    const next = diffWaitQueue.shift();
+    if (next) {
+      activeDiffRequests++;
+      next();
+    }
   }
 
   /**
@@ -272,6 +308,9 @@ export function useGitWorkspaceChanges(onError) {
     listRequestId++;
     ++diffGeneration;
     inflightDiffs.clear();
+    // Reset semaphore state
+    activeDiffRequests = 0;
+    diffWaitQueue.length = 0;
   }
 
   /**
