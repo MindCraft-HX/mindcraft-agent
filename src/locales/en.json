@@ -9,6 +9,24 @@
 		"language": "Language",
 		"addPlugin": "Plugin"
 	},
+	"git": {
+		"changes": "Workspace Changes",
+		"staged": "Staged",
+		"unstaged": "Modified",
+		"untracked": "Untracked",
+		"noRepo": "Not a Git repository",
+		"noChanges": "No working tree changes",
+		"noCwd": "Open a project folder first",
+		"gitNotFound": "Git not found on this system",
+		"loadError": "Failed to fetch changes",
+		"diffLoadError": "Failed to load diff",
+		"retry": "Retry",
+		"refresh": "Refresh",
+		"openFile": "Open file",
+		"binaryNoPreview": "Binary file - no text preview available",
+		"diffTruncated": "Diff truncated (showing first {n} lines)",
+		"diffTruncatedGeneric": "Diff truncated — output too large"
+	},
 	"home": {
 		"welcome": "Welcome to MindCraft",
 		"stats": "Usage Stats",

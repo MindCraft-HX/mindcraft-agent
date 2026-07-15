@@ -97,7 +97,14 @@
                   :class="{ 'git-file-entry--active': expandedEntryId === entry.id }"
                 >
                   <!-- File row -->
-                  <div class="git-file-row" @click="props.gitState.toggleEntry(entry, props.cwd)">
+                  <div
+                    class="git-file-row"
+                    tabindex="0"
+                    role="button"
+                    @click="props.gitState.toggleEntry(entry, props.cwd)"
+                    @keydown.enter="props.gitState.toggleEntry(entry, props.cwd)"
+                    @keydown.space.prevent="props.gitState.toggleEntry(entry, props.cwd)"
+                  >
                     <span class="git-file-status" :class="'git-file-status--' + entry.status">
                       {{ entry.status }}
                     </span>
@@ -165,9 +172,12 @@
 
 <script setup>
 import { computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useClaudeThemeStore } from '../../../stores/claudeTheme.js'
 import GitUnifiedDiffView from './GitUnifiedDiffView.vue'
 import { parseSingleFileDiff } from '../utils/unifiedDiff.js'
+
+const { t } = useI18n()
 
 // ── Props / Emits ──
 
@@ -202,17 +212,17 @@ const groups = computed(() => {
   return [
     {
       key: 'staged',
-      label: props.gitState.$t ? (props.gitState.$t('git.staged') || 'Staged Changes') : 'Staged Changes',
+      label: t('git.staged'),
       entries: grouped.staged,
     },
     {
       key: 'unstaged',
-      label: props.gitState.$t ? (props.gitState.$t('git.unstaged') || 'Unstaged Changes') : 'Unstaged Changes',
+      label: t('git.unstaged'),
       entries: grouped.unstaged,
     },
     {
       key: 'untracked',
-      label: props.gitState.$t ? (props.gitState.$t('git.untracked') || 'Untracked') : 'Untracked',
+      label: t('git.untracked'),
       entries: grouped.untracked,
     },
   ].filter(g => g.entries.length)
@@ -268,6 +278,16 @@ watch(() => props.modelValue, (val) => {
   } else if (!val) {
     parsedHunksCache.clear()
     parsedHunksVersion.clear()
+  }
+})
+
+// ── Watch: CWD change (project switch while drawer open) ──
+
+watch(() => props.cwd, (newCwd, oldCwd) => {
+  if (newCwd && newCwd !== oldCwd && props.modelValue) {
+    parsedHunksCache.clear()
+    parsedHunksVersion.clear()
+    props.gitState.refresh(newCwd)
   }
 })
 

@@ -39,8 +39,9 @@ export function useGitWorkspaceChanges(onError) {
   // ── Request guards ──
 
   let listRequestId = 0;
+  let diffGeneration = 0;  // increments on refresh, stale diff responses discarded
 
-  /** Dedup in-flight diff requests: identity → Promise */
+  /** Dedup in-flight diff requests: identity → { promise, generation } */
   const inflightDiffs = new Map();
 
   // ── Actions ──
@@ -63,6 +64,7 @@ export function useGitWorkspaceChanges(onError) {
     }
 
     const reqId = ++listRequestId;
+    ++diffGeneration;  // invalidate in-flight diff requests from previous snapshot
     loading.value = true;
     errorCode.value = '';
     expandedEntryId.value = '';
@@ -121,7 +123,7 @@ export function useGitWorkspaceChanges(onError) {
 
     const identity = `${repoRoot.value}\0${entry.changeKind}\0${entry.relativePath}`;
 
-    // Already loaded
+    // Already loaded successfully
     if (diffCache.value[identity]) {
       expandedEntryId.value = entry.id;
       return;
@@ -130,7 +132,7 @@ export function useGitWorkspaceChanges(onError) {
     // Dedup in-flight
     if (inflightDiffs.has(identity)) {
       try {
-        await inflightDiffs.get(identity);
+        await inflightDiffs.get(identity).promise;
         expandedEntryId.value = entry.id;
       } catch (_) {}
       return;
@@ -139,6 +141,8 @@ export function useGitWorkspaceChanges(onError) {
     // Start loading
     diffLoading.value = { ...diffLoading.value, [identity]: true };
     expandedEntryId.value = entry.id;
+
+    const gen = diffGeneration;
 
     const promise = (async () => {
       try {
@@ -149,13 +153,23 @@ export function useGitWorkspaceChanges(onError) {
 
         const result = await api.gitGetFileDiff(cwd, entry.relativePath, entry.changeKind);
 
+        // Stale guard: discard result if generation changed (refresh happened)
+        if (gen !== diffGeneration) return;
+
         if (result.errorCode) {
           // Don't cache error results — allows retry on next toggle
           diffErrors.value = { ...diffErrors.value, [identity]: result.errorCode };
         } else {
           diffCache.value = { ...diffCache.value, [identity]: result };
+          // Clear any previous error for this entry
+          if (diffErrors.value[identity]) {
+            const next = { ...diffErrors.value };
+            delete next[identity];
+            diffErrors.value = next;
+          }
         }
       } catch (err) {
+        if (gen !== diffGeneration) return;
         diffErrors.value = { ...diffErrors.value, [identity]: 'GIT_COMMAND_FAILED' };
         if (onError) onError(err);
       } finally {
@@ -164,7 +178,15 @@ export function useGitWorkspaceChanges(onError) {
       }
     })();
 
-    inflightDiffs.set(identity, promise);
+    inflightDiffs.set(identity, { promise, generation: gen });
+
+    // Timeout cleanup: don't let hung requests block retry forever
+    setTimeout(() => {
+      const entry = inflightDiffs.get(identity);
+      if (entry && entry.generation === gen) {
+        inflightDiffs.delete(identity);
+      }
+    }, 30000);
   }
 
   /**
@@ -235,6 +257,8 @@ export function useGitWorkspaceChanges(onError) {
     diffErrors.value = {};
     expandedEntryId.value = '';
     listRequestId++;
+    ++diffGeneration;
+    inflightDiffs.clear();
   }
 
   /**

@@ -134,7 +134,8 @@ function isModalOpen() {
   return Boolean(
     check('.el-dialog__wrapper') ||
     check('.el-drawer__wrapper') ||
-    check('.el-message-box__wrapper')
+    check('.el-message-box__wrapper') ||
+    document.querySelector('.git-drawer-overlay') // custom git-drawer (v-if removes from DOM when closed)
   )
 }
 

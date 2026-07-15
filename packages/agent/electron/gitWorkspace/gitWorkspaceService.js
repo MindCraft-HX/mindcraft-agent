@@ -145,7 +145,7 @@ async function getWorkspaceChanges(cwd) {
   let porcelainRaw = '';
   try {
     const result = await execFileAsync(GIT_EXECUTABLE, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
-      cwd: resolvedCwd,
+      cwd: repo.repoRoot,
       timeout: 10000,
       encoding: 'utf8',
       windowsHide: true,
@@ -170,7 +170,7 @@ async function getWorkspaceChanges(cwd) {
   let unstagedNumstats = [];
   try {
     const result = await execFileAsync(GIT_EXECUTABLE, ['diff', '--numstat', '-z', '--no-ext-diff'], {
-      cwd: resolvedCwd,
+      cwd: repo.repoRoot,
       timeout: 15000,
       encoding: 'utf8',
       windowsHide: true,
@@ -189,7 +189,7 @@ async function getWorkspaceChanges(cwd) {
   let stagedNumstats = [];
   try {
     const result = await execFileAsync(GIT_EXECUTABLE, ['diff', '--cached', '--numstat', '-z', '--no-ext-diff'], {
-      cwd: resolvedCwd,
+      cwd: repo.repoRoot,
       timeout: 15000,
       encoding: 'utf8',
       windowsHide: true,
@@ -326,7 +326,7 @@ async function getFileDiff(cwd, relativePath, changeKind) {
   let stdout = '';
   try {
     const result = await execFileAsync(GIT_EXECUTABLE, args, {
-      cwd: resolvedCwd,
+      cwd: repo.repoRoot,  // always run from repo root, not original cwd (handles subdirectory projects)
       timeout: DEFAULT_TIMEOUT,
       encoding: 'utf8',
       windowsHide: true,

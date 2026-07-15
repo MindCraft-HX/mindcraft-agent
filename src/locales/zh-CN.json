@@ -9,6 +9,24 @@
 		"language": "语言",
 		"addPlugin": "插件"
 	},
+	"git": {
+		"changes": "工作区变更",
+		"staged": "已暂存",
+		"unstaged": "已修改",
+		"untracked": "未跟踪",
+		"noRepo": "不在 Git 仓库中",
+		"noChanges": "工作区无变更",
+		"noCwd": "请先打开项目文件夹",
+		"gitNotFound": "未找到 Git",
+		"loadError": "获取变更失败",
+		"diffLoadError": "加载 diff 失败",
+		"retry": "重试",
+		"refresh": "刷新",
+		"openFile": "打开文件",
+		"binaryNoPreview": "二进制文件 - 无可预览文本",
+		"diffTruncated": "diff 已截断（仅前 {n} 行）",
+		"diffTruncatedGeneric": "diff 已截断 — 输出过大"
+	},
 	"home": {
 		"welcome": "欢迎使用 MindCraft",
 		"stats": "用量统计",

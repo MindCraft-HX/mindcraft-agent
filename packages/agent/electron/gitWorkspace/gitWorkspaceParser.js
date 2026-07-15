@@ -148,9 +148,10 @@ function parsePorcelainZ(raw) {
         const path2 = buf.slice(path2Start, i).toString('utf8');
         i++; // skip NUL
 
-        entry.oldRelativePath = entry.relativePath;
-        entry.relativePath = path2;
-        entry.id = entry.changeKind + '\0' + path2;
+        // porcelain -z format: R  newPath\0oldPath\0
+        // path1 (from classifyPorcelainEntries) = newPath, path2 = oldPath
+        entry.oldRelativePath = path2;
+        // relativePath stays path1 (newPath), id stays changeKind\0newPath — both already correct
       }
       entries.push(entry);
     }
@@ -218,10 +219,9 @@ function parseNumstatZ(raw) {
     };
 
     // After path1\0, peek to determine if there's a rename second path.
-    // Numstat rename format:  add\tdel\toldPath\0newPath\0
-    // Normal entry format:    add\tdel\tpath\0
-    // Key difference: after path1\0, a new entry starts with <add>\t (digit/- then TAB),
-    // while a rename has a second path (no TAB before next NUL).
+    // Two rename formats exist:
+    //   --cached:  add\tdel\t\0oldPath\0newPath\0   (path1 empty, then old, then new)
+    //   unstaged:  add\tdel\toldPath\0newPath\0      (path1 = old, path2 = new)
     if (i < buf.length) {
       let peek = i;
       let foundTab = false;
@@ -232,13 +232,29 @@ function parseNumstatZ(raw) {
         peek++;
       }
       if (foundNul && !foundTab) {
-        // Second path exists (rename/copy)
-        const path2Start = i;
-        while (i < buf.length && buf[i] !== 0) i++;
-        const path2 = buf.slice(path2Start, i).toString('utf8');
-        i++; // skip NUL
-        entry.oldRelativePath = entry.relativePath;
-        entry.relativePath = path2;
+        if (path1 === '') {
+          // --cached rename: \0oldPath\0newPath\0
+          // Read oldPath (path2)
+          const oldStart = i;
+          while (i < buf.length && buf[i] !== 0) i++;
+          const oldPath = buf.slice(oldStart, i).toString('utf8');
+          i++; // skip NUL
+          // Read newPath (path3)
+          const newStart = i;
+          while (i < buf.length && buf[i] !== 0) i++;
+          const newPath = buf.slice(newStart, i).toString('utf8');
+          i++; // skip NUL
+          entry.oldRelativePath = oldPath;
+          entry.relativePath = newPath;
+        } else {
+          // Unstaged rename: oldPath\0newPath\0
+          const path2Start = i;
+          while (i < buf.length && buf[i] !== 0) i++;
+          const path2 = buf.slice(path2Start, i).toString('utf8');
+          i++; // skip NUL
+          entry.oldRelativePath = entry.relativePath; // path1 = oldPath
+          entry.relativePath = path2;                  // path2 = newPath
+        }
       }
     }
 
