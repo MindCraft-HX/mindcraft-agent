@@ -129,13 +129,18 @@ export function useGitWorkspaceChanges(onError) {
       return;
     }
 
-    // Dedup in-flight
+    // Dedup in-flight — only reuse same-generation requests
     if (inflightDiffs.has(identity)) {
-      try {
-        await inflightDiffs.get(identity).promise;
-        expandedEntryId.value = entry.id;
-      } catch (_) {}
-      return;
+      const inflight = inflightDiffs.get(identity);
+      if (inflight.generation === diffGeneration) {
+        try {
+          await inflight.promise;
+          expandedEntryId.value = entry.id;
+        } catch (_) {}
+        return;
+      }
+      // Stale request from previous generation — remove and start fresh
+      inflightDiffs.delete(identity);
     }
 
     // Start loading
@@ -143,6 +148,7 @@ export function useGitWorkspaceChanges(onError) {
     expandedEntryId.value = entry.id;
 
     const gen = diffGeneration;
+    const token = {};  // unique object for safe cleanup — prevents cross-gen interference
 
     const promise = (async () => {
       try {
@@ -173,20 +179,27 @@ export function useGitWorkspaceChanges(onError) {
         diffErrors.value = { ...diffErrors.value, [identity]: 'GIT_COMMAND_FAILED' };
         if (onError) onError(err);
       } finally {
-        diffLoading.value = { ...diffLoading.value, [identity]: false };
-        inflightDiffs.delete(identity);
+        // Only clean up OUR entry — token guards against cross-gen overwrite
+        const existing = inflightDiffs.get(identity);
+        if (existing && existing.token === token) {
+          diffLoading.value = { ...diffLoading.value, [identity]: false };
+          inflightDiffs.delete(identity);
+        }
       }
     })();
 
-    inflightDiffs.set(identity, { promise, generation: gen });
+    inflightDiffs.set(identity, { promise, generation: gen, token });
 
-    // Timeout cleanup: don't let hung requests block retry forever
-    setTimeout(() => {
-      const entry = inflightDiffs.get(identity);
-      if (entry && entry.generation === gen) {
+    // Timeout cleanup: don't let hung requests block retry forever.
+    // Token guard ensures we don't delete a newer generation's entry.
+    const timer = setTimeout(() => {
+      const existing = inflightDiffs.get(identity);
+      if (existing && existing.token === token) {
         inflightDiffs.delete(identity);
       }
     }, 30000);
+    // Clear timeout when request settles (avoid leaking timers)
+    promise.finally(() => clearTimeout(timer));
   }
 
   /**

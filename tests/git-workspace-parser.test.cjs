@@ -26,8 +26,8 @@ const {
 // ── Helpers ──
 
 function makePorcelainBuffer(lines) {
-  // lines: array of [xy, path] or [xy, oldPath, newPath] for renames
-  // porcelain=v1 -z format: "XY path\0" or "XY orig\0new\0"
+  // lines: array of [xy, path] or [xy, newPath, oldPath] for renames
+  // porcelain=v1 -z format: "XY newPath\0oldPath\0" (NEW first, OLD second)
   const parts = [];
   for (const line of lines) {
     parts.push(line[0]);
@@ -118,7 +118,8 @@ describe('parsePorcelainZ', () => {
   });
 
   it('parses renamed file (R)', () => {
-    const raw = makePorcelainBuffer([['R ', 'old.js', 'new.js']]);
+    // Real git format: R  newPath\0oldPath\0 (NEW first)
+    const raw = makePorcelainBuffer([['R ', 'new.js', 'old.js']]);
     const entries = parsePorcelainZ(raw);
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(entries[0].status, 'R');
@@ -127,7 +128,8 @@ describe('parsePorcelainZ', () => {
   });
 
   it('parses copied file (C)', () => {
-    const raw = makePorcelainBuffer([['C ', 'orig.js', 'copy.js']]);
+    // Real git format: C  newPath\0oldPath\0 (NEW first)
+    const raw = makePorcelainBuffer([['C ', 'copy.js', 'orig.js']]);
     const entries = parsePorcelainZ(raw);
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(entries[0].status, 'C');

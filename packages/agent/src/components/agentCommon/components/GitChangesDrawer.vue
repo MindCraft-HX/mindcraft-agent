@@ -102,8 +102,8 @@
                     tabindex="0"
                     role="button"
                     @click="props.gitState.toggleEntry(entry, props.cwd)"
-                    @keydown.enter="props.gitState.toggleEntry(entry, props.cwd)"
-                    @keydown.space.prevent="props.gitState.toggleEntry(entry, props.cwd)"
+                    @keydown.enter.self="props.gitState.toggleEntry(entry, props.cwd)"
+                    @keydown.space.self.prevent="props.gitState.toggleEntry(entry, props.cwd)"
                   >
                     <span class="git-file-status" :class="'git-file-status--' + entry.status">
                       {{ entry.status }}
@@ -288,6 +288,11 @@ watch(() => props.cwd, (newCwd, oldCwd) => {
     parsedHunksCache.clear()
     parsedHunksVersion.clear()
     props.gitState.refresh(newCwd)
+  } else if (!newCwd && oldCwd && props.modelValue) {
+    // Project closed — clear stale content and show NO_CWD
+    parsedHunksCache.clear()
+    parsedHunksVersion.clear()
+    props.gitState.refresh('')
   }
 })
 
