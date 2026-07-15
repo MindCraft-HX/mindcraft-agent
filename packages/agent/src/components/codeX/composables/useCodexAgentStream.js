@@ -72,33 +72,6 @@ function normalizeToolStatus(itemStatus, isFinal) {
  * SDK 可能返回对象格式 {path: {type, unified_diff, ...}} 或数组格式 [{path, operation, unified_diff}]，
  * 此处兼容两种格式，与 electron 侧 toFileChangeChangesFromPatchEnd 逻辑一致。
  */
-function mapPatchChangesToFileChanges(changes) {
-  // 数组格式（electron 富化后的 file_change.changes）
-  if (Array.isArray(changes)) {
-    return changes.map(normalizeIncomingFileChange)
-  }
-  // 对象格式 {path: {type, unified_diff, move_path, ...}}（SDK 原始 patch_apply_end.changes）
-  if (changes && typeof changes === 'object') {
-    return Object.entries(changes).map(([filePath, info]) => ({
-      path: filePath,
-      operation: info?.type === 'create'
-        ? 'add'
-        : info?.type === 'delete'
-          ? 'delete'
-          : info?.move_path
-            ? 'rename'
-            : 'modify',
-      unified_diff: info?.unified_diff || '',
-      _diffSource: info?._diffSource || '',
-      _noDiffReason: info?._noDiffReason || '',
-      _oldStr: '',
-      _newStr: '',
-      diffLines: [],
-    }))
-  }
-  return []
-}
-
 function getActivityLabel(toolName) {
   const n = String(toolName || '').toLowerCase()
   if (['shell', 'bash', 'execute', 'command_execution'].includes(n)) return 'Ran'
@@ -236,43 +209,6 @@ function mergeFileChangePreview(existingChanges, nextChanges) {
   })
 }
 
-function findRecentFileMutationMessage(tab, incomingFileChanges = []) {
-  const incomingPaths = new Set(
-    (Array.isArray(incomingFileChanges) ? incomingFileChanges : [])
-      .map(change => String(change?.path || '').trim())
-      .filter(Boolean)
-  )
-  if (!incomingPaths.size) return null
-
-  for (let index = tab.messages.length - 1; index >= 0; index -= 1) {
-    const message = tab.messages[index]
-    if (message?.role !== 'tool') continue
-
-    const toolName = String(message.toolName || '').toLowerCase()
-    const rawType = String(message.rawType || '').toLowerCase()
-    const isFileMutation = rawType === 'file_change'
-      || rawType === 'apply_patch'
-      || ['write', 'write_file', 'create_file', 'edit', 'edit_file', 'str_replace', 'str_replace_editor', 'str_replace_based_edit'].includes(toolName)
-    if (!isFileMutation) continue
-
-    const existingPaths = new Set(
-      [
-        ...String(message.filePath || '').split('\n'),
-        ...((Array.isArray(message._fileChanges) ? message._fileChanges : []).map(change => String(change?.path || '').trim())),
-      ]
-        .map(path => path.trim())
-        .filter(Boolean)
-    )
-    if (!existingPaths.size) continue
-
-    for (const path of incomingPaths) {
-      if (existingPaths.has(path)) return message
-    }
-  }
-
-  return null
-}
-
 function upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, factory) {
   const existing = toolUseId
     ? tab.messages.find(m => m.role === 'tool' && m.toolUseId === toolUseId)
@@ -354,10 +290,6 @@ const ITEM_TOOL_HANDLERS = {
       }
     },
     status: (item, isFinal) => normalizeToolStatus(item.status, isFinal),
-    findExistingMessage: (tab, item) => {
-      const changes = Array.isArray(item?.changes) ? item.changes : []
-      return findRecentFileMutationMessage(tab, changes)
-    },
   },
   mcp_tool_call: {
     toolName: 'mcp_tool',
@@ -433,36 +365,6 @@ export function useCodexAgentStream({
   onCompactBoundary = () => {},
 }) {
   function handleToolItem(tab, item, isFinal) {
-    if (item.type === 'patch_apply_end') {
-      const toolUseId = item.call_id || item.id
-      if (!toolUseId) return
-      const _fileChanges = mapPatchChangesToFileChanges(item.changes)
-      const filePath = _fileChanges.map(c => c.path).filter(Boolean).join('\n')
-      if (CODEX_DEBUG) console.log('[codex-stream] patch_apply_end -> file_change', {
-        itemId: item.id,
-        callId: item.call_id,
-        status: item.status,
-        changesCount: _fileChanges.length,
-        filePath,
-      })
-      upsertToolMessage(tab, onNewMessage, createToolMessage, toolUseId, (existing, isNew) => ({
-        ...(!isNew ? {} : {
-          toolName: 'file_change',
-          rawType: 'file_change',
-          activityLabel: getActivityLabel('file_change'),
-          toolUseId,
-          expanded: true,
-          newContent: '',
-          diffLines: [],
-        }),
-        filePath,
-        _fileChanges,
-        status: normalizeToolStatus(item.status, true),
-        text: JSON.stringify({ changes: item.changes || [], status: item.status }, null, 2),
-      }))
-      return
-    }
-
     // apply_patch 特殊处理：custom_tool_call 类型，需要解析 input 文本构建 _fileChanges
     if (item.type === 'custom_tool_call' && item.name === 'apply_patch') {
       const patchText = item.input || ''
@@ -543,7 +445,9 @@ export function useCodexAgentStream({
 
     const toolName = typeof handler.toolName === 'function' ? handler.toolName(item) : handler.toolName
 
-    const toolUseId = item.call_id || item.id
+    const toolUseId = item.type === 'file_change'
+      ? (item.id || item.call_id)
+      : (item.call_id || item.id)
     const matchedExisting = typeof handler.findExistingMessage === 'function'
       ? handler.findExistingMessage(tab, item)
       : null
@@ -703,7 +607,7 @@ export function useCodexAgentStream({
       handleToolItem(tab, item, isFinal)
       if (item.type === 'file_change') {
         const justUpserted = [...tab.messages].reverse().find(
-          m => m.role === 'tool' && (m.toolUseId === item.id || String(m.rawType || '').toLowerCase() === 'file_change')
+          m => m.role === 'tool' && m.toolUseId === (item.id || item.call_id)
         )
         if (CODEX_DEBUG) console.log('[codex-stream] file_change rendered', {
           found: !!justUpserted,

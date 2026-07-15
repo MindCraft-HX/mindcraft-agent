@@ -52,6 +52,7 @@
 |------|------|
 | [plan/2026-07-06-post-refactor-release-and-cleanup-queue.md](./plan/2026-07-06-post-refactor-release-and-cleanup-queue.md) | Post-refactor release gate and cleanup queue：当前发布线冻结新功能，后续清理按 T193-T197 分批推进（全部已完成） |
 | [plan/2026-07-07-T201-session-panel-storage-convergence.md](./plan/2026-07-07-T201-session-panel-storage-convergence.md) | T201 Session / Panel 存储收敛：把 session identity/runtime 元数据迁入 SQLite，缩减 panel-state 为 UI 布局层 |
+| [plan/2026-07-14-T202-codex-file-change-event-convergence.md](./plan/2026-07-14-T202-codex-file-change-event-convergence.md) | T202 CodeX 文件变更事件收敛：JSONL 权威 diff 与 SDK file_change 的 live/history 统一 |
 | [plan/2026-07-06-T197-agent-lifecycle-work-graph.md](./plan/2026-07-06-T197-agent-lifecycle-work-graph.md) | T197 Agent lifecycle work graph：stream/abort/done/session map/metrics flush 调用链 |
 | [plan/2026-07-06-T194-ipc-channel-classification.md](./plan/2026-07-06-T194-ipc-channel-classification.md) | T194 IPC 通道分类与迁移：218 grandfathered 通道归属划分、baseline 清零 |
 | [plan/2026-07-06-T187-phase0-inventory.md](./plan/2026-07-06-T187-phase0-inventory.md) | T187 Dead code Phase 0 清单：重构后死代码、孤岛业务线全量盘点 |

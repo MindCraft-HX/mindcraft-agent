@@ -89,13 +89,6 @@ test('resolveToolCardType: function_call without name → tool', () => {
   )
 })
 
-test('resolveToolCardType: patch_apply_end → file_change', () => {
-  assert.equal(
-    resolveToolCardType({ type: 'patch_apply_end' }),
-    'file_change'
-  )
-})
-
 test('resolveToolCardType: output types return null', () => {
   assert.equal(resolveToolCardType({ type: 'custom_tool_call_output' }), null)
   assert.equal(resolveToolCardType({ type: 'function_call_output' }), null)
@@ -126,7 +119,6 @@ test('classifyItemKind: tool items → tool', () => {
     { type: 'error' },
     { type: 'custom_tool_call', name: 'run_tests' },
     { type: 'function_call', name: 'write' },
-    { type: 'patch_apply_end' },
   ]
   for (const item of toolTypes) {
     assert.equal(classifyItemKind(item), 'tool', `${item.type} should be 'tool'`)
@@ -326,35 +318,10 @@ test('buildHistoryToolMessage: generic custom_tool_call → tool message with re
   assert.equal(msg.status, 'done')
 })
 
-test('buildHistoryToolMessage: apply_patch + patchEnd → file_change fusion', () => {
-  const msg = buildHistoryToolMessage(
-    { type: 'custom_tool_call', id: 'ap1', call_id: 'cap1', name: 'apply_patch', input: '...' },
-    '',
-    {
-      success: true,
-      status: 'completed',
-      changes: {
-        'src/demo.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new' },
-      },
-    },
-    {}
-  )
-  assert.ok(msg)
-  assert.equal(msg.role, 'tool')
-  assert.equal(msg.toolName, 'file_change')
-  assert.equal(msg.rawType, 'file_change')
-  assert.equal(msg.status, 'done')
-  assert.equal(msg.filePath, 'src/demo.ts')
-  const parsed = JSON.parse(msg.text)
-  assert.equal(parsed.changes.length, 1)
-  assert.equal(parsed.changes[0].operation, 'modify')
-})
-
 test('buildHistoryToolMessage: function_call shell_command → shell tool with bashCmd', () => {
   const msg = buildHistoryToolMessage(
     { type: 'function_call', id: 'fc1', call_id: 'cfc1', name: 'shell_command', arguments: JSON.stringify({ command: 'ls' }) },
     'file1.txt\nfile2.txt',
-    null,
     { cwd: '/repo' }
   )
   assert.ok(msg)
@@ -372,7 +339,6 @@ test('buildHistoryToolMessage: function_call shell_command prefers arguments.wor
   const msg = buildHistoryToolMessage(
     { type: 'function_call', id: 'fc2', call_id: 'cfc2', name: 'shell_command', arguments: JSON.stringify({ command: 'pwd', workdir: '/actual' }) },
     '/actual',
-    null,
     { cwd: '/fallback' }
   )
   assert.ok(msg)
@@ -383,7 +349,6 @@ test('buildHistoryToolMessage: function_call with error output → error status'
   const msg = buildHistoryToolMessage(
     { type: 'function_call', id: 'fc1', call_id: 'cfc1', name: 'build', arguments: '{}' },
     'Error: compilation failed',
-    null,
     {}
   )
   assert.ok(msg)
@@ -391,7 +356,7 @@ test('buildHistoryToolMessage: function_call with error output → error status'
 })
 
 test('buildHistoryToolMessage: unknown call type returns null', () => {
-  assert.equal(buildHistoryToolMessage({ type: 'agent_message' }, '', null, {}), null)
+  assert.equal(buildHistoryToolMessage({ type: 'agent_message' }, '', {}), null)
 })
 
 // ---------------------------------------------------------------------------
@@ -498,7 +463,6 @@ test('buildHistoryToolMessage: completed shell in history → expanded: false', 
   const msg = buildHistoryToolMessage(
     { type: 'function_call', id: 'sh3', call_id: 'csh3', name: 'shell_command', arguments: JSON.stringify({ command: 'echo hi', workdir: '/tmp' }) },
     'hi\n',
-    null,
     { historyRestore: true }
   )
   assert.ok(msg)
@@ -507,35 +471,10 @@ test('buildHistoryToolMessage: completed shell in history → expanded: false', 
   assert.equal(msg.bashOutput, 'hi\n')
 })
 
-test('buildHistoryToolMessage: apply_patch fusion in history → expanded: false', () => {
-  const msg = buildHistoryToolMessage(
-    { type: 'custom_tool_call', id: 'ap2', call_id: 'cap2', name: 'apply_patch', status: 'completed' },
-    '',
-    { success: true, status: 'applied', changes: { 'src/a.ts': { type: 'update', unified_diff: 'diff' } } },
-    { historyRestore: true }
-  )
-  assert.ok(msg)
-  assert.equal(msg.toolName, 'file_change')
-  assert.equal(msg.expanded, false)
-})
-
-test('buildHistoryToolMessage: apply_patch fusion error → expanded: true even in history', () => {
-  const msg = buildHistoryToolMessage(
-    { type: 'custom_tool_call', id: 'ap3', call_id: 'cap3', name: 'apply_patch', status: 'completed' },
-    '',
-    { success: false, status: 'failed', changes: {} },
-    { historyRestore: true }
-  )
-  assert.ok(msg)
-  assert.equal(msg.expanded, true)
-  assert.equal(msg.status, 'error')
-})
-
 test('buildHistoryToolMessage: short error output → status error, expanded true', () => {
   const msg = buildHistoryToolMessage(
     { type: 'command_execution', id: 'ce2', call_id: 'cce2', command: 'bad', status: 'failed' },
     'Error: not found',
-    null,
     { historyRestore: true }
   )
   assert.ok(msg)
@@ -549,7 +488,6 @@ test('buildHistoryToolMessage: error output ≥500 chars → expanded resolved w
   const msg = buildHistoryToolMessage(
     { type: 'command_execution', id: 'ce2-long', call_id: 'cce2-long', command: 'bad', status: 'failed' },
     longError,
-    null,
     { historyRestore: true }
   )
   assert.ok(msg)
@@ -623,7 +561,6 @@ test('CJS/ESM parity: resolveToolCardType matches', () => {
     { type: 'function_call', name: 'shell_command' },
     { type: 'function_call', name: 'write' },
     { type: 'web_search' },
-    { type: 'patch_apply_end' },
     { type: 'custom_tool_call_output' },
     { type: 'unknown' },
   ]
@@ -686,8 +623,8 @@ test('CJS/ESM parity: buildToolMessageParts matches', () => {
 
 test('CJS/ESM parity: buildHistoryToolMessage matches', () => {
   const call = { type: 'custom_tool_call', id: 'ct1', call_id: 'cct1', name: 'run_tests', input: 'npm test', status: 'in_progress' }
-  const esm = buildHistoryToolMessage(call, 'output text', null, {})
-  const cjsResult = cjs.buildHistoryToolMessage(call, 'output text', null, {})
+  const esm = buildHistoryToolMessage(call, 'output text', {})
+  const cjsResult = cjs.buildHistoryToolMessage(call, 'output text', {})
   assert.ok(esm)
   assert.ok(cjsResult)
   assert.deepEqual(cjsResult, esm, 'CJS/ESM history message mismatch')

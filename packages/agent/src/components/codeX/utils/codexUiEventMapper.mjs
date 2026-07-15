@@ -86,11 +86,6 @@ export function resolveToolCardType(item) {
     return ITEM_TYPE_TO_TOOL_CARD[itemType]
   }
 
-  // patch_apply_end → file_change tool card
-  if (itemType === 'patch_apply_end') {
-    return 'file_change'
-  }
-
   // custom_tool_call: apply_patch 有专门 card，其余直接用 name
   if (itemType === 'custom_tool_call') {
     if (itemName.toLowerCase() === 'apply_patch') return 'apply_patch'
@@ -233,7 +228,10 @@ export function buildToolMessageParts(item, ctx = {}) {
   const toolCardType = resolveToolCardType(item)
   if (!toolCardType) return null
 
-  const toolUseId = item.call_id || item.id
+  // Reducer-produced file changes use `id` as the stable canonical join key.
+  const toolUseId = item.type === 'file_change'
+    ? (item.id || item.call_id)
+    : (item.call_id || item.id)
   const isFinal = Boolean(ctx.isFinal)
 
   const base = {
@@ -278,17 +276,6 @@ export function buildToolMessageParts(item, ctx = {}) {
       base.filePath = changes.map(c => c.path).filter(Boolean).join('\n')
       merge.text = JSON.stringify({ changes, status: item.status }, null, 2)
       status = normalizeStatus(item.status, isFinal)
-      break
-    }
-
-    case 'patch_apply_end': {
-      // CodeX SDK sends changes as an object keyed by file path,
-      // e.g. { "src/a.ts": { type: "update", unified_diff: "..." } }
-      merge.filePath = (item.changes && typeof item.changes === 'object' && !Array.isArray(item.changes))
-        ? Object.keys(item.changes).join('\n')
-        : ''
-      merge.text = JSON.stringify({ changes: item.changes || {}, status: item.status }, null, 2)
-      status = normalizeStatus(item.status, true)
       break
     }
 
@@ -371,48 +358,18 @@ export function buildToolMessageParts(item, ctx = {}) {
 
 /**
  * 构建完整的 history restore tool message（含 role: 'tool'）。
- * 合并 call + output + patchEnd 三个来源。
+ * 合并 call + output。文件修改已在 provider 边界归一为 `file_change`。
  *
  * @param {Object} call     - tool call item
  * @param {string} output   - tool 输出文本
- * @param {Object} patchEnd - patch_apply_end item（仅 apply_patch）
  * @param {Object} ctx      - { cwd, isWriteTool, isEditTool, isBashTool, isReadTool }
  * @returns {Object|null}   - 完整的 UI message 对象
  */
-export function buildHistoryToolMessage(call, output, patchEnd, ctx = {}) {
+export function buildHistoryToolMessage(call, output, ctx = {}) {
   const parts = buildToolMessageParts(call, { ...ctx, isFinal: true })
   if (!parts) return null
 
   // apply_patch + patchEnd → file_change 融合
-  if (call.type === 'custom_tool_call' && String(call.name || '').toLowerCase() === 'apply_patch' && patchEnd) {
-    const changes = []
-    const fileChanges = patchEnd.changes || {}
-    for (const [filePath, info] of Object.entries(fileChanges)) {
-      changes.push({
-        path: filePath,
-        operation: info.type === 'create' ? 'add'
-          : info.type === 'delete' ? 'delete'
-          : info.move_path ? 'rename'
-          : 'modify',
-        unified_diff: info.unified_diff || '',
-      })
-    }
-    const fusionStatus = patchEnd.success !== false ? 'done' : 'error'
-    return {
-      role: 'tool',
-      toolName: 'file_change',
-      rawType: 'file_change',
-      activityLabel: getToolActivityLabel('file_change'),
-      toolUseId: parts.base.toolUseId,
-      status: fusionStatus,
-      filePath: changes.map(c => c.path).filter(Boolean).join('\n'),
-      expanded: shouldExpandToolByDefault({ type: 'file_change' }, ctx, fusionStatus),
-      newContent: '',
-      diffLines: [],
-      text: JSON.stringify({ changes, status: patchEnd.status }, null, 2),
-    }
-  }
-
   const resultStatus = output ? (output.length < 500 && String(output).toLowerCase().includes('error') ? 'error' : 'done') : parts.status
 
   const message = {

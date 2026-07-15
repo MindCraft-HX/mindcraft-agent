@@ -144,7 +144,7 @@ function createStreamHarness() {
   return { tab, stream }
 }
 
-test('write preview remains visible when later weak file_change uses a different id', () => {
+test('write preview remains visible when later file_change uses the canonical call id', () => {
   const { tab, stream } = createStreamHarness()
 
   stream.onAgentMessage({
@@ -180,8 +180,9 @@ test('write preview remains visible when later weak file_change uses a different
     msg: {
       type: 'item.completed',
       item: {
-        id: 'tool-file-change-1',
+        id: 'call-write-1',
         type: 'file_change',
+        call_id: 'call-write-1',
         status: 'completed',
         changes: [
           {
@@ -202,4 +203,39 @@ test('write preview remains visible when later weak file_change uses a different
     newStr: 'export const demo = 1\n',
   })
   assert.equal(toolMessages[0].status, 'done')
+})
+
+test('canonical file_change uses its id instead of a mismatched provider call id', () => {
+  const { tab, stream } = createStreamHarness()
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.completed',
+      item: {
+        id: 'patch:exec-1',
+        call_id: 'exec-1',
+        type: 'file_change',
+        status: 'completed',
+        changes: [{ path: 'src/demo.ts', operation: 'modify', unified_diff: '@@\n-old\n+new' }],
+      },
+    },
+  })
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.updated',
+      item: {
+        id: 'patch:exec-1',
+        call_id: 'call-wrapper',
+        type: 'file_change',
+        status: 'completed',
+        changes: [{ path: 'src/demo.ts', operation: 'modify', unified_diff: '@@\n-old\n+newer' }],
+      },
+    },
+  })
+
+  const toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.equal(toolMessages.length, 1)
+  assert.equal(toolMessages[0].toolUseId, 'patch:exec-1')
 })

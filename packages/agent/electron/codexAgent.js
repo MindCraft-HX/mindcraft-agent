@@ -20,6 +20,8 @@ const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
 const { generateFileChangePreviewsAsync } = require('./codexFileChangePreview')
+const { createFileChangeEventReducer, isInternalExecWrapper } = require('./codex/fileChangeEventReducer')
+const { createHistoryToolCallCollector } = require('./codex/historyToolCallCollector')
 const { normalizeCodexReasoningEffort } = require('../src/components/codeX/utils/normalizeReasoningEffort.cjs')
 const { getToolActivityLabel, buildHistoryToolMessage } = require('../src/components/codeX/utils/codexUiEventMapper.cjs')
 const {
@@ -1646,11 +1648,27 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       let pageData = { lines: [], hasMore: false, totalPages: 1 }
       const messages = []
       const seenMessages = new Set()
-      const seenToolCallIds = new Set() // 已刷入消息的 call_id，防止 JSONL 重复行导致 tool 消息重复
-      const pendingCalls = {} // call_id -> { call, output }
-      const patchCalls = new Set() // call_ids that are apply_patch (handled by patch_apply_end)
+      let historyToolCollector = null
       let historyModel = ''
       let activeTurnTokens = null
+
+      function appendHistoryToolAction(action) {
+        const item = action?.kind === 'file_change' ? action.item : action.call
+        const output = action?.kind === 'tool' ? action.output : ''
+        const msg = buildHistoryToolMessage(item, output, { historyRestore: true })
+        if (!msg) return
+        if (action?.kind === 'tool' && item.type === 'function_call' && item.name !== 'shell_command') {
+          let args = {}
+          try { args = JSON.parse(item.arguments || '{}') } catch (_) {}
+          Object.assign(msg, buildFunctionCallPreviewState(item.name, args))
+        }
+        messages.push(msg)
+      }
+
+      function resetHistoryToolCollector() {
+        historyToolCollector = createHistoryToolCallCollector({ onAction: appendHistoryToolAction })
+      }
+      resetHistoryToolCollector()
 
       function ensureActiveTurnTokens(ts = null) {
         if (!activeTurnTokens) {
@@ -1748,43 +1766,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         const p = row.payload
         if (!p) return
 
-        if (p.type === 'custom_tool_call') {
-          pendingCalls[p.call_id] = { call: p }
-          if (p.name === 'apply_patch') patchCalls.add(p.call_id)
-          return
-        }
-
-        if (p.type === 'custom_tool_call_output') {
-          const existing = pendingCalls[p.call_id]
-          if (existing) {
-            existing.output = p.output || ''
-            tryFlushCall(p.call_id)
-          }
-          return
-        }
-
-        if (p.type === 'function_call') {
-          pendingCalls[p.call_id] = { call: p }
-          return
-        }
-
-        if (p.type === 'function_call_output') {
-          const existing = pendingCalls[p.call_id]
-          if (existing) {
-            existing.output = p.output || ''
-            tryFlushCall(p.call_id)
-          }
-          return
-        }
-
-        if (p.type === 'patch_apply_end') {
-          const existing = pendingCalls[p.call_id]
-          if (existing) {
-            existing.patchEnd = p
-            tryFlushCall(p.call_id)
-          }
-          return
-        }
+        if (historyToolCollector.ingest(p)) return
 
         // --- 新版 SDK 新增的 event_msg 类型 (静默跳过/收集) ---
 
@@ -1804,34 +1786,6 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         // 未知 payload 类型兜底日志
         if (CODEX_DEBUG) console.warn('[codex] collectMessage: unhandled payload.type:', p.type)
       }
-      function tryFlushCall(callId) {
-        const entry = pendingCalls[callId]
-        if (!entry || !entry.call) return
-        if (seenToolCallIds.has(callId)) { delete pendingCalls[callId]; return }
-        seenToolCallIds.add(callId)
-
-        const call = entry.call
-        const output = entry.output || ''
-        const patchEnd = entry.patchEnd
-
-        // apply_patch without patch_end yet → skip for now (defer fusion)
-        if (patchCalls.has(callId) && !patchEnd) return
-
-        // Use shared mapper for tool message construction (live/history parity)
-        const msg = buildHistoryToolMessage(call, output, patchEnd, { historyRestore: true })
-        if (!msg) return
-
-        // Enrich function_call (non-shell) with file preview state
-        if (call.type === 'function_call' && call.name !== 'shell_command') {
-          let args = {}
-          try { args = JSON.parse(call.arguments || '{}') } catch (_) {}
-          Object.assign(msg, buildFunctionCallPreviewState(call.name, args))
-        }
-
-        messages.push(msg)
-        delete pendingCalls[callId]
-      }
-
       const stopTail = perfStartIpc('codex.readRange.tailRead')
       let actualScans = 0
       for (let scanPage = 0; scanPage < maxFirstPageScans; scanPage += 1) {
@@ -1840,9 +1794,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         if (pageData.lines.length) lines.unshift(...pageData.lines)
         messages.length = 0
         seenMessages.clear()
-        seenToolCallIds.clear()
-        for (const key of Object.keys(pendingCalls)) delete pendingCalls[key]
-        patchCalls.clear()
+        resetHistoryToolCollector()
         historyModel = ''
         activeTurnTokens = null
         for (const line of lines) collectMessage(line)
@@ -1853,49 +1805,9 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       // collect：循环后的消息收尾（flush + pending flush）
       const stopCollect = perfStartIpc('codex.readRange.collect')
       flushActiveTurnTokens()
+      historyToolCollector.flushCompleted()
 
-      // Flush remaining calls without output (timeout/cancelled)
-      // NOTE: page=0 uses tail-read; tail may start mid-session. Do not synthesize
-      // incomplete custom_tool_call/function_call items, otherwise phantom trailing
-      // "Edited"/tool messages can appear after history load.
-      for (const [callId, entry] of Object.entries(pendingCalls)) {
-        if (!entry.call) continue
-        const call = entry.call
-        if (call.type === 'reasoning') {
-          messages.push({
-            role: 'tool',
-            toolName: 'thinking',
-            rawType: 'reasoning',
-            activityLabel: getToolActivityLabel('thinking'),
-            toolUseId: callId,
-            status: 'done',
-            text: '',
-            expanded: false,
-            newContent: '',
-            diffLines: [],
-          })
-          continue
-        }
-        if (call.type === 'custom_tool_call' || call.type === 'function_call') {
-          continue
-        }
-        // flush as generic tool
-        const name = call.name || call.type || 'tool'
-        const input = call.input || call.arguments || ''
-        messages.push({
-          role: 'tool',
-          toolName: name,
-          rawType: name || call.type || 'tool',
-          activityLabel: getToolActivityLabel(name || call.type || 'tool'),
-          toolUseId: callId,
-          status: 'done',
-          expanded: true,
-          newContent: '',
-          diffLines: [],
-          text: JSON.stringify({ name, input: String(input).substring(0, 2000) }, null, 2),
-        })
-      }
-      stopCollect({ pendingFlushed: Object.keys(pendingCalls).length })
+      stopCollect({ pendingFlushed: 0 })
 
       const stopProcess = perfStartIpc('codex.readRange.process')
       const sliced = messages.slice(-safePageSize)
@@ -1913,10 +1825,23 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 
     const messages = []
     const seenMessages = new Set()
-    const pendingCalls = {}
-    const patchCalls = new Set()
+    let historyToolCollector = null
     let historyModel = ''
     let activeTurnTokens = null
+
+    function appendHistoryToolAction(action) {
+      const item = action?.kind === 'file_change' ? action.item : action.call
+      const output = action?.kind === 'tool' ? action.output : ''
+      const msg = buildHistoryToolMessage(item, output, { historyRestore: true })
+      if (!msg) return
+      if (action?.kind === 'tool' && item.type === 'function_call' && item.name !== 'shell_command') {
+        let args = {}
+        try { args = JSON.parse(item.arguments || '{}') } catch (_) {}
+        Object.assign(msg, buildFunctionCallPreviewState(item.name, args))
+      }
+      messages.push(msg)
+    }
+    historyToolCollector = createHistoryToolCallCollector({ onAction: appendHistoryToolAction })
 
     function ensureActiveTurnTokens(ts = null) {
       if (!activeTurnTokens) {
@@ -2010,43 +1935,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       const p = row.payload
       if (!p) return
 
-      if (p.type === 'custom_tool_call') {
-        pendingCalls[p.call_id] = { call: p }
-        if (p.name === 'apply_patch') patchCalls.add(p.call_id)
-        return
-      }
-
-      if (p.type === 'custom_tool_call_output') {
-        const existing = pendingCalls[p.call_id]
-        if (existing) {
-          existing.output = p.output || ''
-          tryFlushCall(p.call_id)
-        }
-        return
-      }
-
-      if (p.type === 'function_call') {
-        pendingCalls[p.call_id] = { call: p }
-        return
-      }
-
-      if (p.type === 'function_call_output') {
-        const existing = pendingCalls[p.call_id]
-        if (existing) {
-          existing.output = p.output || ''
-          tryFlushCall(p.call_id)
-        }
-        return
-      }
-
-      if (p.type === 'patch_apply_end') {
-        const existing = pendingCalls[p.call_id]
-        if (existing) {
-          existing.patchEnd = p
-          tryFlushCall(p.call_id)
-        }
-        return
-      }
+      if (historyToolCollector.ingest(p)) return
 
       // --- 新版 SDK 新增的 event_msg 类型 (静默跳过/收集) ---
 
@@ -2066,34 +1955,9 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       // 未知 payload 类型兜底日志
       if (CODEX_DEBUG) console.warn('[codex] collectMessage: unhandled payload.type:', p.type)
     }
-    function tryFlushCall(callId) {
-      const entry = pendingCalls[callId]
-      if (!entry || !entry.call) return
-
-      const call = entry.call
-      const output = entry.output || ''
-      const patchEnd = entry.patchEnd
-
-      // apply_patch without patch_end yet → skip (defer fusion)
-      if (patchCalls.has(callId) && !patchEnd) return
-
-      // Use shared mapper (live/history parity)
-      const msg = buildHistoryToolMessage(call, output, patchEnd, { historyRestore: true })
-      if (!msg) return
-
-      // Enrich function_call (non-shell) with file preview state
-      if (call.type === 'function_call' && call.name !== 'shell_command') {
-        let args = {}
-        try { args = JSON.parse(call.arguments || '{}') } catch (_) {}
-        Object.assign(msg, buildFunctionCallPreviewState(call.name, args))
-      }
-
-      messages.push(msg)
-      delete pendingCalls[callId]
-    }
-
     for (const line of pageData.lines) collectMessage(line)
     flushActiveTurnTokens()
+    historyToolCollector.flushCompleted()
 
     const baseId = -((safePage + 1) * 100000)
     return {
@@ -2430,6 +2294,7 @@ function setupCodexSdkHandlers() {
       let exitCode = 0
       let doneReason = 'completed'
       let detachResumeOnDone = false
+      const fileChangeReducer = createFileChangeEventReducer()
 
       const sessionState = {
         runId, thread: null, abortController, event, model, baseURL, apiKey,
@@ -2696,9 +2561,7 @@ function setupCodexSdkHandlers() {
 
           const { events } = await thread.runStreamed(input, { signal: abortController.signal })
 
-          const applyPatchByCallId = new Map()
-          const applyPatchCallIdByItemId = new Map()
-          const patchApplyEndByCallId = new Map()
+          const authoritativeFileChangeIds = new Set()
           pendingItemIds = new Set()
           let turnCompletedSeen = false
           doneSent = false
@@ -2797,26 +2660,6 @@ function setupCodexSdkHandlers() {
                 filePath: sfilePath,
               }))
             }).catch(() => {})
-          }
-
-          function toFileChangeChangesFromPatchEnd(patchEnd) {
-            const fileChanges = patchEnd?.changes || {}
-            const changes = []
-            for (const [filePath, info] of Object.entries(fileChanges)) {
-              changes.push({
-                path: filePath,
-                kind: info?.type || 'update',
-                operation: info?.type === 'create'
-                  ? 'add'
-                  : info?.type === 'delete'
-                    ? 'delete'
-                    : info?.move_path
-                      ? 'rename'
-                      : 'modify',
-                unified_diff: info?.unified_diff || '',
-              })
-            }
-            return changes
           }
 
           for await (const ev of events) {
@@ -2987,23 +2830,21 @@ function setupCodexSdkHandlers() {
                 if (ev.type === 'item.started' || ev.type === 'item.updated') pendingItemIds.add(item.id)
                 if (ev.type === 'item.completed') pendingItemIds.delete(item.id)
               }
-              if (item?.type === 'custom_tool_call' && item?.name === 'apply_patch' && item?.call_id) {
-                applyPatchByCallId.set(item.call_id, item.id)
-                if (item?.id) applyPatchCallIdByItemId.set(item.id, item.call_id)
+              if (item?.type === 'custom_tool_call' || item?.type === 'function_call') {
+                fileChangeReducer.ingestMutationCall(item)
               }
-              if (item?.type === 'patch_apply_end' && item?.call_id) {
-                patchApplyEndByCallId.set(item.call_id, item)
+              if (isInternalExecWrapper(item)) {
+                continue
               }
               let forwardItem = ev.item
-              if (forwardItem?.type === 'file_change' && ev.type === 'item.completed') {
-                const callId = forwardItem?.call_id
-                  || (forwardItem?.id ? applyPatchCallIdByItemId.get(forwardItem.id) : null)
-                  || [...applyPatchByCallId.entries()].find(([, itemId]) => itemId === forwardItem.id)?.[0]
-                const patchEnd = callId ? patchApplyEndByCallId.get(callId) : null
-                if (patchEnd) {
-                  const enrichedChanges = toFileChangeChangesFromPatchEnd(patchEnd)
-                  if (enrichedChanges.length) forwardItem = { ...forwardItem, changes: enrichedChanges }
-                }
+              if (item?.type === 'patch_apply_end') {
+                forwardItem = fileChangeReducer.ingestPatchApplyEnd(item)?.item || null
+              } else if (item?.type === 'file_change') {
+                forwardItem = fileChangeReducer.ingestFileChange(item)?.item || item
+              }
+              if (forwardItem?._diffAuthority === 'patch_apply_end' && forwardItem.id) {
+                authoritativeFileChangeIds.add(forwardItem.id)
+                if (authoritativeFileChangeIds.size > 128) authoritativeFileChangeIds.delete(authoritativeFileChangeIds.values().next().value)
               }
               if (forwardItem?.type === 'file_change') {
                 // P0: 异步 diff preview 不阻塞主进程 event loop
@@ -3011,17 +2852,25 @@ function setupCodexSdkHandlers() {
                 const rawChanges = [...(forwardItem.changes || [])]
                 const { changes: _, ...itemBase } = forwardItem
 
-                generateFileChangePreviewsAsync(rawChanges, resolvedCwd)
+                const forwardItemId = forwardItem.id
+                const isAuthoritativePatch = forwardItem._diffAuthority === 'patch_apply_end'
+                const previewTask = isAuthoritativePatch
+                  ? Promise.resolve(rawChanges)
+                  : generateFileChangePreviewsAsync(rawChanges, resolvedCwd)
+                previewTask
                   .then(enrichedChanges => {
+                    if (codexSessions.get(sessionId)?.runId !== runId) return
+                    if (!isAuthoritativePatch && authoritativeFileChangeIds.has(forwardItemId)) return
                     const updatedItem = { ...itemBase, changes: enrichedChanges }
                     const s = codexSessions.get(sessionId)?.event?.sender || event.sender
+                    if (!forwardItemId || updatedItem.id !== forwardItemId) return
                     safeSend(s, CODEX_CHANNELS.AGENT_MESSAGE, { sessionId, msg: { type: 'item.updated', item: updatedItem } })
                   })
                   .catch(err => {
                     console.warn('[codex] file_change preview update failed', err?.message || err)
                   })
               }
-              if (item?.type === 'patch_apply_end' || forwardItem?.type === 'file_change') {
+              if (forwardItem?.type === 'file_change') {
                 if (CODEX_DEBUG) {
                   const debugChanges = Array.isArray(forwardItem?.changes) ? forwardItem.changes : []
                   const debugPaths = debugChanges.map(c => c?.path).filter(Boolean)

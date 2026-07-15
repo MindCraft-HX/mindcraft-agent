@@ -6,7 +6,6 @@
  * 与 codexUiEventMapper.mjs 保持逻辑一致。
  * 参见：packages/agent/src/components/codeX/utils/codexUiEventMapper.mjs
  */
-
 // ---------------------------------------------------------------------------
 // Tool classification
 // ---------------------------------------------------------------------------
@@ -53,10 +52,6 @@ function resolveToolCardType(item) {
 
   if (ITEM_TYPE_TO_TOOL_CARD[itemType]) {
     return ITEM_TYPE_TO_TOOL_CARD[itemType]
-  }
-
-  if (itemType === 'patch_apply_end') {
-    return 'file_change'
   }
 
   if (itemType === 'custom_tool_call') {
@@ -219,15 +214,6 @@ function buildToolMessageParts(item, ctx) {
       }
       break
 
-    case 'patch_apply_end':
-      // CodeX SDK sends changes as an object keyed by file path
-      merge.filePath = (item.changes && typeof item.changes === 'object' && !Array.isArray(item.changes))
-        ? Object.keys(item.changes).join('\n')
-        : ''
-      merge.text = JSON.stringify({ changes: item.changes || {}, status: item.status }, null, 2)
-      status = normalizeStatus(item.status, true)
-      break
-
     case 'mcp_tool_call':
       base.serverName = item.server || ''
       base.mcpToolName = item.tool || ''
@@ -304,41 +290,12 @@ function buildToolMessageParts(item, ctx) {
   return { base: base, merge: merge, status: status }
 }
 
-function buildHistoryToolMessage(call, output, patchEnd, ctx) {
+function buildHistoryToolMessage(call, output, ctx) {
   ctx = ctx || {}
   const parts = buildToolMessageParts(call, Object.assign({}, ctx, { isFinal: true }))
   if (!parts) return null
 
   // apply_patch + patchEnd → file_change fusion
-  if (call.type === 'custom_tool_call' && String(call.name || '').toLowerCase() === 'apply_patch' && patchEnd) {
-    const changes = []
-    const fileChanges = patchEnd.changes || {}
-    for (const [filePath, info] of Object.entries(fileChanges)) {
-      changes.push({
-        path: filePath,
-        operation: info.type === 'create' ? 'add'
-          : info.type === 'delete' ? 'delete'
-          : info.move_path ? 'rename'
-          : 'modify',
-        unified_diff: info.unified_diff || '',
-      })
-    }
-    const fusionStatus = patchEnd.success !== false ? 'done' : 'error'
-    return {
-      role: 'tool',
-      toolName: 'file_change',
-      rawType: 'file_change',
-      activityLabel: getToolActivityLabel('file_change'),
-      toolUseId: parts.base.toolUseId,
-      status: fusionStatus,
-      filePath: changes.map(function (c) { return c.path }).filter(Boolean).join('\n'),
-      expanded: shouldExpandToolByDefault({ type: 'file_change' }, ctx, fusionStatus),
-      newContent: '',
-      diffLines: [],
-      text: JSON.stringify({ changes: changes, status: patchEnd.status }, null, 2),
-    }
-  }
-
   const resultStatus = output
     ? (output.length < 500 && String(output).toLowerCase().includes('error') ? 'error' : 'done')
     : parts.status
@@ -375,6 +332,7 @@ function tryParseJson(str) {
   if (!str) return {}
   try { return JSON.parse(str) } catch (_) { return {} }
 }
+
 
 // ---------------------------------------------------------------------------
 // Exports
