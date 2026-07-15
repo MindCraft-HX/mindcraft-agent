@@ -144,6 +144,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   flashTaskbar: () => ipcRenderer.invoke(CORE_CHANNELS.FLASH_TASKBAR),
   appendTaskLog: (line) => ipcRenderer.invoke(CORE_CHANNELS.APPEND_TASK_LOG, line),
 
+  // 平台信息
+  isMac: process.platform === 'darwin',
+
   // 窗口控制（无边框模式）
   minimize: () => ipcRenderer.send(CORE_CHANNELS.WINDOW_MINIMIZE),
   maximize: () => ipcRenderer.send(CORE_CHANNELS.WINDOW_MAXIMIZE),

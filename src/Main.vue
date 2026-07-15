@@ -1,7 +1,7 @@
 <template>
-  <div class="main-layout" :class="themeClass">
-    <!-- 窗口控制按钮（无边框模式） -->
-    <div class="win-controls">
+  <div class="main-layout" :class="[themeClass, { 'is-mac': isMac }]">
+    <!-- 窗口控制按钮（无边框模式，macOS 使用原生红绿灯，隐藏自定义按钮） -->
+    <div v-if="!isMac" class="win-controls">
       <button class="wc-btn" @click="minimize">
         <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
@@ -216,6 +216,7 @@ const settingsDrawer = ref(false);
 const activeSetting = ref(null);
 const sharedSettingsRef = ref(null);
 const sidebarCollapsed = ref(false);
+const isMac = window.electronAPI?.isMac ?? false;
 // 任务完成通知状态：由 codeHub 更新，用于侧边栏"项目"图标提醒
 const codehubHasNotification = ref(false);
 // session 运行中状态：由 codeHub 更新，用于侧边栏"项目"图标闪烁提醒
@@ -295,6 +296,10 @@ window.electronAPI?.openTabByName?.((progress) => {
   margin-right: 90px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+}
+
+.is-mac .content-layout::before {
+  margin-right: 0;
 }
 
 /* === 窗口控制按钮（无边框模式） === */
