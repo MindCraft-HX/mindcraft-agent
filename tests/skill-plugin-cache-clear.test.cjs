@@ -43,13 +43,13 @@ describe('Claude slashCommandsCache', () => {
   const file = path.join(ROOT, 'packages/agent/electron/claudeAgent.js')
 
   const claudeHandlers = [
-    { line: 1221, ch: 'PLUGINS_INSTALL',       needle: 'slashCommandsCache.clear()' },
-    { line: 1234, ch: 'PLUGINS_UNINSTALL',     needle: 'slashCommandsCache.clear()' },
-    { line: 1247, ch: 'PLUGINS_ENABLE',        needle: 'slashCommandsCache.clear()' },
-    { line: 1260, ch: 'PLUGINS_DISABLE',       needle: 'slashCommandsCache.clear()' },
-    { line: 3727, ch: 'SKILLS_INSTALL',        needle: 'slashCommandsCache.clear()' },
-    { line: 3760, ch: 'SKILLS_UNINSTALL',      needle: 'slashCommandsCache.clear()' },
-    { line: 3778, ch: 'SKILLS_MARKET_INSTALL', needle: 'slashCommandsCache.clear()' },
+    { line: 1260, ch: 'PLUGINS_INSTALL',       needle: 'slashCommandsCache.clear()' },
+    { line: 1273, ch: 'PLUGINS_UNINSTALL',     needle: 'slashCommandsCache.clear()' },
+    { line: 1286, ch: 'PLUGINS_ENABLE',        needle: 'slashCommandsCache.clear()' },
+    { line: 1299, ch: 'PLUGINS_DISABLE',       needle: 'slashCommandsCache.clear()' },
+    { line: 3817, ch: 'SKILLS_INSTALL',        needle: 'slashCommandsCache.clear()' },
+    { line: 3850, ch: 'SKILLS_UNINSTALL',      needle: 'slashCommandsCache.clear()' },
+    { line: 3868, ch: 'SKILLS_MARKET_INSTALL', needle: 'slashCommandsCache.clear()' },
   ]
 
   for (const h of claudeHandlers) {
@@ -72,13 +72,13 @@ describe('CodeX codexSlashCommandsCache', () => {
   const file = path.join(ROOT, 'packages/agent/electron/codexAgent.js')
 
   const codexHandlers = [
-    { line: 3700, ch: 'INSTALL_SKILL',        needle: 'codexSlashCommandsCache.clear()' },
-    { line: 3733, ch: 'UNINSTALL_SKILL',      needle: 'codexSlashCommandsCache.clear()' },
-    { line: 3750, ch: 'MARKET_INSTALL_SKILL', needle: 'codexSlashCommandsCache.clear()' },
-    { line: 4041, ch: 'INSTALL_PLUGIN',       needle: 'codexSlashCommandsCache.clear()' },
-    { line: 4054, ch: 'UNINSTALL_PLUGIN',     needle: 'codexSlashCommandsCache.clear()' },
-    { line: 4068, ch: 'ENABLE_PLUGIN',        needle: 'codexSlashCommandsCache.clear()' },
-    { line: 4081, ch: 'DISABLE_PLUGIN',       needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3598, ch: 'INSTALL_SKILL',        needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3631, ch: 'UNINSTALL_SKILL',      needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3648, ch: 'MARKET_INSTALL_SKILL', needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3952, ch: 'INSTALL_PLUGIN',       needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3965, ch: 'UNINSTALL_PLUGIN',     needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3979, ch: 'ENABLE_PLUGIN',        needle: 'codexSlashCommandsCache.clear()' },
+    { line: 3992, ch: 'DISABLE_PLUGIN',       needle: 'codexSlashCommandsCache.clear()' },
   ]
 
   for (const h of codexHandlers) {
