@@ -409,6 +409,10 @@ const CORE_CHANNELS = Object.freeze({
   SET_SESSION_DRAFT_SYNC: 'agent-set-session-draft-sync',
   CLEAR_SESSION_DRAFT: 'agent-clear-session-draft',
 
+  // Git workspace changes (shared drawer for ClaudeCode + CodeX)
+  GIT_WORKSPACE_CHANGES: 'core-git-workspace-changes',
+  GIT_FILE_DIFF: 'core-git-file-diff',
+
   // Performance diagnostics
   SET_PERF_ENABLED: 'agent-set-perf-enabled',
 

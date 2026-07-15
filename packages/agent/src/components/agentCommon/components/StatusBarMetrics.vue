@@ -75,9 +75,22 @@
       </span>
 
       <span v-if="m.gitBranch" class="sb-group">
-        <span class="sb-icon">🔀</span>
-        <span class="sb-val sb-branch">{{ m.gitBranch }}</span>
-        <span v-if="m.gitChanges > 0" class="sb-val sb-changes">({{ m.gitChanges }})</span>
+        <button
+          v-if="gitInteractive"
+          type="button"
+          class="sb-git-btn"
+          :aria-label="'Git: ' + m.gitBranch + (m.gitChanges > 0 ? ' (' + m.gitChanges + ' changes)' : '')"
+          @click.stop="emit('git-click')"
+        >
+          <span class="sb-icon">🔀</span>
+          <span class="sb-val sb-branch">{{ m.gitBranch }}</span>
+          <span v-if="m.gitChanges > 0" class="sb-val sb-changes">({{ m.gitChanges }})</span>
+        </button>
+        <template v-else>
+          <span class="sb-icon">🔀</span>
+          <span class="sb-val sb-branch">{{ m.gitBranch }}</span>
+          <span v-if="m.gitChanges > 0" class="sb-val sb-changes">({{ m.gitChanges }})</span>
+        </template>
       </span>
 
       <span v-if="m.usageApiSessionPct != null" class="sb-group" :class="{ 'sb-warn': m.usageApiSessionPct > 80 }">
@@ -102,8 +115,9 @@ const props = defineProps({
   compactTitleKey: { type: String, default: 'agent.compactTitle' },
   compactHintKey: { type: String, default: 'agent.compactHint' },
   compactingKey: { type: String, default: 'agent.compacting' },
+  gitInteractive: { type: Boolean, default: false },
 })
-const emit = defineEmits(['send-message'])
+const emit = defineEmits(['send-message', 'git-click'])
 const { t } = useI18n()
 
 const { display: inputDisplay, update: updateInput } = useAnimatedNumber()
@@ -235,6 +249,30 @@ function formatDuration(ms) {
 
 .sb-changes {
   color: var(--cc-warning);
+}
+
+.sb-git-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  outline-offset: 1px;
+}
+
+.sb-git-btn:hover {
+  background: var(--cc-bg-hover, #2a2a2a);
+}
+
+.sb-git-btn:focus-visible {
+  outline: 1px solid var(--cc-accent, #4caf50);
 }
 
 .sb-warn .sb-val {

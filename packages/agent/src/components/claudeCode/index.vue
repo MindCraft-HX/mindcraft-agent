@@ -219,7 +219,9 @@
         :liveDurationMs="metricsLiveDurationMs"
         :compacting="metricsData.compacting"
         model-display="claude-short"
+        :gitInteractive="true"
         @send-message="sendFromStatusBar"
+        @git-click="showGitDrawer = true"
       />
 
       <ConfirmDialog ref="confirmDialogRef" />
@@ -254,6 +256,12 @@
       -->
       </div><!-- /cc-main -->
       </div><!-- /cc-content -->
+
+      <GitChangesDrawer
+        v-model="showGitDrawer"
+        :cwd="activeProject?.cwd || ''"
+        :gitState="gitWorkspaceState"
+      />
   </div>
 </template>
 
@@ -325,6 +333,8 @@ import MessageList from './components/messages/MessageList.vue'
 import AskQuestionDialog from './components/messages/AskQuestionDialog.vue'
 import PlanReviewDialog from './components/messages/PlanReviewDialog.vue'
 import StatusBarMetrics from '../agentCommon/components/StatusBarMetrics.vue'
+import GitChangesDrawer from '../agentCommon/components/GitChangesDrawer.vue'
+import { useGitWorkspaceChanges } from '../agentCommon/composables/useGitWorkspaceChanges.js'
 import ManagePlugins from './components/ManagePlugins.vue'
 import ManageSkills from './components/ManageSkills.vue'
 import ScrollToBottom from '../agentCommon/components/ScrollToBottom.vue'
@@ -1958,6 +1968,10 @@ const {
 })
 // ─── 项目/对话管理（替代旧的 useClaudeTabs）──────────────────────
 const sidebarOpen = ref(true)
+const showGitDrawer = ref(false)
+const gitWorkspaceState = useGitWorkspaceChanges((err) => {
+  console.error('[GitWorkspace]', err)
+})
 
 function createChat() {
   const id = nextChatId()

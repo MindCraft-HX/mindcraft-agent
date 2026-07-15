@@ -256,6 +256,9 @@ function createAgentBridge(ipcRenderer) {
   codexValidateKey: (key, baseURL, model) => ipcRenderer.invoke(CODEX_CHANNELS.VALIDATE_KEY, { key, baseURL, model }),
   codexListAvailableModels: () => ipcRenderer.invoke(CODEX_CHANNELS.LIST_AVAILABLE_MODELS),
   codexRunGitDiff: (cwd) => ipcRenderer.invoke(CODEX_CHANNELS.RUN_GIT_DIFF, { cwd }),
+  // Git workspace changes drawer (shared: ClaudeCode + CodeX)
+  gitGetWorkspaceChanges: (cwd) => ipcRenderer.invoke(CORE_CHANNELS.GIT_WORKSPACE_CHANGES, { cwd }),
+  gitGetFileDiff: (cwd, relativePath, changeKind) => ipcRenderer.invoke(CORE_CHANNELS.GIT_FILE_DIFF, { cwd, relativePath, changeKind }),
   codexLoadCodePanelState: () => ipcRenderer.invoke(CODEX_CHANNELS.LOAD_CODE_PANEL_STATE),
   codexSaveCodePanelState: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.SAVE_CODE_PANEL_STATE, payload),
   codexSaveCodePanelStateSync: (payload) => ipcRenderer.sendSync(CODEX_CHANNELS.SAVE_CODE_PANEL_STATE_SYNC, payload),

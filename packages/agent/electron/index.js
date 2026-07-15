@@ -10,6 +10,7 @@ const { registerSystemImportIpc } = require('./db/import/systemImportIpc')
 const { CORE_CHANNELS } = require('../shared/ipcChannels');
 const { registerSystemExportIpc } = require('./db/export/systemExportIpc')
 const { registerCodehubSessionIndexIpc } = require('./codehubSessionIndex')
+const { registerGitWorkspaceIpc } = require('./gitWorkspace')
 const { getDb } = require('./db')
 const { getLocale: facadeGetLocale, setLocale: facadeSetLocale } = require('./settingsFacade')
 
@@ -20,6 +21,7 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
   setupHomeMetricsHandlers(targetIpcMain)
   registerSessionInstructionIpc(targetIpcMain)
   registerCodehubSessionIndexIpc(targetIpcMain)
+  registerGitWorkspaceIpc(targetIpcMain)
 
   // System-level import IPC (T163): CC Switch SQL may contain both CodeX and Claude providers
   {

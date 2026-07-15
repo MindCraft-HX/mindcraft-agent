@@ -201,12 +201,20 @@
           :compact-disabled="true"
           compact-hint-key="agent.codexAutoCompactDesc"
           compacting-key="agent.codexAutoCompacting"
+          :gitInteractive="true"
           @send-message="sendFromStatusBar"
+          @git-click="showGitDrawer = true"
         />
         <ConfirmDialog ref="confirmDialogRef" />
         <SelectModel ref="selectModelRef" />
         <SessionInstructionDialog ref="sessionInstructionRef" :theme-class="themeClass" @saved="refreshActiveSessionInstructionState" />
       </div>
+
+      <GitChangesDrawer
+        v-model="showGitDrawer"
+        :cwd="activeProject?.cwd || ''"
+        :gitState="gitWorkspaceState"
+      />
     </div>
   </div>
 </template>
@@ -247,6 +255,8 @@ import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue
 import ImageLightbox from '../agentCommon/components/ImageLightbox.vue'
 import MessageList from './components/messages/MessageList.vue'
 import StatusBarMetrics from '../agentCommon/components/StatusBarMetrics.vue'
+import GitChangesDrawer from '../agentCommon/components/GitChangesDrawer.vue'
+import { useGitWorkspaceChanges } from '../agentCommon/composables/useGitWorkspaceChanges.js'
 import ScrollToBottom from '../agentCommon/components/ScrollToBottom.vue'
 import ScrollToPrevMsg from '../agentCommon/components/ScrollToPrevMsg.vue'
 
@@ -560,6 +570,10 @@ const REVIEW_PROMPT_UNCOMMITTED = 'Review the current code changes (staged, unst
 const projects = ref([])
 const activeProjectId = ref(null)
 const activeChatId = ref(null)
+const showGitDrawer = ref(false)
+const gitWorkspaceState = useGitWorkspaceChanges((err) => {
+  console.error('[GitWorkspace]', err)
+})
 const inputText = ref('')
 const inputEl = ref(null)
 // Phase 5: rAF 合并的 autosize，同一帧内多次输入只 resize 一次
