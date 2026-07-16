@@ -382,7 +382,11 @@ app.whenReady().then(async () => {
   })
 
   app.on("activate", function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    } else if (win && !win.isVisible()) {
+      win.show();
+    }
   });
 });
 
