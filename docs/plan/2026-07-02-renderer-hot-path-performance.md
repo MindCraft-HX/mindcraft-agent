@@ -32,7 +32,7 @@
 - 不改 ClaudeCode / CodeX provider runtime、abort/done、session restore、history hydrate 语义。
 - 不改变官方 JSONL 读取和写入边界。
 - 不引入新的存储位置。
-- 不做 CodeHub SessionIndex 正式重构。本专题只做 lightweight summary 瘦身；完整 SessionIndex 路线见 `docs/plan/2026-06-26-codehub-session-index-refactor.md`。
+- 不做 CodeHub SessionIndex 正式重构。本专题只做 lightweight summary 瘦身；SessionIndex 后续边界已在 T184 交接中收口。
 - 不删除 `codehubHasNotification` provider 直推链路。
 - 不改 `saveSync()` / unload 同步保存语义。
 - 不把 mention/slash 的 debounce/TTL 作为第一轮优化对象。
@@ -145,7 +145,7 @@ ClaudeCode 通过 `useSlashCommands.onInput()` 做同类操作。
 
 `codeHub/index.vue` 注释已经写明：统一 Tab 目前依赖各 Agent panel 暴露的 `projectTabData`；未挂载的 panel 不会执行 `loadHistory`；在 CodeHub 级 session index 独立出来前，启动时必须挂载所有已注册 Agent。
 
-这属于正式 SessionIndex 方案范围。`docs/plan/2026-06-26-codehub-session-index-refactor.md` 已定义后续目标：
+这属于正式 SessionIndex 方案范围；后续目标已在 T184 交接中收口：
 
 - 移除 CodeHub 对 `panel.projectTabData` 的初始 Tab 存在性依赖。
 - 保留 provider `projectTabData`，但只作为 runtime patch 输入。

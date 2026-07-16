@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible problem in MindCraft Agent.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, provider transcripts, private paths, or security vulnerabilities. Report security issues privately as described in SECURITY.md.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Configure ...
+        3. Run ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Claude Code
+        - Codex
+        - Session/history
+        - Settings/provider configuration
+        - Document viewer
+        - Build/packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include MindCraft version, operating system, and Node.js version. Redact local paths and credentials.
+    validations:
+      required: true

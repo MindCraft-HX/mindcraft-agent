@@ -141,12 +141,6 @@ rg "\.(thinking|_thinkingStart|currentAssistantId)\s*=" packages/agent/src/compo
 
 ### Phase 4：人工验收
 
-新增：
-
-```text
-docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md
-```
-
 验收重点：
 
 1. 正常回复完成后 running 不复活。
@@ -203,7 +197,7 @@ tests/task-done-history-persistence.test.mjs
 - 保留 ClaudeCode 现有“运行中再次发送走 SDK streamInput/interrupt”的行为，本轮不改成 CodeX 式队列。
 - 本轮不改 pending adoption、Session Registry schema、主进程 `agentSessions/cliSessionIds` ownership。
 
-人工验收见：`docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md`。
+人工验收已完成；验收要点保留在本计划中。
 
 ## 9. 推荐开发顺序
 

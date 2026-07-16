@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user problem rather than only a proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Explain the expected behavior and alternatives considered.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Claude Code
+        - Codex
+        - Shared agent core
+        - Session/history
+        - Document viewer
+        - Developer experience
+        - Other
+    validations:
+      required: true

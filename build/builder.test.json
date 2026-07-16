@@ -13,10 +13,6 @@
   },
   "extraResources": [
     {
-      "from": "./database/",
-      "to": "../database/"
-    },
-    {
       "from": "./plugins/vendors",
       "to": "vendors",
       "filter": [

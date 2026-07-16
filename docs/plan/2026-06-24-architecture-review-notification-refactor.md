@@ -647,7 +647,7 @@ agent + chatKey + cliSessionId + resultMessageUuid/session result timestamp
 
 依赖：
 
-- 参考 `docs/plan/2026-06-24-token-metrics-research.md`。
+- Token 指标语义以 `docs/token-metrics-contract.md` 和 `docs/token-metrics.md` 为准。
 
 验收：
 
@@ -972,7 +972,7 @@ node --test tests/codex-agent-done-reason.test.mjs
 依赖：
 
 - PR 2 的 `agent.metrics.updated`
-- `docs/plan/2026-06-24-token-metrics-research.md`
+- `docs/token-metrics-contract.md` 与 `docs/token-metrics.md`
 
 必须保护：
 

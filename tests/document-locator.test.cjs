@@ -149,9 +149,9 @@ test('resolveCandidatePath filters fallback file lists by candidate suffix', asy
 })
 
 test('resolveCandidatePath trims Chinese punctuation from rendered path candidates', async () => {
-  const target = 'D:\\repo\\docs\\qa\\2026-06-19-claude-runtime-metrics-state-machine-acceptance.md'
+  const target = 'D:\\repo\\docs\\plan\\2026-06-19-claude-runtime-metrics-state-machine.md'
   const result = await __test__.resolveCandidatePath({
-    rawText: 'docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md。',
+    rawText: 'docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md。',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: (value) => normalize(value) === normalize(target),
@@ -160,7 +160,7 @@ test('resolveCandidatePath trims Chinese punctuation from rendered path candidat
 
   assert.equal(result.ok, true)
   assert.equal(result.matchType, 'workspace-relative')
-  assert.equal(result.rawText, 'docs/qa/2026-06-19-claude-runtime-metrics-state-machine-acceptance.md')
+  assert.equal(result.rawText, 'docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md')
   assert.equal(normalize(result.filePath), normalize(target))
 })
 

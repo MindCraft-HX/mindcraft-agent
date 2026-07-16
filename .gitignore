@@ -8,8 +8,11 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-.codex/agent-shared-layer-before-delete.patch
-.codex/agent-shared-layer-untracked-before-delete.zip
+# Local agent workspace state, diagnostics, and scratch analysis.
+.codex/
+.claude/
+.cursor/
+.continue/
 .DS_Store
 dist
 dist-ssr
@@ -46,8 +49,7 @@ dev-plugins/
 *.db-wal
 *.db-shm
 
-# 忽略 package-lock.json
-package-lock.json
+# Keep the npm lockfile reproducible. Package-manager debug files are ignored above.
 
 # 文档本地草稿 / 私密记录（不提交）
 docs/local/
@@ -60,6 +62,35 @@ docs/marketing/
 # 本地个人覆盖（不提交）；AGENTS.md / CLAUDE.md 是项目规则，需提交
 CLAUDE.local.md
 AGENTS.local.md
+
+# Local credentials and machine-specific environment overrides. The tracked
+# config/.env.* files contain only non-secret build targets.
+.env
+.env.*.local
+.envrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Electron/runtime artifacts and test output.
+*.asar
+*.blockmap
+*.dmg
+*.exe
+*.msi
+*.zip
+playwright-report/
+test-results/
+
+# Local runtime files that may be created when userData is redirected to the repo.
+session-registry/
+simple-chat/
+diagnostics/
+mindcraft.db
+mindcraft.db-*
 
 __pycache__/
 _test/

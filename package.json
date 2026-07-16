@@ -93,7 +93,7 @@
   "description": "轻量级多Agent集成平台",
   "keywords": [],
   "author": "Hanson Cui",
-  "license": "ISC",
+  "license": "MIT",
   "build": {
     "appId": "com.mindcraft.agent",
     "productName": "MindCraft-Agent",
@@ -120,10 +120,6 @@
       "allowToChangeInstallationDirectory": true
     },
     "extraResources": [
-      {
-        "from": "./database/",
-        "to": "../database/"
-      },
       {
         "from": "./plugins/vendors",
         "to": "vendors",

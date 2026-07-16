@@ -215,7 +215,7 @@ Markdown Viewer 面向本地文档，可保留更多 markdown 能力，但路径
 |------|------|------|
 | Windows 路径 | `E:\work\Timer_manager\XRADIO_Flash_Developer_Guide-CN.pdf` | `_` 保留，不触发 emphasis，可点击 |
 | 中文标点 | `docs/TODO.md。` | candidate 不包含 `。` |
-| markdown link | `[打开](docs/TODO.md)` | 生成 `data-path-candidate` |
+| markdown link | `[打开](../TODO.md)` | 生成 `data-path-candidate` |
 | 外链 | `[官网](https://example.com)` | 保留外链 |
 | inline code | `` `wasm_gtslidersettagrawdata` `` | 不触发 `_` emphasis |
 | inline code 路径 | `` `packages/agent/electron/claudeAgent.js` `` | 是否可点击由 mode 明确决定 |
@@ -253,7 +253,7 @@ Markdown Viewer 面向本地文档，可保留更多 markdown 能力，但路径
 - Markdown Viewer 改为使用 token 级插件，移除 `renderHtml()` 末尾 `linkifyHtmlTextNodes(rendered)` 的 HTML 字符串后处理。
 - 插件跳过 markdown inline code、raw HTML `<code>` / `<script>` 等保护区域，并处理 Windows 反斜杠路径在 `markdown-it` 中拆成 `text` + `text_special` 的情况。
 - 增加自动化覆盖：`tests/local-path-tokenizer.test.mjs`、`tests/markdown-it-local-link.test.mjs`、`tests/agent-markdown-render.test.mjs`。
-- 增加 dev 手测清单：`docs/qa/2026-06-26-markdown-local-path-link-acceptance.md`。
+- 完成开发态手工回归；覆盖范围由自动化测试和本文记录。
 
 仍待后续：
 

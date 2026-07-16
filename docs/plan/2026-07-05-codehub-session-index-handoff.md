@@ -1,8 +1,7 @@
 # T184 CodeHub SessionIndex Phase 1/2 交接文档
 
 > 日期：2026-07-05
-> 状态：待实施
-> 关联旧方案：`docs/plan/2026-06-26-codehub-session-index-refactor.md`
+> 状态：Phase 1-3 已完成；本文保留实现边界和验收记录。
 > 范围：CodeHub 顶部统一 tab 的轻量索引层。第一版只做被动 `SessionIndex`，保留 eager mount，不启用 lazy mount。
 
 ## 1. 背景
@@ -35,7 +34,7 @@ const mountedMap = reactive(createMountedMap(agentKeys.value))
 - session scan cache、registry read cache、activation chain、draft cache 和 metrics 后台化已收口。
 - cache hit 路径禁止写 registry 的规则已写入缓存治理文档。
 
-因此现在可以启动 `SessionIndex`，但只能做 Phase 1/2：**被动索引 + eager mount**。
+本轮以 **被动索引 + eager mount** 为边界，不启用 lazy mount。
 
 ## 2. 本轮目标
 
@@ -287,4 +286,3 @@ npm test -- tests/codehub-session-index-loader.test.cjs tests/codehub-session-in
 ```
 
 如果新增测试路径不同，以实际路径为准。
-

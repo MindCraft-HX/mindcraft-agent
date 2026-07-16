@@ -19,7 +19,6 @@ Registered follow-ups:
 | T199 | architecture/storage | **Session / Panel Storage Boundary Audit**：盘点 `session-registry`、panel-state、renderer restore persistence 的权威边界，先审计不迁移。执行入口：`docs/plan/2026-07-06-storage-phase-2-chat-settings-session.md`。产出 `docs/plan/2026-07-06-T199-session-panel-storage-audit.md`（7 节审计文档）。 | P2 | ✅ 已完成 |
 
 > 最后更新：2026-07-06
-> 历史归档：`docs/archive/todo-history.md`
 > 知识库入口：`docs/index.md`
 
 ⚠️ **会话相关 bug 排查第一入口**：`docs/session-pitfalls.md`（跨 Agent 陷阱全景图）
@@ -139,8 +138,8 @@ Provider 存储主线在 T174/T195 已经收口，不应继续把后续零散需
 ## 2026-06-27 Docs Knowledge Base Cleanup ✅ 已完成 (2026-06-28)
 
 - ✅ 新增 `docs/index.md` 作为知识库索引
-- ✅ 整理 `docs/TODO.md`：保留活跃 P0/P1，历史长文迁移到 `docs/archive/todo-history.md`
-- ✅ 合并 CodeX chat proxy 文档：plan/empty-stream/acceptance-test 归档到 `docs/archive/`
+- ✅ 整理 `docs/TODO.md`：保留活跃 P0/P1，已完成细节留在对应的 dated plan 中。
+- ✅ 合并 CodeX chat proxy 文档：历史 plan/empty-stream/acceptance-test 已在公开发布整理中移除。
 - ✅ 更新 AGENTS.md / CLAUDE.md 文档路由表
 
 ## 2026-06-27 Metrics Follow-up Risks
