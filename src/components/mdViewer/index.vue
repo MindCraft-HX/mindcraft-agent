@@ -56,7 +56,14 @@
     </div>
 
     <!-- 自定义标签栏支持拖拽排序 + 键盘导航 + 无障碍 -->
-    <div v-if="tabs.length" class="doc-tabs-bar" role="tablist" aria-label="文档标签页">
+    <div
+      v-if="tabs.length"
+      ref="docTabsBarRef"
+      class="doc-tabs-bar"
+      role="tablist"
+      aria-label="文档标签页"
+      @wheel="onTabsWheel"
+    >
       <div class="doc-tabs">
         <div
           v-for="(tab, idx) in tabs"
@@ -74,6 +81,7 @@
           @dragleave="onTabDragLeave"
           @dragend="onTabDragEnd"
           @drop="onTabDrop($event, idx)"
+          @contextmenu.prevent="openTabContextMenu($event, tab.id)"
         >
           <span class="doc-tab-label">
             <el-icon v-if="tab.isLoading" class="doc-tab-loading"><Loading /></el-icon>
@@ -84,6 +92,21 @@
       </div>
       <div class="drag-spacer"></div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="tabContextMenu.visible"
+        class="doc-tab-context-menu"
+        :style="{ left: `${tabContextMenu.x}px`, top: `${tabContextMenu.y}px` }"
+        role="menu"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button type="button" role="menuitem" @click="closeContextTab">{{ $t('doc.closeTab') }}</button>
+        <button type="button" role="menuitem" :disabled="tabs.length < 2" @click="closeOtherTabs">{{ $t('doc.closeOtherTabs') }}</button>
+        <button type="button" role="menuitem" @click="closeAllTabs">{{ $t('doc.closeAllTabs') }}</button>
+      </div>
+    </Teleport>
 
     <div v-if="currentTab" ref="docBodyRef" class="doc-body" :class="{
         'is-loading': currentTab.isLoading,
@@ -147,6 +170,7 @@ const VIEWER_MAP = {
 const tabs = ref([])
 const activeTabId = ref('')
 const docBodyRef = ref(null)
+const docTabsBarRef = ref(null)
 const viewerRef = ref(null)
 const seenPayloadKeys = new Map()
 const MAX_SEEN_PAYLOAD_KEYS = 200
@@ -166,6 +190,7 @@ let _watcherLock = false
 // 标签页拖拽排序
 const dragIndex = ref(-1)
 const dragOverIndex = ref(-1)
+const tabContextMenu = reactive({ visible: false, x: 0, y: 0, tabId: '' })
 
 function onTabDragStart(e, index) {
   dragIndex.value = index
@@ -195,6 +220,59 @@ function onTabDrop(e, toIndex) {
   dragOverIndex.value = -1
   if (fromIndex < 0 || fromIndex === toIndex) return
   reorderTabs(fromIndex, toIndex)
+}
+
+function onTabsWheel(event) {
+  const el = docTabsBarRef.value
+  if (!el || el.scrollWidth <= el.clientWidth || !event.deltaY) return
+  event.preventDefault()
+  el.scrollLeft += event.deltaY
+}
+
+function openTabContextMenu(event, tabId) {
+  activeTabId.value = tabId
+  tabContextMenu.visible = true
+  tabContextMenu.tabId = tabId
+  tabContextMenu.x = Math.min(event.clientX, window.innerWidth - 176)
+  tabContextMenu.y = Math.min(event.clientY, window.innerHeight - 116)
+}
+
+function closeTabContextMenu() {
+  tabContextMenu.visible = false
+  tabContextMenu.tabId = ''
+}
+
+function onDocumentPointerDown(event) {
+  if (!tabContextMenu.visible) return
+  if (event.target?.closest?.('.doc-tab-context-menu')) return
+  closeTabContextMenu()
+}
+
+async function closeTabs(tabIds) {
+  for (const id of tabIds) {
+    if (!tabs.value.some(tab => tab.id === id)) continue
+    await removeTab(id)
+    // A canceled dirty-document confirmation keeps the tab open. Stop so a
+    // bulk close cannot unexpectedly continue with later tabs.
+    if (tabs.value.some(tab => tab.id === id)) break
+  }
+}
+
+async function closeContextTab() {
+  const { tabId } = tabContextMenu
+  closeTabContextMenu()
+  if (tabId) await closeTabs([tabId])
+}
+
+async function closeOtherTabs() {
+  const { tabId } = tabContextMenu
+  closeTabContextMenu()
+  await closeTabs(tabs.value.filter(tab => tab.id !== tabId).map(tab => tab.id))
+}
+
+async function closeAllTabs() {
+  closeTabContextMenu()
+  await closeTabs(tabs.value.map(tab => tab.id))
 }
 
 // 键盘导航 — Left/Right 箭头切换标签页，Home/End 跳到首/尾
@@ -853,6 +931,7 @@ onMounted(async () => {
   window.electronAPI?.onMdContent?.(enqueuePayload)
   // Ctrl+Tab 全局快捷键（文档级监听，不依赖 div 获得焦点）
   document.addEventListener('keydown', onDocGlobalKeydown)
+  document.addEventListener('pointerdown', onDocumentPointerDown)
   await drainPendingPayloads()
   // 恢复上次打开的文档 tabs（在 drainPendingPayloads 之后，避免重复）
   await restoreDocTabs()
@@ -860,6 +939,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocGlobalKeydown)
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
   saveCurrentTabScroll(activeTabId.value)
   persistDocTabs()
   clearTimeout(_persistTimer)
@@ -1082,18 +1162,29 @@ onActivated(() => {
   background: var(--cc-bg-secondary, rgba(255, 255, 255, 0.88));
   border-bottom: 1px solid var(--doc-line);
   padding: 0 12px;
-  min-height: 36px;
+  min-height: 44px;
+  height: 44px;
   overflow-x: auto;
   -webkit-app-region: drag;
   overflow-y: hidden;
   user-select: none;
+  scrollbar-gutter: stable;
 }
+
+.doc-tabs-bar::-webkit-scrollbar { height: 8px; }
+.doc-tabs-bar::-webkit-scrollbar-track { background: var(--cc-bg-tertiary, transparent); }
+.doc-tabs-bar::-webkit-scrollbar-thumb {
+  background: var(--cc-border-strong, #64748b);
+  border-radius: 999px;
+}
+.doc-tabs-bar::-webkit-scrollbar-thumb:hover { background: var(--doc-accent); }
 
 .doc-tabs {
   display: flex;
   align-items: center;
   gap: 0;
-  min-width: 0;
+  min-width: max-content;
+  padding-right: 90px;
 }
 
 .doc-tab {
@@ -1109,8 +1200,10 @@ onActivated(() => {
   user-select: none;
   -webkit-app-region: no-drag;
   white-space: nowrap;
-  min-width: 0;
+  min-width: 112px;
   max-width: 200px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
   transition: background 0.12s, color 0.12s;
 }
 
@@ -1168,13 +1261,55 @@ onActivated(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 156px;
+  overflow: hidden;
 }
 
 .doc-tab-text {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.doc-tab-context-menu {
+  position: fixed;
+  z-index: 10001;
+  width: 164px;
+  padding: 4px;
+  background: var(--cc-bg-elevated, #252525);
+  border: 1px solid var(--cc-border-strong, #3a3a3a);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.doc-tab-context-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--doc-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.doc-tab-context-menu button:hover:not(:disabled) {
+  background: var(--cc-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.doc-tab-context-menu button:disabled {
+  color: var(--doc-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .doc-tab-loading,
