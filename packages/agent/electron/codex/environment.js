@@ -10,7 +10,7 @@
 const { execSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { getEnvWithNodePath, resolveLoginShellPath, getCommonGlobalBinDirs } = require('../shared/shellPathHelper');
+const { getEnvWithNodePath, getFullEnv, resolveLoginShellPath, getCommonGlobalBinDirs } = require('../shared/shellPathHelper');
 
 // ---- 内部可变状态 ----
 
@@ -104,9 +104,11 @@ function findGlobalCodexPath() {
         return candidate;
       }
     }
+    // macOS: 使用完整环境（含 nvm/Homebrew 等）探测，避免 Electron 打包后 PATH 残缺
+    const fullEnv = getFullEnv();
     try {
-      const direct = execSync('which codex', { encoding: 'utf8', timeout: 5000 }).trim();
-      if (direct && isExecutableHealthy(direct)) {
+      const direct = execSync('which codex', { encoding: 'utf8', timeout: 5000, env: fullEnv }).trim();
+      if (direct && isExecutableHealthy(direct, fullEnv)) {
         _globalCodexPath = direct;
         return direct;
       }

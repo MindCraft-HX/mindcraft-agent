@@ -67,10 +67,17 @@ function registerEnvironmentIpc(ipcMain, {
             execFile(cmd, args, {
               encoding: 'utf8', timeout: 5000, windowsHide: true,
               stdio: ['ignore', 'pipe', 'pipe'],
+              env: fullEnv,
             }, (err, stdout) => {
               if (err) reject(err); else resolve(stdout);
             });
           })).trim();
+          // Normalize: "codex-cli 0.144.4" → "0.144.4"
+          if (codexVersion) {
+            const parts = codexVersion.split(/\s+/);
+            const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0];
+            codexVersion = verToken.replace(/^v/, '').trim();
+          }
         } catch (_) {}
       }
       result.codex = { installed, path: codexPath, version: codexVersion };
@@ -131,7 +138,20 @@ function registerEnvironmentIpc(ipcMain, {
       const installedPath = typeof getConfiguredExecutablePath === 'function'
         ? String(getConfiguredExecutablePath() || '').trim() || findGlobalCodexPath() || null
         : findGlobalCodexPath() || null;
-      return { success: true, path: installedPath };
+      // 通过 npm list -g 直接读取实际安装版本（不依赖二进制发现，兜底旧版本显示问题）
+      let installedVersion = null;
+      try {
+        const npmListOut = await new Promise((resolve, reject) => {
+          exec('npm list -g @openai/codex --json --depth=0', {
+            encoding: 'utf8', timeout: 10000, env,
+          }, (err2, stdout2) => {
+            if (err2) reject(err2); else resolve(stdout2);
+          });
+        });
+        const parsed = JSON.parse(npmListOut.trim());
+        installedVersion = parsed?.dependencies?.['@openai/codex']?.version || null;
+      } catch (_) {}
+      return { success: true, path: installedPath, version: installedVersion };
     } catch (e) {
       return { success: false, message: e?.stderr || e?.message || String(e) };
     } finally {
