@@ -198,11 +198,9 @@ npx electron-builder --config=./build/builder.prod.ios.json --mac
    → dist_electron/latest.yml 版本号 = 1.0.2
    → dist_electron/latest.yml releaseNotes 内容正确
 
-7. 上传到 COS（腾讯云对象存储）
-   → 详见 §10 COS 上传指南
-   → Bucket: download.mindcraft.com.cn
-   → 路径: MindCraft-Agent/installer/win/
-   → 上传文件: exe + zip + latest.yml + blockmap（共 4 个）
+7. 发布构建产物
+   → 通过受控的私有发布流程上传 exe、zip、latest.yml 和 blockmap
+   → 不要在公开仓库记录存储服务、Bucket、区域、控制台链接或上传凭证
 ```
 
 ### 服务器目录结构
@@ -429,90 +427,19 @@ macOS 构建需要：
 
 ---
 
-## 10. COS 上传指南
+## 10. Private Release Infrastructure
 
-### COS 配置
+Release storage, upload credentials, signing secrets, provider consoles, and
+deployment scripts are internal operational material. Keep them in a private
+runbook or CI secret store, never in this repository.
 
-> 凭证从安全渠道获取，不要写入仓库。历史文档中的真实 SecretId/SecretKey 已脱敏。
+For every release, the authorized maintainer should:
 
-| 配置项 | 值 |
-|--------|-----|
-| SecretId | `<COS_SECRET_ID>` |
-| SecretKey | `<COS_SECRET_KEY>` |
-| Bucket | `genitop-1317577547` |
-| Region | `ap-nanjing` |
-| CDN 域名 | `download.mindcraft.com.cn` |
+1. Upload the signed installer, portable archive, update manifest, and blockmap
+   through the private release workflow.
+2. Verify that the public download links resolve to the intended version.
+3. Publish user-facing release notes without credentials, internal hostnames,
+   storage identifiers, or operational commands.
 
-### 发布地址
-
-| 项目 | Bucket 路径 | CDN URL |
-|------|------------|---------|
-| mindcraft-agent | `MindCraft-Agent/installer/win/` | `https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/` |
-| mindcraft-electron | `MindCraft/installer/win/` | `https://download.mindcraft.com.cn/MindCraft/installer/win/` |
-
-> CDN 域名 `download.mindcraft.com.cn` → COS 源站 `genitop-1317577547.cos.ap-nanjing.myqcloud.com`（在 `mindcraft-drf/api/jobs.py` 中做 URL 重写）
-
-### 方式 1：coscmd 命令行（推荐，本次验证通过）
-
-```powershell
-# 安装（一次性）
-pip install coscmd
-
-# 配置（一次性；凭证从安全渠道获取）
-coscmd config -a <COS_SECRET_ID> -s <COS_SECRET_KEY> -b genitop-1317577547 -r ap-nanjing
-
-# 上传全部 4 个文件（从项目根目录执行）
-cd mindcraft-agent
-coscmd upload "dist_electron/MindCraft-Agent Setup 1.0.2.exe" "MindCraft-Agent/installer/win/"
-coscmd upload dist_electron/MindCraft-Agent-1.0.2-win.zip "MindCraft-Agent/installer/win/"
-coscmd upload "dist_electron/MindCraft-Agent Setup 1.0.2.exe.blockmap" "MindCraft-Agent/installer/win/"
-coscmd upload dist_electron/latest.yml "MindCraft-Agent/installer/win/"
-
-# 验证
-coscmd list MindCraft-Agent/installer/win/
-```
-
-### 方式 2：腾讯云控制台手动上传
-
-1. 打开 [腾讯云 COS 控制台](https://console.cloud.tencent.com/cos/bucket?bucket=genitop-1317577547&region=ap-nanjing)
-2. Bucket: `genitop-1317577547`，Region: `ap-nanjing`
-3. 进入目录 `MindCraft-Agent/installer/win/`
-4. 上传 4 个文件（拖拽或点击上传）
-5. 确认 `latest.yml` 已被覆盖
-
-### 方式 3：一键上传脚本
-
-在项目根目录创建 `upload.ps1`（已在 `.gitignore`，不提交）：
-
-```powershell
-param([string]$Version = "1.0.2")
-
-$targetPath = "MindCraft-Agent/installer/win/"
-
-$files = @(
-    "dist_electron/MindCraft-Agent Setup $Version.exe",
-    "dist_electron/MindCraft-Agent-$Version-win.zip",
-    "dist_electron/MindCraft-Agent Setup $Version.exe.blockmap",
-    "dist_electron/latest.yml"
-)
-
-foreach ($f in $files) {
-    Write-Host "Uploading: $f"
-    coscmd upload "$f" "$targetPath"
-}
-
-Write-Host "`nDone. Verify:"
-coscmd list "$targetPath"
-
-Write-Host "`nCDN: https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/"
-```
-
-### 上传后验证
-
-```powershell
-# 1. 确认 latest.yml 指向正确版本
-curl https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/latest.yml
-
-# 2. 确认 exe 可下载
-curl -I "https://download.mindcraft.com.cn/MindCraft-Agent/installer/win/MindCraft-Agent%20Setup%201.0.2.exe"
-```
+External contributors only need the build commands and release notes in this
+document; they do not need access to the publication infrastructure.

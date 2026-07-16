@@ -62,11 +62,11 @@ reviewed Gitee `develop` commit. Do not force-push GitHub `main`.
 
 ## Initial Setup
 
-The repository uses these remotes:
+Keep the internal and public remotes distinct:
 
 ```powershell
 git remote -v
-# origin  https://gitee.com/genitop/mindcraft-agent.git
+# origin  <internal development remote>
 # github  https://github.com/MindCraft-HX/mindcraft-agent.git
 ```
 

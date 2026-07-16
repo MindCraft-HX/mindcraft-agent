@@ -16,7 +16,7 @@
 ## 证据：用户实际文件 vs SDK 源码
 
 ```
-C:\Users\hanso\.claude\settings.json (2026-06-15)
+~/.claude/settings.json（本机示例，2026-06-15）
 SDK 版本：@anthropic-ai/claude-agent-sdk v0.2.117
 ```
 
