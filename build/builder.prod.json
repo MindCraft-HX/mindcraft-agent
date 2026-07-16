@@ -40,8 +40,7 @@
   "win": {
     "icon": "dist/logo-white.png",
     "target": [
-      "nsis",
-      "zip"
+      "nsis"
     ],
     "fileAssociations": [
       {
