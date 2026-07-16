@@ -153,7 +153,7 @@ SDK 的 MCP 能力完全未使用：
 | 安全控制 | `strictKnownMarketplaces`、`blockedMarketplaces`、`strictPluginOnlyCustomization` |
 | 启用插件 | `enabledPlugins` setting（`plugin-id@marketplace-id` 格式） |
 
-**注**：App 有自定义 `dev-plugins/` 系统（realm-observer、hello-world），与 SDK 插件系统独立。
+**注**：开发模式可选地扫描项目根 `dev-plugins/`；该目录不随公开仓库提供示例插件，SDK 插件与 marketplace 仍是默认集成路径。
 
 **优先级：L-M** — SDK 插件比自定义系统更丰富，但当前自定义系统可用。
 

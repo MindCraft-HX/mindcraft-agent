@@ -1,4 +1,4 @@
-import test from 'node:test'
+﻿import test from 'node:test'
 import assert from 'node:assert/strict'
 
 function hasRichNormalizedFileChanges(fileChanges) {
@@ -107,20 +107,20 @@ test('history restore rebuilds apply_patch diff when stored changes are weak', (
       name: 'apply_patch',
       input: [
         '*** Begin Patch',
-        '*** Update File: docs/TODO.md',
+        '*** Update File: docs/index.md',
         '@@',
         '-old line',
         '+new line',
         '*** End Patch',
       ].join('\n'),
-      changes: [{ path: 'docs/TODO.md', kind: 'update' }],
+      changes: [{ path: 'docs/index.md', kind: 'update' }],
     }),
   }]
 
   normalizeFileChangeMessages(messages)
 
-  assert.equal(messages[0].filePath, 'docs/TODO.md')
-  assert.equal(messages[0]._fileChanges?.[0]?.path, 'docs/TODO.md')
+  assert.equal(messages[0].filePath, 'docs/index.md')
+  assert.equal(messages[0]._fileChanges?.[0]?.path, 'docs/index.md')
   assert.equal(messages[0]._fileChanges?.[0]?.diffHunks?.length, 1)
 })
 

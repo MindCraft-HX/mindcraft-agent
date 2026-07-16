@@ -15,12 +15,12 @@ test('resolveCandidatePath prefers workspaceRoot before cwd and fallback', async
   const workspaceRoot = 'D:\\repo'
   const cwd = 'D:\\repo\\src'
   const existingPaths = new Set([
-    normalize('D:\\repo\\docs\\TODO.md'),
-    normalize('D:\\repo\\src\\docs\\TODO.md'),
+    normalize('D:\\repo\\docs\\index.md'),
+    normalize('D:\\repo\\src\\docs\\index.md'),
   ])
 
   const result = await __test__.resolveCandidatePath({
-    rawText: 'docs/TODO.md',
+    rawText: 'docs/index.md',
     workspaceRoot,
     cwd,
     pathExists: (value) => existingPaths.has(normalize(value)),
@@ -28,12 +28,12 @@ test('resolveCandidatePath prefers workspaceRoot before cwd and fallback', async
   })
 
   assert.equal(result.ok, true)
-  assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\TODO.md'))
+  assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\index.md'))
   assert.equal(result.matchType, 'workspace-relative')
 })
 
 test('resolveCandidatePath accepts absolute file paths', async () => {
-  const absolutePath = 'D:\\repo\\docs\\TODO.md'
+  const absolutePath = 'D:\\repo\\docs\\index.md'
   const result = await __test__.resolveCandidatePath({
     rawText: absolutePath,
     workspaceRoot: 'D:\\repo',
@@ -48,9 +48,9 @@ test('resolveCandidatePath accepts absolute file paths', async () => {
 })
 
 test('resolveCandidatePath accepts file:// absolute file paths', async () => {
-  const absolutePath = 'D:\\repo\\docs\\TODO.md'
+  const absolutePath = 'D:\\repo\\docs\\index.md'
   const result = await __test__.resolveCandidatePath({
-    rawText: 'file:///D:/repo/docs/TODO.md',
+    rawText: 'file:///D:/repo/docs/index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: (value) => normalize(value) === normalize(absolutePath),
@@ -59,14 +59,14 @@ test('resolveCandidatePath accepts file:// absolute file paths', async () => {
 
   assert.equal(result.ok, true)
   assert.equal(result.matchType, 'absolute')
-  assert.equal(result.rawText, 'D:/repo/docs/TODO.md')
+  assert.equal(result.rawText, 'D:/repo/docs/index.md')
   assert.equal(normalize(result.filePath), normalize(absolutePath))
 })
 
 test('resolveCandidatePath accepts slash-prefixed windows absolute file paths', async () => {
-  const absolutePath = 'D:\\repo\\docs\\TODO.md'
+  const absolutePath = 'D:\\repo\\docs\\index.md'
   const result = await __test__.resolveCandidatePath({
-    rawText: '/D:/repo/docs/TODO.md',
+    rawText: '/D:/repo/docs/index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: (value) => normalize(value) === normalize(absolutePath),
@@ -75,7 +75,7 @@ test('resolveCandidatePath accepts slash-prefixed windows absolute file paths', 
 
   assert.equal(result.ok, true)
   assert.equal(result.matchType, 'absolute')
-  assert.equal(result.rawText, '/D:/repo/docs/TODO.md')
+  assert.equal(result.rawText, '/D:/repo/docs/index.md')
   assert.equal(normalize(result.filePath), normalize(absolutePath))
 })
 
@@ -96,62 +96,62 @@ test('resolveCandidatePath falls back to cwd when workspaceRoot misses', async (
 
 test('resolveCandidatePath returns multiple matches when fallback is ambiguous', async () => {
   const result = await __test__.resolveCandidatePath({
-    rawText: 'TODO.md',
+    rawText: 'index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: () => false,
     searchFiles: async () => ({
       ok: true,
-      files: ['docs/TODO.md', 'archive/TODO.md'],
-      suggestions: ['docs/TODO.md', 'archive/TODO.md'],
+      files: ['docs/index.md', 'archive/index.md'],
+      suggestions: ['docs/index.md', 'archive/index.md'],
     }),
   })
 
   assert.equal(result.ok, false)
   assert.equal(result.reason, 'multiple-matches')
-  assert.deepEqual(result.matches, ['docs/TODO.md', 'archive/TODO.md'])
+  assert.deepEqual(result.matches, ['docs/index.md', 'archive/index.md'])
 })
 
 test('resolveCandidatePath uses fallback when exactly one file matches', async () => {
   const result = await __test__.resolveCandidatePath({
-    rawText: 'TODO.md',
+    rawText: 'index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: () => false,
     searchFiles: async () => ({
       ok: true,
-      files: ['docs/TODO.md'],
-      suggestions: ['docs/TODO.md'],
+      files: ['docs/index.md'],
+      suggestions: ['docs/index.md'],
     }),
   })
 
   assert.equal(result.ok, true)
   assert.equal(result.matchType, 'rg-fallback')
-  assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\TODO.md'))
+  assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\index.md'))
 })
 
 test('resolveCandidatePath filters fallback file lists by candidate suffix', async () => {
   const result = await __test__.resolveCandidatePath({
-    rawText: 'docs/TODO.md',
+    rawText: 'docs/index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: () => false,
     searchFiles: async () => ({
       ok: true,
-      files: ['README.md', 'docs/TODO.md', 'src/main.js'],
+      files: ['README.md', 'docs/index.md', 'src/main.js'],
       suggestions: [],
     }),
   })
 
   assert.equal(result.ok, true)
   assert.equal(result.matchType, 'rg-fallback')
-  assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\TODO.md'))
+  assert.equal(normalize(result.filePath), normalize('D:\\repo\\docs\\index.md'))
 })
 
 test('resolveCandidatePath trims Chinese punctuation from rendered path candidates', async () => {
-  const target = 'D:\\repo\\docs\\plan\\2026-06-19-claude-runtime-metrics-state-machine.md'
+  const target = 'D:\\repo\\docs\\agent-architecture.md'
   const result = await __test__.resolveCandidatePath({
-    rawText: 'docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md。',
+    rawText: 'docs/agent-architecture.md。',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     pathExists: (value) => normalize(value) === normalize(target),
@@ -160,7 +160,7 @@ test('resolveCandidatePath trims Chinese punctuation from rendered path candidat
 
   assert.equal(result.ok, true)
   assert.equal(result.matchType, 'workspace-relative')
-  assert.equal(result.rawText, 'docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md')
+  assert.equal(result.rawText, 'docs/agent-architecture.md')
   assert.equal(normalize(result.filePath), normalize(target))
 })
 
@@ -175,10 +175,10 @@ test('inferOpenMode routes markdown and code files into in-app viewers', () => {
 test('openDocumentCandidate opens supported files in md viewer payload', async () => {
   const payloads = []
   const result = await openDocumentCandidate({
-    rawText: 'docs/TODO.md',
+    rawText: 'docs/index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
-    pathExists: (value) => normalize(value) === normalize('D:\\repo\\docs\\TODO.md'),
+    pathExists: (value) => normalize(value) === normalize('D:\\repo\\docs\\index.md'),
     searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
     openMdPayload: async (payload) => payloads.push(payload),
     openWithDefault: async () => '',
@@ -187,9 +187,9 @@ test('openDocumentCandidate opens supported files in md viewer payload', async (
   assert.equal(result.ok, true)
   assert.equal(result.openMode, 'mdViewer')
   assert.equal(payloads.length, 1)
-  assert.equal(payloads[0].name, 'TODO.md')
+  assert.equal(payloads[0].name, 'index.md')
   assert.equal(payloads[0].size, 0)
-  assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\TODO.md'))
+  assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\index.md'))
 })
 
 test('openDocumentCandidate falls back to system default for unsupported files', async () => {
@@ -241,15 +241,15 @@ test('openDocumentCandidate blocks agent-message absolute paths outside workspac
 test('openDocumentCandidate allows agent-message absolute paths inside workspace', async () => {
   const payloads = []
   const result = await openDocumentCandidate({
-    rawText: 'D:\\repo\\docs\\TODO.md',
+    rawText: 'D:\\repo\\docs\\index.md',
     workspaceRoot: 'D:\\repo',
     cwd: 'D:\\repo\\src',
     source: 'agent-message',
-    pathExists: (value) => normalize(value) === normalize('D:\\repo\\docs\\TODO.md'),
+    pathExists: (value) => normalize(value) === normalize('D:\\repo\\docs\\index.md'),
     realpath: (value) => {
       if (normalize(value) === normalize('D:\\repo')) return normalize('D:\\repo')
       if (normalize(value) === normalize('D:\\repo\\src')) return normalize('D:\\repo\\src')
-      if (normalize(value) === normalize('D:\\repo\\docs\\TODO.md')) return normalize('D:\\repo\\docs\\TODO.md')
+      if (normalize(value) === normalize('D:\\repo\\docs\\index.md')) return normalize('D:\\repo\\docs\\index.md')
       throw new Error('missing path')
     },
     searchFiles: async () => ({ ok: true, files: [], suggestions: [] }),
@@ -260,7 +260,7 @@ test('openDocumentCandidate allows agent-message absolute paths inside workspace
   assert.equal(result.ok, true)
   assert.equal(result.openMode, 'mdViewer')
   assert.equal(payloads.length, 1)
-  assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\TODO.md'))
+  assert.equal(normalize(payloads[0].filePath), normalize('D:\\repo\\docs\\index.md'))
 })
 
 test('openDocumentCandidate blocks agent-message symlink targets outside workspace', async () => {

@@ -4,11 +4,11 @@
 
 [中文](#中文介绍) | [English](#english)
 
-![MindCraft Agent workspace](docs/assets/mindcraft-agent-workspace.svg)
-
 ## 中文介绍
 
 MindCraft Agent 是一个面向软件开发的轻量级多 Agent 桌面工作台。它将 Claude Code 与 Codex 放入同一个项目上下文中，同时提供会话管理、文件变更查看、Markdown 文档浏览和轻量 Chat，减少在命令行、编辑器和多个 AI 工具之间来回切换的成本。
+
+> **截图位置（待美工制作）**：在这里放一张 16:9 的产品总览图，展示项目列表、Claude Code/Codex 会话区和文件变更预览。图片应使用脱敏演示项目；不得出现本机路径、账号信息、密钥、私有提示词或真实业务内容。建议文件名：`docs/images/workspace-overview-zh.png`。
 
 ### 核心能力
 
@@ -45,7 +45,6 @@ npm run test:e2e
 ### 文档与贡献
 
 - [文档总索引](docs/index.md)
-- [当前任务与发布队列](docs/TODO.md)
 - [架构与数据边界](docs/agent-architecture.md)
 - [会话问题排查](docs/session-pitfalls.md)
 - [GitHub 发布策略](docs/github-publication.md)
@@ -55,6 +54,8 @@ npm run test:e2e
 ## English
 
 MindCraft Agent is a lightweight, project-aware desktop workspace for software development. It brings Claude Code and Codex into one application, alongside session management, file-change review, Markdown browsing, and lightweight chat.
+
+> **Screenshot placeholder (design asset needed):** Add a 16:9 product overview showing the project list, Claude Code/Codex conversation workspace, and file-change preview. Use a sanitized demo project only: no local paths, account details, keys, private prompts, or real project content. Suggested filename: `docs/images/workspace-overview-en.png`.
 
 ### Highlights
 
@@ -91,7 +92,6 @@ See the [Build & Deploy Guide](docs/build-and-deploy.md) for packaging and relea
 ### Documentation And Contributing
 
 - [Documentation index](docs/index.md)
-- [Current work and release queue](docs/TODO.md)
 - [Architecture and data boundaries](docs/agent-architecture.md)
 - [Session troubleshooting](docs/session-pitfalls.md)
 - [GitHub publication workflow](docs/github-publication.md)

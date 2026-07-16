@@ -2,6 +2,16 @@ const assert = require('node:assert')
 const fs = require('node:fs')
 const path = require('node:path')
 
+// The Electron entrypoint is loaded only to verify exports. Keep this structural
+// test independent from Electron's user-data-backed persistence implementation.
+class TestConf {
+  get() { return undefined }
+  set() {}
+  delete() {}
+}
+
+require.cache[require.resolve('electron-conf')] = { exports: { Conf: TestConf } }
+
 const root = path.resolve(__dirname, '..')
 const agentRoot = path.join(root, 'packages', 'agent')
 

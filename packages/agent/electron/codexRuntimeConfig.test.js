@@ -1,6 +1,28 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
+// The production module persists settings through Electron. These parser tests
+// run under Node, so provide the small in-memory interface it initializes with.
+class TestConf {
+  constructor() {
+    this.store = {}
+  }
+
+  get(key) {
+    return this.store[key]
+  }
+
+  set(key, value) {
+    this.store[key] = value
+  }
+
+  delete(key) {
+    delete this.store[key]
+  }
+}
+
+require.cache[require.resolve('electron-conf')] = { exports: { Conf: TestConf } }
+
 const {
   __test__: {
     parseSimpleTomlContent,

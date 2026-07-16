@@ -5,7 +5,7 @@
  *   5. 旧 panel cache 不能覆盖 active registry binding（重启/恢复安全）
  *   6. 删除 session → registry/panel/index 一致性
  *
- * 参见：docs/plan/2026-07-01-session-registry-ownership-handoff.md
+ * See docs/session-pitfalls.md and docs/agent-architecture.md.
  *       docs/session-pitfalls.md §Trap 8
  */
 

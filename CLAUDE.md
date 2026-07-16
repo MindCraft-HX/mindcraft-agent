@@ -24,19 +24,14 @@ docs/            versioned engineering knowledge base
 | Situation | Read first |
 | --- | --- |
 | Documentation entry point | `docs/index.md` |
-| Current work and bugs | `docs/TODO.md` |
 | Architecture, ownership, data boundary | `docs/agent-architecture.md` |
 | Duplicate, interrupted, missing, or stuck sessions | `docs/session-pitfalls.md` |
 | Token metrics, StatusBar, footer, context, cache | `docs/token-metrics-contract.md`, then `docs/token-metrics.md` |
 | SDK capability or official API | `docs/sdk-feature-gaps.md`, then local `.d.ts` files |
 | Claude settings pollution | `docs/settings-json-pollution.md` |
-| Dev white screen or zombie process | `docs/bugs/dev-white-screen-zombie-process.md` |
 | Packaging and releases | `docs/build-and-deploy.md` |
 | GitHub publication and mirror workflow | `docs/github-publication.md` |
-| Performance investigation | `docs/perf-audit-report.md` |
-| Activation hot path and cache governance | `docs/plan/2026-07-05-hot-path-governance-and-streaming-render.md`, `docs/plan/2026-07-05-project-session-activation-work-graph.md`, `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md` |
-| Electron end-to-end verification | `docs/plan/2026-07-05-electron-e2e-smoke-harness.md` |
-| Architecture review | `docs/architecture-health-review-2026-06-28.md`, `docs/review.md` |
+| Plugin/skill cache invalidation | `docs/skill-plugin-cache-invalidation.md` |
 
 ## Data And Session Boundaries
 
@@ -54,7 +49,7 @@ docs/            versioned engineering knowledge base
 - Activation synchronously updates only active identity, already-cached UI state, current-session first load, focus, and scroll. Metrics, full scans, registry writes, and non-current work run later.
 - Use scheduled refresh with per-project cooldown; update ordering at the send/done boundary instead of polling on focus.
 - Drafts use session-registry plus renderer memory cache. Switching tabs must not cause per-key panel writes or disk I/O.
-- New caches require an owner, key, source of truth, invalidation, timeout/limit, and mutation policy. Read `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md` first.
+- New caches require an owner, key, source of truth, invalidation, timeout/limit, and mutation policy. Document the design with the relevant stable architecture contract before implementation.
 - Prefer `createFileDerivedCache()` for file-derived data and `trackDedup()` (or equivalent timeout-backed identity guards) for in-flight work. A cache hit must not write registry, panel state, official directories, or trigger heavy scan/IPC.
 - Skill or plugin mutations must clear the slash-command cache; follow `docs/skill-plugin-cache-invalidation.md`.
 - Performance probes and diagnostic logs require an explicit flag; do not add default dev-console noise.

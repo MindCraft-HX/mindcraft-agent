@@ -7,7 +7,7 @@
  * 覆盖场景（T165 handoff §5）：
  *   4. ClaudeCode equivalent scan/done/restore sequences
  *
- * 参见：docs/plan/2026-07-01-session-registry-ownership-handoff.md
+ * See docs/session-pitfalls.md and docs/agent-architecture.md.
  *       docs/session-pitfalls.md
  */
 

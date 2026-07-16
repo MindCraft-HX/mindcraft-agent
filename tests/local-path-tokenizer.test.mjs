@@ -34,7 +34,7 @@ assert.deepEqual(
 )
 
 assert.equal(
-  splitLocalPathText('file:///D:/repo/docs/TODO.md').some((segment) => segment.type === 'path'),
+  splitLocalPathText('file:///D:/repo/docs/index.md').some((segment) => segment.type === 'path'),
   true,
   'file:// windows absolute paths should be recognized as local candidates'
 )
@@ -46,7 +46,7 @@ assert.equal(
 )
 
 assert.equal(
-  splitLocalPathText('./docs/TODO.md').some((segment) => segment.type === 'path'),
+  splitLocalPathText('./docs/index.md').some((segment) => segment.type === 'path'),
   true,
   './ relative paths should be recognized as local candidates'
 )
@@ -67,9 +67,9 @@ const md = new MarkdownIt({ html: true, linkify: true }).use(markdownItLocalPath
 
 const html = md.render(`实际路径 ${windowsPath}
 
-请看 docs/TODO.md。
+请看 docs/index.md。
 
-[打开 TODO](docs/TODO.md)
+[打开 TODO](docs/index.md)
 
 \`packages/agent/electron/claudeAgent.js\`
 
@@ -81,15 +81,15 @@ assert.ok(
   'plugin should linkify plain windows paths with underscores'
 )
 assert.ok(
-  html.includes('data-path-candidate="docs/TODO.md"'),
+  html.includes('data-path-candidate="docs/index.md"'),
   'plugin should linkify plain project paths'
 )
 assert.ok(
-  !html.includes('data-path-candidate="docs/TODO.md。"'),
+  !html.includes('data-path-candidate="docs/index.md。"'),
   'plugin should exclude trailing Chinese punctuation from candidates'
 )
 assert.equal(
-  (html.match(/data-path-candidate="docs\/TODO\.md"/g) || []).length,
+  (html.match(/data-path-candidate="docs\/index\.md"/g) || []).length,
   2,
   'plain path and markdown local link should both route through data-path-candidate'
 )

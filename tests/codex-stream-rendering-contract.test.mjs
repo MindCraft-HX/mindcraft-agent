@@ -4,7 +4,7 @@
  * 目标：验证 live stream 中 custom_tool_call、agent_message、thinking 标签
  * 的修复后正确行为。原 Phase 0 characterization BUG 测试已更新为期望行为。
  *
- * 背景文档：docs/plan/2026-07-01-codex-event-rendering-contract.md
+ * Background: docs/agent-architecture.md and docs/session-pitfalls.md.
  * 关联 TODO：T168
  */
 

@@ -1,4 +1,4 @@
-import test from 'node:test'
+﻿import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ref } from 'vue'
 
@@ -58,7 +58,7 @@ test('apply_patch preview remains visible after file_change completion arrives',
         name: 'apply_patch',
         input: [
           '*** Begin Patch',
-          '*** Update File: docs/TODO.md',
+          '*** Update File: docs/index.md',
           '@@',
           '-old line',
           '+new line',
@@ -73,7 +73,7 @@ test('apply_patch preview remains visible after file_change completion arrives',
   assert.equal(toolMessages.length, 1)
   assert.equal(toolMessages[0].toolUseId, 'call-apply-1')
   assert.equal(toolMessages[0].rawType, 'apply_patch')
-  assert.equal(toolMessages[0]._fileChanges?.[0]?.path, 'docs/TODO.md')
+  assert.equal(toolMessages[0]._fileChanges?.[0]?.path, 'docs/index.md')
   assert.equal(toolMessages[0]._fileChanges?.[0]?._diffHunks?.length, 1)
 
   stream.onAgentMessage({
@@ -87,7 +87,7 @@ test('apply_patch preview remains visible after file_change completion arrives',
         status: 'completed',
         changes: [
           {
-            path: 'docs/TODO.md',
+            path: 'docs/index.md',
             kind: 'update',
           },
         ],
@@ -98,8 +98,8 @@ test('apply_patch preview remains visible after file_change completion arrives',
   toolMessages = tab.messages.filter(msg => msg.role === 'tool')
   assert.equal(toolMessages.length, 1)
   assert.equal(toolMessages[0].toolUseId, 'call-apply-1')
-  assert.equal(toolMessages[0].filePath, 'docs/TODO.md')
-  assert.equal(toolMessages[0]._fileChanges?.[0]?.path, 'docs/TODO.md')
+  assert.equal(toolMessages[0].filePath, 'docs/index.md')
+  assert.equal(toolMessages[0]._fileChanges?.[0]?.path, 'docs/index.md')
   assert.equal(toolMessages[0]._fileChanges?.[0]?._diffHunks?.length, 1)
   assert.equal(toolMessages[0].status, 'done')
 })

@@ -153,14 +153,7 @@ MindCraft 自有数据包括：
 - 缓存命中路径必须保持轻量。provider scan cache 只能缓存 provider raw summary；registry 派生字段应在独立读/merge 阶段处理，避免 cache hit 继续隐式 upsert 大量 session record。
 - 新增缓存必须登记 owner/key/value/invalidation/limit/stale policy/mutation policy。禁止未登记的临时 Map 进入切换热路径。
 
-相关计划与验收：
-
-- `docs/plan/2026-07-02-renderer-hot-path-performance.md`
-- `docs/plan/2026-07-02-session-tab-switch-performance.md`
-- `docs/plan/2026-07-02-T172-session-switch-performance.md`
-- `docs/plan/2026-07-05-project-session-activation-work-graph.md`
-- `docs/plan/2026-07-05-hot-path-governance-and-streaming-render.md`
-- `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md`
+这些规则是当前性能与缓存边界；历史实施计划不作为公开文档维护。
 
 ## 5.2 缓存与本地派生数据边界
 
@@ -173,7 +166,7 @@ MindCraft 自有数据包括：
 - provider scan cache 只缓存 provider raw summary；registry 派生字段通过独立 read/merge 合并，不能让 cache hit 路径继续隐式 upsert。
 - 不引入全局 Redis 式缓存服务，不把当前 live turn metrics 当历史缓存回灌。
 
-详细盘点和已迁移缓存见 `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md`。
+新增缓存时应在本架构文档或相关稳定契约中记录边界与失效规则。
 
 ## 6. 消息来源与持久化
 
@@ -285,7 +278,7 @@ App 专属字段必须写入 MindCraft 自有配置，例如 `claude-internal.js
 | Token metrics | `docs/token-metrics-contract.md`, `docs/token-metrics.md` | `tests/*token*`, `tests/*metrics*` |
 | SDK 能力 | `docs/sdk-feature-gaps.md` | 按具体 adapter 增补 |
 | settings 污染 | `docs/settings-json-pollution.md` | 配置读写相关测试 |
-| dev 白屏 | `docs/bugs/dev-white-screen-zombie-process.md` | 路由/启动脚本测试 |
+| dev 白屏 | 检查 `[main] route check:`、路由状态和启动脚本 | 路由/启动脚本测试 |
 | 打包部署 | `docs/build-and-deploy.md` | build 手工验收 |
 
 新架构决策应同时更新对应 docs 和测试。不要把长期知识只留在对话里。

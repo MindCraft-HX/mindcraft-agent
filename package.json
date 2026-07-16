@@ -131,7 +131,8 @@
         "from": "./tools/rg",
         "to": "tools/rg",
         "filter": [
-          "**/*"
+          "win-x64/rg.exe",
+          "win-x64/LICENSE-MIT"
         ]
       }
     ],

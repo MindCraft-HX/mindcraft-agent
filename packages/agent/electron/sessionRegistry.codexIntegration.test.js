@@ -9,7 +9,7 @@
  *   2. provider scan first → done last（单一 chatKey）
  *   3. done first → provider scan last（单一 chatKey）
  *
- * 参见：docs/plan/2026-07-01-session-registry-ownership-handoff.md
+ * See docs/session-pitfalls.md and docs/agent-architecture.md.
  *       docs/session-pitfalls.md
  */
 

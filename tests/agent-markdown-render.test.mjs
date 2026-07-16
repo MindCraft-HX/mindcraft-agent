@@ -83,7 +83,7 @@ assert.ok(orderedListWithFencedCodeHtml.includes('refreshSessions'), 'fenced cod
 assert.ok(orderedListWithFencedCodeHtml.includes('nextTick'), 'fenced code block inside list continuation should preserve surrounding code context')
 assert.ok(!orderedListWithFencedCodeHtml.includes('```js'), 'fenced code markers inside list continuation should not leak as literal text')
 
-const localPathMarkdown = `请查看 docs/TODO.md
+const localPathMarkdown = `请查看 docs/index.md
 
 [打开主进程](electron/main.js)
 
@@ -91,21 +91,21 @@ const localPathMarkdown = `请查看 docs/TODO.md
 
 const localPathHtml = renderContent(localPathMarkdown)
 
-assert.ok(localPathHtml.includes('data-path-candidate="docs/TODO.md"'), 'project-relative paths should become clickable candidates')
-assert.ok(localPathHtml.includes('title="打开 docs/TODO.md"'), 'local path candidates should expose a clickable title')
+assert.ok(localPathHtml.includes('data-path-candidate="docs/index.md"'), 'project-relative paths should become clickable candidates')
+assert.ok(localPathHtml.includes('title="打开 docs/index.md"'), 'local path candidates should expose a clickable title')
 assert.ok(localPathHtml.includes('data-path-candidate="electron/main.js"'), 'markdown local links should use the unified path candidate attribute')
 assert.ok(localPathHtml.includes('data-path-candidate="D:\\repo\\src\\main.js"'), 'absolute windows paths should become clickable candidates')
 assert.ok(!localPathHtml.includes('data-local-file-path='), 'legacy local-file-path attribute should no longer be emitted')
 
 const fencedPathMarkdown = `\`\`\`md
-docs/TODO.md
+docs/index.md
 src/main.js
-[打开 TODO](docs/TODO.md)
+[打开文档索引](docs/index.md)
 \`\`\``
 
 const fencedPathHtml = renderContent(fencedPathMarkdown)
 
-assert.ok(fencedPathHtml.includes('data-path-candidate="docs/TODO.md"'), 'strong local paths inside fenced blocks should become clickable candidates')
+assert.ok(fencedPathHtml.includes('data-path-candidate="docs/index.md"'), 'strong local paths inside fenced blocks should become clickable candidates')
 assert.ok(fencedPathHtml.includes('data-path-candidate="src/main.js"'), 'multiple strong local paths inside fenced blocks should become clickable candidates')
 
 const packagesPathHtml = renderContent('packages/agent/electron/codexAgent.js')
@@ -115,7 +115,7 @@ assert.ok(
   'packages/agent source paths should become clickable candidates'
 )
 
-const planPath = 'docs/plan/2026-06-19-claude-runtime-metrics-state-machine.md'
+const planPath = 'docs/agent-architecture.md'
 const planHtml = renderContent(`状态机计划：${planPath}。`)
 
 assert.ok(
@@ -227,10 +227,10 @@ assert.ok(!pseudoTableHtml.includes('<table'), 'B3: pseudo-table without separat
 // --- 表格 + 路径链接共存 ---
 
 // C1: 单元格含相对路径
-const relativePathTable = `File | Description\n---|---\ndocs/TODO.md | Task list`
+const relativePathTable = `File | Description\n---|---\ndocs/index.md | Documentation index`
 const relativePathHtml = renderContent(relativePathTable)
 assert.ok(relativePathHtml.includes('<table'), 'C1: table with relative path should render')
-assert.ok(relativePathHtml.includes('data-path-candidate="docs/TODO.md"'), 'C1: relative path inside cell should be clickable')
+assert.ok(relativePathHtml.includes('data-path-candidate="docs/index.md"'), 'C1: relative path inside cell should be clickable')
 
 // C2: 单元格含 Windows 绝对路径
 const absolutePathTable = `File | Description\n---|---\nD:\\repo\\main.js | Entry point`
@@ -269,8 +269,8 @@ assert.ok(richTableHtml.includes('<del>pending</del>'), 'D4: strikethrough in ce
 // --- 路径链接化回归测试（保护 afb16f5 目录前缀分支不退化） ---
 
 // E1: 白名单目录路径不带扩展名
-const noExt_1 = renderContent('docs/TODO')
-assert.ok(noExt_1.includes('data-path-candidate="docs/TODO"'), 'E1: whitelisted dir path without extension should be clickable')
+const noExt_1 = renderContent('docs/index')
+assert.ok(noExt_1.includes('data-path-candidate="docs/index"'), 'E1: whitelisted dir path without extension should be clickable')
 
 assert.ok(renderContent('src/main').includes('data-path-candidate="src/main"'), 'E1: src/main should be clickable')
 assert.ok(renderContent('packages/foo/bar').includes('data-path-candidate="packages/foo/bar"'), 'E1: packages/foo/bar should be clickable')
@@ -279,7 +279,7 @@ assert.ok(renderContent('scripts/deploy').includes('data-path-candidate="scripts
 assert.ok(renderContent('lib/utils').includes('data-path-candidate="lib/utils"'), 'E1: lib/utils (new whitelist) should be clickable')
 
 // E2: 带扩展名的白名单路径仍然正常
-assert.ok(renderContent('docs/TODO.md').includes('data-path-candidate="docs/TODO.md"'), 'E2: with extension should still be clickable')
+assert.ok(renderContent('docs/index.md').includes('data-path-candidate="docs/index.md"'), 'E2: with extension should still be clickable')
 assert.ok(renderContent('src/main.js').includes('data-path-candidate="src/main.js"'), 'E2: src/main.js with extension')
 
 // E3: 非白名单路径不带扩展名不应当链接

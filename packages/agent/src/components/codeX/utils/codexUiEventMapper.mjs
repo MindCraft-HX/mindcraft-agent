@@ -6,7 +6,7 @@
  * - live stream 和 history restore 共用同一套分类规则。
  * - 不处理 agent_message / turn_terminal（这些由调用方按契约直接映射）。
  *
- * 目标契约参见：docs/plan/2026-07-01-codex-event-rendering-contract.md
+ * Event rendering follows the stable architecture and session contracts in docs/.
  *
  * 约定：
  *   - item: SDK 原始 item 对象 { type, name, call_id, id, status, ... }
