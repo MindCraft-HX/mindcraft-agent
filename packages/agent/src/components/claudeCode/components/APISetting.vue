@@ -72,7 +72,7 @@
                 class="env-node-link" @click="openNodeJsDownload">{{ $t('settings.downloadNode') }}</a>
               <span class="env-item" :class="envStatus.claude?.installed ? 'ok' : 'err'">
                 <span class="env-dot"></span>
-                Claude Code {{ envStatus.claude?.installed ? (envStatus.claude.version ? `v${envStatus.claude.version.split(/\s/)[0].replace(/^v/, '')}` : $t('settings.installed')) : $t('settings.notInstalled') }}
+                Claude Code {{ envStatus.claude?.installed ? (envStatus.claude.version ? `v${extractVersion(envStatus.claude.version)}` : $t('settings.installed')) : $t('settings.notInstalled') }}
               </span>
               <button v-if="envStatus.claude?.installed"
                 class="env-update-btn" :class="{ updating: envCheckingUpdate }"
@@ -169,6 +169,18 @@ import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
 const { t, te, locale } = useI18n()
+
+/**
+ * Extract a version number from raw CLI output.
+ * e.g. "claude-code 1.0.3" → "1.0.3", "v1.2.3" → "1.2.3"
+ */
+function extractVersion(raw) {
+  if (!raw) return ''
+  const parts = String(raw).trim().split(/\s+/)
+  // Prefer the first token that looks like a version number (starts with digit or v+digit)
+  const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0] || ''
+  return verToken.replace(/^v/, '').trim()
+}
 
 const confirmDialogRef = ref(null)
 
@@ -292,6 +304,10 @@ async function installClaudeCode() {
     if (result?.success) {
       ElMessage.success(t('system.installSuccess'))
       await checkEnvironment()
+      // 优先使用安装接口返回的确切版本
+      if (result.version && envStatus.value?.claude) {
+        envStatus.value.claude.version = result.version
+      }
     } else {
       ElMessage.error(result?.message || t('settings.installFailedManual'))
     }
@@ -319,7 +335,7 @@ async function checkForUpdate() {
       ElMessage.error(t('system.versionCheckFail') + ': ' + (res?.error || ''))
       return
     }
-    const localVer = env.claude.version.replace(/^v/, '').split(/\s/)[0].trim()
+    const localVer = extractVersion(env.claude.version)
     const latestVer = res.version
     if (localVer === latestVer) {
       ElMessage.success(t('system.alreadyLatest', { version: latestVer }))
@@ -339,6 +355,10 @@ async function checkForUpdate() {
           if (result?.success) {
             ElMessage.success(t('settings.updateSuccessRedetect'))
             await checkEnvironment()
+            // 优先使用安装接口返回的确切版本（兜底 checkEnvironment 可能仍读到旧版本）
+            if (result.version && envStatus.value?.claude) {
+              envStatus.value.claude.version = result.version
+            }
             envUpdateAvailable.value = false
             envLatestVersion.value = ''
           } else {

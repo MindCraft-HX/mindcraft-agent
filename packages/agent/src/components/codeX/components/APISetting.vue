@@ -88,7 +88,7 @@
               </span>
               <span class="env-item" :class="envStatus.codex?.installed ? 'ok' : 'err'">
                 <span class="env-dot"></span>
-                Codex {{ envStatus.codex?.installed ? (envStatus.codex.version ? `v${envStatus.codex.version.split(/\s/)[0].replace(/^v/, '')}` : $t('settings.installed')) : $t('settings.notInstalled') }}
+                Codex {{ envStatus.codex?.installed ? (envStatus.codex.version ? `v${extractVersion(envStatus.codex.version)}` : $t('settings.installed')) : $t('settings.notInstalled') }}
               </span>
               <button v-if="envStatus.codex?.installed"
                 class="env-update-btn" :class="{ updating: envCheckingUpdate }"
@@ -197,6 +197,18 @@ function localText(zh, en) {
   return String(locale.value || '').toLowerCase().startsWith('zh') ? zh : en
 }
 
+/**
+ * Extract a version number from raw CLI output.
+ * e.g. "codex-cli 0.144.4" → "0.144.4", "v1.2.3" → "1.2.3"
+ */
+function extractVersion(raw) {
+  if (!raw) return ''
+  const parts = String(raw).trim().split(/\s+/)
+  // Prefer the first token that looks like a version number (starts with digit or v+digit)
+  const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0] || ''
+  return verToken.replace(/^v/, '').trim()
+}
+
 const showSettings = ref(false)
 const showProviderForm = ref(false)
 const editingNewProvider = ref(false)
@@ -249,6 +261,10 @@ async function installCodex() {
     const result = await window.electronAPI?.codexInstallCodex?.()
     if (result?.success) {
       await checkEnvironment()
+      // 优先使用安装接口返回的确切版本
+      if (result.version && envStatus.value?.codex) {
+        envStatus.value.codex.version = result.version
+      }
       const ver = envStatus.value?.codex?.version
       const installedPath = result?.path || envStatus.value?.codex?.path || ''
       if (ver && installedPath) {
@@ -281,7 +297,7 @@ async function checkForUpdate() {
       ElMessage.error(t('system.versionCheckFail') + ': ' + (res?.error || ''))
       return
     }
-    const localVer = env.codex.version.replace(/^v/, '').split(/\s/)[0].trim()
+    const localVer = extractVersion(env.codex.version)
     const latestVer = res.version
     if (localVer === latestVer) {
       ElMessage.success(t('system.alreadyLatest', { version: latestVer }))
@@ -300,15 +316,19 @@ async function checkForUpdate() {
           const result = await window.electronAPI?.codexInstallCodex?.()
           if (result?.success) {
             await checkEnvironment()
+            // 优先使用安装接口返回的确切版本（兜底 checkEnvironment 可能仍读到旧版本）
+            if (result.version && envStatus.value?.codex) {
+              envStatus.value.codex.version = result.version
+            }
             envUpdateAvailable.value = false
             envLatestVersion.value = ''
             const newVer = envStatus.value?.codex?.version
             const installedPath = result?.path || envStatus.value?.codex?.path || ''
             if (newVer && installedPath) {
-              const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
+              const shortVer = extractVersion(newVer)
               ElMessage.success(`${t('settings.codexUpdatedTo', { version: shortVer })}\n${t('agent.path')}${installedPath}`)
             } else if (newVer) {
-              const shortVer = newVer.replace(/^v/, '').split(/\s/)[0]
+              const shortVer = extractVersion(newVer)
               ElMessage.success(t('settings.codexUpdatedTo', { version: shortVer }))
             } else if (installedPath) {
               ElMessage.success(`${t('settings.codexUpdateCompleteRefresh')}\n${t('agent.path')}${installedPath}`)
