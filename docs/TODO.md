@@ -49,7 +49,7 @@ ClaudeCode 全量审计 + CodeX 复审完成，输出 `docs/architecture-health-
 
 ## 2026-06-29 Architecture Refactor Freeze ✅ 已完成
 
-Batch 0-5 已全线交付并冻结，当前新版已切换到实际测试使用。自动验收和人工 smoke 均已通过，详见 `docs/plans/remaining-refactoring-roadmap.md`。
+Batch 0-5 已全线交付并冻结，当前新版已切换到实际测试使用。自动验收和人工 smoke 均已通过，详见 `docs/plan/remaining-refactoring-roadmap.md`。
 
 已确认：
 - `npm run test:contract`：ESLint `no-undef` clean，291 assertions pass。
@@ -228,7 +228,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | T147 | bug | **CodeX 中间进度 assistant 文本偶发不渲染**：已补主进程规范化转发与历史解析兼容。 | P1 | ✅ 已完成 |
 | T140 | ux/refactor | **Agent running 中再次发送 / pending 输入可视化**：CodeX 增加 pending queue UI；ClaudeCode 让发送按钮状态与 Enter 行为一致。 | P1 | 📝 待方案 |
 | T165 | architecture/bug | **Session Registry ownership 收口**：Phase 1/2 与字段权威审计已完成；provider owner contract、runtime merge contract、Claude model/effort、CodeX reasoningEffort 和真实链路覆盖均已收口。执行入口：`docs/plan/2026-07-01-session-registry-ownership-handoff.md`。 | P1 | ✅ 已完成 |
-| T166 | architecture/test | **IPC registry 新增通道硬约束补齐**：现有 baseline 可发现未登记 channel，但后续新增 main/preload channel 仍需强制引用 `ipcChannels` 常量，避免字符串字面量绕过 registry；保留历史 channel 兼容，不做命名大一统。详见 `docs/plans/remaining-refactoring-roadmap.md#phase-cipc-registry-从软约束升级为新增通道硬约束`。 | P2 | 📝 待方案 |
+| T166 | architecture/test | **IPC registry 新增通道硬约束补齐**：现有 baseline 可发现未登记 channel，但后续新增 main/preload channel 仍需强制引用 `ipcChannels` 常量，避免字符串字面量绕过 registry；保留历史 channel 兼容，不做命名大一统。详见 `docs/plan/remaining-refactoring-roadmap.md#phase-cipc-registry-从软约束升级为新增通道硬约束`。 | P2 | 📝 待方案 |
 | T167 | test/architecture | **Session/Run 竞态 E2E 前置覆盖**：sessionRegistry 集成覆盖与 Electron E2E 真实链路覆盖已完成，覆盖 CodeX/Claude scan/done/restore、panel cache 覆盖安全、删除一致性和跨 agent 隔离。详见 `docs/session-pitfalls.md`。 | P2 | ✅ 已完成 |
 | T168 | refactor/bug | **CodeX event rendering contract 收口**：已完成 live stream + history mapper 修复：tool call 不渲染、assistant 空泡泡、`<thinking>tool call</thinking>` 泄漏、agent_message 覆盖 assistant 正文、shell history 输出缺失均有契约测试覆盖。详见 `docs/plan/2026-07-01-codex-event-rendering-contract.md`。 | P1 | ✅ 已完成 |
 | T169 | perf/refactor | **Renderer 高频链路性能瘦身**：已完成 Phase 0-5：开发态探针、ProjectTabs summary helper、provider summary 单一 computed、CodeHub `collectTabs` 白名单、`saveAsync` 去双重 clone、textarea autosize rAF 合并。不混入 CodeHub SessionIndex 大重构。详见 `docs/plan/2026-07-02-renderer-hot-path-performance.md`。 | P1 | ✅ 已完成 |
@@ -266,7 +266,7 @@ Agent 架构重构 PR1-PR3 已完成主线：Agent Registry / Agent Protocol / A
 | R07 | refactor | **Phase 7: `electron/main.js` 拆分**：拆出 `themeStore.js`（44行）+ `tray.js`（47行），main.js 655→616。详见 `docs/architecture-health-review-2026-06-28.md#10`。 | P2 | ✅ 部分完成 |
 | R08 | infra | **Phase 8: Vite 5 升级**：Vite 4.4.6 → 5.4.21；`@vitejs/plugin-vue` 4.4.0 → 5.2.x；构建成功，154 测试全通过。详见 `docs/architecture-health-review-2026-06-28.md#11`。 | P3 | ✅ 已完成 |
 | R09 | refactor | **Main handler setup 拆分专项**：`setupClaudeHandlers()` / `setupCodexSdkHandlers()` 按 IPC 组拆注册边界；先拆 config/skills/plugins/session-instruction/environment，stream/queue/abort/done 主循环暂缓。 | P2 | ✅ 已完成 (Batch 0-5) |
-| B0-5 | refactor | **架构重构 Batch 0-5 全线交付**：R01-R09 护栏 + 叶子模块拆分 + Skills/Marketplace 共享化 + CLI executor 去重 + TOML IPC 合并。新增 ESLint `no-undef` 护栏 + 导入完整性测试。291 合约断言 + 120 单元测试通过，人工 smoke 已通过。详见 `docs/plans/remaining-refactoring-roadmap.md`。 | P1 | ✅ 已完成，阶段冻结 + 观察期 |
+| B0-5 | refactor | **架构重构 Batch 0-5 全线交付**：R01-R09 护栏 + 叶子模块拆分 + Skills/Marketplace 共享化 + CLI executor 去重 + TOML IPC 合并。新增 ESLint `no-undef` 护栏 + 导入完整性测试。291 合约断言 + 120 单元测试通过，人工 smoke 已通过。详见 `docs/plan/remaining-refactoring-roadmap.md`。 | P1 | ✅ 已完成，阶段冻结 + 观察期 |
 | R10 | refactor | **长期 IPC 通道统一**：需 E2E 前置覆盖后再评估。当前 ClaudeCode/CodeX 通道名不统一，但重命名有静默失效风险。 | P3 | ⏸️ 后续阶段，需 E2E 前置 |
 | T155 | test | **修复 `test:all` 7 个历史失败**：4 个已修复（todo-list/update-plan 编码损坏重写、electron-window-icon-paths 过时删除、local-search async/await+过时文件删除）；3 个 defer（permission-sound 需 Vue 测试环境、task-stream-sync ×2 需 domain 排查）。`test:all` 7→3 fail。 | P3 | 🔧 部分完成，3 个延后 |
 | T156 | bug | **CodeX `scrollBottom is not defined`**：`codeX/index.vue` 6 处裸 `scrollBottom(tab.id)` 改为 `smartScrollToBottom(tab.id)`，解构重命名冲突已修复。 | P3 | ✅ 已完成 |
