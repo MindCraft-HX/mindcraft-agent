@@ -1,44 +1,77 @@
-# MindCraft Agent
+<p align="center">
+  <img src="public/logos/v3/white-app-icon.svg" width="96" alt="MindCraft Agent logo">
+</p>
 
-> A desktop workspace that brings Claude Code and Codex into one project-aware development flow.
+<h1 align="center">MindCraft Agent</h1>
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<p align="center">
+  One desktop workspace for <strong>Claude Code</strong>, <strong>Codex</strong>, and the software projects they help you build.
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MindCraft-HX/mindcraft-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b82f6.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/desktop-Electron-47848f.svg" alt="Electron desktop app">
+  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%2B%20Codex-111827.svg" alt="Claude Code and Codex">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> · <a href="#inside-the-workspace">Features</a> · <a href="docs/index.md">Docs</a> · <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
 ![MindCraft Agent product overview](docs/images/overview.png)
 
-_Product overview: start project conversations, browse documents, use lightweight chat, and review usage from one desktop workspace._
+<p align="center"><em>Projects, document work, lightweight chat, and usage insight in one desktop workspace.</em></p>
 
-## Highlights
+## Why MindCraft Agent?
 
-- **Two coding agents, one workspace** - Use Claude Code and Codex side by side while preserving provider-specific runtime and session boundaries.
-- **Project-aware sessions** - Keep MindCraft UI sessions, provider threads, and official transcripts clearly separated.
-- **Visible development flow** - Review streamed responses, tool activity, file changes, diffs, task progress, and normalized token metrics.
-- **Built-in document workspace** - Open, browse, and edit local Markdown and code files with tabs and path-link navigation.
-- **Local-first boundaries** - MindCraft-owned state stays in Electron `userData`, not in provider configuration or transcript directories.
+AI coding should not require juggling terminals, provider-specific windows, project notes, and file diffs. MindCraft Agent gives Claude Code and Codex a shared, project-aware desktop home while preserving the boundaries each provider needs.
 
-## Workspace Tour
+| | What you get | Why it matters |
+| --- | --- | --- |
+| **01** | **Two coding agents, one workspace** | Switch between Claude Code and Codex without abandoning the project context. |
+| **02** | **A visible development loop** | Follow streamed responses, tool activity, task progress, changed files, and diffs. |
+| **03** | **Sessions that stay understandable** | Keep UI sessions, provider threads, and provider transcripts as distinct identities. |
+| **04** | **Document work beside code work** | Browse, edit, preview, and link Markdown or code files without leaving the app. |
 
-### Multi-Agent Workspace
+```text
+Claude Code ─┐
+             ├── MindCraft Agent ── projects · sessions · diffs · documents
+Codex ───────┘
+```
+
+## Inside The Workspace
+
+### Multi-Agent Project Flow
 
 ![Multi-agent workspace](docs/images/multi-agent-workspace.png)
 
-Session navigation, task progress, model controls, and slash commands in one view.
+<p align="center"><em>Navigate sessions, follow task progress, control models, and use slash commands in one focused view.</em></p>
 
-### Code Change Review
+### Review Changes In Context
 
 ![Code change review](docs/images/code-change-review.png)
 
-Inspect diffs in the conversation flow, then continue collaborating with the agent.
+<p align="center"><em>Inspect file changes and diffs inside the conversation, then carry on with the agent.</em></p>
 
-### Document Workspace
+### Keep Documentation Close
 
 ![Document workspace](docs/images/document-workspace.png)
 
-Edit, preview, and split-view Markdown and code files without leaving the app.
+<p align="center"><em>Edit, preview, and split-view Markdown or code files without breaking your flow.</em></p>
 
 ## Quick Start
 
-Prerequisites: Node.js 20+, npm, and an installed/authenticated Claude Code and/or Codex setup.
+### Prerequisites
+
+- Node.js 20+
+- npm
+- An installed and authenticated Claude Code and/or Codex setup
+
+### Run From Source
 
 ```powershell
 git clone https://github.com/MindCraft-HX/mindcraft-agent.git
@@ -47,35 +80,20 @@ npm install
 npm run dev
 ```
 
-Development starts Vite and Electron. Runtime data is stored in Electron `userData`, not in the repository or provider transcript directories.
+MindCraft Agent starts Vite and Electron. Its runtime data stays in Electron `userData`, not in your repository or provider transcript directories.
 
-## Verify And Package
+## Learn And Contribute
 
-```powershell
-npm test
-npm run test:contract
-npm run build
-npm run test:e2e
-```
-
-See the [Build & Deploy Guide](docs/build-and-deploy.md) for packaging and release details. Do not use the current `build/build.js --version` path.
-
-## Documentation
-
-| Topic | Read |
+| Looking for | Start here |
 | --- | --- |
-| Architecture and data boundaries | [agent-architecture.md](docs/agent-architecture.md) |
-| Session troubleshooting | [session-pitfalls.md](docs/session-pitfalls.md) |
-| GitHub publication workflow | [github-publication.md](docs/github-publication.md) |
-| Full documentation index | [docs/index.md](docs/index.md) |
+| System boundaries and architecture | [Architecture guide](docs/agent-architecture.md) |
+| Session recovery and troubleshooting | [Session pitfalls](docs/session-pitfalls.md) |
+| Local development and packaging | [Build and deploy guide](docs/build-and-deploy.md) |
+| Complete engineering documentation | [Documentation index](docs/index.md) |
+| Contributions and pull requests | [Contributing guide](CONTRIBUTING.md) |
+| Security reports | [Security policy](SECURITY.md) |
 
-## Contributing And Security
-
-- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
-- Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
-- Do not commit API keys, provider transcripts, local runtime state, private notes, or packaged artifacts.
-
-## Repository Layout
+## Project Layout
 
 ```text
 packages/agent/  shared Agent core for renderer, Electron, and preload
@@ -87,4 +105,4 @@ docs/            engineering documentation and project decisions
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE).

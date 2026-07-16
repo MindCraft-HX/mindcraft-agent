@@ -90,10 +90,25 @@
     "vue-demi": "^0.14.7",
     "vue-router": "^4.2.5"
   },
-  "description": "轻量级多Agent集成平台",
-  "keywords": [],
+  "description": "A desktop workspace for Claude Code and Codex.",
+  "keywords": [
+    "ai-coding",
+    "claude-code",
+    "codex",
+    "developer-tools",
+    "electron",
+    "multi-agent"
+  ],
   "author": "Hanson Cui",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MindCraft-HX/mindcraft-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MindCraft-HX/mindcraft-agent/issues"
+  },
+  "homepage": "https://github.com/MindCraft-HX/mindcraft-agent#readme",
   "build": {
     "appId": "com.mindcraft.agent",
     "productName": "MindCraft-Agent",
