@@ -3402,7 +3402,7 @@ function setupClaudeHandlers() {
   })
 
   // 主动查询会话 metrics（用于切换 tab 时恢复历史数据）
-  ipcMain.handle(CLAUDE_CHANNELS.AGENT_QUERY_METRICS, async (event, { cliSessionId, model }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.AGENT_QUERY_METRICS, async (event, { cliSessionId, model, forceGitRefresh = false }) => {
     const stop = perfStartIpc(CLAUDE_CHANNELS.AGENT_QUERY_METRICS)
     if (!cliSessionId) { stop(); return null }
 
@@ -3414,7 +3414,7 @@ function setupClaudeHandlers() {
     if (cached) {
       // ── 热路径：cache hit → 直接返回 ──
       const metricsCwd = cached.cwd || claudeMetrics.getLatestSessionCwd?.(cliSessionId) || ''
-      const gitInfo = metricsCwd ? await claudeMetrics.getGitInfo(metricsCwd) : null
+      const gitInfo = metricsCwd ? await claudeMetrics.getGitInfo(metricsCwd, { forceRefresh: Boolean(forceGitRefresh) }) : null
       const result = {
         model: model || '',
         costUsd: cached.result.costUsd || 0,

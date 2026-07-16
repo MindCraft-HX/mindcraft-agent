@@ -2,41 +2,43 @@
   <div class="codehub-wrap" :class="themeClass">
     <!-- ===== 统一 Tab 栏 ===== -->
     <div class="codehub-unified-tabs" v-if="indexRestored && unifiedTabs.length > 0">
-      <div
-        v-for="(tab, idx) in unifiedTabs"
-        :key="tab.id"
-        class="codehub-tab"
-        :class="{
-          active: tab.id === activeTabId,
-          'task-done': tab.hasDoneNotification && tab.id !== activeTabId,
-          'session-running': tab.runningCount > 0,
-          'session-pending': tab.hasPendingTool,
-          'drag-over': dragOverTabIdx === idx,
-          dragging: dragTabIdx === idx,
-        }"
-        draggable="true"
-        @click="activateTab(tab)"
-        @contextmenu.prevent="openContextMenu($event, tab)"
-        @dragstart="onDragStart($event, idx)"
-        @dragover.prevent="onDragOver($event, idx)"
-        @dragleave="onDragLeave"
-        @dragend="onDragEnd($event)"
-        @drop="onDrop($event, idx)"
-        :title="tab.cwd || $t('codehub.noFolder')"
-      >
-        <span class="codehub-tab-agent-icon" :class="tab.iconClass" :style="tab.iconStyle"></span>
-        <span class="codehub-tab-name">
-          <span v-if="tab.runningCount === 1" class="running-dot" :title="$t('codehub.running')"></span>
-          <span v-else-if="tab.runningCount >= 2" class="running-badge" :title="$t('codehub.sessionsRunning', { n: tab.runningCount })">{{ tab.runningCount }}</span>
-          <span v-else-if="tab.hasPendingTool" class="pending-dot" :title="$t('codehub.waitingUser')"></span>
-          {{ tab.name }}
-        </span>
-        <button class="codehub-tab-close" @click.stop="closeTab(tab)" :title="$t('codehub.close')">×</button>
+      <div class="codehub-tab-track">
+        <div
+          v-for="(tab, idx) in unifiedTabs"
+          :key="tab.id"
+          class="codehub-tab"
+          :class="{
+            active: tab.id === activeTabId,
+            'task-done': tab.hasDoneNotification && tab.id !== activeTabId,
+            'session-running': tab.runningCount > 0,
+            'session-pending': tab.hasPendingTool,
+            'drag-over': dragOverTabIdx === idx,
+            dragging: dragTabIdx === idx,
+          }"
+          draggable="true"
+          @click="activateTab(tab)"
+          @contextmenu.prevent="openContextMenu($event, tab)"
+          @dragstart="onDragStart($event, idx)"
+          @dragover.prevent="onDragOver($event, idx)"
+          @dragleave="onDragLeave"
+          @dragend="onDragEnd($event)"
+          @drop="onDrop($event, idx)"
+          :title="tab.cwd || $t('codehub.noFolder')"
+        >
+          <span class="codehub-tab-agent-icon" :class="tab.iconClass" :style="tab.iconStyle"></span>
+          <span class="codehub-tab-name">
+            <span v-if="tab.runningCount === 1" class="running-dot" :title="$t('codehub.running')"></span>
+            <span v-else-if="tab.runningCount >= 2" class="running-badge" :title="$t('codehub.sessionsRunning', { n: tab.runningCount })">{{ tab.runningCount }}</span>
+            <span v-else-if="tab.hasPendingTool" class="pending-dot" :title="$t('codehub.waitingUser')"></span>
+            {{ tab.name }}
+          </span>
+          <button class="codehub-tab-close" @click.stop="closeTab(tab)" :title="$t('codehub.close')">×</button>
+        </div>
       </div>
       <button class="codehub-tab-add" @click="openAgentPicker('user')" :title="$t('codehub.newTab')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
       </button>
-      <div class="drag-spacer"></div>
+      <div class="codehub-window-spacer" aria-hidden="true"></div>
     </div>
 
     <!-- ===== Context Menu ===== -->
@@ -810,16 +812,34 @@ watch(
 
 /* ===== 统一 Tab 栏（匹配原 claudeCode ProjectTabs 风格） ===== */
 .codehub-unified-tabs {
-  position: relative;
   display: flex; align-items: center;
   background: var(--cc-bg-tertiary);
   border-bottom: 1px solid var(--cc-border);
-  min-height: 32px; height: 32px;
-  overflow-x: auto; overflow-y: hidden;
-  padding: 0 4px; gap: 0;
+  min-height: 40px; height: 40px;
+  overflow: hidden;
+  gap: 0;
   flex-shrink: 0; user-select: none;
   -webkit-app-region: drag;
 }
+.codehub-tab-track {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 4px;
+  scrollbar-gutter: stable;
+  -webkit-app-region: drag;
+}
+.codehub-tab-track::-webkit-scrollbar { height: 8px; }
+.codehub-tab-track::-webkit-scrollbar-track { background: var(--cc-bg-tertiary); }
+.codehub-tab-track::-webkit-scrollbar-thumb {
+  background: var(--cc-border-strong, #64748b);
+  border-radius: 999px;
+}
+.codehub-tab-track::-webkit-scrollbar-thumb:hover { background: var(--cc-primary); }
 .codehub-tab,
 .codehub-tab-close,
 .codehub-tab-add {
@@ -833,9 +853,10 @@ watch(
   background: var(--cc-bg-secondary);
   color: var(--cc-text-secondary);
   cursor: pointer; white-space: nowrap;
-  min-width: 92px; max-width: 220px;
+  width: 220px; min-width: 120px; max-width: 220px;
   transition: background 0.12s, color 0.12s;
-  position: relative; flex-shrink: 0;
+  position: relative; flex: 0 1 220px;
+  box-sizing: border-box;
 }
 .codehub-tab:hover {
   background: var(--cc-border);
@@ -959,6 +980,11 @@ watch(
 }
 .codehub-tab-add:hover {
   background: var(--cc-menu-hover); color: var(--cc-primary);
+}
+.codehub-window-spacer {
+  width: 90px;
+  align-self: stretch;
+  flex: 0 0 90px;
 }
 
 /* ===== Context Menu ===== */

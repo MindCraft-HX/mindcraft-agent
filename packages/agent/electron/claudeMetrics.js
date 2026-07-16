@@ -517,12 +517,12 @@ const gitCache = new Map() // cwd -> { branch, changes, timestamp }
 const GIT_CACHE_TTL = 30000 // 30 秒
 
 // P1-4：execFileSync → 异步 execFile，避免 git 操作阻塞主进程
-async function getGitInfo(cwd) {
+async function getGitInfo(cwd, { forceRefresh = false } = {}) {
   if (!cwd) return null
 
   const now = Date.now()
   const cached = gitCache.get(cwd)
-  if (cached && now - cached.timestamp < GIT_CACHE_TTL) {
+  if (!forceRefresh && cached && now - cached.timestamp < GIT_CACHE_TTL) {
     return cached
   }
 

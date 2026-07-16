@@ -615,6 +615,7 @@ let _refreshingMetrics = false
 const _metricsTracker = createMetricsDedupTracker()
 const _claudeMetricsJustSent = new Map() // cliSessionId -> timestamp
 const METRICS_DEDUP_TTL_MS = 300
+const claudeDoneMetricsRetryTimers = new Map()
 
 function findClaudeTabBySessionId(sessionId = '') {
   if (!sessionId) return null
@@ -700,9 +701,10 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
 
   const dedupKey = chat.cliSessionId
   const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
+  const forceGitRefresh = reason.startsWith('done-retry:')
 
   // T178: 切 session 后 300ms TTL — 跳过后续 reason 的重复 metrics 查询
-  if (reason !== 'switch-chat' && dedupKey) {
+  if (reason !== 'switch-chat' && !forceGitRefresh && dedupKey) {
     const sent = _claudeMetricsJustSent.get(dedupKey)
     if (sent && Date.now() - sent < METRICS_DEDUP_TTL_MS) { stop({ activationId: getActivationId() }); return }
   }
@@ -726,6 +728,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
   const ipcPromise = window.electronAPI.claudeAgentQueryMetrics({
     cliSessionId: chat.cliSessionId,
     model: getClaudeTabModel(chat),
+    forceGitRefresh,
   })
   _metricsTracker.track(chat.cliSessionId, ipcPromise)
 
@@ -781,6 +784,31 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
     _refreshingMetrics = false
     stop({ activationId: getActivationId() })
   }
+}
+
+function clearClaudeDoneMetricsRetry(sessionId = '') {
+  if (!sessionId) return
+  const timers = claudeDoneMetricsRetryTimers.get(sessionId)
+  if (Array.isArray(timers)) {
+    for (const timer of timers) clearTimeout(timer)
+  }
+  claudeDoneMetricsRetryTimers.delete(sessionId)
+}
+
+function scheduleClaudeDoneMetricsRefresh(sessionId = '') {
+  if (!sessionId) return
+  clearClaudeDoneMetricsRetry(sessionId)
+  const delays = [0, 250, 1000]
+  const timers = delays.map((delay, index) => setTimeout(() => {
+    const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === sessionId)
+    if (!tab) {
+      clearClaudeDoneMetricsRetry(sessionId)
+      return
+    }
+    void refreshMetricsForChat(tab, `done-retry:${delay}`)
+    if (index === delays.length - 1) clearClaudeDoneMetricsRetry(sessionId)
+  }, delay))
+  claudeDoneMetricsRetryTimers.set(sessionId, timers)
 }
 
 const activeProject = computed(() => projects.value.find(p => p.id === activeProjectId.value) || null)
@@ -3752,7 +3780,10 @@ onMounted(() => {
   window.addEventListener('beforeunload', persistActiveInputDraft)
   window.addEventListener('beforeunload', flushHistoryOnUnload)
   window.electronAPI.onClaudeAgentMessage(onAgentMessage)
-  window.electronAPI.onClaudeAgentDone(onAgentDone)
+  window.electronAPI.onClaudeAgentDone((payload) => {
+    onAgentDone(payload)
+    scheduleClaudeDoneMetricsRefresh(payload?.sessionId || '')
+  })
   window.electronAPI.onClaudeAgentPermission(onAgentPermission)
   window.electronAPI.onClaudeAgentEarlyCliSession?.(onEarlyCliSession)
   window.electronAPI.onClaudeAgentAskQuestion?.((data) => {
@@ -3875,6 +3906,7 @@ defineExpose({
 })
 
 onUnmounted(() => {
+  for (const sessionId of claudeDoneMetricsRetryTimers.keys()) clearClaudeDoneMetricsRetry(sessionId)
   if (mentionRefreshTimer) {
     clearTimeout(mentionRefreshTimer)
     mentionRefreshTimer = null

@@ -350,6 +350,13 @@ async function run() {
     assert.ok(metrics)
     assert.ok(metrics.gitBranch)
     assert.equal(metrics.gitChanges > 0, true)
+
+    execFileSync('git', ['switch', '-c', 'metrics-refresh'], { cwd: dir, stdio: 'ignore' })
+    const staleMetrics = await __test__.getCodexSessionMetricsByFile(filePath, '', dir)
+    assert.equal(staleMetrics.gitBranch, metrics.gitBranch)
+
+    const refreshedMetrics = await __test__.getCodexSessionMetricsByFile(filePath, '', dir, { forceGitRefresh: true })
+    assert.equal(refreshedMetrics.gitBranch, 'metrics-refresh')
   })
 
   await withTempDir(async (dir) => {
@@ -557,7 +564,10 @@ async function run() {
   console.log('codex git metrics tests passed')
 }
 
-run().catch((err) => {
+run().then(() => {
+  if (process.versions.electron) require('electron').app.quit()
+}).catch((err) => {
   console.error(err)
-  process.exit(1)
+  if (process.versions.electron) require('electron').app.exit(1)
+  else process.exit(1)
 })

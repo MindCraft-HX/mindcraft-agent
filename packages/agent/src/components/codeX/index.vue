@@ -2637,13 +2637,14 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
 
   const dedupKey = chat.cliSessionId || chat.sessionId
   const isInteraction = reason === 'switch-chat' || reason === 'active-tab-state-watch'
+  const forceGitRefresh = reason.startsWith('done-retry:')
   const hasSnapshot = !chat.thinking && hasAgentStatusBarSnapshot(chat.metrics || {})
 
   // T177: 记录 metrics 调用来源分布
   perfCount(`metrics.reason.${reason}`)
 
   // T177: 切 session 后 300ms TTL — 跳过后续 reason 的重复 metrics 查询
-  if (reason !== 'switch-chat' && dedupKey) {
+  if (reason !== 'switch-chat' && !forceGitRefresh && dedupKey) {
     const sent = _metricsJustSent.get(dedupKey)
     if (sent && Date.now() - sent < METRICS_DEDUP_TTL_MS) {
       stop()
@@ -2677,6 +2678,7 @@ async function refreshMetricsForChat(chat, reason = 'unknown') {
     cwd: activeProject.value?.cwd || chat.cwd || '',
     thinking: requestThinking,
     thinkingStart: chat._thinkingStart || 0,
+    forceGitRefresh,
   })
   if (dedupKey) _codexMetricsTracker.track(dedupKey, ipcPromise)
 

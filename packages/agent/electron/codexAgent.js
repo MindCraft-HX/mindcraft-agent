@@ -270,7 +270,7 @@ function isCodexSnapshotFreshForRunningTurn(snapshot = null, thinkingStart = 0) 
   return sampleAt >= Math.max(0, startedAt - 1000)
 }
 
-async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '', thinking = false, thinkingStart = 0, lightOnly = false } = {}) {
+async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', filePath = '', model = '', cwd = '', thinking = false, thinkingStart = 0, lightOnly = false, forceGitRefresh = false } = {}) {
   const subResolve = perfStartIpc('codex-metrics.resolve')
   const resolvedFilePath = resolveCodexSessionFilePath({
     sessionId,
@@ -303,11 +303,11 @@ async function queryCodexStatusBarMetrics({ sessionId = '', cliSessionId = '', f
       const cached = getCachedMetricsAggregate(resolvedFilePath)
       if (cached) sessionMetrics = { ...cached.result }
     } else {
-      sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '')
+      sessionMetrics = await getCodexSessionMetricsByFile(resolvedFilePath, model || '', cwd || '', { forceGitRefresh })
     }
   } else if (sessionId || cliSessionId) {
     if (!lightOnly) {
-      sessionMetrics = await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '')
+      sessionMetrics = await getCodexSessionMetrics(sessionId || cliSessionId, model || '', cwd || '', { forceGitRefresh })
     }
   }
   subSession({ hasSessionMetrics: sessionMetrics ? 1 : 0 })
@@ -1190,14 +1190,14 @@ function buildCodexMetricsFromTokenCountPayload(payload = {}, {
 // NOTE: Transcript/session aggregate helper only. Valid for history restore, diagnostics,
 // and session context refresh. Its aggregate token totals must never be used as StatusBar
 // current-turn `in/out/cache`; StatusBar must read TurnStore live/final snapshots.
-async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '') {
+async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = '', { forceGitRefresh = false } = {}) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return null
     // T177: 优先走 aggregate 缓存 — 文件未变时直接返回已聚合结果
     const cachedAggregate = getCachedMetricsAggregate(filePath)
     if (cachedAggregate !== null) {
       perfCount('codex-metrics.aggregate-cache-hit')
-      const gitInfo = await getGitInfo(cachedAggregate.cwd || fallbackCwd || '')
+      const gitInfo = await getGitInfo(cachedAggregate.cwd || fallbackCwd || '', { forceRefresh: forceGitRefresh })
       return {
         ...cachedAggregate.result,
         gitBranch: gitInfo?.branch || '',
@@ -1366,7 +1366,7 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
     } catch (_) { /* stat 失败不阻塞返回 */ }
 
     // git 状态独立获取（getGitInfo 自带 30s TTL cache，不与 JSONL aggregate 混用）
-    const gitInfo = await getGitInfo(cwd)
+    const gitInfo = await getGitInfo(cwd, { forceRefresh: forceGitRefresh })
 
     return {
       ...result,
@@ -1380,7 +1380,7 @@ async function getCodexSessionMetricsByFile(filePath, model = '', fallbackCwd = 
 
 /** 通过 sessionId 获取指标（会匹配 cliSessionId 找到对应 JSONL 文件） */
 // P1-4：级联 async — getCodexSessionMetricsByFile 已异步化
-async function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
+async function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '', options = {}) {
   const cliSessionId = cliSessionIds.get(sessionId) || sessionId
   if (!cliSessionId) return null
   const files = listCodexJsonlFilesCached()
@@ -1390,7 +1390,7 @@ async function getCodexSessionMetrics(sessionId, model = '', fallbackCwd = '') {
   })
   if (!matched) return null
   const sessionCwd = codexSessions.get(sessionId)?.cwd || fallbackCwd || ''
-  return await getCodexSessionMetricsByFile(matched, model, sessionCwd)
+  return await getCodexSessionMetricsByFile(matched, model, sessionCwd, options)
 }
 
 function extractSessionSummary(filePath) {
@@ -3401,20 +3401,20 @@ function setupCodexSdkHandlers() {
   // NOTE: Easy-to-misuse bridge. StatusBar current-turn token fields must come from
   // TurnStore snapshots. Session/file aggregate metrics may only supplement session-level
   // fields such as context usage, git info, and speed.
-  ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY_METRICS, async (event, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart } = {}) => {
+  ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY_METRICS, async (event, { sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart, forceGitRefresh = false } = {}) => {
     const stop = perfStartIpc(CODEX_CHANNELS.AGENT_QUERY_METRICS)
     const resolvedFilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId, fallbackFilePath: filePath })
     const cacheHit = resolvedFilePath && getCachedMetricsAggregate(resolvedFilePath)
 
     if (cacheHit) {
       // 热路径：缓存命中，正常流程
-      const result = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart })
+      const result = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart, forceGitRefresh })
       stop({ hasMetrics: result ? 1 : 0, cacheHit: 1 })
       return result
     }
 
     // T177: 冷路径 — 先返回轻结果（仅 TurnStore snapshot），后台异步聚合
-    const lightResult = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart, lightOnly: true })
+    const lightResult = await queryCodexStatusBarMetrics({ sessionId, cliSessionId, filePath, model, cwd, thinking, thinkingStart, lightOnly: true, forceGitRefresh })
     stop({ hasMetrics: lightResult ? 1 : 0, cacheHit: 0, backgroundAggregate: 1 })
 
     if (resolvedFilePath) {
