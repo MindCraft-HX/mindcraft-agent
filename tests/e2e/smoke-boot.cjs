@@ -241,8 +241,12 @@ describe('Electron E2E Boot Smoke (T196)', () => {
     if (!readyData) { t.skip(); return; }
     assert.strictEqual(readyData.settingsLoaded, true, 'settingsLoaded should be true');
     assert.ok(Array.isArray(readyData.settingsKeys), 'settingsKeys should be array');
-    assert.strictEqual(readyData.settingsKeys.length, 0,
-      'settingsKeys should be empty for fresh userData');
+    const expectedNamespaces = ['diagnostics', 'app', 'codexDefaults', 'claudePrefs', 'misc'];
+    assert.deepStrictEqual(
+      [...readyData.settingsKeys].sort(),
+      [...expectedNamespaces].sort(),
+      'fresh userData should initialize only the documented settings namespaces'
+    );
   });
 
   it('Phase 2: app version is defined', function (t) {
