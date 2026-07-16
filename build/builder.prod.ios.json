@@ -3,7 +3,7 @@
   "productName": "MindCraft-Agent",
   "copyright": "Copyright © 2025 GENITOP",
   "releaseInfo": {
-    "releaseNotesFile": "release/release-1.2.6.md"
+    "releaseNotesFile": "release/release-1.2.10.md"
   },
   "extraMetadata": {
     "mode": "production",
@@ -12,7 +12,7 @@
   },
   "mac": {
     "category": "public.app-category.utilities",
-    "icon": "dist/logo-app-ios.icns",
+    "icon": "dist/logo-app-ios-white.icns",
     "target": [
       "dmg",
       "zip",

@@ -9,7 +9,7 @@
   },
   "mac": {
     "category": "public.app-category.utilities",
-    "icon": "dist/BETA-ios.icns",
+    "icon": "dist/BETA-ios-white.icns",
     "target": [
       "dmg",
       "zip",

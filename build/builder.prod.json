@@ -3,7 +3,7 @@
   "productName": "MindCraft-Agent",
   "copyright": "Copyright © 2025 GENITOP",
   "releaseInfo": {
-    "releaseNotesFile": "release/release-1.2.9.md"
+    "releaseNotesFile": "release/release-1.2.10.md"
   },
   "extraMetadata": {
     "mode": "production",

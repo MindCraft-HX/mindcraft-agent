@@ -8,11 +8,19 @@ const APP_ICON_SVG = path.join(ROOT, 'public/logos/v3/white-app-icon.svg');
 const OUTPUTS = [
   { size: 256, path: path.join(ROOT, 'public/logo-white.png') },
   { size: 64, path: path.join(ROOT, 'public/logo-white-64.png') },
+  { size: 512, path: path.join(ROOT, 'public/logo-white-512.png') },
+];
+const ICNS_OUTPUTS = [
+  { name: 'logo-app-ios-white.icns', source: 'public/logo-white-512.png' },
+  { name: 'BETA-ios-white.icns', source: 'public/logo-white-512.png' },
 ];
 const DIST_SYNC = [
   ['public/logo-white.png', 'dist/logo-white.png'],
   ['public/logo-white-64.png', 'dist/logo-white-64.png'],
+  ['public/logo-white-512.png', 'dist/logo-white-512.png'],
   ['public/logos/v3/white-app-icon.svg', 'dist/logos/v3/white-app-icon.svg'],
+  ['public/logo-app-ios-white.icns', 'dist/logo-app-ios-white.icns'],
+  ['public/BETA-ios-white.icns', 'dist/BETA-ios-white.icns'],
 ];
 const APP_ICON_COLORS = {
   a1: '#F4F4F1',
@@ -98,6 +106,69 @@ function syncDistCopies() {
   }
 }
 
+function generateIconset(sourcePng, outputIcns) {
+  const tmpDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'mindcraft-iconset-'));
+  const iconsetDir = path.join(tmpDir, 'icon.iconset');
+  fs.mkdirSync(iconsetDir, { recursive: true });
+
+  try {
+    const sizes = [
+      { name: 'icon_16x16.png', size: 16 },
+      { name: 'icon_16x16@2x.png', size: 32 },
+      { name: 'icon_32x32.png', size: 32 },
+      { name: 'icon_32x32@2x.png', size: 64 },
+      { name: 'icon_128x128.png', size: 128 },
+      { name: 'icon_128x128@2x.png', size: 256 },
+      { name: 'icon_256x256.png', size: 256 },
+      { name: 'icon_256x256@2x.png', size: 512 },
+      { name: 'icon_512x512.png', size: 512 },
+    ];
+
+    for (const { name, size } of sizes) {
+      const result = spawnSync('sips', [
+        '-z', String(size), String(size),
+        sourcePng,
+        '--out', path.join(iconsetDir, name),
+      ], { stdio: 'pipe' });
+      if (result.status !== 0) {
+        throw new Error(`sips failed for ${size}x${size}: ${result.stderr?.toString() || result.stdout?.toString()}`);
+      }
+    }
+
+    const result = spawnSync('iconutil', [
+      '-c', 'icns',
+      iconsetDir,
+      '-o', outputIcns,
+    ], { stdio: 'pipe' });
+    if (result.status !== 0) {
+      throw new Error(`iconutil failed: ${result.stderr?.toString() || result.stdout?.toString()}`);
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function generateIcnsFiles() {
+  for (const icns of ICNS_OUTPUTS) {
+    const sourcePng = path.join(ROOT, icns.source);
+    const outputIcns = path.join(ROOT, 'public', icns.name);
+
+    if (process.platform === 'darwin') {
+      try {
+        generateIconset(sourcePng, outputIcns);
+        console.log(`generated public/${icns.name} from ${icns.source}`);
+      } catch (err) {
+        console.warn(`iconutil/sips not available (${err.message}), falling back to PNG copy`);
+        fs.copyFileSync(sourcePng, outputIcns);
+      }
+    } else {
+      // On non-macOS, just copy PNG as .icns (electron-builder on macOS can handle it)
+      fs.copyFileSync(sourcePng, outputIcns);
+      console.log(`copied ${icns.source} -> public/${icns.name} (PNG fallback)`);
+    }
+  }
+}
+
 function runNodeMode() {
   buildAppIconSvg();
 
@@ -116,6 +187,7 @@ function runNodeMode() {
   }
 
   validatePngHeaders();
+  generateIcnsFiles();
   syncDistCopies();
 }
 
