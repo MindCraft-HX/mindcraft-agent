@@ -15,6 +15,7 @@
 | Current work | [TODO.md](./TODO.md) | Release status, active work, and deferred follow-ups. |
 | Session defects | [session-pitfalls.md](./session-pitfalls.md) | Required first stop for duplicated, interrupted, missing, or stuck sessions. |
 | Build and release | [build-and-deploy.md](./build-and-deploy.md) | Development, packaging, release artifacts, and known build-script caveats. |
+| Public GitHub release | [github-publication.md](./github-publication.md) | Gitee source-of-truth, GitHub mirror, branch roles, and safe publication commands. |
 
 ## Engineering Contracts
 

@@ -32,6 +32,7 @@ docs/            versioned engineering knowledge base
 | Claude settings pollution | `docs/settings-json-pollution.md` |
 | Dev white screen or zombie process | `docs/bugs/dev-white-screen-zombie-process.md` |
 | Packaging and releases | `docs/build-and-deploy.md` |
+| GitHub publication and mirror workflow | `docs/github-publication.md` |
 | Performance investigation | `docs/perf-audit-report.md` |
 | Activation hot path and cache governance | `docs/plan/2026-07-05-hot-path-governance-and-streaming-render.md`, `docs/plan/2026-07-05-project-session-activation-work-graph.md`, `docs/plan/2026-07-05-cache-governance-and-local-derived-data.md` |
 | Electron end-to-end verification | `docs/plan/2026-07-05-electron-e2e-smoke-harness.md` |
@@ -83,3 +84,4 @@ docs/            versioned engineering knowledge base
 - Dev mode protects against zombie processes through predev port cleanup, a three-second server probe, and quit-on-window-close.
 - Run relevant checks before handoff: `npm test`, `npm run test:contract`, `npm run build`, and `npm run test:e2e` for Electron wiring.
 - Follow `docs/build-and-deploy.md` for packaging. Do not use the broken `build.js --version` path.
+- Keep `origin/develop` as the internal source of truth. Publish reviewed commits to GitHub only through the branch and remote workflow in `docs/github-publication.md`; never use `git push --mirror`.
