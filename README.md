@@ -22,6 +22,10 @@
   <a href="#快速开始">快速开始</a> · <a href="#工作区能力">产品能力</a> · <a href="docs/index.md">文档</a> · <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
 
+<p align="center">
+  <a href="https://www.mindcraft.com.cn"><strong>访问 MindCraft 官网并下载应用</strong></a>
+</p>
+
 ![MindCraft Agent 产品总览](docs/images/overview.png)
 
 <p align="center"><em>项目对话、文档工作、轻量 Chat 与用量洞察，汇集在同一个桌面工作区。</em></p>
@@ -64,6 +68,10 @@ Codex ───────┘
 <p align="center"><em>无需离开应用，即可编辑、预览和分屏浏览 Markdown 或代码文件。</em></p>
 
 ## 快速开始
+
+### 获取应用
+
+前往 [MindCraft 官网](https://www.mindcraft.com.cn) 获取适用于你的最新版本。官网会提供当前可用的下载方式与产品信息。
 
 ### 环境要求
 

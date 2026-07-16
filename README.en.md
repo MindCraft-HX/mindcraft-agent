@@ -22,6 +22,10 @@
   <a href="#quick-start">Quick start</a> · <a href="#inside-the-workspace">Features</a> · <a href="docs/index.md">Docs</a> · <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
+<p align="center">
+  <a href="https://www.mindcraft.com.cn"><strong>Visit MindCraft to download the app</strong></a>
+</p>
+
 ![MindCraft Agent product overview](docs/images/overview.png)
 
 <p align="center"><em>Projects, document work, lightweight chat, and usage insight in one desktop workspace.</em></p>
@@ -64,6 +68,10 @@ Codex ───────┘
 <p align="center"><em>Edit, preview, and split-view Markdown or code files without breaking your flow.</em></p>
 
 ## Quick Start
+
+### Get The App
+
+Visit [MindCraft](https://www.mindcraft.com.cn) for the latest available download options and product information.
 
 ### Prerequisites
 
