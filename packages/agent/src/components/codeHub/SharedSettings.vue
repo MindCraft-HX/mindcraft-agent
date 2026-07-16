@@ -21,6 +21,7 @@
           :key="activeTab.key"
           :ref="(el) => { if (el) settingsRefs[activeTab.key] = el }"
           embedded
+          @providerActivated="notifyProviderActivated(activeTab.providerType)"
         />
       </div>
     </div>
@@ -48,6 +49,7 @@ const tabs = computed(() => {
     label: a.name,
     iconClass: a.iconClass,
     iconStyle: { ...a.iconStyle, fontSize: a.key === 'codex' ? '18px' : '16px' },
+    providerType: a.runtime?.provider || '',
     settingsComponent: a.settingsComponent,
   }))
   // 快捷键设置 Tab
@@ -96,6 +98,13 @@ function activateTab(key) {
 function loadCurrentTab() {
   const ref = settingsRefs[active.value]
   ref?.openSettings?.()
+}
+
+function notifyProviderActivated(agentType) {
+  if (agentType !== 'claude' && agentType !== 'codex') return
+  window.dispatchEvent(new CustomEvent('mindcraft-provider-activated', {
+    detail: { agentType },
+  }))
 }
 
 defineExpose({ open, close })

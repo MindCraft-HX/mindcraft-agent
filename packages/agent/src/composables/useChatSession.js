@@ -94,12 +94,15 @@ export function useChatSession() {
 
   /** 保存当前会话 */
   async function saveSession() {
-    if (!currentSession.id) return
+    if (!currentSession.id) return false
     currentSession.updatedAt = Date.now()
     try {
-      await api().chatSaveSession?.(currentSession.id, JSON.parse(JSON.stringify(currentSession)))
+      const save = api().chatSaveSession
+      if (typeof save !== 'function') return false
+      return (await save(currentSession.id, JSON.parse(JSON.stringify(currentSession)))) !== false
     } catch (e) {
       console.warn('[useChatSession] saveSession failed:', e)
+      return false
     }
   }
 

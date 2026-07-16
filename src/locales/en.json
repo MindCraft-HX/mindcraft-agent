@@ -361,6 +361,7 @@
 		"newChat": "New Chat",
 		"clearContext": "Clear Context",
 		"clearShort": "Clear",
+		"clearFailed": "Failed to clear the context. Please try again.",
 		"compress": "Compress Context (AI Summary)",
 		"compressShort": "Compress",
 		"compressed": "Context Compressed",

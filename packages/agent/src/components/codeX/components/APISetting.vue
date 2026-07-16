@@ -653,11 +653,15 @@ async function handleProviderFormSave(payload) {
   } else if (idx >= 0 && idx < settingsForm.value.providers.length) {
     settingsForm.value.providers.splice(idx, 1, p)
   }
-  if (settingsForm.value.selectedIdx === settingsForm.value.activeIdx) {
+  const isEditingActive = settingsForm.value.selectedIdx === settingsForm.value.activeIdx
+  if (isEditingActive) {
     const ok = await applyProvider(settingsForm.value.activeIdx)
-    if (ok) emit('providerActivated')
+    if (!ok) return
   }
   await persistProviders()
+  // Consumers refresh from SQLite after this event, so emit only after the
+  // edited active provider (including inline model slots) is durable.
+  if (isEditingActive) emit('providerActivated')
   showProviderForm.value = false
   currentProvider.value = null
   ElMessage.success(t('settings.saved'))

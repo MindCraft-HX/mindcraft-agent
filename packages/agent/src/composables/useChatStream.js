@@ -602,11 +602,27 @@ export function useChatStream(chatSession) {
         summary = result?.fullText || ''
       }
 
-      if (summary && !userAborted) {
-        // 覆盖（而非叠加）旧摘要，压缩后清空消息
-        chatSession.currentSession.contextSummary = summary.trim()
-        chatSession.currentSession.messages = []
-        await chatSession.saveSession?.()
+      if (!summary || userAborted) {
+        if (!userAborted) {
+          streamError.value = '上下文压缩失败：未收到摘要内容'
+        }
+        return
+      }
+
+      // Save the replacement atomically from the renderer's perspective. A
+      // failed disk write must not leave the UI looking compressed while the
+      // old history will reappear after reopening the session.
+      const previousSummary = chatSession.currentSession.contextSummary
+      const previousMessages = chatSession.currentSession.messages
+      const previousUpdatedAt = chatSession.currentSession.updatedAt
+      chatSession.currentSession.contextSummary = summary.trim()
+      chatSession.currentSession.messages = []
+      const saved = await chatSession.saveSession?.()
+      if (!saved) {
+        chatSession.currentSession.contextSummary = previousSummary
+        chatSession.currentSession.messages = previousMessages
+        chatSession.currentSession.updatedAt = previousUpdatedAt
+        throw new Error('摘要保存失败')
       }
     } catch (e) {
       console.warn('[compressContext] failed:', e)

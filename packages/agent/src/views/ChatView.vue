@@ -23,13 +23,13 @@
           </span>
           <button
             class="topbar-btn"
-            :disabled="isStreaming || !currentSession.messages.length"
+            :disabled="isStreaming || (!currentSession.messages.length && !currentSession.contextSummary)"
             @click="clearContext"
             :title="$t('chat.clearContext')"
           >{{ $t('chat.clearShort') }}</button>
           <button
             class="topbar-btn"
-            :disabled="isStreaming || currentSession.messages.length < 2"
+            :disabled="isStreaming || (!currentSession.messages.length && !currentSession.contextSummary)"
             @click="onCompress"
             :title="$t('chat.compress')"
           >{{ $t('chat.compressShort') }}</button>
@@ -187,14 +187,29 @@ function onThinkingLevelUpdate(v) { currentSession.thinkingLevel = v }
 function onWebSearchUpdate(v) { currentSession.webSearchEnabled = v }
 
 // 上下文操作
-function clearContext() {
+async function clearContext() {
+  const previousMessages = currentSession.messages
+  const previousSummary = currentSession.contextSummary
+  const previousUpdatedAt = currentSession.updatedAt
   clearMessages()
   setSummary('')
-  saveSession()
+  const saved = await saveSession()
+  if (!saved) {
+    currentSession.messages = previousMessages
+    currentSession.contextSummary = previousSummary
+    currentSession.updatedAt = previousUpdatedAt
+    streamError.value = $t('chat.clearFailed')
+    return
+  }
+  await loadList()
 }
 
 async function onCompress() {
+  const previousUpdatedAt = currentSession.updatedAt
   await compressContext()
+  if (!streamError.value && currentSession.updatedAt !== previousUpdatedAt) {
+    await loadList()
+  }
 }
 
 // 发送 / 停止
@@ -244,7 +259,9 @@ function imgPreviewSrc(img) {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 10px 16px;
+  // Keep actions clear of App.vue's 90px absolute drag spacer and the
+  // frameless-window controls it reserves space for.
+  padding: 10px 106px 10px 16px;
   border-bottom: 1px solid var(--cc-border, #2a2a2a);
   background: var(--cc-bg-deepest, #0d1117);
   flex-shrink: 0;

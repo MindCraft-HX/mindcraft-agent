@@ -128,6 +128,7 @@ import { useI18n } from 'vue-i18n'
 import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
 import { useImageAttachments } from '../agentCommon/composables/useImageAttachments.js'
 import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
+import { buildCodexModelSlots } from '../codeX/utils/modelSlots.mjs'
 
 const { t } = useI18n()
 
@@ -267,18 +268,24 @@ function buildClaudeOptions() {
 }
 
 function buildCodexOptions() {
+  // The running CodeX API key/base URL belongs to the active provider, so
+  // its primary model and configured inline alternatives are the only safe
+  // choices here. Keep this in sync with the CodeX agent model picker.
   const state = codexProvidersState.value
-  const providers = Array.isArray(state?.providers) ? state.providers : []
-  const opts = []
-  const seen = new Set()
-  for (const p of providers) {
-    const m = String(p?.model || '').trim()
-    if (m && !seen.has(m)) {
-      seen.add(m)
-      opts.push({ label: p.name ? `${m}（${p.name}）` : m, value: m })
-    }
+  if (!Array.isArray(state?.providers) || state.providers.length === 0) {
+    return CODEX_FALLBACK_MODELS
   }
-  return opts.length ? opts : CODEX_FALLBACK_MODELS
+  const { items, activeProvider } = buildCodexModelSlots({
+    storedProviders: state,
+    fallbackModels: [],
+  })
+  const providerName = String(activeProvider?.name || '').trim()
+  return items.length
+    ? items.map(item => ({
+      label: providerName ? `${item.id}（${providerName}）` : item.id,
+      value: item.id,
+    }))
+    : CODEX_FALLBACK_MODELS
 }
 
 function refreshModelOptions(resetModel = false) {
@@ -303,23 +310,40 @@ function defaultModel() {
   const providers = Array.isArray(state?.providers) ? state.providers : []
   const activeIdx = Number.isInteger(state?.activeIdx) ? state.activeIdx : -1
   const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : providers[0]
-  return String(active?.model || '').trim()
+  return String(active?.model || modelOptions.value[0]?.value || '').trim()
+}
+
+async function refreshProviderState(agentType, resetModel = false) {
+  const apiObj = window.electronAPI || {}
+  if (!agentType || agentType === 'claude') {
+    claudeProvidersState.value = await apiObj.claudeGetProviders?.().catch(() => null) || null
+  }
+  if (!agentType || agentType === 'codex') {
+    codexProvidersState.value = await apiObj.codexGetProviders?.().catch(() => null) || null
+  }
+  // A provider switch changes the active provider's valid model set. Reset
+  // only when Simple Chat is using that provider type.
+  if (!agentType || agentType === localProvider.value) {
+    refreshModelOptions(resetModel)
+  }
+}
+
+function onProviderActivated(event) {
+  const agentType = event?.detail?.agentType
+  if (agentType === 'claude' || agentType === 'codex') {
+    void refreshProviderState(agentType, true)
+  }
 }
 
 onMounted(async () => {
-  try {
-    const apiObj = window.electronAPI || {}
-    const [claudeP, codexP] = await Promise.all([
-      apiObj.claudeGetProviders?.().catch(() => null),
-      apiObj.codexGetProviders?.().catch(() => null),
-    ])
-    claudeProvidersState.value = claudeP || null
-    codexProvidersState.value = codexP || null
-  } catch (_) {}
-  refreshModelOptions(!props.model)
+  await refreshProviderState(null, !props.model)
+  window.addEventListener('mindcraft-provider-activated', onProviderActivated)
 })
 
-onUnmounted(() => dispose?.())
+onUnmounted(() => {
+  window.removeEventListener('mindcraft-provider-activated', onProviderActivated)
+  dispose?.()
+})
 
 const placeholder = computed(() => t('chat.placeholder'))
 

@@ -361,6 +361,7 @@
 		"newChat": "新对话",
 		"clearContext": "清空上下文",
 		"clearShort": "清空",
+		"clearFailed": "清空上下文失败，请重试",
 		"compress": "压缩上下文（AI 摘要）",
 		"compressShort": "压缩",
 		"compressed": "已压缩上下文",
