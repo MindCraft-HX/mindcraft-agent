@@ -108,7 +108,7 @@
     },
     "mac": {
       "category": "public.app-category.utilities",
-      "icon": "dist/logo-app-ios.icns",
+      "icon": "dist/logo-app-ios-white.icns",
       "target": [
         "dmg",
         "zip",
@@ -178,5 +178,5 @@
   "overrides": {
     "canvas": "npm:browser-canvas@1.0.0"
   },
-  "version": "1.2.9"
+  "version": "1.2.10"
 }
