@@ -1,77 +1,77 @@
 <p align="center">
-  <img src="public/logos/v3/white-app-icon.svg" width="96" alt="MindCraft Agent logo">
+  <img src="public/logos/v3/white-app-icon.svg" width="96" alt="MindCraft Agent 标志">
 </p>
 
 <h1 align="center">MindCraft Agent</h1>
 
 <p align="center">
-  One desktop workspace for <strong>Claude Code</strong>, <strong>Codex</strong>, and the software projects they help you build.
+  为 <strong>Claude Code</strong>、<strong>Codex</strong> 与软件项目打造的统一桌面开发工作区。
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+  <a href="README.md">简体中文</a> · <a href="README.en.md">English</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/MindCraft-HX/mindcraft-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b82f6.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/desktop-Electron-47848f.svg" alt="Electron desktop app">
-  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%2B%20Codex-111827.svg" alt="Claude Code and Codex">
+  <img src="https://img.shields.io/badge/desktop-Electron-47848f.svg" alt="Electron 桌面应用">
+  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%2B%20Codex-111827.svg" alt="Claude Code 与 Codex">
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> · <a href="#inside-the-workspace">Features</a> · <a href="docs/index.md">Docs</a> · <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="#快速开始">快速开始</a> · <a href="#工作区能力">产品能力</a> · <a href="docs/index.md">文档</a> · <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
 
-![MindCraft Agent product overview](docs/images/overview.png)
+![MindCraft Agent 产品总览](docs/images/overview.png)
 
-<p align="center"><em>Projects, document work, lightweight chat, and usage insight in one desktop workspace.</em></p>
+<p align="center"><em>项目对话、文档工作、轻量 Chat 与用量洞察，汇集在同一个桌面工作区。</em></p>
 
-## Why MindCraft Agent?
+## 为什么选择 MindCraft Agent？
 
-AI coding should not require juggling terminals, provider-specific windows, project notes, and file diffs. MindCraft Agent gives Claude Code and Codex a shared, project-aware desktop home while preserving the boundaries each provider needs.
+AI 编程不应意味着在终端、不同 Provider 的窗口、项目笔记和文件 Diff 之间反复切换。MindCraft Agent 为 Claude Code 和 Codex 提供共享、理解项目上下文的桌面工作区，同时保留各自应有的运行时边界。
 
-| | What you get | Why it matters |
+| | 你将获得 | 这意味着什么 |
 | --- | --- | --- |
-| **01** | **Two coding agents, one workspace** | Switch between Claude Code and Codex without abandoning the project context. |
-| **02** | **A visible development loop** | Follow streamed responses, tool activity, task progress, changed files, and diffs. |
-| **03** | **Sessions that stay understandable** | Keep UI sessions, provider threads, and provider transcripts as distinct identities. |
-| **04** | **Document work beside code work** | Browse, edit, preview, and link Markdown or code files without leaving the app. |
+| **01** | **双 Agent，一个工作区** | 在 Claude Code 与 Codex 之间切换，不丢失项目上下文。 |
+| **02** | **可见的开发闭环** | 查看流式回复、工具调用、任务进度、文件改动与 Diff。 |
+| **03** | **清晰的会话边界** | 分离 UI 会话、Provider 线程和 Provider Transcript，避免身份混乱。 |
+| **04** | **文档与代码并行工作** | 在应用内浏览、编辑、预览并链接 Markdown 或代码文件。 |
 
 ```text
 Claude Code ─┐
-             ├── MindCraft Agent ── projects · sessions · diffs · documents
+             ├── MindCraft Agent ── 项目 · 会话 · Diff · 文档
 Codex ───────┘
 ```
 
-## Inside The Workspace
+## 工作区能力
 
-### Multi-Agent Project Flow
+### 多 Agent 项目流程
 
-![Multi-agent workspace](docs/images/multi-agent-workspace.png)
+![多 Agent 项目工作区](docs/images/multi-agent-workspace.png)
 
-<p align="center"><em>Navigate sessions, follow task progress, control models, and use slash commands in one focused view.</em></p>
+<p align="center"><em>会话导航、任务进度、模型控制与斜杠命令，集中在一个专注的工作视图中。</em></p>
 
-### Review Changes In Context
+### 在上下文中审阅代码改动
 
-![Code change review](docs/images/code-change-review.png)
+![代码变更审阅](docs/images/code-change-review.png)
 
-<p align="center"><em>Inspect file changes and diffs inside the conversation, then carry on with the agent.</em></p>
+<p align="center"><em>在会话中查看文件变更和 Diff，再直接继续与 Agent 协作。</em></p>
 
-### Keep Documentation Close
+### 让文档始终在手边
 
-![Document workspace](docs/images/document-workspace.png)
+![文档工作区](docs/images/document-workspace.png)
 
-<p align="center"><em>Edit, preview, and split-view Markdown or code files without breaking your flow.</em></p>
+<p align="center"><em>无需离开应用，即可编辑、预览和分屏浏览 Markdown 或代码文件。</em></p>
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 环境要求
 
 - Node.js 20+
 - npm
-- An installed and authenticated Claude Code and/or Codex setup
+- 已安装并完成认证的 Claude Code 和/或 Codex
 
-### Run From Source
+### 从源码运行
 
 ```powershell
 git clone https://github.com/MindCraft-HX/mindcraft-agent.git
@@ -80,29 +80,29 @@ npm install
 npm run dev
 ```
 
-MindCraft Agent starts Vite and Electron. Its runtime data stays in Electron `userData`, not in your repository or provider transcript directories.
+MindCraft Agent 会启动 Vite 与 Electron。运行数据存放在 Electron `userData`，不会写入仓库或 Provider Transcript 目录。
 
-## Learn And Contribute
+## 文档与贡献
 
-| Looking for | Start here |
+| 你想了解 | 从这里开始 |
 | --- | --- |
-| System boundaries and architecture | [Architecture guide](docs/agent-architecture.md) |
-| Session recovery and troubleshooting | [Session pitfalls](docs/session-pitfalls.md) |
-| Local development and packaging | [Build and deploy guide](docs/build-and-deploy.md) |
-| Complete engineering documentation | [Documentation index](docs/index.md) |
-| Contributions and pull requests | [Contributing guide](CONTRIBUTING.md) |
-| Security reports | [Security policy](SECURITY.md) |
+| 系统边界与架构 | [架构指南](docs/agent-architecture.md) |
+| 会话恢复与问题排查 | [会话陷阱](docs/session-pitfalls.md) |
+| 本地开发与打包 | [构建与发布指南](docs/build-and-deploy.md) |
+| 全部工程文档 | [文档索引](docs/index.md) |
+| 贡献与 Pull Request | [贡献指南](CONTRIBUTING.md) |
+| 安全问题报告 | [安全策略](SECURITY.md) |
 
-## Project Layout
+## 仓库结构
 
 ```text
-packages/agent/  shared Agent core for renderer, Electron, and preload
-src/             host shell, routing, navigation, and host-only views
-electron/        desktop runtime, windows, file-system integration, packaging
-tests/           unit, contract, regression, and Electron smoke tests
-docs/            engineering documentation and project decisions
+packages/agent/  面向 renderer、Electron 与 preload 的共享 Agent 核心
+src/             宿主壳层、路由、导航与仅宿主使用的视图
+electron/        桌面运行时、窗口、文件系统集成与打包
+tests/           单元、契约、回归与 Electron 冒烟测试
+docs/            工程文档与项目决策
 ```
 
-## License
+## 许可证
 
-Released under the [MIT License](LICENSE).
+本项目采用 [MIT License](LICENSE) 开源。
