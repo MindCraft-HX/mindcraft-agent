@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync, execFileSync } = require('child_process');
 const { augmentEnvWithBundledRg } = require('../localSearch');
-const { getEnvWithNodePath, resolveLoginShellPath, getCommonGlobalBinDirs } = require('../shared/shellPathHelper');
+const { getEnvWithNodePath, getFullEnv, resolveLoginShellPath, getCommonGlobalBinDirs } = require('../shared/shellPathHelper');
 
 // ---- Internal mutable state ----
 
@@ -122,8 +122,10 @@ async function findSystemClaude() {
       }
     } catch (_) {}
   } else {
+    // macOS/Linux: 使用完整环境（含 nvm/Homebrew 等）探测，避免 Electron 打包后 PATH 残缺导致找到旧二进制
+    const fullEnv = getFullEnv();
     try {
-      const result = execSync('which claude', { encoding: 'utf8', timeout: 5000 }).trim();
+      const result = execSync('which claude', { encoding: 'utf8', timeout: 5000, env: fullEnv }).trim();
       if (tryPath(result)) return _systemClaudePath;
     } catch (_) {
       // 打包后 shell profile 不加载，`which` 找不到 claude，降级到 login shell PATH 和已知目录
@@ -132,7 +134,8 @@ async function findSystemClaude() {
     try {
       const loginPath = resolveLoginShellPath();
       if (loginPath) {
-        const result = execSync('which claude', { encoding: 'utf8', timeout: 5000, env: { ...process.env, PATH: loginPath } }).trim();
+        const loginEnv = { ...process.env, PATH: loginPath, Path: loginPath };
+        const result = execSync('which claude', { encoding: 'utf8', timeout: 5000, env: loginEnv }).trim();
         if (tryPath(result)) return _systemClaudePath;
       }
     } catch (_) {}
