@@ -1643,16 +1643,24 @@ function setupClaudeHandlers() {
           const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)
           const cmd = isCmdShim ? 'cmd.exe' : claudePath
           const args = isCmdShim ? ['/c', claudePath, '--version'] : ['--version']
+          const fullEnv = getFullEnv()
           claudeVersion = (await new Promise((resolve, reject) => {
             execFile(cmd, args, {
               encoding: 'utf8',
               timeout: 5000,
               windowsHide: true,
               stdio: ['ignore', 'pipe', 'pipe'],
+              env: fullEnv,
             }, (err, stdout) => {
               if (err) reject(err); else resolve(stdout)
             })
           })).trim()
+          // Normalize: "claude-code 1.0.3" → "1.0.3"
+          if (claudeVersion) {
+            const parts = claudeVersion.split(/\s+/)
+            const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0]
+            claudeVersion = verToken.replace(/^v/, '').trim()
+          }
         } catch (_) {}
       }
       result.claude = { installed: !!claudePath, path: claudePath || null, customPath, version: claudeVersion }
@@ -1689,7 +1697,20 @@ function setupClaudeHandlers() {
       })
       resetSystemClaudeCache()
       const newPath = await findSystemClaude()
-      return { success: true, path: newPath || null }
+      // 通过 npm list -g 直接读取实际安装版本（不依赖二进制发现，兜底旧版本显示问题）
+      let installedVersion = null
+      try {
+        const npmListOut = await new Promise((resolve, reject) => {
+          exec('npm list -g @anthropic-ai/claude-code --json --depth=0', {
+            encoding: 'utf8', timeout: 10000, env,
+          }, (err2, stdout2) => {
+            if (err2) reject(err2); else resolve(stdout2)
+          })
+        })
+        const parsed = JSON.parse(npmListOut.trim())
+        installedVersion = parsed?.dependencies?.['@anthropic-ai/claude-code']?.version || null
+      } catch (_) {}
+      return { success: true, path: newPath || null, version: installedVersion }
     } catch (e) {
       const msg = (e?.stderr || e?.message || String(e)).toLowerCase()
       let hint = ''
