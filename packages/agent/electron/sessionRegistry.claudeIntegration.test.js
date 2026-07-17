@@ -25,7 +25,6 @@ const {
   listSessionRecords,
   setSessionTitle,
   upsertRuntimeByProvider,
-  repairSessionRegistry,
 } = require('./sessionRegistry')
 
 // ---------------------------------------------------------------------------
@@ -283,25 +282,6 @@ test('rename session: find → setTitle preserves user title through re-sync', (
   assert.ok(result.ok)
   assert.equal(result.record.title, 'Custom user name')
   assert.equal(result.record.titleSource, 'user')
-})
-
-// ---------------------------------------------------------------------------
-// readClaudeCodePanelState: sync + repair sequence
-// ---------------------------------------------------------------------------
-
-test('readClaudeCodePanelState sequence: sync → repair is consistent', () => {
-  const userDataDir = makeTempUserData()
-
-  // Step 1: sync (simulates claudeAgent.js L623)
-  syncPanelStateSessions('claude', makePanelState(), { userDataDir })
-
-  // Step 2: repair (simulates claudeAgent.js L624)
-  const repair = repairSessionRegistry({ userDataDir })
-  assert.ok(repair.ok, 'repair succeeds on clean data')
-  assert.equal(repair.changed, false, 'no changes needed')
-
-  const records = listSessionRecords({ userDataDir })
-  assert.equal(records.length, 1)
 })
 
 // ---------------------------------------------------------------------------

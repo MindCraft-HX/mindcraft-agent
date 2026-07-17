@@ -14,7 +14,6 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const {
   deleteSessionRecordsByProvider,
   findSessionRecordByProvider,
-  repairSessionRegistry,
 } = require('./sessionRegistry')
 const {
   findByProviderScan,
@@ -763,15 +762,6 @@ function readClaudeCodePanelState() {
     const raw = fs.readFileSync(fp, 'utf8')
     const state = normalizeState(JSON.parse(raw))
     if (!state) return null
-    // T201: syncPanelStateSessions removed — session identity now lives in SQLite.
-    // TODO(T201.1): repairSessionRegistry still reads JSON registry files. Without
-    // syncPanelStateSessions, panel-state-only sessions are invisible to repair.
-    // Migrate repair to SQLite so it reads from the authoritative store.
-    const repair = repairSessionRegistry(sessionRegistryOptionsForTest || {})
-    if (repair?.changed && fs.existsSync(fp)) {
-      const repaired = normalizeState(JSON.parse(fs.readFileSync(fp, 'utf8')))
-      if (repaired) return repaired
-    }
     return state
   } catch (e) {
     console.warn('[claude-code-ui] read failed:', e?.message || e)

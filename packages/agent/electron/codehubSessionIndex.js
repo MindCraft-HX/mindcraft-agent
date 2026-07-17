@@ -77,8 +77,8 @@ function readCodexPanelState() {
  * Reads all session records and returns a Map<projectKey, {maxUpdatedAt, sessionCount}>
  * where projectKey = `${agentType}:${projectId}`.
  *
- * This is read-only — it uses the exported listSessionRecords() which only
- * reads files from disk and never mutates the registry.
+ * This is read-only: it queries the SQLite session repository without
+ * triggering provider scans or mutations.
  */
 async function buildRegistryProjectIndex() {
   const index = new Map()

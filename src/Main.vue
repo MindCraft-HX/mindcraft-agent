@@ -2,13 +2,13 @@
   <div class="main-layout" :class="[themeClass, { 'is-mac': isMac }]">
     <!-- 窗口控制按钮（无边框模式，macOS 使用原生红绿灯，隐藏自定义按钮） -->
     <div v-if="!isMac" class="win-controls">
-      <button class="wc-btn" @click="minimize">
+      <button class="wc-btn" type="button" @click="minimize">
         <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
-      <button class="wc-btn" @click="maximize">
+      <button class="wc-btn" type="button" @click="maximize">
         <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
-      <button class="wc-btn wc-close" @click="closeWin">
+      <button class="wc-btn wc-close" type="button" @click="closeWin">
         <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
     </div>
@@ -285,7 +285,12 @@ window.electronAPI?.openTabByName?.((progress) => {
 <style lang="scss" scoped>
 .main-layout {
   height: 100%;
+  --mc-window-controls-width: 138px;
   -webkit-app-region: no-drag;
+}
+
+.main-layout.is-mac {
+  --mc-window-controls-width: 0px;
 }
 
 /* === 内容区顶部拖拽区 === */
@@ -293,7 +298,7 @@ window.electronAPI?.openTabByName?.((progress) => {
   content: '';
   display: block;
   height: 10px;
-  margin-right: 90px;
+  margin-right: var(--mc-window-controls-width);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -309,11 +314,13 @@ window.electronAPI?.openTabByName?.((progress) => {
   right: 0;
   z-index: 9999;
   display: flex;
+  height: 40px;
   -webkit-app-region: no-drag;
 }
 .wc-btn {
-  width: 30px;
-  height: 28px;
+  width: 46px;
+  height: 40px;
+  padding: 0;
   border: none;
   background: transparent;
   -webkit-app-region: no-drag;

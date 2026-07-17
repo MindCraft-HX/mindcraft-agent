@@ -27,7 +27,6 @@ const {
   findSessionRecordByProvider,
   listSessionRecords,
   setSessionTitle,
-  repairSessionRegistry,
   upsertRuntimeByProvider,
 } = require('./sessionRegistry')
 
@@ -319,24 +318,17 @@ test('multiple panel syncs are idempotent', () => {
 })
 
 // ---------------------------------------------------------------------------
-// readPanelState sequence: sync → restore → repair
+// Legacy panel restore compatibility
 // ---------------------------------------------------------------------------
 
-test('readPanelState sequence: sync → restore → repair is consistent', () => {
+test('legacy registry can restore an empty panel state', () => {
   const userDataDir = makeTempUserData()
 
-  // Step 1: sync (simulates codexAgent.js L3584)
   syncPanelStateSessions('codex', makePanelState(), { userDataDir })
 
-  // Step 2: restore (simulates codexAgent.js L3585)
   const backfill = restorePanelStateFromSessionRegistry('codex',
     { projects: [] }, { userDataDir })
   assert.equal(backfill.changed, true, 'empty panel state gets backfilled')
-
-  // Step 3: repair (simulates codexAgent.js L3587)
-  const repair = repairSessionRegistry({ userDataDir })
-  assert.ok(repair.ok, 'repair succeeds on clean data')
-  assert.equal(repair.changed, false, 'clean data needs no repair')
 
   // Records intact
   const records = listSessionRecords({ userDataDir })

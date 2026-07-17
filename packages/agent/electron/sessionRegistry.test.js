@@ -14,8 +14,7 @@ const {
   getSessionRecordPath,
   listSessionRecords,
   makeProviderKeys,
-  repairSessionRegistry,
-  restoreMissingPanelStateChats,
+  restorePanelStateFromSessionRegistry,
   resolveSessionByProvider,
   clearSessionDraft,
   setSessionTitle,
@@ -578,170 +577,6 @@ test('upsertSessionFromProviderScan generates MindCraft chatKey instead of using
   assert.equal(record.provider.cliSessionId, 'thread-1')
   assert.equal(record.title, 'Provider title')
   assert.equal(record.titleSource, 'provider')
-})
-
-test('repairSessionRegistry rewrites polluted provider chatKey and panel state only under userData', () => {
-  const userDataDir = makeTempUserData()
-  syncPanelStateSessions('codex', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'thread-1',
-        name: 'Polluted session',
-        cliSessionId: 'thread-1',
-        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
-      }],
-    }],
-  }, { userDataDir })
-  fs.writeFileSync(path.join(userDataDir, 'codex-panel-state.json'), JSON.stringify({
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'thread-1',
-        cliSessionId: 'thread-1',
-        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
-      }],
-    }],
-  }), 'utf8')
-
-  const report = repairSessionRegistry({ userDataDir })
-
-  assert.equal(report.ok, true)
-  assert.equal(report.changed, true)
-  assert.ok(report.backupPath)
-  const records = listSessionRecords({ userDataDir })
-  assert.equal(records.length, 1)
-  assert.notEqual(records[0].chatKey, 'thread-1')
-  assert.equal(records[0].provider.cliSessionId, 'thread-1')
-  const panelState = JSON.parse(fs.readFileSync(path.join(userDataDir, 'codex-panel-state.json'), 'utf8'))
-  assert.equal(panelState.projects[0].chats[0].sessionId, records[0].chatKey)
-  assert.equal(panelState.projects[0].chats[0].cliSessionId, 'thread-1')
-  assert.equal(fs.existsSync(path.join(userDataDir, 'session-registry-backups')), true)
-})
-
-test('repairSessionRegistry merges duplicate provider records and keeps user title', () => {
-  const userDataDir = makeTempUserData()
-  syncPanelStateSessions('claude', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        sessionId: 'chat-key-user',
-        name: 'User title',
-        titleSource: 'user',
-        cliSessionId: 'cli-1',
-        filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
-      }],
-    }],
-  }, { userDataDir })
-  const duplicate = {
-    schemaVersion: 1,
-    chatKey: 'cli-1',
-    agent: 'claude',
-    projectId: 'project-1',
-    cwd: 'D:/repo',
-    title: 'Provider title',
-    titleSource: 'provider',
-    provider: {
-      cliSessionId: 'cli-1',
-      filePath: 'C:/Users/demo/.claude/projects/repo/cli-1.jsonl',
-    },
-    runtime: { model: 'claude-sonnet', effort: 'high' },
-    instruction: { enabled: true, content: 'Keep instruction', attachments: [] },
-    createdAt: 100,
-    updatedAt: 300,
-  }
-  fs.writeFileSync(getSessionRecordPath('cli-1', { userDataDir }), JSON.stringify(duplicate, null, 2), 'utf8')
-
-  const report = repairSessionRegistry({ userDataDir })
-
-  assert.equal(report.ok, true)
-  assert.equal(report.changed, true)
-  const records = listSessionRecords({ userDataDir })
-  assert.equal(records.length, 1)
-  assert.equal(records[0].chatKey, 'chat-key-user')
-  assert.equal(records[0].title, 'User title')
-  assert.equal(records[0].titleSource, 'user')
-  assert.equal(records[0].instruction.content, 'Keep instruction')
-  assert.equal(records[0].runtime.model, 'claude-sonnet')
-  const resolved = resolveSessionByProvider({ agent: 'claude', cliSessionId: 'cli-1' }, { userDataDir })
-  assert.equal(resolved.chatKey, 'chat-key-user')
-})
-
-test('repairSessionRegistry updates polluted panel chatKey when registry is already canonical', () => {
-  const userDataDir = makeTempUserData()
-  syncPanelStateSessions('codex', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'chat-key-canonical',
-        name: 'Canonical',
-        cliSessionId: 'thread-1',
-        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
-      }],
-    }],
-  }, { userDataDir })
-  fs.writeFileSync(path.join(userDataDir, 'codex-panel-state.json'), JSON.stringify({
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'thread-1',
-        cliSessionId: 'thread-1',
-        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
-      }],
-    }],
-  }), 'utf8')
-
-  const report = repairSessionRegistry({ userDataDir })
-
-  assert.equal(report.ok, true)
-  assert.equal(report.changed, true)
-  assert.equal(report.repairedGroups.length, 0)
-  const panelState = JSON.parse(fs.readFileSync(path.join(userDataDir, 'codex-panel-state.json'), 'utf8'))
-  assert.equal(panelState.projects[0].chats[0].sessionId, 'chat-key-canonical')
-})
-
-test('repairSessionRegistry does not rewrite a panel from another agent on provider id collision', () => {
-  const userDataDir = makeTempUserData()
-  syncPanelStateSessions('claude', {
-    projects: [{
-      id: 'project-claude',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-claude',
-        sessionId: 'claude-chat-key',
-        name: 'Claude canonical',
-        cliSessionId: 'same-provider-id',
-        filePath: 'C:/Users/demo/.claude/projects/repo/same-provider-id.jsonl',
-      }],
-    }],
-  }, { userDataDir })
-  fs.writeFileSync(path.join(userDataDir, 'codex-panel-state.json'), JSON.stringify({
-    projects: [{
-      id: 'project-codex',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-codex',
-        sessionId: 'same-provider-id',
-        cliSessionId: 'same-provider-id',
-        filePath: 'C:/Users/demo/.codex/sessions/same-provider-id.jsonl',
-      }],
-    }],
-  }), 'utf8')
-
-  const report = repairSessionRegistry({ userDataDir })
-
-  assert.equal(report.changed, false)
-  const panelState = JSON.parse(fs.readFileSync(path.join(userDataDir, 'codex-panel-state.json'), 'utf8'))
-  assert.equal(panelState.projects[0].chats[0].sessionId, 'same-provider-id')
 })
 
 test('deleteSessionRecordsByProvider removes matching provider filePath records', () => {
@@ -1325,7 +1160,7 @@ test('normalizeSessionInstructionInput rejects oversized attachment payloads', (
   )
 })
 
-test('restoreMissingPanelStateChats backfills missing Codex chats into existing cwd project', () => {
+test('restorePanelStateFromSessionRegistry backfills missing Codex chats into existing cwd project', () => {
   const userDataDir = makeTempUserData()
   syncPanelStateSessions('codex', {
     projects: [{
@@ -1365,7 +1200,7 @@ test('restoreMissingPanelStateChats backfills missing Codex chats into existing 
     }],
   }
 
-  const result = restoreMissingPanelStateChats('codex', panelState, { userDataDir })
+  const result = restorePanelStateFromSessionRegistry('codex', panelState, { userDataDir })
 
   assert.equal(result.changed, true)
   assert.equal(result.added, 1)
@@ -1382,7 +1217,7 @@ test('restoreMissingPanelStateChats backfills missing Codex chats into existing 
   assert.equal(restored._resumeAllowed, true)
 })
 
-test('restoreMissingPanelStateChats rebuilds projects only when Codex panel is empty', () => {
+test('restorePanelStateFromSessionRegistry rebuilds projects only when Codex panel is empty', () => {
   const userDataDir = makeTempUserData()
   syncPanelStateSessions('codex', {
     projects: [{
@@ -1409,7 +1244,7 @@ test('restoreMissingPanelStateChats rebuilds projects only when Codex panel is e
   }, { userDataDir })
 
   const panelState = { projects: [] }
-  const result = restoreMissingPanelStateChats('codex', panelState, { userDataDir })
+  const result = restorePanelStateFromSessionRegistry('codex', panelState, { userDataDir })
 
   assert.equal(result.changed, true)
   assert.equal(result.addedProjects, 2)
@@ -1424,7 +1259,7 @@ test('restoreMissingPanelStateChats rebuilds projects only when Codex panel is e
   assert.equal(record.metadata.resumeAllowed, false)
 })
 
-test('restoreMissingPanelStateChats skips legacy empty Codex local drafts from registry', () => {
+test('restorePanelStateFromSessionRegistry skips legacy empty Codex local drafts from registry', () => {
   const userDataDir = makeTempUserData()
   const recordPath = getSessionRecordPath('chat-key-empty', { userDataDir })
   fs.mkdirSync(path.dirname(recordPath), { recursive: true })
@@ -1476,7 +1311,7 @@ test('restoreMissingPanelStateChats skips legacy empty Codex local drafts from r
     }],
   }
 
-  const result = restoreMissingPanelStateChats('codex', panelState, { userDataDir })
+  const result = restorePanelStateFromSessionRegistry('codex', panelState, { userDataDir })
 
   assert.equal(result.changed, false)
   assert.equal(result.added, 0)

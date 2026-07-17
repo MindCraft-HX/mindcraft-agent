@@ -2,42 +2,44 @@
   <div class="codehub-wrap" :class="themeClass">
     <!-- ===== 统一 Tab 栏 ===== -->
     <div class="codehub-unified-tabs" v-if="indexRestored && unifiedTabs.length > 0">
-      <div class="codehub-tab-track">
-        <div
-          v-for="(tab, idx) in unifiedTabs"
-          :key="tab.id"
-          class="codehub-tab"
-          :class="{
-            active: tab.id === activeTabId,
-            'task-done': tab.hasDoneNotification && tab.id !== activeTabId,
-            'session-running': tab.runningCount > 0,
-            'session-pending': tab.hasPendingTool,
-            'drag-over': dragOverTabIdx === idx,
-            dragging: dragTabIdx === idx,
-          }"
-          draggable="true"
-          @click="activateTab(tab)"
-          @contextmenu.prevent="openContextMenu($event, tab)"
-          @dragstart="onDragStart($event, idx)"
-          @dragover.prevent="onDragOver($event, idx)"
-          @dragleave="onDragLeave"
-          @dragend="onDragEnd($event)"
-          @drop="onDrop($event, idx)"
-          :title="tab.cwd || $t('codehub.noFolder')"
-        >
-          <span class="codehub-tab-agent-icon" :class="tab.iconClass" :style="tab.iconStyle"></span>
-          <span class="codehub-tab-name">
-            <span v-if="tab.runningCount === 1" class="running-dot" :title="$t('codehub.running')"></span>
-            <span v-else-if="tab.runningCount >= 2" class="running-badge" :title="$t('codehub.sessionsRunning', { n: tab.runningCount })">{{ tab.runningCount }}</span>
-            <span v-else-if="tab.hasPendingTool" class="pending-dot" :title="$t('codehub.waitingUser')"></span>
-            {{ tab.name }}
-          </span>
-          <button class="codehub-tab-close" @click.stop="closeTab(tab)" :title="$t('codehub.close')">×</button>
+      <div class="codehub-tab-strip">
+        <div class="codehub-tab-track">
+          <div
+            v-for="(tab, idx) in unifiedTabs"
+            :key="tab.id"
+            class="codehub-tab"
+            :class="{
+              active: tab.id === activeTabId,
+              'task-done': tab.hasDoneNotification && tab.id !== activeTabId,
+              'session-running': tab.runningCount > 0,
+              'session-pending': tab.hasPendingTool,
+              'drag-over': dragOverTabIdx === idx,
+              dragging: dragTabIdx === idx,
+            }"
+            draggable="true"
+            @click="activateTab(tab)"
+            @contextmenu.prevent="openContextMenu($event, tab)"
+            @dragstart="onDragStart($event, idx)"
+            @dragover.prevent="onDragOver($event, idx)"
+            @dragleave="onDragLeave"
+            @dragend="onDragEnd($event)"
+            @drop="onDrop($event, idx)"
+            :title="tab.cwd || $t('codehub.noFolder')"
+          >
+            <span class="codehub-tab-agent-icon" :class="tab.iconClass" :style="tab.iconStyle"></span>
+            <span class="codehub-tab-name">
+              <span v-if="tab.runningCount === 1" class="running-dot" :title="$t('codehub.running')"></span>
+              <span v-else-if="tab.runningCount >= 2" class="running-badge" :title="$t('codehub.sessionsRunning', { n: tab.runningCount })">{{ tab.runningCount }}</span>
+              <span v-else-if="tab.hasPendingTool" class="pending-dot" :title="$t('codehub.waitingUser')"></span>
+              {{ tab.name }}
+            </span>
+            <button class="codehub-tab-close" type="button" @click.stop="closeTab(tab)" :title="$t('codehub.close')">×</button>
+          </div>
         </div>
+        <button class="codehub-tab-add" type="button" @click="openAgentPicker('user')" :title="$t('codehub.newTab')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
+        </button>
       </div>
-      <button class="codehub-tab-add" @click="openAgentPicker('user')" :title="$t('codehub.newTab')">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z"/></svg>
-      </button>
       <div class="codehub-window-spacer" aria-hidden="true"></div>
     </div>
 
@@ -812,8 +814,7 @@ watch(
 
 /* ===== 统一 Tab 栏（匹配原 claudeCode ProjectTabs 风格） ===== */
 .codehub-unified-tabs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px 90px;
+  display: flex;
   align-items: center;
   background: var(--cc-bg-tertiary);
   border-bottom: 1px solid var(--cc-border);
@@ -823,12 +824,20 @@ watch(
   flex-shrink: 0; user-select: none;
   -webkit-app-region: drag;
 }
+.codehub-tab-strip {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex: 0 1 max-content;
+  min-width: 0;
+  max-width: calc(100% - var(--mc-window-controls-width, 138px));
+}
 .codehub-tab-track {
   display: flex;
   align-items: center;
   align-self: stretch;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0 4px;
@@ -985,6 +994,9 @@ watch(
 }
 .codehub-window-spacer {
   align-self: stretch;
+  flex: 1 0 var(--mc-window-controls-width, 138px);
+  min-width: var(--mc-window-controls-width, 138px);
+  -webkit-app-region: no-drag;
 }
 
 /* ===== Context Menu ===== */

@@ -543,92 +543,6 @@ function setSessionInstruction(chatKey, data, opts) {
   return sessionRegistry().setSessionInstruction(chatKey, data, opts);
 }
 
-// ---------------------------------------------------------------------------
-// Backfill / population check
-// ---------------------------------------------------------------------------
-
-/**
- * Check whether the sessions table has any rows.
- *
- * @param {import('sql.js').Database} db
- * @returns {boolean}
- */
-function isDbPopulated(db) {
-  try {
-    const result = db.exec('SELECT COUNT(*) FROM sessions');
-    if (!result || result.length === 0) return false;
-    return Number(result[0].values[0][0]) > 0;
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
- * One-shot backfill from session-registry JSON → SQLite.
- * Source files are NOT deleted.
- *
- * @param {import('sql.js').Database} db
- * @param {object} [opts]
- * @param {string} [opts.userDataDir]
- * @returns {{ ok: boolean, count: number }}
- */
-function backfillFromRegistry(db, { userDataDir } = {}) {
-  const dao = sessionsDao();
-  let count = 0;
-
-  const registryDir = userDataDir
-    ? path.join(userDataDir, 'session-registry', 'sessions')
-    : null;
-
-  if (!registryDir || !fs.existsSync(registryDir)) {
-    return { ok: true, count: 0 };
-  }
-
-  try {
-    const files = fs.readdirSync(registryDir).filter(f => f.endsWith('.json'));
-    for (const file of files) {
-      let record;
-      try {
-        record = JSON.parse(fs.readFileSync(path.join(registryDir, file), 'utf8'));
-      } catch (_) { continue; }
-      if (!record || !record.chatKey) continue;
-
-      // Session identity
-      dao.upsertSession(db, recordToDaoParams(record));
-
-      // Provider binding
-      const provider = record.provider;
-      if (provider && (provider.cliSessionId || provider.filePath)) {
-        const agent = record.agent || '';
-        const providerKey = `${agent}::${provider.cliSessionId || provider.filePath}`;
-        dao.upsertSessionBinding(db, {
-          chatKey: record.chatKey,
-          providerKey,
-          cliSessionId: String(provider.cliSessionId || ''),
-          filePath: String(provider.filePath || ''),
-          source: provider.source || 'scan',
-          detached: provider.detached ? 1 : 0,
-          resumeAllowed: record.metadata?.resumeAllowed !== false ? 1 : 0,
-          updatedAt: record.updatedAt || now(),
-        });
-      }
-
-      // Runtime
-      const runtime = record.runtime;
-      if (runtime && (runtime.model || runtime.effort)) {
-        dao.upsertSessionRuntime(db, record.chatKey, runtime);
-      }
-
-      count++;
-    }
-  } catch (e) {
-    console.error('[sessionRepository] backfill error:', e.message);
-    return { ok: false, count, error: e.message };
-  }
-
-  return { ok: true, count };
-}
-
 /**
  * Restore panel state from SQLite.  Mirrors `restorePanelStateFromSessionRegistry`
  * but reads from the authoritative SQLite store.  Ensures sessions created after
@@ -790,6 +704,4 @@ module.exports = {
   clearSessionDraft,
   getSessionInstruction,
   setSessionInstruction,
-  isDbPopulated,
-  backfillFromRegistry,
 };

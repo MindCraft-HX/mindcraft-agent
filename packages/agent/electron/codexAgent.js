@@ -14,7 +14,7 @@ const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
-const { deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
+const { deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
 const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
@@ -3777,14 +3777,6 @@ function setupCodexSdkHandlers() {
         // JSON registry fallback for pre-migration sessions not yet in SQLite
         const jsonBackfill = restorePanelStateFromSessionRegistry('codex', backfill.panelState || normalized)
         if (jsonBackfill?.changed && !backfill?.changed) writePanelState(jsonBackfill.panelState)
-        // TODO(T201.1): repairSessionRegistry still reads JSON registry files. Without
-        // syncPanelStateSessions, panel-state-only sessions are invisible to repair.
-        // Migrate repair to SQLite so it reads from the authoritative store.
-        const repair = repairSessionRegistry()
-        if (repair?.changed) {
-          const repairedPath = fs.existsSync(PANEL_STATE_FILE) ? PANEL_STATE_FILE : candidate
-          return normalizePanelState(JSON.parse(fs.readFileSync(repairedPath, 'utf8')))
-        }
         return normalized
       } catch (e) {
         console.warn('[codex] readPanelState failed:', e?.message || e, 'file=', candidate)

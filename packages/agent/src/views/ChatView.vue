@@ -259,9 +259,9 @@ function imgPreviewSrc(img) {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  // Keep actions clear of App.vue's 90px absolute drag spacer and the
+  // Keep actions clear of App.vue's window-controls spacer and the
   // frameless-window controls it reserves space for.
-  padding: 10px 106px 10px 16px;
+  padding: 10px 154px 10px 16px;
   border-bottom: 1px solid var(--cc-border, #2a2a2a);
   background: var(--cc-bg-deepest, #0d1117);
   flex-shrink: 0;

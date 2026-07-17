@@ -1184,7 +1184,7 @@ onActivated(() => {
   align-items: center;
   gap: 0;
   min-width: max-content;
-  padding-right: 90px;
+  padding-right: var(--mc-window-controls-width, 138px);
 }
 
 .doc-tab {

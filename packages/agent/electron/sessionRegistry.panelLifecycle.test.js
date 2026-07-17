@@ -22,7 +22,6 @@ const {
   deleteSessionRecordsByProvider,
   listSessionRecords,
   setSessionTitle,
-  repairSessionRegistry,
 } = require('./sessionRegistry')
 
 // ---------------------------------------------------------------------------
@@ -394,51 +393,6 @@ test('CodeX panel sync does not affect Claude records', () => {
   assert.equal(afterRecords[0].agent, 'claude', 'Claude session untouched')
 })
 
-test('repairSessionRegistry does not cross agent boundaries', () => {
-  const userDataDir = makeTempUserData()
-
-  // Create both with valid data
-  syncPanelStateSessions('codex', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-c1',
-        sessionId: 'chat-key-codex',
-        name: 'CodeX',
-        cliSessionId: 'thread-1',
-        filePath: 'C:/codex/thread-1.jsonl',
-        createdAt: 100,
-        updatedAt: 200,
-      }],
-    }],
-  }, { userDataDir })
-
-  syncPanelStateSessions('claude', {
-    projects: [{
-      id: 'project-2',
-      cwd: 'D:/repo-2',
-      chats: [{
-        id: 'chat-c2',
-        sessionId: 'chat-key-claude',
-        name: 'Claude',
-        cliSessionId: 'cli-1',
-        filePath: 'C:/claude/cli-1.jsonl',
-        createdAt: 300,
-        updatedAt: 400,
-      }],
-    }],
-  }, { userDataDir })
-
-  const repair = repairSessionRegistry({ userDataDir })
-  assert.ok(repair.ok)
-  assert.equal(repair.changed, false, 'clean data needs no repair')
-
-  // Both still exist
-  const records = listSessionRecords({ userDataDir })
-  assert.equal(records.length, 2)
-})
-
 // ---------------------------------------------------------------------------
 // User title stability
 // ---------------------------------------------------------------------------
@@ -494,35 +448,6 @@ test('user title survives provider scan with different title', () => {
   const record = listSessionRecords({ userDataDir }).find(r => r.chatKey === 'chat-key-1')
   assert.ok(record, 'record exists after scan + rename')
   assert.equal(record.titleSource, 'user')
-})
-
-// ---------------------------------------------------------------------------
-// repairSessionRegistry full consistency
-// ---------------------------------------------------------------------------
-
-test('repairSessionRegistry on clean data reports no changes', () => {
-  const userDataDir = makeTempUserData()
-
-  syncPanelStateSessions('codex', {
-    projects: [{
-      id: 'project-1',
-      cwd: 'D:/repo',
-      chats: [{
-        id: 'chat-1',
-        sessionId: 'chat-key-1',
-        name: 'Session',
-        cliSessionId: 'thread-1',
-        filePath: 'C:/Users/demo/.codex/sessions/thread-1.jsonl',
-        createdAt: 100,
-        updatedAt: 200,
-      }],
-    }],
-  }, { userDataDir })
-
-  const repair = repairSessionRegistry({ userDataDir })
-  assert.ok(repair.ok)
-  assert.equal(repair.changed, false, 'clean registry needs no repair')
-  assert.equal(repair.scannedRecords, 1)
 })
 
 test('writePanelState → sync sequence is consistent', () => {
