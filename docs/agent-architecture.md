@@ -129,6 +129,7 @@ MindCraft 自有数据包括：
 - 不要把 `cliSessionId` 当 UI tab id。
 - 不要用 `filePath` 承载 MindCraft 自有元数据。
 - 会话相关 bug 先读 `docs/session-pitfalls.md`，再动代码。
+- A user title write must persist its `chatKey -> cliSessionId/filePath` binding in the same SQLite transaction. Startup may backfill only explicit legacy user renames from panel state; scan-derived panel titles are never authoritative.
 - session-registry 的 provider binding / runtime 字段是 source-aware 的：provider/scan/done 的权威写入不能被 panel cache 覆盖。
 - panel cache 只能补缺 UI 状态或 runtime 空洞；不能把旧的 model/effort/reasoningEffort 写回覆盖 provider authoritative state。
 - draft 文本可以走 renderer 两级内存缓存，但最终仍应落到 session-registry；不要恢复到每次切 tab 都读写磁盘，也不要用 panel state 做逐键持久化。

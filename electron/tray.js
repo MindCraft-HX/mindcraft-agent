@@ -33,7 +33,7 @@ function createTray(win, iconDir) {
         }, 0);
       },
     },
-    { label: '退出', click: () => require('electron').app.exit() },
+    { label: '退出', click: () => require('electron').app.quit() },
   ]);
 
   tray.setContextMenu(contextMenu);

@@ -704,28 +704,32 @@ async function writeClaudeSessionMeta(cwd, cliSessionId, data = {}, { chatKey, f
   const meta = normalizeClaudeSessionMeta(data)
   let db = null
   try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
-  return upsertRuntimeByProvider(db, {
+  const result = upsertRuntimeByProvider(db, {
     agent: 'claude',
     chatKey,
     filePath,
     cliSessionId,
     runtime: meta,
   })
+  if (result?.ok) await persistDb()
+  return result
 }
 
 async function deleteClaudeSessionArtifacts(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return false
-    const record = findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
+    let db = null
+    try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
+    const record = (db && findByProviderScan(db, 'claude', { filePath }))
+      || findSessionRecordByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     fs.unlinkSync(filePath)
     deleteSessionRecordsByProvider({ agent: 'claude', filePath }, sessionRegistryOptionsForTest || {})
     // T201: also clean up SQLite
     if (record?.chatKey) {
       removeStore(record.chatKey)
-      let db = null
-      try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
       if (db) deleteSession(db, record.chatKey)
     }
+    if (db) await persistDb()
     const metaPath = String(filePath).replace(/\.jsonl$/i, '.meta.json')
     try {
       if (metaPath !== filePath && fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
@@ -1011,7 +1015,10 @@ function setupClaudeHandlers() {
       const result = setSessionTitle(db, record.chatKey, title, {
         agent: 'claude',
         cwd: cwd || record.cwd,
+        cliSessionId: record.provider?.cliSessionId || sessionId,
+        filePath: record.provider?.filePath || '',
       })
+      if (result?.ok) await persistDb()
       return { success: Boolean(result?.ok), error: result?.error }
     } catch (e) {
       console.error('[claude-rename-session] error:', e)

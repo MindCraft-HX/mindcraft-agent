@@ -10,8 +10,8 @@ const source = fs.readFileSync(
 assert.match(source, /class="codehub-tab-track"[\s\S]*v-for="\(tab, idx\) in unifiedTabs"/)
 assert.match(source, /class="codehub-tab-add"[\s\S]*class="codehub-window-spacer"/)
 assert.doesNotMatch(source, /<div class="drag-spacer"><\/div>/)
+assert.match(source, /\.codehub-unified-tabs\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) 36px 90px/)
 assert.match(source, /\.codehub-tab-track\s*\{[\s\S]*overflow-x:\s*auto/)
-assert.match(source, /\.codehub-window-spacer\s*\{[\s\S]*flex:\s*0 0 90px/)
 assert.match(source, /\.codehub-tab\s*\{[\s\S]*width:\s*220px;\s*min-width:\s*120px;\s*max-width:\s*220px/)
 assert.match(source, /\.codehub-tab\s*\{[\s\S]*flex:\s*0 1 220px/)
 

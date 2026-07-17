@@ -22,6 +22,7 @@ const { exec } = require('child_process');
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require("../packages/agent/electron/diagnosticsFileUtils");
 const { CORE_CHANNELS } = require("../packages/agent/shared/ipcChannels");
 const { init: initSettingsFacade, flush: flushSettings } = require("../packages/agent/electron/settingsFacade");
+const { persistDb } = require("../packages/agent/electron/db");
 
 const packageJson = require(path.join(app.getAppPath(), 'package.json'));
  
@@ -81,7 +82,7 @@ if (process.env.VITE_DEV_SERVER_URL) {
       .catch(() => {
         if (++devServerMisses >= 2) {
           console.log('[main] dev server gone, exiting');
-          app.exit(0);
+          app.quit();
         }
       });
   }, 3000);
@@ -91,6 +92,8 @@ let isAppQuitting = false
 let isQuittingForUpdate = false
 let mainRendererReady = false
 const pendingAssociatedMarkdownPaths = []
+let quitPersistenceStarted = false
+let quitPersistenceFinished = false
 
 function queueAssociatedMarkdown(commandLine) {
   const filePath = findAssociatedMarkdownPath(commandLine, { existsSync: fs.existsSync })
@@ -106,9 +109,19 @@ function openQueuedAssociatedMarkdown() {
   }
 }
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   isAppQuitting = true
   flushSettings()
+  if (quitPersistenceFinished) return
+  event.preventDefault()
+  if (quitPersistenceStarted) return
+  quitPersistenceStarted = true
+  // sql.js keeps the authority in memory. Hold normal shutdown until it is
+  // exported, then resume Electron's standard quit flow.
+  persistDb().finally(() => {
+    quitPersistenceFinished = true
+    app.quit()
+  })
 })
 
 // 单实例锁（仅生产模式，dev 模式允许多开调试）
@@ -391,7 +404,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", function () {
-  if (process.platform !== "darwin") app.exit();
+  if (process.platform !== "darwin") app.quit();
 });
 
 // 外部链接默认游览器打开

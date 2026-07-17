@@ -192,6 +192,19 @@ describe('session bindings', () => {
     db.close()
   })
 
+  test('upsertSessionBinding rejects a provider key owned by another session', async () => {
+    const db = await createFreshDb()
+    sessionsDao.upsertSession(db, { chatKey: 'first', createdAt: 1, updatedAt: 1 })
+    sessionsDao.upsertSession(db, { chatKey: 'second', createdAt: 1, updatedAt: 1 })
+    sessionsDao.upsertSessionBinding(db, { chatKey: 'first', providerKey: 'codex::thread-1' })
+
+    const result = sessionsDao.upsertSessionBinding(db, { chatKey: 'second', providerKey: 'codex::thread-1' })
+    assert.equal(result.ok, false)
+    assert.match(result.error, /Provider key already belongs to first/)
+    assert.equal(sessionsDao.listSessionBindings(db, 'second').length, 0)
+    db.close()
+  })
+
   test('findSessionByProviderKey returns session with provider', async () => {
     const db = await createFreshDb()
     sessionsDao.upsertSession(db, {

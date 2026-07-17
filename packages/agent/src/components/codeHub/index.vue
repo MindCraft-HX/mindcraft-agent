@@ -812,7 +812,9 @@ watch(
 
 /* ===== 统一 Tab 栏（匹配原 claudeCode ProjectTabs 风格） ===== */
 .codehub-unified-tabs {
-  display: flex; align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 90px;
+  align-items: center;
   background: var(--cc-bg-tertiary);
   border-bottom: 1px solid var(--cc-border);
   min-height: 40px; height: 40px;
@@ -975,16 +977,14 @@ watch(
   width: 28px; height: 28px; border-radius: 4px;
   border: none; background: var(--cc-border); color: var(--cc-text-dim);
   cursor: pointer; display: flex; align-items: center;
-  justify-content: center; margin-left: 4px; margin-right: 4px;
+  justify-content: center; margin: 0 4px;
   flex-shrink: 0; transition: all 0.1s;
 }
 .codehub-tab-add:hover {
   background: var(--cc-menu-hover); color: var(--cc-primary);
 }
 .codehub-window-spacer {
-  width: 90px;
   align-self: stretch;
-  flex: 0 0 90px;
 }
 
 /* ===== Context Menu ===== */

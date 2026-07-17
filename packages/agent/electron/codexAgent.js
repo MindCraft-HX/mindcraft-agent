@@ -15,7 +15,7 @@ const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('.
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
 const { deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, repairSessionRegistry, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
-const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle, deleteSession, restorePanelState } = require('./sessionRepository')
+const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -3290,7 +3290,10 @@ function setupCodexSdkHandlers() {
   ipcMain.handle(CODEX_CHANNELS.DELETE_SESSION_FILE, async (_, { filePath }) => {
     try {
       if (!filePath || !fs.existsSync(filePath)) return false
-      const record = findSessionRecordByProvider({ agent: 'codex', filePath })
+      let db = null
+      try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
+      const record = (db && findByProviderScan(db, 'codex', { filePath }))
+        || findSessionRecordByProvider({ agent: 'codex', filePath })
       fs.unlinkSync(filePath)
       clearCodexJsonlCaches()
       deleteSessionRecordsByProvider({ agent: 'codex', filePath })
@@ -3302,10 +3305,9 @@ function setupCodexSdkHandlers() {
         })
         removeStore(record.chatKey)
         // T201: also clean up SQLite
-        let db = null
-        try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
         if (db) deleteSession(db, record.chatKey)
       }
+      if (db) await persistDb()
       return true
     } catch (e) {
       console.warn('[codex-delete-session-file] failed:', e?.message || e)
@@ -3351,6 +3353,7 @@ function setupCodexSdkHandlers() {
         let db = null
         try { db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }) } catch (_) {}
         if (db) deleteSession(db, chatKey)
+        if (db) await persistDb()
       }
 
       return {
@@ -3379,7 +3382,10 @@ function setupCodexSdkHandlers() {
       const result = setSessionTitle(db, record.chatKey, title, {
         agent: 'codex',
         cwd: record.cwd,
+        cliSessionId: record.provider?.cliSessionId || sessionId,
+        filePath: record.provider?.filePath || '',
       })
+      if (result?.ok) await persistDb()
       return { success: Boolean(result?.ok), error: result?.error }
     } catch (e) {
       console.error('[codex-rename-session] error:', e)
@@ -3763,6 +3769,8 @@ function setupCodexSdkHandlers() {
         // T201: restore from SQLite first (post-migration sessions), then JSON fallback
         let backfill = { changed: false }
         if (db) {
+          const titleBackfill = backfillUserTitlesFromPanelState(db, 'codex', normalized)
+          if (titleBackfill.changed) await persistDb()
           backfill = restorePanelState(db, 'codex', normalized)
           if (backfill?.changed) writePanelState(backfill.panelState)
         }

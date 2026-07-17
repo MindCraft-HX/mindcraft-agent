@@ -130,7 +130,7 @@ function setupAutoUpdater(env, platform, win, { beforeInstall } = {}) {
       dev: false,
     })
     if (info.force) {
-      setTimeout(() => { app.exit() }, 300)
+      setTimeout(() => { app.quit() }, 300)
     }
   })
 

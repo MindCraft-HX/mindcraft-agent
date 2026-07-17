@@ -8,7 +8,7 @@ const {
   setSessionInstruction,
 } = require('./sessionRegistry')
 const { setSessionTitle } = require('./sessionRepository')
-const { getDb } = require('./db')
+const { getDb, persistDb } = require('./db')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { resolveAttachments, buildFullInstructionPrompt, ALLOWED_EXTENSIONS } = require('./sessionInstructionAttachments')
 const { perfStartIpc } = require('./shared/mainPerfProbe')
@@ -38,7 +38,9 @@ function registerSessionInstructionIpc(ipcMain) {
       // T201: write session title through SQLite
       let db = null
       try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
-      const result = setSessionTitle(db, payload.chatKey, payload.title, payload); stop(); return result
+      const result = setSessionTitle(db, payload.chatKey, payload.title, payload)
+      if (result?.ok) await persistDb()
+      stop(); return result
     } catch (err) {
       stop(); return { ok: false, error: err?.message || 'write failed' }
     }

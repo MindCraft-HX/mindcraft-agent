@@ -328,6 +328,10 @@ function upsertSessionBinding(db, binding) {
   const updatedAt = typeof binding.updatedAt === 'number' ? binding.updatedAt : now();
 
   try {
+    const owner = findSessionByProviderKey(db, providerKey);
+    if (owner && owner.chatKey !== chatKey) {
+      return { ok: false, error: `Provider key already belongs to ${owner.chatKey}` };
+    }
     db.run(
       `INSERT INTO session_bindings (chat_key, provider_key, cli_session_id, file_path, source, detached, resume_allowed, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)

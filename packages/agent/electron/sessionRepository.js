@@ -36,6 +36,23 @@ function now() {
   return Math.floor(Date.now() / 1000);
 }
 
+function toUnixSeconds(value) {
+  if (value instanceof Date) return Math.floor(value.getTime() / 1000);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.floor(value > 100000000000 ? value / 1000 : value);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const timestamp = new Date(value).getTime();
+    if (Number.isFinite(timestamp)) return Math.floor(timestamp / 1000);
+  }
+  return 0;
+}
+
+function toUnixMilliseconds(value) {
+  const seconds = toUnixSeconds(value);
+  return seconds ? seconds * 1000 : 0;
+}
+
 /** Convert DAO session row → registry-shaped record (camelCase, nested provider). */
 function daoRowToRecord(row, binding, runtime) {
   if (!row) return null;
@@ -48,8 +65,9 @@ function daoRowToRecord(row, binding, runtime) {
     titleSource: row.titleSource,
     description: row.description,
     metadata: row.metadata || {},
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    // SQLite timestamps are seconds; renderer and panel state use milliseconds.
+    createdAt: toUnixMilliseconds(row.createdAt),
+    updatedAt: toUnixMilliseconds(row.updatedAt),
   };
   if (binding) {
     record.provider = {
@@ -82,8 +100,8 @@ function recordToDaoParams(record) {
     titleSource: record.titleSource || '',
     description: record.description || '',
     metadata: record.metadata || {},
-    createdAt: typeof record.createdAt === 'number' ? record.createdAt : now(),
-    updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : now(),
+    createdAt: toUnixSeconds(record.createdAt) || now(),
+    updatedAt: toUnixSeconds(record.updatedAt) || now(),
   };
 }
 
@@ -191,12 +209,52 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
   const dao = sessionsDao();
   const row = dao.getSession(db, chatKey);
   const record = row || { chatKey, createdAt: now() };
+  const agent = record.agent || String(opts.agent || '');
+  const scanInfo = {
+    cliSessionId: String(opts.cliSessionId || ''),
+    filePath: String(opts.filePath || ''),
+  };
+  const providerKeys = agent ? buildProviderKeys(agent, scanInfo) : [];
+
   record.title = String(title || '');
   record.titleSource = 'user';
   record.updatedAt = now();
-  record.agent = record.agent || opts.agent || '';
-  const result = dao.upsertSession(db, recordToDaoParams(record));
-  return result;
+  record.agent = agent;
+  record.projectId = record.projectId || String(opts.projectId || '');
+  record.cwd = record.cwd || String(opts.cwd || '');
+
+  try {
+    db.run('BEGIN');
+    const result = dao.upsertSession(db, recordToDaoParams(record));
+    if (!result.ok) {
+      db.run('ROLLBACK');
+      return result;
+    }
+
+    // A later transcript scan must resolve this same renamed UI session.
+    for (const providerKey of providerKeys) {
+      const binding = dao.upsertSessionBinding(db, {
+        chatKey,
+        providerKey,
+        cliSessionId: scanInfo.cliSessionId,
+        filePath: scanInfo.filePath,
+        source: 'user',
+        detached: false,
+        resumeAllowed: true,
+        updatedAt: record.updatedAt,
+      });
+      if (!binding.ok) {
+        db.run('ROLLBACK');
+        return binding;
+      }
+    }
+
+    db.run('COMMIT');
+    return result;
+  } catch (e) {
+    try { db.run('ROLLBACK'); } catch (_) {}
+    return { ok: false, error: e.message };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -260,14 +318,23 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
 
   // Try all candidate keys to find an existing row
   let row = null;
+  let matchedChatKey = '';
   for (const key of keys) {
-    row = dao.findSessionByProviderKey(db, key);
-    if (row) break;
+    const candidate = dao.findSessionByProviderKey(db, key);
+    if (!candidate) continue;
+    if (matchedChatKey && candidate.chatKey !== matchedChatKey) return null;
+    row = candidate;
+    matchedChatKey = candidate.chatKey;
   }
 
-  // Build record from existing or create new
+  // Build record from existing or create new. Provider timestamps are kept in
+  // seconds, matching SQLite, and never regress a newer local boundary write.
   const chatKey = row?.chatKey || `${agent}::scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const nowTs = now();
+  const scanCreatedAt = toUnixSeconds(scanSummary.createdAt);
+  const scanUpdatedAt = toUnixSeconds(scanSummary.updatedAt);
+  const existingBindings = row ? dao.listSessionBindings(db, chatKey) : [];
+  const existingRuntime = row ? dao.getSessionRuntime(db, chatKey) : null;
 
   const record = row ? daoRowToRecord(row, row.provider) : {
     chatKey,
@@ -278,8 +345,8 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
     titleSource: scanSummary.titleSource || 'scan',
     description: scanSummary.description || '',
     metadata: {},
-    createdAt: nowTs,
-    updatedAt: nowTs,
+    createdAt: (scanCreatedAt || nowTs) * 1000,
+    updatedAt: (scanUpdatedAt || scanCreatedAt || nowTs) * 1000,
   };
 
   // Merge scan summary fields
@@ -287,36 +354,81 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
     record.title = scanSummary.title;
     record.titleSource = scanSummary.titleSource || 'scan';
   }
-  record.updatedAt = nowTs;
+  record.projectId = record.projectId || project.projectId || '';
+  record.cwd = record.cwd || project.cwd || '';
+  // Use the raw DAO row for existing records. Once a record is converted for
+  // the renderer it is in milliseconds, which is otherwise ambiguous for old
+  // timestamps close to the Unix epoch.
+  const recordCreatedAt = row
+    ? (toUnixSeconds(row.createdAt) || scanCreatedAt || nowTs)
+    : (scanCreatedAt || nowTs);
+  const recordUpdatedAt = Math.max(
+    row ? toUnixSeconds(row.updatedAt) : 0,
+    scanUpdatedAt,
+    recordCreatedAt,
+  );
+  record.createdAt = recordCreatedAt * 1000;
+  record.updatedAt = recordUpdatedAt * 1000;
 
-  // Save
-  dao.upsertSession(db, recordToDaoParams(record));
+  const runtime = {
+    model: scanSummary.model || existingRuntime?.model || '',
+    effort: scanSummary.effort || existingRuntime?.effort || undefined,
+    modelTier: scanSummary.modelTier || existingRuntime?.modelTier || '',
+    reasoningEffort: scanSummary.reasoningEffort || existingRuntime?.reasoningEffort || undefined,
+  };
+  const hasRuntime = Boolean(scanSummary.model || scanSummary.effort || scanSummary.modelTier || scanSummary.reasoningEffort);
+  const bindingByKey = new Map(existingBindings.map(binding => [binding.providerKey, binding]));
+  const needsBinding = keys.some(providerKey => !bindingByKey.has(providerKey));
+  const needsRuntime = hasRuntime && (
+    !existingRuntime ||
+    existingRuntime.model !== runtime.model ||
+    (existingRuntime.effort || '') !== (runtime.effort || '') ||
+    existingRuntime.modelTier !== runtime.modelTier ||
+    (existingRuntime.reasoningEffort || '') !== (runtime.reasoningEffort || '')
+  );
+  const needsSession = !row ||
+    row.agent !== record.agent ||
+    row.projectId !== record.projectId ||
+    row.cwd !== record.cwd ||
+    row.title !== record.title ||
+    row.titleSource !== record.titleSource ||
+    row.description !== record.description ||
+    row.createdAt !== recordCreatedAt ||
+    row.updatedAt !== recordUpdatedAt;
 
-  // Save bindings for ALL provider keys (both cliSessionId and filePath)
-  for (const providerKey of keys) {
-    dao.upsertSessionBinding(db, {
-      chatKey: record.chatKey,
-      providerKey,
-      cliSessionId: scanSummary.cliSessionId || '',
-      filePath: scanSummary.filePath || '',
-      source: 'scan',
-      detached: false,
-      resumeAllowed: true,
-      updatedAt: nowTs,
-    });
+  if (needsSession || needsBinding || needsRuntime) {
+    try {
+      db.run('BEGIN');
+      if (needsSession) {
+        const result = dao.upsertSession(db, recordToDaoParams(record));
+        if (!result.ok) throw new Error(result.error || 'Unable to save session');
+      }
+      for (const providerKey of keys) {
+        if (bindingByKey.has(providerKey)) continue;
+        const result = dao.upsertSessionBinding(db, {
+          chatKey: record.chatKey,
+          providerKey,
+          cliSessionId: scanSummary.cliSessionId || '',
+          filePath: scanSummary.filePath || '',
+          source: 'scan',
+          detached: false,
+          resumeAllowed: true,
+          updatedAt: recordUpdatedAt,
+        });
+        if (!result.ok) throw new Error(result.error || 'Unable to save provider binding');
+      }
+      if (needsRuntime) {
+        const result = dao.upsertSessionRuntime(db, record.chatKey, runtime);
+        if (!result.ok) throw new Error(result.error || 'Unable to save runtime');
+      }
+      db.run('COMMIT');
+    } catch (_) {
+      try { db.run('ROLLBACK'); } catch (_) {}
+      return null;
+    }
   }
 
-  // Save runtime if present
-  if (scanSummary.model || scanSummary.effort) {
-    dao.upsertSessionRuntime(db, record.chatKey, {
-      model: scanSummary.model || '',
-      effort: scanSummary.effort || undefined,
-      modelTier: scanSummary.modelTier || '',
-      reasoningEffort: scanSummary.reasoningEffort || undefined,
-    });
-  }
-
-  const rt = dao.getSessionRuntime(db, record.chatKey);
+  const rt = needsRuntime ? runtime : existingRuntime;
   return daoRowToRecord(record, {
     cliSessionId: scanSummary.cliSessionId || '',
     filePath: scanSummary.filePath || '',
@@ -367,34 +479,44 @@ function mergeRegistryFields(agent, scanSummary = {}, record = null) {
  */
 function upsertRuntimeByProvider(db, { agent, filePath, cliSessionId, chatKey, runtime } = {}) {
   const dao = sessionsDao();
+  if (!db) return { ok: false, error: 'DB unavailable' };
   if (!chatKey) return { ok: false, error: 'Missing chatKey' };
 
-  // Ensure binding exists
-  if (filePath || cliSessionId) {
-    const providerKey = `${agent || ''}::${cliSessionId || filePath || ''}`;
-    if (providerKey && providerKey !== `${agent || ''}::`) {
-      dao.upsertSessionBinding(db, {
-        chatKey, providerKey,
+  const providerKeys = buildProviderKeys(agent || '', { cliSessionId, filePath });
+  const timestamp = now();
+  try {
+    db.run('BEGIN');
+    const row = dao.getSession(db, chatKey);
+    if (!row) {
+      const result = dao.upsertSession(db, {
+        chatKey,
+        agent: agent || '',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      if (!result.ok) throw new Error(result.error || 'Unable to save session');
+    }
+    const existingBindings = new Set(dao.listSessionBindings(db, chatKey).map(binding => binding.providerKey));
+    for (const providerKey of providerKeys) {
+      if (existingBindings.has(providerKey)) continue;
+      const result = dao.upsertSessionBinding(db, {
+        chatKey,
+        providerKey,
         cliSessionId: cliSessionId || '',
         filePath: filePath || '',
-        source: 'scan',
-        updatedAt: now(),
+        source: 'runtime',
+        updatedAt: timestamp,
       });
+      if (!result.ok) throw new Error(result.error || 'Unable to save provider binding');
     }
+    const result = dao.upsertSessionRuntime(db, chatKey, runtime || {});
+    if (!result.ok) throw new Error(result.error || 'Unable to save runtime');
+    db.run('COMMIT');
+    return result;
+  } catch (e) {
+    try { db.run('ROLLBACK'); } catch (_) {}
+    return { ok: false, error: e.message };
   }
-
-  // Ensure session row exists
-  const row = dao.getSession(db, chatKey);
-  if (!row) {
-    dao.upsertSession(db, {
-      chatKey,
-      agent: agent || '',
-      createdAt: now(),
-      updatedAt: now(),
-    });
-  }
-
-  return dao.upsertSessionRuntime(db, chatKey, runtime || {});
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +650,7 @@ function restorePanelState(db, agent, panelState) {
 
   for (const row of rows) {
     const binding = dao.listSessionBindings(db, row.chatKey)[0];
+    if (!binding) continue;
     const runtime = dao.getSessionRuntime(db, row.chatKey);
     const record = daoRowToRecord(row, binding, runtime);
     if (record.agent !== agent) continue;
@@ -608,6 +731,48 @@ function restorePanelState(db, agent, panelState) {
   return { changed: added > 0 || repaired > 0, added, repaired, panelState: { ...panelState, projects } };
 }
 
+/**
+ * Backfill only explicit legacy user renames from panel state. Scan-derived
+ * titles are intentionally ignored so panel cache cannot become an authority.
+ */
+function backfillUserTitlesFromPanelState(db, agent, panelState) {
+  if (!db) return { changed: false, count: 0 };
+  const dao = sessionsDao();
+  let count = 0;
+
+  for (const project of Array.isArray(panelState?.projects) ? panelState.projects : []) {
+    for (const chat of Array.isArray(project?.chats) ? project.chats : []) {
+      const chatKey = String(chat?.sessionId || '');
+      const legacyTitle = String(chat?.name || '').trim();
+      if (!chatKey || !legacyTitle || (chat?.titleSource !== 'user' && !chat?._userRenamed)) continue;
+
+      const scanInfo = {
+        cliSessionId: String(chat?.cliSessionId || ''),
+        filePath: String(chat?.filePath || ''),
+      };
+      const providerKeys = buildProviderKeys(agent, scanInfo);
+      const existing = dao.getSession(db, chatKey);
+      const knownKeys = new Set((existing ? dao.listSessionBindings(db, chatKey) : []).map(binding => binding.providerKey));
+      const needsBinding = providerKeys.some(providerKey => !knownKeys.has(providerKey));
+      const needsTitle = !existing || existing.titleSource !== 'user' || !existing.title;
+      if (!needsBinding && !needsTitle) continue;
+
+      // Preserve a user title already present in SQLite; old panel state only
+      // supplies a missing binding or a title that was never persisted.
+      const title = existing?.titleSource === 'user' && existing.title ? existing.title : legacyTitle;
+      const result = setSessionTitle(db, chatKey, title, {
+        agent,
+        projectId: String(project?.id || ''),
+        cwd: String(project?.cwd || ''),
+        ...scanInfo,
+      });
+      if (result.ok) count += 1;
+    }
+  }
+
+  return { changed: count > 0, count };
+}
+
 module.exports = {
   listSessions,
   getSession,
@@ -619,6 +784,7 @@ module.exports = {
   mergeRegistryFields,
   upsertRuntimeByProvider,
   restorePanelState,
+  backfillUserTitlesFromPanelState,
   getSessionDraft,
   setSessionDraft,
   clearSessionDraft,
