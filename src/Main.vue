@@ -189,8 +189,7 @@
 
       <!-- 右侧内容区 -->
       <el-main class="content-layout">
-        <WorkbenchShell v-show="isWorkbenchRoute" />
-        <router-view v-if="!isWorkbenchRoute" v-slot="{ Component }">
+        <router-view v-slot="{ Component }">
           <keep-alive :include="['codeHub', 'mdViewer', 'chat']">
             <component :is="Component" />
           </keep-alive>
@@ -210,7 +209,6 @@ import { useRoute, useRouter } from "vue-router";
 import { Setting, Check } from '@element-plus/icons-vue';
 import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
-import WorkbenchShell from '@/components/workbench/WorkbenchShell.vue';
 import { storeToRefs } from 'pinia';
 import { usePluginStore } from '@/stores/pluginStore';
 
@@ -247,8 +245,6 @@ const router = useRouter();
 const activeIndex = computed(() => {
   return route.meta.parent || "/main/codeHub"
 })
-
-const isWorkbenchRoute = computed(() => ['codeHub', 'mdViewer', 'chat'].includes(String(route.name || '')))
 
 // 文档浏览：直接路由到主窗口内嵌视图（不再弹独立窗口）
 const openMdBrowser = () => router.push('/main/mdViewer')

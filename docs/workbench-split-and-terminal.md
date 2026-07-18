@@ -8,6 +8,8 @@
 >
 > 目标：把 MindCraft Agent 从页面式工具集合演进为项目感知的一体化 Vibe Coding IDE，同时不破坏现有 Agent 会话、文档编辑和桌面安全边界。
 
+> 当前实施状态（2026-07-18）：Phase 1 平台底座保留，Phase 2A 业务边界仅部分完成；Phase 3 正式 UI 接线已撤下。主窗口继续使用原有路由页面，直到 external tab projection、typed navigation intent、surface state 和独立 document item 在旧 UI 下通过契约与 Electron E2E。不得以顶层 `Agent / Documents / Chat` 双层标签作为过渡 UI。
+
 ## 开工判断（Go / No-Go）
 
 整体架构可以开工，但“可以开工”不等于可以从终端或大模板重写直接开始。开发入口和阻断条件固定如下：
