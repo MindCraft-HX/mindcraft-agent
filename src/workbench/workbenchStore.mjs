@@ -103,7 +103,7 @@ export function createWorkbenchStore({ loadLayout, saveLayout, resolveIntent } =
   }
 
   async function open(itemId, item, options = {}) {
-    replaceLayout(openItem(layout, itemId, item, options))
+    replaceLayout(mergeSecondaryGroup(openItem(layout, itemId, item, options)))
     const result = await activate(itemId, { reason: 'open' })
     void persist()
     return result
@@ -150,7 +150,17 @@ export function createWorkbenchStore({ loadLayout, saveLayout, resolveIntent } =
       const result = typeof loadLayout === 'function' ? await loadLayout() : null
       if (result?.ok && result.windowInstanceId) {
         windowInstanceId = result.windowInstanceId
-        layout = normalizeLayout(result.layout)
+        const restored = normalizeLayout(result.layout)
+        const needsMigration = restored.groups.length > 1
+        // A split layout can park a resident surface in an empty pane after a
+        // reload. Keep one host until every resident surface has pane-safe ownership.
+        layout = needsMigration ? mergeSecondaryGroup(restored) : restored
+        if (needsMigration) {
+          hydrated = true
+          emit()
+          void persist()
+          return getSnapshot()
+        }
       }
       hydrated = true
       emit()
@@ -160,7 +170,7 @@ export function createWorkbenchStore({ loadLayout, saveLayout, resolveIntent } =
     activate,
     close,
     move(itemId, targetGroupId) {
-      replaceLayout(moveItem(layout, itemId, targetGroupId))
+      replaceLayout(mergeSecondaryGroup(moveItem(layout, itemId, targetGroupId)))
       void persist()
       return getSnapshot()
     },

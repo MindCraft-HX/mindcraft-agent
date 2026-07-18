@@ -1,6 +1,6 @@
 <template>
   <div class="workbench-shell">
-    <div class="workbench-groups" :class="{ split: groups.length > 1 }">
+    <div class="workbench-groups">
       <section
         v-for="group in groups"
         :key="group.id"
@@ -22,36 +22,34 @@
             @dragstart="startDrag($event, itemId)"
           >{{ itemTitle(itemId) }}</button>
           <button
-            v-if="groups.length === 1 && group.itemIds.length > 1"
+            v-if="false"
             class="workbench-split"
             type="button"
             title="Split editor"
             @click="splitItem(group.activeItemId)"
           >↗</button>
           <button
-            v-if="groups.length > 1"
+            v-if="false"
             class="workbench-merge"
             type="button"
             title="Merge panes"
             @click="store.mergeSecondary()"
           >↔</button>
         </div>
-        <div class="workbench-surface" :id="surfaceId(group.id)" />
+        <div class="workbench-surface" :id="surfaceId(group.id)">
+          <div
+            v-for="itemId in mountedItemIds"
+            v-show="isActive(itemId)"
+            :key="itemId"
+            class="workbench-item-host"
+          >
+            <CodeHub v-if="itemId === 'agent:codehub'" ref="agentRef" />
+            <ChatView v-else-if="itemId === 'chat:simple'" ref="chatRef" />
+            <MdViewer v-else-if="itemId === 'document:home'" ref="documentRef" />
+          </div>
+        </div>
       </section>
     </div>
-
-    <Teleport
-      v-for="itemId in mountedItemIds"
-      :key="itemId"
-      :to="`#${surfaceId(itemGroupId(itemId))}`"
-      :disabled="!ready"
-    >
-      <div v-show="isActive(itemId)" class="workbench-item-host">
-        <CodeHub v-if="itemId === 'agent:codehub'" ref="agentRef" />
-        <ChatView v-else-if="itemId === 'chat:simple'" ref="chatRef" />
-        <MdViewer v-else-if="itemId === 'document:home'" ref="documentRef" />
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -67,7 +65,6 @@ const router = useRouter()
 const agentRef = ref(null)
 const chatRef = ref(null)
 const documentRef = ref(null)
-const ready = ref(false)
 const draggedItemId = ref('')
 const { store, snapshot } = useWorkbenchStore({
   loadLayout: () => window.electronAPI?.loadWorkbenchLayout?.(),
@@ -82,7 +79,6 @@ const mountedItemIds = computed(() => [...mountedItems.value]
   .filter(itemId => Boolean(snapshot.value.layout.items[itemId])))
 
 function surfaceId(groupId) { return `workbench-surface-${groupId}` }
-function itemGroupId(itemId) { return groups.value.find(group => group.itemIds.includes(itemId))?.id || 'group-primary' }
 function isActive(itemId) {
   const group = groups.value.find(candidate => candidate.itemIds.includes(itemId))
   return Boolean(group && group.id === snapshot.value.layout.activeGroupId && group.activeItemId === itemId)
@@ -144,32 +140,23 @@ function moveDroppedItem(event, groupId) {
   draggedItemId.value = ''
   if (itemId) store.move(itemId, groupId)
 }
-function splitItem(itemId) {
-  if (itemId && itemId !== 'agent:codehub') store.move(itemId, 'group-secondary')
-}
-
 onMounted(async () => {
   await store.hydrate()
   mountedItems.value = new Set([...mountedItems.value, ...Object.keys(snapshot.value.layout.items)])
-  ready.value = true
   await registerMountedAdapters()
   await openRouteItem()
 })
-watch(() => route.name, () => { if (ready.value) void openRouteItem() })
+watch(() => route.name, () => { void openRouteItem() })
 </script>
 
 <style scoped>
 .workbench-shell { display: flex; height: 100%; min-height: 0; background: var(--cc-bg, #111827); }
 .workbench-groups { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .workbench-group { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-.workbench-group + .workbench-group { border-left: 1px solid var(--cc-border-strong, #3b4350); }
 .workbench-tabs { display: flex; align-items: center; min-height: 34px; overflow-x: auto; border-bottom: 1px solid var(--cc-border, #2a2a2a); background: var(--cc-bg-secondary, #161b22); }
 .workbench-tab { height: 34px; max-width: 180px; padding: 0 12px; border: 0; border-right: 1px solid var(--cc-border, #2a2a2a); border-bottom: 2px solid transparent; background: transparent; color: var(--cc-text-dim, #8b949e); cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .workbench-tab:hover { color: var(--cc-text, #e5e7eb); background: var(--cc-bg-hover, rgba(255,255,255,.05)); }
 .workbench-tab.active { color: var(--cc-text, #e5e7eb); border-bottom-color: var(--cc-primary, #60a5fa); background: var(--cc-bg, #111827); }
-.workbench-merge, .workbench-split { margin-right: 6px; width: 24px; height: 22px; border: 1px solid var(--cc-border, #30363d); border-radius: 4px; background: transparent; color: var(--cc-text-dim, #8b949e); cursor: pointer; }
-.workbench-merge { margin-left: auto; }
-.workbench-split:hover, .workbench-merge:hover { color: var(--cc-primary, #60a5fa); border-color: var(--cc-primary, #60a5fa); }
-.workbench-surface, .workbench-item-host { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
-.workbench-item-host { height: 100%; }
+.workbench-surface { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.workbench-item-host { display: flex; flex: 1; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 </style>

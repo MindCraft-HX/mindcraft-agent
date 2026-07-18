@@ -17,12 +17,13 @@ test('main routes the three resident surfaces through one workbench shell', () =
   assert.match(shell, /MdViewer v-else-if="itemId === 'document:home'"/)
 })
 
-test('workbench shell moves the same surface with Teleport and exposes split plus cross-pane drag', () => {
-  assert.match(shell, /<Teleport/)
-  assert.match(shell, /:to="`#\$\{surfaceId\(itemGroupId\(itemId\)\)\}`"/)
+test('workbench shell renders resident surfaces in the stable single-pane host', () => {
+  assert.doesNotMatch(shell, /<Teleport/)
+  assert.match(shell, /v-for="itemId in mountedItemIds"/)
+  assert.match(shell, /v-show="isActive\(itemId\)"/)
   assert.match(shell, /@dragstart="startDrag\(\$event, itemId\)"/)
   assert.match(shell, /@drop="moveDroppedItem\(\$event, group.id\)"/)
-  assert.match(shell, /@click="splitItem\(group.activeItemId\)"/)
+  assert.doesNotMatch(shell, /v-if="groups\.length === 1 && group\.itemIds\.length > 1"/)
 })
 
 test('workbench shell keeps mounted singleton surfaces resident after first open', () => {
