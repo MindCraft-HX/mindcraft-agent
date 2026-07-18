@@ -501,5 +501,6 @@ T046 的修复历史暴露了一个危险模式：
 | 2026-06-11 | T046 会话绑定修复后暴露白名单漂移 | Trap 7：Codex/Claude 6 处标签剥离各自维护，SDK 新增 `<INSTRUCTIONS>`/`<task-notification>` 遗漏 | 用户 bubble 显示完整 AGENTS.md + 环境上下文 | 统一为 helpers.js 的模式匹配（snake_case/kebab-case/ALLCAPS） |
 | 2026-06-11 | T051 统一剥离函数后 CodeX 仍泄漏（T053） | Trap 7 变体：`filterCodexSystemMessages` 调用剥离函数仅做 `hasRealText` 判断，未修改消息 `m.text`/`m.content` | 统一后 ClaudeCode 正常、CodeX 仍显示完整系统上下文 | `filterCodexSystemMessages` 在 hasRealText 通过后显式剥离 `m.text` 和 `m.content` 各文本块 |
 | 2026-07-17 | T201 SQLite title path | 重命名只保存标题，未同时保存 provider binding | 重启扫描无法关联原 thread，用户标题被扫描标题替换 | 将 title 与 `chatKey -> cliSessionId/filePath` binding 放入同一事务；启动时仅回填历史面板中显式用户重命名 |
+| 2026-07-18 | Codex external CLI image resume | `exec --image <FILE>...` 是可变参数，但 transport 把 `resume <thread-id>` 放在图片参数之后 | CLI 将 `resume` 和 UUID 当成图片路径，已有会话带图发送时静默新建 thread；扫描再将新 transcript 识别为 external session，阻塞式确认框进一步干扰输入 | `resume <thread-id>` 必须排在所有 `--image` 之前；`thread.started` 变化立即重绑并持久化；发送即显式 claim，禁止在 composer 热路径使用 `window.confirm`；覆盖带图 resume、claim 失败保留草稿和 thread ownership 回归测试 |
 
 > **维护原则**：每次打补丁后，在此表中追加一条。如果同一文件/同一函数连续出现 ≥3 次回归，考虑重写而非继续补丁。
