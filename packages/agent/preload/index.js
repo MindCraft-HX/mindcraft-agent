@@ -195,6 +195,7 @@ function createAgentBridge(ipcRenderer) {
   codexAgentAbort: (sessionId) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_ABORT, sessionId),
   codexSelectDirectory: () => ipcRenderer.invoke(CODEX_CHANNELS.SELECT_DIRECTORY),
   codexRegisterCliSessions: (map) => ipcRenderer.invoke(CODEX_CHANNELS.REGISTER_CLI_SESSIONS, map),
+  codexClaimCliSession: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.CLAIM_CLI_SESSION, payload),
   codexUnregisterCliSession: (sessionId) => ipcRenderer.invoke(CODEX_CHANNELS.UNREGISTER_CLI_SESSION, sessionId),
   codexListSessionsByCwd: (cwd) => ipcRenderer.invoke(CODEX_CHANNELS.LIST_SESSIONS_BY_CWD, cwd),
   codexRenameSession: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.RENAME_SESSION, payload),

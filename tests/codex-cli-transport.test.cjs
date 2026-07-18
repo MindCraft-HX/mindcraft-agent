@@ -114,3 +114,24 @@ test('Windows cancellation terminates only the owned child process tree', () => 
   assert.equal(terminated, true)
   assert.deepEqual(calls, [{ command: 'taskkill.exe', args: ['/pid', '4242', '/t', '/f'] }])
 })
+
+test('malformed JSON terminates the owned child before propagating the parser error', async () => {
+  const calls = []
+  const child = new EventEmitter()
+  child.pid = 4242
+  child.exitCode = null
+  child.killed = false
+  child.stdin = new PassThrough()
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  const client = new CodexCliClient({
+    executablePath: 'codex.exe', env: {}, platform: 'win32',
+    spawnImpl() { return child },
+    execFileImpl(command, args) { calls.push({ command, args }) },
+  })
+  const { events } = await client.startThread().runStreamed('hello')
+  const consume = (async () => { for await (const _event of events) {} })()
+  child.stdout.end('not-json\n')
+  await assert.rejects(consume, /non-JSON stdout/)
+  assert.deepEqual(calls, [{ command: 'taskkill.exe', args: ['/pid', '4242', '/t', '/f'] }])
+})

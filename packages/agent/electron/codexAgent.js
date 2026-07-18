@@ -16,7 +16,8 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
 const { createRuntimeConf } = require('./shared/createRuntimeConf')
 const { deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
-const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
+const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, claimScannedProviderBinding, upsertRuntimeByProvider, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
+const { getFullEnv } = require('./shared/shellPathHelper')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { ensureProxy, shutdownProxy, isProxyRunning } = require('./codex/chatProxyManager')
@@ -2206,6 +2207,14 @@ function resetCodexRuntime() {
   clearAllStores()
 }
 
+function bindCodexThreadIdentity(cliIds, sessionId, threadId) {
+  const nextId = String(threadId || '').trim()
+  if (!sessionId || !nextId) return { changed: false, previousId: '', threadId: nextId }
+  const previousId = cliIds.get(sessionId) || ''
+  cliIds.set(sessionId, nextId)
+  return { changed: previousId !== nextId, previousId, threadId: nextId }
+}
+
 /** Register Codex external-CLI IPC handlers (query/abort/history/settings). */
 function buildCodexSessionFingerprint({ model, baseURL, apiFormat, reasoningEffort } = {}) {
   return JSON.stringify({
@@ -2423,7 +2432,7 @@ function setupCodexCliHandlers() {
             ...(effectiveBaseUrl ? { baseUrl: effectiveBaseUrl } : {}),
             ...(proxyCodexConfig ? { config: proxyCodexConfig } : {}),
             env: augmentEnvWithBundledRg({
-              ...process.env,
+              ...getFullEnv(),
               OPENAI_API_KEY: apiKey,
               ...(effectiveBaseUrl ? { OPENAI_BASE_URL: effectiveBaseUrl } : {}),
             }),
@@ -2695,7 +2704,23 @@ function setupCodexCliHandlers() {
             }
 
             if (ev.type === 'thread.started' && ev.thread_id) {
-              if (!cliSessionIds.has(sessionId)) cliSessionIds.set(sessionId, ev.thread_id)
+              const identity = bindCodexThreadIdentity(cliSessionIds, sessionId, ev.thread_id)
+              if (identity.changed) {
+                // Codex may roll a resumed transcript onto a new thread id. Bind
+                // it before background scan can classify the new file as external.
+                try {
+                  const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
+                  const result = upsertRuntimeByProvider(db, {
+                    agent: 'codex', chatKey: sessionId, cliSessionId: ev.thread_id,
+                    runtime: { model: model || '', reasoningEffort: reasoningEffort || undefined },
+                  })
+                  if (result.ok) await persistDb()
+                } catch (_) {}
+                appendCodexTurnDiagnostic({
+                  kind: 'turn.thread-identity', diagnosticId, sessionId, runId,
+                  previousCliSessionId: identity.previousId, cliSessionId: identity.threadId,
+                })
+              }
             }
 
             if (ev.type === 'turn.completed') {
@@ -3182,6 +3207,18 @@ function setupCodexCliHandlers() {
           // 统一发送 done（避免 drain timer 被清除后丢失）
           if (isCurrentRunAtCleanup && needDone) {
             const sfilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: thread?.id })
+            // Only a run actually owned by MindCraft can make a thread
+            // resumable on future launches. Scans remain read-only until claim.
+            if (thread?.id && !detachResumeOnDone) {
+              try {
+                const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
+                upsertRuntimeByProvider(db, {
+                  agent: 'codex', chatKey: sessionId, cliSessionId: thread.id, filePath: sfilePath,
+                  runtime: { model: model || '', reasoningEffort: reasoningEffort || undefined },
+                })
+                await persistDb()
+              } catch (_) {}
+            }
             if (CODEX_DEBUG) console.log('[Codex] agent-done (finally) → filePath:', sfilePath || '(empty)')
             safeSend(event.sender, CODEX_CHANNELS.AGENT_DONE, buildCodexAgentDonePayload({
               sessionId,
@@ -3231,16 +3268,28 @@ function setupCodexCliHandlers() {
     }
   })
 
-  ipcMain.handle(CODEX_CHANNELS.REGISTER_CLI_SESSIONS, (_, map) => {
+  ipcMain.handle(CODEX_CHANNELS.REGISTER_CLI_SESSIONS, async (_, map) => {
     for (const [sid, cliId] of Object.entries(map || {})) {
       if (!cliId) continue
-      const record = findSessionRecordByProvider({ agent: 'codex', cliSessionId: cliId })
-      if (record?.chatKey === sid && record?.metadata?.resumeAllowed === false) {
+      let record = null
+      try { record = findByProviderScan(await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }), 'codex', { cliSessionId: cliId }) } catch (_) {}
+      const isScanIdentity = String(sid).startsWith('codex::scan-')
+      if (!record || record.chatKey !== sid || record.provider?.resumeAllowed === false || record.provider?.source === 'scan' || isScanIdentity && record.provider?.source !== 'user') {
         cliSessionIds.delete(sid)
         continue
       }
       cliSessionIds.set(sid, cliId)
     }
+  })
+
+  ipcMain.handle(CODEX_CHANNELS.CLAIM_CLI_SESSION, async (_, { sessionId, cliSessionId, filePath } = {}) => {
+    if (!sessionId || !cliSessionId) return { ok: false, error: 'Missing session identity' }
+    try {
+      const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
+      const result = claimScannedProviderBinding(db, { agent: 'codex', chatKey: sessionId, cliSessionId, filePath })
+      if (result.ok) cliSessionIds.set(sessionId, cliSessionId)
+      return result
+    } catch (error) { return { ok: false, error: error?.message || String(error) } }
   })
 
   ipcMain.handle(CODEX_CHANNELS.UNREGISTER_CLI_SESSION, (_, sessionId) => {
@@ -4236,6 +4285,7 @@ module.exports = {
     shouldEmitCodexSessionTerminalSignals,
     waitForCodexSessionRunToClose,
     findCodexSessionForSlashCommands,
+    bindCodexThreadIdentity,
     finalizeCodexSessionDoneState,
     closeCodexSessionRun,
     markCodexSessionDoneSent,

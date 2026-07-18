@@ -29,6 +29,7 @@ const {
   setSessionTitle,
   upsertRuntimeByProvider,
 } = require('./sessionRegistry')
+const { mergeRegistryFields } = require('./sessionRepository')
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -166,6 +167,15 @@ test('scan first → panel sync later: single chatKey, titleSource from provider
   // User title from panel should be preserved (titleSource='user')
   // Note: syncPanelStateSessions with providerBindingSource='panel' won't
   // overwrite an existing titleSource='provider' — but setSessionTitle would.
+})
+
+test('scan-created Codex binding is readable but not resumable until explicitly claimed', () => {
+  const enriched = mergeRegistryFields('codex', makeScanSummary(), {
+    chatKey: 'codex::scan-1',
+    provider: { cliSessionId: 'thread-1', filePath: 'C:/thread-1.jsonl', source: 'scan', resumeAllowed: true },
+  })
+  assert.equal(enriched.cliSessionId, 'thread-1')
+  assert.equal(enriched.resumeAllowed, false)
 })
 
 // ---------------------------------------------------------------------------

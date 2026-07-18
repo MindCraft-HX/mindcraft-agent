@@ -262,6 +262,7 @@ export function buildPersistableCodexChat(chat = {}) {
   delete c._messagesLoaded
   c._thinkingStart = c.filePath ? null : (c._thinkingStart || null)
   c._awaitingDone = c.filePath ? false : Boolean(c._awaitingDone)
+  c._resumeClaimed = Boolean(c._resumeClaimed)
   c.thinking = false
   c.currentAssistantId = null
   c.draftText = ''

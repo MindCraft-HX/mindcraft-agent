@@ -6,7 +6,7 @@ const path = require('path')
 const {
   extractClaudeSessionTitle,
   extractCodexSessionSummary,
-} = require('../electron/mainModules/sessionTitleUtils')
+} = require('../packages/agent/electron/sessionTitleUtils.js')
 
 function withTempFile(content, run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindcraft-session-title-'))
@@ -71,6 +71,18 @@ function runCodexInstructionOnlyTitleStrippedTest() {
   })
 }
 
+function runCodexFallbackTitleDistinguishesNearbyUuidV7SessionsTest() {
+  const id = '019f7471-8e6b-73b1-bdd2-1705d4cdf45f'
+  const content = [
+    JSON.stringify({ type: 'session_meta', payload: { id, cwd: 'D:/repo', timestamp: '2026-07-18T00:00:00.000Z' } }),
+    '',
+  ].join('\n')
+  withTempFile(content, (filePath) => {
+    const result = extractCodexSessionSummary(filePath, () => ({ shouldDefer: false }))
+    assert.equal(result.name, 'session 019f7471-8e6b')
+  })
+}
+
 function runClaudeInstructionOnlyTitleStrippedTest() {
   const content = [
     JSON.stringify({
@@ -92,6 +104,7 @@ function run() {
   runClaudeTailCustomTitleTest()
   runCodexTailCustomTitleTest()
   runCodexInstructionOnlyTitleStrippedTest()
+  runCodexFallbackTitleDistinguishesNearbyUuidV7SessionsTest()
   runClaudeInstructionOnlyTitleStrippedTest()
   console.log('session-title-utils tests passed')
 }

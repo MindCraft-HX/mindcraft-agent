@@ -142,6 +142,7 @@ class CodexCliThread {
     }
     child.stdin.end(prompt)
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
+    let consumedNormally = false
     try {
       for await (const line of lines) {
         if (!String(line).trim()) continue
@@ -165,9 +166,15 @@ class CodexCliThread {
         const detail = result.signal ? `signal ${result.signal}` : `code ${result.code ?? 1}`
         throw new Error(`Codex CLI exited with ${detail}: ${Buffer.concat(stderrChunks).toString('utf8')}`)
       }
+      consumedNormally = true
     } finally {
       lines.close()
       if (signal) signal.removeEventListener('abort', abort)
+      // Parser/stream failures must not leave a child writing an unobserved
+      // transcript after MindCraft has released its iterator.
+      if (!consumedNormally && child.exitCode === null && !child.killed) {
+        terminateOwnedChild(child, { platform: this.client.platform, execFileImpl: this.client.execFile })
+      }
       this.child = null
     }
   }

@@ -162,7 +162,7 @@ function extractCodexSessionSummary(filePath, collectSessionTailRiskSummary) {
     sessionId: meta.id,
     cliSessionId: meta.id,
     cwd: meta.cwd,
-    name: customTitle || firstUserText || lastAgentText || `session ${meta.id.slice(0, 8)}`,
+    name: customTitle || firstUserText || lastAgentText || `session ${meta.id.slice(0, 13)}`,
     _isCustomTitle: Boolean(customTitle),
     createdAt: meta.timestamp || stat.birthtime?.toISOString?.() || stat.mtime.toISOString(),
     updatedAt: stat.mtime.toISOString(),

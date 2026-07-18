@@ -230,6 +230,7 @@ const CODEX_CHANNELS = Object.freeze({
   // Session lifecycle
   LIST_SESSIONS_BY_CWD: 'codex-list-sessions-by-cwd',
   REGISTER_CLI_SESSIONS: 'codex-register-cli-sessions',
+  CLAIM_CLI_SESSION: 'codex-claim-cli-session',
   UNREGISTER_CLI_SESSION: 'codex-unregister-cli-session',
   DELETE_SESSION_FILE: 'codex-delete-session-file',
   READ_SESSION_FILE_RANGE: 'codex-read-session-file-range',

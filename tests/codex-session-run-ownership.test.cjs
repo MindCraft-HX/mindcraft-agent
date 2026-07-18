@@ -108,6 +108,16 @@ function runFindSlashCommandSessionByCliIdTest() {
   assert.equal(__test__.findCodexSessionForSlashCommands(sessions, cliSessionIds, 'missing'), null)
 }
 
+function runThreadRolloverRebindsChatIdentityTest() {
+  const cliSessionIds = new Map([['chat-1', 'thread-old']])
+
+  const rollover = __test__.bindCodexThreadIdentity(cliSessionIds, 'chat-1', 'thread-new')
+
+  assert.deepEqual(rollover, { changed: true, previousId: 'thread-old', threadId: 'thread-new' })
+  assert.equal(cliSessionIds.get('chat-1'), 'thread-new')
+  assert.equal(__test__.bindCodexThreadIdentity(cliSessionIds, 'chat-1', 'thread-new').changed, false)
+}
+
 function runCodexResumeFingerprintTest() {
   const same = __test__.buildCodexSessionFingerprint({
     model: 'deepseek-v4-pro',
@@ -184,6 +194,7 @@ async function run() {
   await runCloseSessionRunMarksClosedAndResolvesCompletionTest()
   runDoneSentDoesNotMarkStreamClosedTest()
   runFindSlashCommandSessionByCliIdTest()
+  runThreadRolloverRebindsChatIdentityTest()
   runCodexResumeFingerprintTest()
   runEmptyUpstreamFailureDetectionTest()
   console.log('codex session run ownership tests passed')

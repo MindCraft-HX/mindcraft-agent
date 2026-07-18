@@ -462,7 +462,42 @@ function mergeRegistryFields(agent, scanSummary = {}, record = null) {
     effort: record.runtime?.effort || scanSummary.effort || '',
     modelTier: record.runtime?.modelTier || scanSummary.modelTier || '',
     reasoningEffort: record.runtime?.reasoningEffort || scanSummary.reasoningEffort || '',
+    // A transcript found by a scan is readable, but is not owned for resume
+    // until MindCraft created it or the user explicitly claims it.
+    resumeAllowed: record.provider?.resumeAllowed !== false && record.provider?.source !== 'scan',
   };
+}
+
+/**
+ * Mark a scanned provider thread as deliberately adopted by this MindCraft
+ * chat. This is the only path that makes a scan-created binding resumable.
+ */
+function claimScannedProviderBinding(db, { agent, chatKey, cliSessionId, filePath } = {}) {
+  const dao = sessionsDao();
+  if (!db || !chatKey) return { ok: false, error: 'Missing database or chatKey' };
+  const record = findByProviderScan(db, agent || '', { cliSessionId, filePath });
+  if (!record || record.chatKey !== chatKey) return { ok: false, error: 'Provider binding does not belong to this chat' };
+  try {
+    db.run('BEGIN');
+    const bindings = dao.listSessionBindings(db, chatKey);
+    for (const binding of bindings) {
+      if (binding.cliSessionId !== String(cliSessionId || '') && binding.filePath !== String(filePath || '')) continue;
+      const result = dao.upsertSessionBinding(db, {
+        ...binding,
+        chatKey,
+        source: 'user',
+        detached: false,
+        resumeAllowed: true,
+        updatedAt: now(),
+      });
+      if (!result.ok) throw new Error(result.error || 'Unable to claim provider binding');
+    }
+    db.run('COMMIT');
+    return { ok: true };
+  } catch (error) {
+    try { db.run('ROLLBACK'); } catch (_) {}
+    return { ok: false, error: error.message };
+  }
 }
 
 /**
@@ -696,6 +731,7 @@ module.exports = {
   findByProviderScan,
   ensureFromProviderScan,
   mergeRegistryFields,
+  claimScannedProviderBinding,
   upsertRuntimeByProvider,
   restorePanelState,
   backfillUserTitlesFromPanelState,

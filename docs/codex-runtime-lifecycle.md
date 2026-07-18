@@ -61,6 +61,14 @@ read-only reconciliation may fill gaps using provider item/event identity. It
 must not duplicate already-rendered messages and must not block completion
 forever.
 
+Codex may emit `thread.started` with a different thread id after MindCraft asks
+to resume an existing thread. Treat this as a provider rollover within the same
+MindCraft chat, not as a new external session. The main process must replace the
+in-memory `chatKey -> cliSessionId` mapping and persist the new provider binding
+before a background transcript scan can discover it. The completion boundary
+persists the binding again with the resolved `filePath`; renderer scan results
+must never infer ownership from an id prefix or transcript filename.
+
 ## External CLI Direction
 
 Codex runtime is being migrated to a `CodexCliTransport` that accepts an
@@ -83,3 +91,4 @@ The migration sequence is:
 - abort and timeout emit exactly one terminal completion;
 - queued input starts only after the previous run closes;
 - an interrupted historical transcript remains readable and resumable.
+- a resumed run that rolls onto a new thread id remains bound to one `chatKey`.

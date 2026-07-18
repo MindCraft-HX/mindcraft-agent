@@ -1170,7 +1170,11 @@ function makeRestoredChat(c, messages) {
     createdAt: c.createdAt ?? null, updatedAt: c.updatedAt ?? null, fileSize: c.fileSize ?? null,
     titleSource: c.titleSource || (c._userRenamed ? 'user' : ''),
     _userRenamed: Boolean(c._userRenamed),
-    _resumeAllowed: c._resumeAllowed !== false,
+    // Legacy scan keys have no proof of ownership. A claim is persisted only
+    // after the user explicitly chooses to continue that external thread.
+    _resumeAllowed: c._resumeAllowed !== false && c.resumeAllowed !== false
+      && (!String(c.sessionId || '').startsWith('codex::scan-') || c._resumeClaimed === true),
+    _resumeClaimed: Boolean(c._resumeClaimed),
     hasMoreHistory: Boolean(c.filePath),
     currentPage: 0,
     pageSize: 60,
@@ -1427,7 +1431,7 @@ async function buildChatFromSessionSummary(summary) {
   const chatId = summary.chatKey ? `chat-${summary.chatKey}` : `chat-${providerSessionId || Date.now()}`
   const chat = makeRestoredChat({
     id: chatId,
-    name: summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`,
+    name: summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 13)}`,
     sessionId: chatKey,
     cliSessionId: providerSessionId,
     filePath: summary.filePath,
@@ -1441,6 +1445,8 @@ async function buildChatFromSessionSummary(summary) {
     _thinkingStart: null,
     titleSource: summary.titleSource || (summary._isCustomTitle ? 'provider' : ''),
     _userRenamed: summary.titleSource === 'user' || Boolean(summary._userRenamed),
+    _resumeAllowed: summary.resumeAllowed !== false,
+    _resumeClaimed: summary.resumeAllowed !== false && String(chatKey).startsWith('codex::scan-'),
   }, [])
   return chat
 }
@@ -1470,7 +1476,7 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
     const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
     const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
     const cached = cacheByPath[normalizedPath] || cacheBySid[summary.chatKey] || cacheBySid[providerSessionId] || null
-    const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
+    const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 13)}`
 
     if (cached) {
       if (!cached._userRenamed) cached.name = name
@@ -1478,6 +1484,8 @@ async function loadProjectChatsFromCodexSessions(proj, cwd) {
       cached.updatedAt = mergeCodexUpdatedAt(cached.updatedAt, summary.updatedAt)
       cached.filePath = summary.filePath || ''
       cached.cliSessionId = providerSessionId || cached.cliSessionId
+      cached._resumeAllowed = summary.resumeAllowed !== false
+      cached._resumeClaimed = summary.resumeAllowed !== false && String(cached.sessionId || '').startsWith('codex::scan-')
       cached.sessionId = cached.sessionId || summary.chatKey || `codex-session-${cached.id}-${Date.now()}`
       cached.model = cached.model || summary.model || cached.metrics?.model || null
       cached.reasoningEffort = normalizeCodexReasoningEffort(cached.reasoningEffort || summary.reasoningEffort) || null
@@ -1564,7 +1572,7 @@ async function refreshProjectSessionsInBackground(project) {
       const normalizedPath = String(summary.filePath || '').replace(/\\/g, '/')
       const providerSessionId = summary.providerSessionId || summary.cliSessionId || summary.id || ''
       const cached = cacheByPath[normalizedPath] || cacheBySid[summary.chatKey] || cacheBySid[providerSessionId] || null
-      const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 8)}`
+      const name = summary.name || `${t('chat.sessionPrefix')}${String(summary.id || '').slice(0, 13)}`
 
       if (cached) {
         if (!cached._userRenamed) cached.name = name
@@ -1572,6 +1580,8 @@ async function refreshProjectSessionsInBackground(project) {
         cached.updatedAt = mergeCodexUpdatedAt(cached.updatedAt, summary.updatedAt)
         cached.filePath = summary.filePath || ''
         cached.cliSessionId = providerSessionId || cached.cliSessionId
+        cached._resumeAllowed = summary.resumeAllowed !== false
+        cached._resumeClaimed = summary.resumeAllowed !== false && String(cached.sessionId || '').startsWith('codex::scan-')
         cached.sessionId = cached.sessionId || summary.chatKey || `codex-session-${cached.id}-${Date.now()}`
         cached.model = cached.model || summary.model || cached.metrics?.model || null
         cached.reasoningEffort = normalizeCodexReasoningEffort(cached.reasoningEffort || summary.reasoningEffort) || null
@@ -2234,6 +2244,21 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (!tab.webSearchMode) tab.webSearchMode = codexConfigStore.defaultWebSearch
   if (!tab.model) tab.model = codexDefaultModel.value || null
   if (!tab.reasoningEffort) tab.reasoningEffort = codexDefaultReasoningEffort.value || null
+
+  // Provider scans may find threads belonging to another Codex client. Keep
+  // them readable, but require an explicit user claim before resuming them.
+  if (tab.cliSessionId && tab._resumeAllowed === false) {
+    const confirmed = window.confirm('This transcript was discovered from an external Codex session. Continue the original thread in MindCraft?')
+    if (!confirmed) return
+    const claimed = await window.electronAPI.codexClaimCliSession?.({
+      sessionId: tab.sessionId,
+      cliSessionId: tab.cliSessionId,
+      filePath: tab.filePath || '',
+    })
+    if (!claimed?.ok) return
+    tab._resumeAllowed = true
+    tab._resumeClaimed = true
+  }
 
   if (isCodexTurnLocked(tab)) {
     tab._queuedInput = text
