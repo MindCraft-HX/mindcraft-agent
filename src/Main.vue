@@ -211,6 +211,7 @@ import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
 import { storeToRefs } from 'pinia';
 import { usePluginStore } from '@/stores/pluginStore';
+import { createLegacyNavigationAdapter, documentPayloadToIntent } from '@/workbench/navigationIntent.mjs';
 
 const settingsDrawer = ref(false);
 const activeSetting = ref(null);
@@ -241,6 +242,7 @@ const closeWin = () => window.electronAPI?.close()
 
 const route = useRoute();
 const router = useRouter();
+const navigationAdapter = createLegacyNavigationAdapter({ router });
 
 const activeIndex = computed(() => {
   return route.meta.parent || "/main/codeHub"
@@ -264,8 +266,20 @@ function openPlugin(pluginId) {
 // 监听主进程 push 的文档打开请求（agent 消息点文档链接时触发）
 let disposeOpenMdViewer = null
 onMounted(async () => {
-  disposeOpenMdViewer = window.electronAPI?.onOpenMdViewer?.(() => {
-    router.push('/main/mdViewer')
+  disposeOpenMdViewer = window.electronAPI?.onOpenMdViewer?.((payload) => {
+    const intent = documentPayloadToIntent(payload)
+    if (intent) {
+      void navigationAdapter.dispatch(intent)
+      return
+    }
+    // Keep the legacy notification usable for callers that do not carry a
+    // document payload (for example a plain "show documents" command).
+    void navigationAdapter.dispatch({
+      requestId: `route-${Date.now()}`,
+      type: 'open-document',
+      resourceId: 'legacy://document-viewer',
+      source: 'legacy-open-md-viewer',
+    })
   })
   // 插件系统：加载已安装列表 + 监听主进程变更
   await pluginStore.loadInstalledPlugins()

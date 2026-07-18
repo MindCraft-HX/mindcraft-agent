@@ -872,6 +872,7 @@ V1 应用重启后不恢复运行中的 shell，也不持久化 terminal descrip
 - 已实现 versioned layout descriptor 的 main-side repository：原子写、last-known-good 回退、单调 revision 和 main-authoritative window instance 校验。
 - 已实现 `main-workbench | standalone-agent` 的 main-side role registry；layout load/save 与 close response 仅接受已登记的 main workbench sender，renderer 不能自报 role 或写入任意 settings key。
 - 已实现 CloseCoordinator 的 renderer participant registry 与 main/renderer handshake 骨架；当前未接管退出路径，故不会改变托盘 hide、普通 quit 或更新安装的既有行为。document dirty participant 在 Phase 2A controller 落地后注册。
+- 已将 typed navigation intent 接入旧路由兼容层：主窗口接收带 request id 的文件打开通知后映射为 `open-document` intent，Agent/Chat intent 也可映射到现有路由；领域组件仍独立负责正文与会话激活，Workbench 正式 UI 未开启。
 - Phase 1 尚未完成：sandbox-compatible preload bundle、HTML sanitizer/sink inventory 和真实 Electron 窗口 E2E 仍未完成，不能据此打开 Phase 2/4 的 gate。
 
 完成条件：现有主窗口、独立 Agent 窗口、文件关联、托盘 hide、正常 quit/update 和 preload bridge 回归通过；window role、layout revision、CloseCoordinator requestId 和 typed IPC schema 有纯逻辑/contract tests；此阶段不改用户布局、不拆业务组件、不给 renderer 新增通用能力。

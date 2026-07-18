@@ -58,4 +58,5 @@ test('openMdInMain directly sends ready payloads and keeps a queued fallback', (
   assert.equal(sentPayload.filePath, 'D:/repo/docs/B.md')
   assert.equal(pendingPayload.filePath, 'D:/repo/docs/B.md')
   assert.equal(sentPayload.__mdRequestId, pendingPayload.__mdRequestId)
+  assert.equal(win.sent[1].payload.__mdRequestId, sentPayload.__mdRequestId)
 })

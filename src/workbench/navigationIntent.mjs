@@ -59,3 +59,53 @@ export function createIntentQueue({ limit = 20 } = {}) {
     },
   }
 }
+
+/**
+ * Adapts typed navigation intents to the currently routed UI.
+ *
+ * The adapter intentionally knows only route/query identities. Domain
+ * components continue to own document/session activation and payload loading.
+ */
+export function createLegacyNavigationAdapter({ router } = {}) {
+  if (!router || typeof router.push !== 'function') throw new Error('router.push is required')
+
+  function routeForIntent(intent) {
+    if (intent.type === 'open-document') return { path: '/main/mdViewer' }
+    if (intent.type === 'focus-chat') {
+      const sessionId = intent.chatTarget?.sessionId
+      return sessionId ? { path: '/main/chat', query: { sessionId } } : { path: '/main/chat' }
+    }
+    if (intent.type === 'focus-agent') {
+      const query = {}
+      if (intent.agentTarget?.agent) query.agent = intent.agentTarget.agent
+      if (intent.agentTarget?.projectId) query.project = intent.agentTarget.projectId
+      return Object.keys(query).length ? { path: '/main/codeHub', query } : { path: '/main/codeHub' }
+    }
+    return null
+  }
+
+  return {
+    dispatch(raw) {
+      const intent = normalizeWorkbenchIntent(raw)
+      if (!intent) return Promise.resolve({ accepted: false, reason: 'invalid-intent' })
+      const route = routeForIntent(intent)
+      if (!route) return Promise.resolve({ accepted: false, reason: 'unsupported-intent' })
+      return Promise.resolve(router.push(route))
+        .then(() => ({ accepted: true, requestId: intent.requestId, intent }))
+        .catch(error => ({ accepted: false, requestId: intent.requestId, reason: error?.message || 'navigation-failed' }))
+    },
+  }
+}
+
+export function documentPayloadToIntent(payload = {}) {
+  const requestId = boundedString(payload.__mdRequestId, 128)
+  const resourceId = boundedString(payload.filePath)
+  if (!requestId || !resourceId) return null
+  return normalizeWorkbenchIntent({
+    requestId,
+    type: 'open-document',
+    target: 'active',
+    source: boundedString(payload.source, 128) || 'document-open',
+    resourceId,
+  })
+}

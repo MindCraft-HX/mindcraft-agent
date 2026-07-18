@@ -48,7 +48,7 @@ function openMdInMain(payload) {
   mainWin.show()
   mainWin.focus()
 
-  mainWin.webContents.send(CORE_CHANNELS.OPEN_MD_VIEWER)
+  mainWin.webContents.send(CORE_CHANNELS.OPEN_MD_VIEWER, routedPayload)
 }
 
 function registerMdViewerHandlers() {

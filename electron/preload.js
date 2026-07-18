@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   getPendingMdContent: () => ipcRenderer.invoke(CORE_CHANNELS.MD_VIEWER_READY),
   onOpenMdViewer: (callback) => {
-    const handler = () => callback()
+    const handler = (_event, payload) => callback(payload)
     ipcRenderer.on(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
     return () => ipcRenderer.removeListener(CORE_CHANNELS.OPEN_MD_VIEWER, handler)
   },

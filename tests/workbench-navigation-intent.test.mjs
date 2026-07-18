@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createIntentQueue, normalizeWorkbenchIntent } from '../src/workbench/navigationIntent.mjs'
+import {
+  createIntentQueue,
+  createLegacyNavigationAdapter,
+  documentPayloadToIntent,
+  normalizeWorkbenchIntent,
+} from '../src/workbench/navigationIntent.mjs'
 
 test('normalizes a bounded document open intent', () => {
   const intent = normalizeWorkbenchIntent({
@@ -35,4 +40,50 @@ test('queue is idempotent by request id and bounded', () => {
   assert.equal(queue.push({ requestId: 'b', type: 'focus-chat' }), true)
   assert.equal(queue.push({ requestId: 'c', type: 'focus-agent' }), true)
   assert.deepEqual(queue.drain().map(intent => intent.requestId), ['b', 'c'])
+})
+
+test('document payload becomes a bounded open-document intent', () => {
+  assert.deepEqual(documentPayloadToIntent({
+    __mdRequestId: 'md-1',
+    filePath: 'D:/repo/README.md',
+    source: 'file-association',
+  }), {
+    requestId: 'md-1',
+    type: 'open-document',
+    target: 'active',
+    source: 'file-association',
+    resourceId: 'D:/repo/README.md',
+  })
+  assert.equal(documentPayloadToIntent({ filePath: 'D:/repo/README.md' }), null)
+})
+
+test('legacy navigation adapter maps typed intents without exposing domain state', async () => {
+  const routes = []
+  const adapter = createLegacyNavigationAdapter({ router: { push: route => { routes.push(route) } } })
+
+  const agentResult = await adapter.dispatch({
+    requestId: 'agent-1', type: 'focus-agent', agentTarget: { agent: 'codex', projectId: 'project-1' },
+  })
+  const chatResult = await adapter.dispatch({
+    requestId: 'chat-1', type: 'focus-chat', chatTarget: { sessionId: 'session-1' },
+  })
+  const documentResult = await adapter.dispatch({
+    requestId: 'doc-1', type: 'open-document', resourceId: 'D:/repo/a.md', target: 'beside',
+  })
+
+  assert.equal(agentResult.accepted, true)
+  assert.equal(chatResult.accepted, true)
+  assert.equal(documentResult.accepted, true)
+  assert.deepEqual(routes, [
+    { path: '/main/codeHub', query: { agent: 'codex', project: 'project-1' } },
+    { path: '/main/chat', query: { sessionId: 'session-1' } },
+    { path: '/main/mdViewer' },
+  ])
+})
+
+test('legacy navigation adapter reports router failures instead of throwing', async () => {
+  const result = await createLegacyNavigationAdapter({
+    router: { push: () => Promise.reject(new Error('route failed')) },
+  }).dispatch({ requestId: 'fail-1', type: 'focus-chat' })
+  assert.deepEqual(result, { accepted: false, requestId: 'fail-1', reason: 'route failed' })
 })
