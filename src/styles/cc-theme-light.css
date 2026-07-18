@@ -12,6 +12,9 @@
   --cc-bg-select: #fff;
   --cc-bg-overlay: rgba(0, 0, 0, 0.3);
   --cc-bg-hover: #eceae6;
+  --cc-bg-surface: var(--cc-bg-secondary);
+  --cc-bg-selected: #e4e1dc;
+  --cc-input-bg: var(--cc-bg-input);
 
   /* 文字层级 */
   --cc-text: #111;
@@ -28,6 +31,7 @@
   --cc-text-9a: #505050;
   --cc-text-ddd: #222;
   --cc-text-b0: #3a3a3a;
+  --cc-text-primary: var(--cc-text);
 
   /* 边框层级 */
   --cc-border: #e2dfd9;
@@ -37,6 +41,7 @@
   --cc-border-stronger: #b8b4ae;
   --cc-border-hover: #9a9690;
   --cc-border-focus: #b85c3a;
+  --cc-border-lightest: var(--cc-border-light);
 
   /* 主色 */
   --cc-primary: #b85c3a;
@@ -44,6 +49,8 @@
   --cc-primary-bg: #fdf5f0;
   --cc-primary-border: #e8c0a0;
   --cc-btn-primary-text: #fff;
+  --cc-accent: var(--cc-primary);
+  --cc-accent-bg: var(--cc-primary-bg);
 
   /* 按钮 */
   --cc-btn-bg: #eceae6;
@@ -97,6 +104,7 @@
   --cc-warning: #c2680a;
   --cc-warning-bg: #fdf4e3;
   --cc-warning-border: #f0d89a;
+  --cc-warning-text: #9a4f08;
   --cc-attention: #0284c7;
   --cc-attention-bg: #e0f2fe;
   --cc-attention-border: #7dd3fc;
@@ -105,6 +113,7 @@
   --cc-error-bg: #fce8e8;
   --cc-error-border: #f0b8b8;
   --cc-error-text: #c51e1e;
+  --cc-danger-text: var(--cc-error-text);
 
   --cc-hljs-default: #2c2c2c;
 
@@ -200,6 +209,9 @@
   --cc-diff-empty-bg: #f6f5f3;
   --cc-diff-word-add-bg: #a6e0b3;
   --cc-diff-word-del-bg: #f0b0b0;
+  --cc-diff-add-prefix: #087a32;
+  --cc-diff-del-prefix: #b91c1c;
+  --cc-diff-line-num: #626262;
   --cc-diff-modal-overlay: rgba(0, 0, 0, 0.35);
   --cc-diff-modal-bg: #fff;
   --cc-diff-modal-header-bg: #f6f5f3;

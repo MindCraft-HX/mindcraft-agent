@@ -12,6 +12,9 @@
   --cc-bg-select: #f4efe6;
   --cc-bg-overlay: rgba(60, 35, 15, 0.28);
   --cc-bg-hover: #ded3bf;
+  --cc-bg-surface: var(--cc-bg-secondary);
+  --cc-bg-selected: #d9ccb6;
+  --cc-input-bg: var(--cc-bg-input);
 
   /* 文字层级 — 深暖棕 */
   --cc-text: #2c1e12;
@@ -28,6 +31,7 @@
   --cc-text-9a: #695240;
   --cc-text-ddd: #3b2a1c;
   --cc-text-b0: #483525;
+  --cc-text-primary: var(--cc-text);
 
   /* 边框层级 — 暖灰棕 */
   --cc-border: #d4c6b2;
@@ -37,6 +41,7 @@
   --cc-border-stronger: #ab9b82;
   --cc-border-hover: #88705e;
   --cc-border-focus: #9b6b4a;
+  --cc-border-lightest: var(--cc-border-light);
 
   /* 主色 — 优雅栗棕，不偏金不偏黄 */
   --cc-primary: #9b6b4a;
@@ -44,6 +49,8 @@
   --cc-primary-bg: #f6ede4;
   --cc-primary-border: #d4b896;
   --cc-btn-primary-text: #fff;
+  --cc-accent: var(--cc-primary);
+  --cc-accent-bg: var(--cc-primary-bg);
 
   /* 按钮 */
   --cc-btn-bg: #ded3bf;
@@ -106,6 +113,7 @@
   --cc-error-bg: #fce8e8;
   --cc-error-border: #eeb4b4;
   --cc-error-text: #c02828;
+  --cc-danger-text: var(--cc-error-text);
 
   --cc-hljs-default: #3b2a1c;
 
@@ -201,6 +209,9 @@
   --cc-diff-empty-bg: #eae3d6;
   --cc-diff-word-add-bg: #b8d9c0;
   --cc-diff-word-del-bg: #e8b8b0;
+  --cc-diff-add-prefix: #236b36;
+  --cc-diff-del-prefix: #b42323;
+  --cc-diff-line-num: #78604e;
   --cc-diff-modal-overlay: rgba(50, 25, 10, 0.38);
   --cc-diff-modal-bg: #f4efe6;
   --cc-diff-modal-header-bg: #eae3d6;
