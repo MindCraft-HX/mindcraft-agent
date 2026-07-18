@@ -284,6 +284,7 @@ import {
   isCodexTurnLocked,
   claimCodexSessionForSend,
   mergeCodexUpdatedAt,
+  reconcileCodexTranscriptTail,
   mergeScannedChatsPreservingRuntime,
   restoreCodexActiveRuns,
   sanitizeCodexPersistedMetrics,
@@ -1746,6 +1747,22 @@ const { onAgentMessage, onAgentDone } = useCodexAgentStream({
   isWriteTool, isEditTool, isBashTool, isReadTool, inferToolFailureFromText, createToolMessage,
   onNewMessage: () => {},
   trimMessages,
+  async reconcileTranscriptTail(tab, expectedFilePath) {
+    if (!tab || tab.filePath !== expectedFilePath || !window.electronAPI?.codexReadSessionFileRange) return
+    const rawData = await window.electronAPI.codexReadSessionFileRange({
+      filePath: expectedFilePath,
+      page: 0,
+      pageSize: MAX_MESSAGES,
+    })
+    if (tab.filePath !== expectedFilePath || tab.thinking || tab._awaitingDone) return
+    const transcriptMessages = filterCodexSystemMessages(rawData?.messages || [])
+    normalizeFileChangeMessages(transcriptMessages)
+    const appended = reconcileCodexTranscriptTail(tab.messages, transcriptMessages, { nextId: nextMsgId })
+    if (!appended.length) return
+    trimMessages(tab, true)
+    saveHistory({ immediate: true, force: true })
+    if (tab.id === activeChatId.value) smartScrollToBottom(tab.id)
+  },
   onCompactBoundary(postTokens) {
     const tab = activeTab.value
     if (!tab) return

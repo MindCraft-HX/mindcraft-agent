@@ -8,6 +8,7 @@ import {
   markCodexAbortRequested,
   markCodexDone,
   mergeCodexUpdatedAt,
+  reconcileCodexTranscriptTail,
   mergeScannedChatsPreservingRuntime,
   restoreCodexActiveRuns,
   shouldHydrateHistoryFromDisk,
@@ -55,6 +56,47 @@ test('cold-restored session must not stay locked by stale awaitingDone flag', ()
   const restored = { thinking: false, _awaitingDone: false }
   assert.equal(isCodexTurnLocked(restored), false)
   assert.equal(shouldHydrateHistoryFromDisk(restored), true)
+})
+
+test('done reconciliation appends only transcript messages missing from live rendering', () => {
+  const messages = [
+    { id: 1, role: 'user', text: 'hello' },
+    { id: 2, role: 'assistant', text: 'answer' },
+  ]
+  let id = 2
+  const appended = reconcileCodexTranscriptTail(messages, [
+    { role: 'user', text: 'hello' },
+    { role: 'assistant', text: 'answer' },
+    { role: 'tool', toolUseId: 'tool-1', toolName: 'shell', text: 'done' },
+  ], { nextId: () => ++id })
+
+  assert.equal(appended.length, 1)
+  assert.equal(appended[0].toolUseId, 'tool-1')
+  assert.equal(appended[0].id, 3)
+  assert.equal(messages.length, 3)
+})
+
+test('done reconciliation preserves repeated identical transcript messages by occurrence', () => {
+  const messages = [{ id: 1, role: 'assistant', text: 'same' }]
+  const appended = reconcileCodexTranscriptTail(messages, [
+    { role: 'assistant', text: 'same' },
+    { role: 'assistant', text: 'same' },
+  ])
+
+  assert.equal(appended.length, 1)
+  assert.equal(messages.length, 2)
+})
+
+test('done reconciliation matches live text to structured transcript content', () => {
+  const messages = [{ id: 1, role: 'assistant', text: 'answer' }]
+  const appended = reconcileCodexTranscriptTail(messages, [{
+    role: 'assistant',
+    text: 'answer',
+    content: [{ type: 'output_text', text: 'answer' }],
+  }])
+
+  assert.equal(appended.length, 0)
+  assert.equal(messages.length, 1)
 })
 
 test('renderer reload restores only main-owned active Codex runs', () => {

@@ -2248,7 +2248,7 @@ function shouldResumeCodexSession({ previousCliId } = {}) {
 function setupCodexCliHandlers() {
   ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxMode: frontendSandbox, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
     const runtime = readRuntimeConfig()
-    console.log('[codex-diag] readRuntimeConfig:', {
+    if (CODEX_DEBUG) console.log('[codex-diag] readRuntimeConfig:', {
       hasApiKey: !!runtime.apiKey,
       baseURL: runtime.baseURL,
       model: runtime.model,

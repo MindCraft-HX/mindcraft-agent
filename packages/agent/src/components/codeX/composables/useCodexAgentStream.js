@@ -363,6 +363,7 @@ export function useCodexAgentStream({
   scrollBottom, saveHistory, nextMsgId,
   isWriteTool, isEditTool, isBashTool, isReadTool,
   inferToolFailureFromText, createToolMessage, onNewMessage, trimMessages,
+  reconcileTranscriptTail = () => {},
   onCompactBoundary = () => {},
 }) {
   function handleToolItem(tab, item, isFinal) {
@@ -798,6 +799,11 @@ export function useCodexAgentStream({
       filePath: detachResume ? '' : filePath,
       reason,
     })
+    if (filePath && !detachResume) {
+      // Completion is never blocked by transcript I/O. The renderer asks for
+      // one bounded, read-only tail reconciliation after releasing the run.
+      void Promise.resolve(reconcileTranscriptTail(tab, filePath)).catch(() => {})
+    }
     // T182: agent 完成后精准更新 fileSize，替代等扫描
     if (filePath && !detachResume) {
       window.electronAPI.codexGetFileStat?.(filePath).then(stat => {

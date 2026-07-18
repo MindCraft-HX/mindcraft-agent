@@ -15,6 +15,7 @@ export {
   markCodexTurnAccepted,
   markCodexTurnStarting,
   mergeCodexUpdatedAt,
+  reconcileCodexTranscriptTail,
   mergeScannedCodexChats,
   mergeScannedChatsPreservingRuntime,
   restoreCodexActiveRuns,

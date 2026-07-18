@@ -80,6 +80,11 @@ all `--image` arguments. The top-level CLI image option is variadic; putting it
 first makes it consume the words `resume` and the thread id as image paths,
 silently starting a new thread instead of resuming the existing one.
 
+After `agent_done`, the renderer may perform one bounded, read-only tail read of
+the resolved transcript. It appends only messages missing from the live stream,
+using provider tool identity and occurrence-aware message keys. Reconciliation
+must never replace live history, scan other sessions, or delay completion.
+
 ## External CLI Direction
 
 Codex runtime is being migrated to a `CodexCliTransport` that accepts an
