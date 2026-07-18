@@ -26,14 +26,13 @@ const { registerGitDiffIpc } = require('./gitDiffIpc');
  * @param {string[]} deps.CODEX_SANDBOX_MODES
  * @param {Function} deps.findLegacyUserData
  * @param {Function} deps.normalizeCodexReasoningEffort
- * @param {Function} deps.loadCodexSdk
  * @param {Function} deps.findGlobalCodexPath
  * @param {Function} [deps.getConfiguredExecutablePath]
  * @param {Function} [deps.isExecutableHealthy]
  * @param {Function} [deps.clearGlobalCodexPathCache]
  * @param {Function} deps.isInstallingCodex
  * @param {Function} deps.setInstallingCodex
- * @param {Function} deps.resetCodexSdkPromise
+ * @param {Function} [deps.hasActiveCodexRuns]
  * @param {Function} deps.readPanelState
  * @param {Function} deps.lt — 本地化翻译函数
  * @param {string} deps.userDataDir — app.getPath('userData')
@@ -59,14 +58,13 @@ function registerCodexLeafIpcs(ipcMain, deps) {
   });
 
   registerEnvironmentIpc(ipcMain, {
-    loadCodexSdk: deps.loadCodexSdk,
     findGlobalCodexPath: deps.findGlobalCodexPath,
     getConfiguredExecutablePath: deps.getConfiguredExecutablePath,
     isExecutableHealthy: deps.isExecutableHealthy,
     clearGlobalCodexPathCache: deps.clearGlobalCodexPathCache,
     isInstallingCodex: deps.isInstallingCodex,
     setInstallingCodex: deps.setInstallingCodex,
-    resetCodexSdkPromise: deps.resetCodexSdkPromise,
+    hasActiveCodexRuns: deps.hasActiveCodexRuns,
     lt: deps.lt,
   });
 

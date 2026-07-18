@@ -33,7 +33,7 @@ assert.match(rendererEntry, /export\s+\{\s*default\s+as\s+CodeHub\s*\}/)
 
 const electronEntry = require(path.join(agentRoot, 'electron', 'index.js'))
 assert.equal(typeof electronEntry.registerAgentIPCs, 'function')
-assert.equal(typeof electronEntry.resetCodexSdkRuntime, 'function')
+assert.equal(typeof electronEntry.resetCodexRuntime, 'function')
 
 const preloadEntry = require(path.join(agentRoot, 'preload', 'index.js'))
 assert.equal(typeof preloadEntry.createAgentBridge, 'function')

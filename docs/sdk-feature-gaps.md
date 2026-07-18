@@ -1,8 +1,9 @@
 # SDK 未集成功能全景分析
 
 > 创建：2026-06-16
-> SDK 版本：`@anthropic-ai/claude-agent-sdk` v0.2.117 / `@openai/codex-sdk` v0.135.0
-> 验证依据：SDK 源码类型定义（`sdk.d.ts`、`dist/index.d.ts`），非网络文档
+> Claude SDK 版本：`@anthropic-ai/claude-agent-sdk` v0.2.117
+> Codex 运行时：configured external `codex` executable; validate with `--version` and `exec --help`
+> 验证依据：Claude SDK 类型定义与 Codex CLI 公开帮助输出，非网络文档
 > 关联：`docs/agent-architecture.md`（架构入口）。本文是 SDK 能力与取舍的专题入口；新增 SDK 用法仍需核对本地 `.d.ts`。
 
 ## 一、Claude Code SDK — 未集成功能
@@ -170,28 +171,17 @@ SDK 的 MCP 能力完全未使用：
 
 ---
 
-## 二、Codex SDK — 未集成功能
+## 二、Codex External CLI — Runtime Contract
 
-Codex SDK (v0.135.0) API 面较小，App 已用 `startThread()`/`resumeThread()`/`runStreamed()`。缺口：
+MindCraft no longer imports the Codex SDK. `CodexCliTransport` starts the
+configured external executable with `codex exec --json`, owns the child process,
+and normalizes stdout JSONL into the renderer event contract.
 
-### 2.1 ThreadOptions 缺口
+Required capabilities are `--json` and `exec resume`; optional capabilities are
+probed for images, additional directories, and non-Git workspaces. npm is only
+an installer/update channel, not a runtime dependency.
 
-| Option | 状态 | 用途 |
-|--------|:---:|------|
-| `webSearchEnabled` (boolean) | ❌ 未用 | 独立于 `webSearchMode` 控制 Web 搜索 |
-| `skipGitRepoCheck` | ❌ 未用 | 允许在非 git 目录使用 |
-| `outputSchema` (TurnOptions) | ❌ 未用 | 逐轮 JSON Schema 结构化输出 |
-| `signal` (TurnOptions) | ❌ 未用 | 逐轮 AbortSignal 取消 |
-
-### 2.2 SDK 架构缺口
-
-| 能力 | 状态 | 用途 |
-|------|:---:|------|
-| `Thread.run()` (非流式) | ❌ 未用 | 阻塞执行返回完成的 `Turn` |
-| `CodexOptions.config` | ❌ 未用 | 嵌套 config 对象自动扁平化为 `--config key=value` CLI 参数 |
-| `CodexOptions.env` | ❌ 未用 | 自定义环境变量传给 Codex CLI 子进程 |
-
-### 2.3 Thread Event 类型未完全处理
+### 2.1 Event Types Not Fully Handled
 
 | Event 类型 | 当前处理 |
 |------|------|
@@ -199,12 +189,12 @@ Codex SDK (v0.135.0) API 面较小，App 已用 `startThread()`/`resumeThread()`
 | `web_search` items | 可能未渲染到 UI |
 | `mcp_tool_call` items | 未处理（除非配置了 MCP） |
 
-### 2.4 Codex 较新功能
+### 2.2 Codex CLI Newer Features
 
 | 功能 | 版本 | 描述 |
 |------|:---:|------|
-| `excludeTurns` 参数 | 近期 | 分页友好的 resume/fork（排除指定 turn） |
-| Unix socket 传输 | 近期 | app-server 集成 |
+| `excludeTurns` 参数 | 近期 | resume/fork 分页能力；需先确认 CLI 公开参数 |
+| Unix socket 传输 | 近期 | app-server 集成；当前仍为 experimental，不作为 runtime 依赖 |
 | Permission profiles | 近期 | 跨 session 权限 profile 持久化 |
 | Reasoning token 报告 | 近期 | `codex exec --json` 报告 reasoning-token 用量 |
 

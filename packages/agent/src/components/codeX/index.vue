@@ -276,7 +276,6 @@ import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
 import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput, shouldRetryRejectedCodexInput } from './utils/queuedInputFlush.mjs'
 import {
   applyCodexMetrics,
-  markCodexAborted,
   markCodexAbortRequested,
   markCodexIdle,
   markCodexQueued,
@@ -2520,7 +2519,8 @@ async function abortSession() {
   } catch (_) {
     // abort 失败不阻塞状态清理
   }
-  markCodexAborted(tab)
+  // The main process keeps the session owned until the transport actually
+  // closes, then onAgentDone releases this renderer lock.
   saveHistory()
 }
 

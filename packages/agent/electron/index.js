@@ -1,6 +1,6 @@
 const { ipcMain } = require('electron')
 const { setupClaudeHandlers } = require('./claudeAgent')
-const { setupCodexSdkHandlers, resetCodexSdkRuntime } = require('./codexAgent')
+const { setupCodexCliHandlers, resetCodexRuntime } = require('./codexAgent')
 const { getDiagnosticsEnabled, setDiagnosticsEnabled } = require('./diagnosticsFileUtils')
 const { registerLocalSearchIpc } = require('./localSearch')
 const { setupHomeMetricsHandlers } = require('./homeMetrics')
@@ -16,7 +16,7 @@ const { getLocale: facadeGetLocale, setLocale: facadeSetLocale } = require('./se
 
 function registerAgentIPCs(targetIpcMain = ipcMain) {
   setupClaudeHandlers()
-  setupCodexSdkHandlers()
+  setupCodexCliHandlers()
   registerLocalSearchIpc(targetIpcMain)
   setupHomeMetricsHandlers(targetIpcMain)
   registerSessionInstructionIpc(targetIpcMain)
@@ -63,5 +63,5 @@ function registerAgentIPCs(targetIpcMain = ipcMain) {
 
 module.exports = {
   registerAgentIPCs,
-  resetCodexSdkRuntime,
+  resetCodexRuntime,
 }

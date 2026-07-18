@@ -48,7 +48,7 @@ docs/
 根 `electron/main.js` 负责桌面壳接线，并注册共享 Agent IPC：
 
 ```js
-const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron")
+const { registerAgentIPCs, resetCodexRuntime } = require("../packages/agent/electron")
 ```
 
 `packages/agent/electron/**` 才是 ClaudeCode / CodeX 的 provider 适配和运行态主逻辑。
@@ -224,19 +224,23 @@ UI 统一语义：
 
 ## 8. SDK 与官方能力
 
+Codex 的运行生命周期、transcript 最终一致性和外部 CLI 迁移契约见
+`docs/codex-runtime-lifecycle.md`。逻辑 terminal 事件、transport 关闭和
+`agent_done` 是三个不同的边界，不能用一个布尔值替代。
+
 开发 SDK 相关功能前先查：
 
 - `docs/sdk-feature-gaps.md`
 - ClaudeCode 类型定义：`node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`
-- CodeX 类型定义：`node_modules/@openai/codex-sdk/dist/index.d.ts`
+- CodeX 外部 CLI：configured executable plus `codex --version` and `codex exec --help`
 
 基本差异：
 
 | 维度 | ClaudeCode | CodeX |
 |------|------------|-------|
-| 主入口 | `query()` async generator | `Codex.startThread()` / `resumeThread()` |
+| 主入口 | `query()` async generator | `CodexCliClient.startThread()` / `resumeThread()` → `codex exec --json` |
 | 会话管理 API | list/get/delete/fork 等较多 | 基本依赖 CLI/transcript |
-| 运行时控制 | Query 上有多种控制方法 | Thread 主要是 `run` / `runStreamed` |
+| 运行时控制 | Query 上有多种控制方法 | MindCraft-owned child process + JSONL event stream |
 | Hook | 有 hook 系统 | 无同等级 hook |
 | 权限 | `permissionMode` + `canUseTool` | `sandboxMode` + `approvalPolicy` |
 

@@ -26,6 +26,7 @@ docs/            versioned engineering knowledge base
 | Documentation entry point | `docs/index.md` |
 | Architecture, ownership, data boundary | `docs/agent-architecture.md` |
 | Duplicate, interrupted, missing, or stuck sessions | `docs/session-pitfalls.md` |
+| Codex lifecycle, transcript consistency, CLI runtime | `docs/codex-runtime-lifecycle.md` |
 | Token metrics, StatusBar, footer, context, cache | `docs/token-metrics-contract.md`, then `docs/token-metrics.md` |
 | SDK capability or official API | `docs/sdk-feature-gaps.md`, then local `.d.ts` files |
 | Claude settings pollution | `docs/settings-json-pollution.md` |
@@ -39,7 +40,7 @@ docs/            versioned engineering knowledge base
 - Provider directories contain only provider-supported configuration, authentication, skills, plugins, MCP, transcripts, and runtime state. Do not add MindCraft sidecars beside transcripts.
 - `chatKey` is the MindCraft UI session identity; `cliSessionId`/thread id is the provider identity; `filePath` points to a transcript. Never use them interchangeably.
 - `onAgentDone` is not guaranteed after a crash; do not assume scan and done events are ordered.
-- `resetAgentRuntime()` and `resetCodexSdkRuntime()` affect every window.
+- `resetAgentRuntime()` and `resetCodexRuntime()` affect every window.
 - Strip system tags only through `stripSystemContextTags()`.
 - `gitMirrorUrl` and `memoryInjectMode` are MindCraft-owned fields and must not be written to `~/.claude/settings.json`; sanitize official settings writes.
 
@@ -67,7 +68,7 @@ docs/            versioned engineering knowledge base
 - Read an entire function before editing large runtime or view files, especially `claudeAgent.js`, `codexAgent.js`, and provider `index.vue` files.
 - After three regressions in one function, stop patching: redraw the boundary or add a contract test.
 - Before changing session/project activation, scans, metrics, drafts, or history, write a work graph with synchronous work, background work, source of truth, cancellation, deduplication, invalidation, and probes. Separate P0 visible work, P1 current-session first load, P2 backfill, and P3 background repair.
-- Before using a new SDK API, inspect local definitions: Claude at `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`; Codex at `node_modules/@openai/codex-sdk/dist/index.d.ts`.
+- Before using a new Claude SDK API, inspect `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`. Codex runtime changes must instead validate the configured external CLI with `codex --version` and `codex exec --help`.
 - Never log API keys, including prefixes or lengths.
 - Update stable documentation and tests when changing a contract. Keep private or temporary material under ignored `docs/local/`, `docs/private/`, or `docs/tmp/`.
 - Preserve unrelated working-tree changes. Never use destructive Git commands without explicit approval.

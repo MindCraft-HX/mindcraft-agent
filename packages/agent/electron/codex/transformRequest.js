@@ -114,7 +114,7 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
 }
 
 function shouldFilterDeferredCodexTools() {
-  // Current local Codex runtime in MindCraft (observed with @openai/codex-sdk 0.135.0)
+  // Keep this proxy transform aligned with the supported external Codex CLI.
   // accepts the tool schema but returns a tool output like:
   //   "unsupported call: multi_agent_v1"
   // That means the protocol bridge is fine, but the local runtime cannot execute

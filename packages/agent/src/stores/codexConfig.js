@@ -6,7 +6,7 @@ import {
 } from '../components/agentCommon/utils/sandboxHelpers.js'
 
 /**
- * Codex SDK 配置 Store
+ * Codex CLI 配置 Store
  * 管理文件权限（sandbox）、网络访问、网页搜索等 Codex 专属设置
  */
 export const useCodexConfigStore = defineStore('codexConfig', () => {

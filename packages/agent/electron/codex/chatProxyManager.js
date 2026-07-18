@@ -1,9 +1,9 @@
 /**
  * Chat protocol proxy lifecycle for Codex.
  *
- * Do not modify ~/.codex/config.toml here. Codex SDK exposes a per-process
- * config override that is passed to the spawned Codex CLI as --config values,
- * so the Chat proxy can be selected without touching user-owned CLI config.
+ * Do not modify ~/.codex/config.toml here. MindCraft passes a per-process
+ * `--config` override to the spawned Codex CLI, so the Chat proxy can be
+ * selected without touching user-owned CLI config.
  */
 
 const crypto = require('crypto')

@@ -13,7 +13,6 @@ const { CODEX_CHANNELS } = require('../../shared/ipcChannels');
 const { Conf } = require('electron-conf');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { getCodexDefault, setCodexDefault } = require('../settingsFacade');
 const { appendPreservedCodexConfigSections } = require('./configTomlPreserve');
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('../db/import/index');
@@ -72,15 +71,7 @@ function registerConfigIpc(ipcMain, {
   });
   ipcMain.handle(CODEX_CHANNELS.BROWSE_EXECUTABLE, async () => {
     const { dialog } = require('electron');
-    const { execSync } = require('child_process');
-    // 默认定位到 npm 全局 root，少点十几层目录
-    let defaultPath = os.homedir();
-    try {
-      const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 3000 }).trim();
-      if (globalRoot && fs.existsSync(globalRoot)) {
-        defaultPath = globalRoot;
-      }
-    } catch (_) {}
+    const defaultPath = require('os').homedir();
     const result = await dialog.showOpenDialog({
       title: 'Select Codex executable',
       defaultPath,

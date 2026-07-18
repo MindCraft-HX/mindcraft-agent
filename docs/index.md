@@ -9,6 +9,7 @@ open-source repository.
 | --- | --- |
 | Architecture and ownership | [agent-architecture.md](./agent-architecture.md) |
 | Session identity and recovery | [session-pitfalls.md](./session-pitfalls.md) |
+| Codex runtime lifecycle and CLI migration | [codex-runtime-lifecycle.md](./codex-runtime-lifecycle.md) |
 | Token metrics contract | [token-metrics-contract.md](./token-metrics-contract.md) |
 | Token metrics implementation | [token-metrics.md](./token-metrics.md) |
 | SDK capabilities and limits | [sdk-feature-gaps.md](./sdk-feature-gaps.md) |

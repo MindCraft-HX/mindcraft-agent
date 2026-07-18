@@ -44,6 +44,12 @@ const { perfStartIpc, perfCount } = require('./shared/mainPerfProbe')
 
 const { getAgentProtocol } = require('./agentProtocolBridge')
 const { CODEX_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
+const {
+  canStartCodexSessionRun,
+  didCodexTranscriptAdvance,
+  markCodexTerminalSeen,
+  markCodexTransportClosed,
+} = require('./codex/runLifecycle')
 
 // ---- CodeX Config (extracted leaf module, Phase 5) ----
 // Stateless TOML utils — no deps on module constants, safe to load early.
@@ -63,13 +69,13 @@ const {
   findGlobalCodexPath,
   getConfiguredCodexPath,
   isExecutableHealthy,
-  loadCodexSdk,
-  resetCodexSdkPromise,
   clearGlobalCodexPathCache,
   setCodexConfRef,
   isInstallingCodex,
   setInstallingCodex,
 } = require('./codex/environment')
+const { CodexCliClient } = require('./codex/cliTransport')
+const { getCodexCliCapabilities } = require('./codex/cliCapabilities')
 
 // ---- CodeX Done Payload builders (extracted, Batch 2) ----
 const {
@@ -438,14 +444,14 @@ function getSessionLoadLogFile() {
 
 // Codex debug 输出开关（需要查看详细日志时改为 true）
 const CODEX_DEBUG = false
-// SDK 已知的事件类型（二进制可能输出未知类型，如 context_usage 等）
+// Public CLI event types; newer executables can emit additional types.
 const KNOWN_EVENT_TYPES = new Set([
   'thread.started', 'turn.started', 'turn.completed', 'turn.failed',
-  'task_started', 'task_complete',   // 新版 SDK 事件类型（等同于 turn.started / turn.completed）
+  'task_started', 'task_complete',   // CLI aliases for turn.started / turn.completed
   'item.started', 'item.updated', 'item.completed', 'thread.error', 'error',
   // CodeX 二进制 compact 事件（autoCompact 触发时通过 JSONL 输出）
   'compaction', 'compaction_trigger', 'context_compaction', 'contextCompaction',
-  // 新版 SDK JSONL 行类型（静默跳过）
+  // CLI JSONL event types that are not directly rendered.
   'turn_context', 'session_meta', 'token_count', 'user_message', 'agent_message', 'reasoning',
 ])
 
@@ -1778,7 +1784,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 
         if (historyToolCollector.ingest(p)) return
 
-        // --- 新版 SDK 新增的 event_msg 类型 (静默跳过/收集) ---
+        // --- Newer CLI event_msg types (silently skip or collect) ---
 
         // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
         const agentMessage = extractCodexAssistantHistoryMessageFromJsonlRow(row)
@@ -1947,7 +1953,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
 
       if (historyToolCollector.ingest(p)) return
 
-      // --- 新版 SDK 新增的 event_msg 类型 (静默跳过/收集) ---
+      // --- Newer CLI event_msg types (silently skip or collect) ---
 
       // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
       const agentMessage = extractCodexAssistantHistoryMessageFromJsonlRow(row)
@@ -2072,10 +2078,6 @@ function isCodexSessionRunTerminal(existing) {
   return Boolean(existing?.doneSent || existing?.resultReceived)
 }
 
-function canStartCodexSessionRun(existing) {
-  return !existing || existing.streamClosed === true
-}
-
 function markCodexSessionDoneSent(session) {
   if (!session) return
   session.doneSent = true
@@ -2185,11 +2187,11 @@ function closeCodexSessionRun(session, {
   }
   session.resultReceived = Boolean(resultReceived)
   session.doneSent = Boolean(doneSent)
-  session.streamClosed = true
+  markCodexTransportClosed(session)
   try { session.resolveCompletion?.() } catch (_) {}
 }
 
-function resetCodexSdkRuntime() {
+function resetCodexRuntime() {
   for (const [, poller] of codexMetricsPollers.entries()) {
     clearInterval(poller.interval)
   }
@@ -2202,10 +2204,9 @@ function resetCodexSdkRuntime() {
   sessionFingerprints.clear()
   slowNoticeSent.clear()
   clearAllStores()
-  resetCodexSdkPromise()
 }
 
-/** 注册所有 Codex SDK 相关的 IPC 处理器（query/abort/history/settings） */
+/** Register Codex external-CLI IPC handlers (query/abort/history/settings). */
 function buildCodexSessionFingerprint({ model, baseURL, apiFormat, reasoningEffort } = {}) {
   return JSON.stringify({
     model: String(model || '').trim(),
@@ -2217,13 +2218,11 @@ function buildCodexSessionFingerprint({ model, baseURL, apiFormat, reasoningEffo
 
 function shouldResumeCodexSession({ previousCliId } = {}) {
   // P0: 只要存在旧 threadId 就尝试 resume，不再因 fingerprint 变化阻断
-  // SDK 的 resumeThread(id, options) 原生支持传入新的 model / reasoningEffort
+  // The public CLI resume command accepts the current run options.
   return Boolean(String(previousCliId || '').trim())
 }
 
-function setupCodexSdkHandlers() {
-  loadCodexSdk().catch(() => {})
-
+function setupCodexCliHandlers() {
   ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxMode: frontendSandbox, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
     const runtime = readRuntimeConfig()
     console.log('[codex-diag] readRuntimeConfig:', {
@@ -2300,6 +2299,7 @@ function setupCodexSdkHandlers() {
       const diagnosticId = makeCodexTurnDiagnosticId('codex-turn')
       let gotAnyMessage = false
       let resultReceived = false
+      // Keep shared diagnostic field names stable across provider adapters.
       const liveSampleCounts = { sdkLiveCount: 0, jsonlPollCount: 0, tokenCountCount: 0, sdkResultCount: 0, sawLiveTurnTokens: false, sawFinalTurnTokens: false }
       let exitCode = 0
       let doneReason = 'completed'
@@ -2377,13 +2377,12 @@ function setupCodexSdkHandlers() {
 
       let drainTimer = null
       // 以下变量在 try / finally 之间共享（let 在 try 块内声明则 finally 无法访问）
-      let doneSent = false
+          let doneSent = false
+          let logicalTerminalHandled = false
       let pendingItemIds = new Set()
       let thread = null
       ;(async () => {
         try {
-          const { Codex } = await loadCodexSdk()
-
           // 协议转换代理：跟随 apiFormat 自动管理，通过本次 Codex 子进程 config 指向本地 proxy
           let effectiveBaseUrl = baseURL || ''
           let proxyCodexConfig = null
@@ -2411,8 +2410,15 @@ function setupCodexSdkHandlers() {
             try { await shutdownProxy() } catch (_) {}
           }
 
-          const codex = new Codex({
-            codexPathOverride: findGlobalCodexPath(),
+          const executablePath = findGlobalCodexPath()
+          if (!executablePath) throw new Error('Codex CLI executable was not found')
+          const cliCapability = await getCodexCliCapabilities(executablePath)
+          if (!cliCapability.compatible) {
+            throw new Error('Codex CLI must support `exec --json` and `exec resume`')
+          }
+          const codex = new CodexCliClient({
+            executablePath,
+            capabilities: cliCapability.capabilities,
             apiKey,
             ...(effectiveBaseUrl ? { baseUrl: effectiveBaseUrl } : {}),
             ...(proxyCodexConfig ? { config: proxyCodexConfig } : {}),
@@ -2426,7 +2432,7 @@ function setupCodexSdkHandlers() {
           const threadOptions = {
             workingDirectory: resolvedCwd,
             skipGitRepoCheck: true,
-            // approvalPolicy: SDK 使用单向 exec --experimental-json 模式，stdin 在输入后即关闭，
+            // `codex exec --json` is one-way: stdin closes after the prompt,
             // 无法回复 CLI 发出的 ExecApprovalRequest 事件（需要双向 app-server 协议）。
             // 权限由 sandboxMode OS 级强制执行，approvalPolicy 固定 'never'。
             approvalPolicy: 'never',
@@ -2522,7 +2528,7 @@ function setupCodexSdkHandlers() {
               stopLocalPoller()
               return
             }
-            if (s.streamClosed || s.doneSent || s.resultReceived) {
+            if (s.streamClosed) {
               stopLocalPoller()
               return
             }
@@ -2530,6 +2536,13 @@ function setupCodexSdkHandlers() {
             if (!cliId) return
             const filePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: cliId })
             if (!fs.existsSync(filePath)) return
+            let transcriptAdvanced = false
+            try {
+              const stat = fs.statSync(filePath)
+              const nextTranscriptStat = { size: stat.size, mtimeMs: stat.mtimeMs }
+              transcriptAdvanced = didCodexTranscriptAdvance(s.__transcriptStat, nextTranscriptStat)
+              s.__transcriptStat = nextTranscriptStat
+            } catch (_) {}
             const liveMetrics = extractLatestCodexLiveTurnMetricsFromJsonl(filePath, {
               model: model || '',
               turnStartedAt: s.startTime || pollStart,
@@ -2566,6 +2579,9 @@ function setupCodexSdkHandlers() {
               }, sessionId, model || '')
             }
             if (sawJsonlPollSample) liveSampleCounts.jsonlPollCount += 1
+            // A growing transcript proves Codex is still active even if the
+            // CLI stdout can go silent after a logical terminal event.
+            if (transcriptAdvanced) resetTurnTimeout()
           }, CODEX_METRICS_POLL_INTERVAL_MS)
           startCodexMetricsPoller(sessionId, { interval: pollInterval, startTime: pollStart, runId })
 
@@ -2582,13 +2598,13 @@ function setupCodexSdkHandlers() {
           const DRAIN_MAX_MS = 1000
 
           function scheduleDone(delayMs) {
-            if (doneSent) return
+            if (logicalTerminalHandled) return
             if (drainTimer) clearTimeout(drainTimer)
             drainTimer = setTimeout(flushDone, Math.max(0, delayMs))
           }
 
           function maybeSendDone() {
-            if (doneSent) return
+            if (logicalTerminalHandled) return
             if (!turnCompletedSeen) return
             console.log(`[codex] maybeSendDone: pendingItems=${pendingItemIds.size} sessionId=${sessionId}`)
             if (pendingItemIds.size === 0) {
@@ -2601,7 +2617,7 @@ function setupCodexSdkHandlers() {
           }
 
           function flushDone() {
-            if (doneSent) return
+            if (logicalTerminalHandled) return
             drainTimer = null
             if (!turnCompletedSeen) return
             const now = Date.now()
@@ -2638,38 +2654,15 @@ function setupCodexSdkHandlers() {
           }
 
           function triggerDone() {
-            if (doneSent) { console.log(`[codex] triggerDone: already doneSent, skipping. sessionId=${sessionId}`); return }
+            if (logicalTerminalHandled) { console.log(`[codex] triggerDone: terminal already handled, skipping. sessionId=${sessionId}`); return }
             const currentSession = codexSessions.get(sessionId)
             if (currentSession?.runId !== runId) { console.warn(`[codex] triggerDone: session gone or runId mismatch. currentRunId=${currentSession?.runId} expected=${runId} sessionId=${sessionId}`); return }
-            doneSent = true
+            logicalTerminalHandled = true
             drainTimer = null
-            currentSession.doneSent = true
-            // B029: 标记 stream 已关闭，让 canStartCodexSessionRun 和 waitForCodexSessionRunToClose
-            // 立即通过，消除 triggerDone → codex-agent-done → 前端 flush _queuedInput →
-            // codexAgentQuery 竞态（B029：done 发送时 finally 尚未运行，streamClosed=false
-            // 导致 2.5s 超时等待 → "CodeX 正在处理上一轮请求" toast）
-            currentSession.streamClosed = true
-            try { currentSession.resolveCompletion?.() } catch (_) {}
-            const sender = codexSessions.get(sessionId)?.event?.sender || event.sender
-            const sfilePath = resolveCodexSessionFilePath({ sessionId, cliSessionId: thread.id })
-            console.log(`[codex] triggerDone: sessionId=${sessionId} cliId=${thread?.id} filePath=${!!sfilePath}`)
-            safeSend(sender, CODEX_CHANNELS.AGENT_DONE, buildCodexAgentDonePayload({
-              sessionId,
-              cliSessionId: thread.id,
-              filePath: sfilePath,
-              reason: doneReason,
-              detachResume: detachResumeOnDone,
-            }))
-            // PR 2：双发 agent.run.done（triggerDone 是同步函数，用 .then）
-            getAgentProtocol().then(({ buildAgentRunDoneEvent }) => {
-              safeSend(sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
-                agent: 'codex',
-                chatKey: sessionId,
-                runId,
-                cliSessionId: thread.id || '',
-                filePath: sfilePath,
-              }))
-            }).catch(() => {})
+            // A terminal event means answer rendering is complete, not that the
+            // The CLI transport has exited. Keep ownership until finally closes it.
+            markCodexTerminalSeen(currentSession)
+            console.log(`[codex] terminal seen; waiting for transport close: sessionId=${sessionId} cliId=${thread?.id || ''}`)
           }
 
           for await (const ev of events) {
@@ -3081,8 +3074,8 @@ function setupCodexSdkHandlers() {
               })
             }
           }
-          // SDK 找不到二进制时的错误，替换为更友好的提示
-          else if (/Unable to locate Codex CLI/i.test(errMsg) || /Missing optional dependency/i.test(errMsg)) {
+          // Missing executable errors get a localized setup hint.
+          else if (/Codex CLI executable was not found/i.test(errMsg) || /Unable to locate Codex CLI/i.test(errMsg)) {
             doneReason = resolveCodexDoneReasonFromError(err)
             if (!resultReceived && canEmitTerminalSignals) {
               safeSend(event.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
@@ -3220,39 +3213,20 @@ function setupCodexSdkHandlers() {
     const s = codexSessions.get(sessionId)
     if (s) {
       try { s.abortController?.abort?.() } catch (_) {}
-      if (s.__turnTimeout) { clearTimeout(s.__turnTimeout); s.__turnTimeout = null }
       if (s.__bootWatch) { clearTimeout(s.__bootWatch); s.__bootWatch = null }
-      // 停止 metrics 轮询器
-      stopCodexMetricsPoller(sessionId)
-      // 额外尝试终止 thread（如果 SDK 暴露了 stop/cancel 方法）
+      // Terminate only the thread's owned CLI child process.
       try {
         if (s.thread && typeof s.thread.cancel === 'function') await s.thread.cancel()
         else if (s.thread && typeof s.thread.stop === 'function') await s.thread.stop()
       } catch (_) {}
-      codexSessions.delete(sessionId)
-      // 发送 abort 系统消息，让前端显示"已中断"并立即停止 thinking 状态
+      // Keep ownership until the iterator finally closes; otherwise a new run
+      // can overlap a process that is still flushing its transcript.
+      s.abortRequested = true
+      // Stop the button immediately, but leave _awaitingDone locked until the
+      // common finalizer emits the single authoritative AGENT_DONE.
       safeSend(s.event?.sender, CODEX_CHANNELS.AGENT_MESSAGE, {
         sessionId,
         msg: { type: 'system', subtype: 'abort', message: { content: [{ type: 'text', text: lt('aborted') }] } },
-      })
-      safeSend(s.event?.sender, CODEX_CHANNELS.AGENT_DONE, buildCodexAgentDonePayload({
-        sessionId,
-        reason: 'aborted',
-      }))
-      // PR 2：双发 agent.run.done（abort 路径）
-      try {
-        const { buildAgentRunDoneEvent } = await getAgentProtocol()
-        safeSend(s.event?.sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
-          agent: 'codex',
-          chatKey: sessionId,
-        }))
-      } catch (_) { /* 新通道发送失败不影响旧通道 */ }
-      // 发送 thinking=false 确保前端状态正确
-      sendMetrics(s.event?.sender, {
-        sessionId,
-        model: s.model || '',
-        durationMs: Math.max(0, Date.now() - (s.startTime || Date.now())),
-        thinking: false,
       })
     }
   })
@@ -3436,62 +3410,20 @@ function setupCodexSdkHandlers() {
     const cacheKey = `${resolvedCwd}::${sessionId || ''}`
     const now = Date.now()
     const cached = codexSlashCommandsCache.get(cacheKey)
-    // 默认命令：/new /model 等由前端作为应用本地命令处理，不通过 IPC 返回。
-    // IPC 只返回 SDK 级别的命令（如 /compact /init 等），由前端合并到本地命令后
+    // Default commands are handled by the renderer's curated command table.
     if (cached && (now - cached.ts) < 10 * 60 * 1000 && Array.isArray(cached.commands) && cached.commands.length) {
       return cached.commands
     }
-    if (!sessionId) {
-      return [] // 无会话时无 SDK 命令，前端使用本地命令
-    }
+    if (!sessionId) return []
     const runningSession = findCodexSessionForSlashCommands(codexSessions, cliSessionIds, sessionId)
     if (runningSession && !runningSession.streamClosed) {
       return (cached && Array.isArray(cached.commands)) ? cached.commands : []
     }
 
-    try {
-      const { Codex } = await loadCodexSdk()
-      const rt = readRuntimeConfig()
-      const codex = new Codex({
-        codexPathOverride: findGlobalCodexPath(),
-        ...(rt.apiKey ? { apiKey: rt.apiKey } : {}),
-        ...(rt.baseURL ? { baseUrl: rt.baseURL } : {}),
-        env: augmentEnvWithBundledRg({
-          ...process.env,
-          ...(rt.apiKey ? { OPENAI_API_KEY: rt.apiKey } : {}),
-          ...(rt.baseURL ? { OPENAI_BASE_URL: rt.baseURL } : {}),
-        }),
-      })
-      let thread = null
-      const cliSessionId = sessionId ? (cliSessionIds.get(sessionId) || sessionId) : ''
-      if (cliSessionId) {
-        try {
-          thread = codex.resumeThread(cliSessionId, { workingDirectory: resolvedCwd, skipGitRepoCheck: true })
-        } catch (_) {
-          thread = null
-        }
-      }
-      if (!thread) return [] // 无法恢复会话，无 SDK 命令
-
-      // Prefer structured command listing; it's stable even when finalResponse is empty.
-      let structured = []
-      try {
-        structured = await thread.query.supportedCommands()
-      } catch (_) {}
-      const normalized = (structured || []).map(c => ({
-        name: c?.name || '',
-        description: c?.description || '',
-      })).filter(c => c.name)
-      if (normalized.length) {
-        codexSlashCommandsCache.set(cacheKey, { ts: now, commands: normalized })
-        return normalized
-      }
-
-      return [] // 未获取到 SDK 命令
-    } catch (e) {
-      console.error('[codex-list-slash-commands]', e?.message || e)
-      return [] // 出错时前端用本地命令
-    }
+    // `codex exec --json` exposes no supported-commands RPC. This endpoint is
+    // cache-only; the renderer owns the curated command list.
+    void resolvedCwd
+    return []
   })
 
   ipcMain.handle(CODEX_CHANNELS.LIST_LOCAL_SKILLS, async (_, { cwd } = {}) => {
@@ -3716,14 +3648,13 @@ function setupCodexSdkHandlers() {
     normalizeCodexReasoningEffort,
     codexConfigDir: CODEX_CONFIG_DIR,
     configTomlFile: CONFIG_TOML_FILE,
-    loadCodexSdk,
     findGlobalCodexPath,
     getConfiguredExecutablePath: getConfiguredCodexPath,
     isExecutableHealthy,
     clearGlobalCodexPathCache,
     isInstallingCodex,
     setInstallingCodex,
-    resetCodexSdkPromise,
+    hasActiveCodexRuns: () => codexSessions.size > 0,
     readPanelState,
     lt,
     userDataDir: getMindCraftUserDataDir(),
@@ -4279,9 +4210,9 @@ let _codexProviderStorage = null;
 function getCodexProviderStorage() { return _codexProviderStorage; }
 
 module.exports = {
-  setupCodexSdkHandlers,
+  setupCodexCliHandlers,
   getCodexProviderStorage,
-  resetCodexSdkRuntime,
+  resetCodexRuntime,
   __test__: {
     buildCodexAgentDonePayload,
     buildCodexMetricsFromTokenCountPayload,

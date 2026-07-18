@@ -42,13 +42,18 @@ test('CodeX abort: abortController.abort() fires before thread cancel', () => {
   )
 })
 
-test('CodeX abort: sends abort message then agent-done', () => {
+test('CodeX abort: sends abort message but defers done until transport cleanup', () => {
   const source = fs.readFileSync(codexAgentPath, 'utf8')
 
   assert.match(
     source,
-    /ipcMain\.handle\(CODEX_CHANNELS\.AGENT_ABORT[\s\S]*CODEX_CHANNELS\.AGENT_MESSAGE[\s\S]*subtype:\s*'abort'[\s\S]*CODEX_CHANNELS\.AGENT_DONE/,
-    'expected abort system message before agent-done in codex-agent-abort',
+    /ipcMain\.handle\(CODEX_CHANNELS\.AGENT_ABORT[\s\S]*CODEX_CHANNELS\.AGENT_MESSAGE[\s\S]*subtype:\s*'abort'/,
+    'expected an immediate abort system message in codex-agent-abort',
+  )
+  assert.doesNotMatch(
+    source,
+    /ipcMain\.handle\(CODEX_CHANNELS\.AGENT_ABORT[\s\S]*?CODEX_CHANNELS\.AGENT_DONE/,
+    'abort must defer agent-done to the owned transport finalizer',
   )
 })
 
@@ -165,5 +170,20 @@ test('CodeX done: finally block clears active session and timers', () => {
     source,
     /codexSessions\.delete\(sessionId\)/,
     'expected codexSessions.delete in completion path',
+  )
+})
+
+test('CodeX logical terminal keeps ownership until the transport finalizer runs', () => {
+  const source = fs.readFileSync(codexAgentPath, 'utf8')
+
+  assert.match(
+    source,
+    /terminal seen; waiting for transport close/,
+    'expected a logical terminal event to wait for transport closure',
+  )
+  assert.doesNotMatch(
+    source,
+    /currentSession\.streamClosed\s*=\s*true[\s\S]{0,500}AGENT_DONE/,
+    'logical terminal handling must not mark a stream closed before sending done',
   )
 })

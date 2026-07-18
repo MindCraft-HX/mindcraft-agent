@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import {
   CODEX_RUNTIME_STATES,
   isCodexTurnLocked,
+  markCodexAbortRequested,
+  markCodexDone,
   mergeCodexUpdatedAt,
   mergeScannedChatsPreservingRuntime,
   shouldHydrateHistoryFromDisk,
@@ -51,6 +53,17 @@ test('cold-restored session must not stay locked by stale awaitingDone flag', ()
   const restored = { thinking: false, _awaitingDone: false }
   assert.equal(isCodexTurnLocked(restored), false)
   assert.equal(shouldHydrateHistoryFromDisk(restored), true)
+})
+
+test('abort request keeps the Codex send lock until authoritative done', () => {
+  const tab = { thinking: true, _awaitingDone: true, metrics: { thinking: true } }
+
+  markCodexAbortRequested(tab)
+
+  assert.equal(isCodexTurnLocked(tab), true)
+  assert.equal(shouldHydrateHistoryFromDisk(tab), false)
+  markCodexDone(tab, { reason: 'aborted' })
+  assert.equal(isCodexTurnLocked(tab), false)
 })
 
 test('scan metadata must not roll back newer local Codex updatedAt', () => {

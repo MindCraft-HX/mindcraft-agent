@@ -56,7 +56,7 @@ const { setupIpcHandlers, setupHostIpcHandlers } = require("./mainModules/ipcHan
 const { setupAutoUpdater } = require("./mainModules/autoUpdate");
 const { loadRegistry, scanAndValidate, scanDevPlugins, registerIPCHandlers: registerPluginHandlers, getInstalledPlugins } = require("./mainModules/pluginManager");
 
-const { registerAgentIPCs, resetCodexSdkRuntime } = require("../packages/agent/electron");
+const { registerAgentIPCs, resetCodexRuntime } = require("../packages/agent/electron");
 const { openClaudeWin } = require("./claudeWindow/index.js");
 const { openCodexWin } = require("./codexWindow/index.js");
 const { findAssociatedMarkdownPath } = require('./fileAssociation');
@@ -303,7 +303,7 @@ function prepareForUpdateInstall() {
   isAppQuitting = true
   flushSettings()
   try { globalShortcut.unregisterAll() } catch (_) {}
-  try { resetCodexSdkRuntime?.() } catch (e) { console.warn('[main] reset codex runtime before update failed:', e?.message || e) }
+  try { resetCodexRuntime?.() } catch (e) { console.warn('[main] reset codex runtime before update failed:', e?.message || e) }
   try {
     if (tray && !tray.isDestroyed?.()) tray.destroy()
   } catch (_) {}

@@ -10,6 +10,7 @@ import { findChatBySessionId } from '../utils/sessionRouting.mjs'
 import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs'
 import {
   markCodexDone,
+  markCodexAbortRequested,
   markCodexFailed,
   markCodexStreamActivity,
   markCodexTerminalSeen,
@@ -637,7 +638,9 @@ export function useCodexAgentStream({
         return
       }
       if (msg.subtype === 'abort') {
-        markCodexFailed(tab, 'aborted')
+        // The provider may still be flushing stdout/transcript. Keep the send
+        // lock until the main-process finalizer emits AGENT_DONE.
+        markCodexAbortRequested(tab)
         const lastThinking = [...tab.messages].reverse().find(
           m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
         )
