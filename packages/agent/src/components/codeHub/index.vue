@@ -1,5 +1,5 @@
 <template>
-  <div class="codehub-wrap" :class="themeClass">
+  <div ref="rootRef" class="codehub-wrap" :class="themeClass" tabindex="-1">
     <!-- ===== 统一 Tab 栏 ===== -->
     <div class="codehub-unified-tabs" v-if="indexRestored && unifiedTabs.length > 0">
       <div class="codehub-tab-strip">
@@ -130,10 +130,13 @@ import { useAgentRegistry } from '../../registry/useAgentRegistry.js'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { startActivation, getActivationId } from '../agentCommon/utils/activationContext.js'
+import { createAgentWorkbenchAdapter } from '../../workbench/agentAdapter.mjs'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
+const rootRef = ref(null)
+let workbenchAdapter = null
 
 const { agents, agentKeys, getAgentMeta, isRegistered, createMountedMap } = useAgentRegistry()
 
@@ -373,6 +376,22 @@ function activateTab(tab, preferredChat = null) {
   doSwitchProject(tab, preferredChat)
   stop({ activationId })
 }
+
+function createWorkbenchAdapter() {
+  if (workbenchAdapter) return workbenchAdapter
+  workbenchAdapter = createAgentWorkbenchAdapter({
+    getTabs: () => unifiedTabs.value,
+    getActiveProject: () => activeTabId.value,
+    activateProject(projectId, target) {
+      const tab = unifiedTabs.value.find(item => item.id === projectId || String(item.projectId) === String(projectId))
+      if (tab) activateTab(tab, target?.chatId || target?.sessionId ? target : null)
+    },
+    focus: () => rootRef.value?.focus?.(),
+  })
+  return workbenchAdapter
+}
+
+defineExpose({ createWorkbenchAdapter })
 
 function doSwitchProject(tab, preferredChat = null) {
   const stop = perfStart('codehub.doSwitchProject')
@@ -640,6 +659,8 @@ watchEffect(() => {
   activeTabId.value = syncedTabId
   localStorage.setItem('codehub_active_tab', syncedTabId)
 })
+
+watch([unifiedTabs, activeTabId], () => workbenchAdapter?.publish(), { deep: false })
 
 // ── Tab 操作 ──
 function closeTab(tab) {

@@ -158,6 +158,10 @@ import { createDocumentTab } from './documentPayload.mjs'
 import { createPendingDocumentTab, finalizeDocumentTab } from './documentTabs.mjs'
 import { isEditableFile, EDIT_MODE } from './editState.mjs'
 import { getDocumentTabScrollOwner } from './documentScrollPolicy.mjs'
+import { resolveDocumentViewerType } from './viewerRegistry.mjs'
+import { createDocumentController } from '@/documents/documentController.mjs'
+import { createDocumentElectronAdapter } from '@/documents/documentElectronAdapter.mjs'
+import { createDocumentWorkbenchAdapter } from '@/documents/documentWorkbenchAdapter.mjs'
 
 const VIEWER_MAP = {
   markdown: MarkdownViewer,
@@ -183,6 +187,26 @@ const editStates = reactive({})
 
 // 每个 tab 的编辑模式（仅 markdown）：preview-only | edit-only | split
 const tabEditModes = reactive({})
+let documentController = null
+let workbenchAdapter = null
+
+function getDocumentController() {
+  if (documentController) return documentController
+  try {
+    const adapter = createDocumentElectronAdapter()
+    documentController = createDocumentController(adapter)
+  } catch (_) {
+    // Browser fallback keeps inline documents and the legacy non-file path usable.
+    documentController = null
+  }
+  return documentController
+}
+
+function usesDocumentController(payload = {}) {
+  if (!payload?.filePath) return false
+  const viewerType = resolveDocumentViewerType({ filePath: payload.filePath })
+  return viewerType === 'markdown' || viewerType === 'code' || viewerType === 'html'
+}
 
 // 防止 activeTabId watcher 在取消切换时重入
 let _watcherLock = false
@@ -419,6 +443,26 @@ function rememberPayload(payload = {}) {
   return Boolean(previous && now - previous < 1000)
 }
 async function ensurePayloadContent(payload = {}) {
+  const controller = usesDocumentController(payload) ? getDocumentController() : null
+  if (controller) {
+    const adapter = createDocumentElectronAdapter()
+    const identity = await adapter.describe(payload.filePath)
+    if (!identity) throw new Error('document identity is unavailable')
+    const opened = await controller.open(identity, { title: payload.name || '' })
+    // A dirty draft is still the authoritative view if an external reload
+    // reports a conflict. Do not fall back to the legacy file bridge.
+    const document = controller.getDocument(identity.canonicalDocumentKey)
+    if (!document) throw new Error(opened.reason || 'document open failed')
+    return {
+      ...payload,
+      filePath: document.identity.filePath,
+      content: document.draftText,
+      size: document.identity.signature.size,
+      canonicalDocumentKey: document.identity.canonicalDocumentKey,
+      lexicalDocumentKey: document.identity.lexicalDocumentKey,
+      documentItemId: document.itemId,
+    }
+  }
   if (!payload?.filePath || payload.content || payload.data) return payload
   const file = await window.electronAPI?.readFileByPath?.(payload.filePath)
   if (!file) {
@@ -582,19 +626,11 @@ watch(activeTabId, async (newId, oldId) => {
     _watcherLock = false
     return
   }
-  // 脏保护：切换离开旧 tab 时确认
+  // Switching tabs preserves drafts. Closing is the only destructive action.
   if (oldId && oldId !== newId) {
     // Capture the old preview position before async confirmation yields.
     saveCurrentTabScroll(oldId)
     persistDocTabs()
-    const ok = await confirmDiscardEdits(oldId)
-    if (!ok) {
-      // 用户取消，恢复旧 tab
-      await nextTick()
-      _watcherLock = true
-      activeTabId.value = oldId
-      return
-    }
   }
 
   if (_restoring || !newId) return
@@ -678,7 +714,9 @@ function saveCurrentTabScroll(tabId) {
 // 鍚屾搴旂敤 payload锛氱珛鍗冲垱寤?tab銆佹洿鏂?UI銆傝繑鍥為渶瑕佸紓姝ヨ鍙栫殑 pendingTab锛堟垨 null锛?
 function applyPayloadSync(payload = {}) {
   const existing = findTabByFilePath(payload.filePath)
-  const requiresRead = Boolean(payload?.filePath && !payload.content && !payload.data)
+  // Text documents are always loaded through the canonical main-process
+  // controller, including file-picker payloads that already carry bytes.
+  const requiresRead = Boolean(payload?.filePath && (usesDocumentController(payload) || (!payload.content && !payload.data)))
 
   if (!requiresRead) {
     const readyTab = createDocumentTab({
@@ -785,6 +823,16 @@ async function removeTab(id) {
   const ok = await confirmDiscardEdits(id)
   if (!ok) return
 
+  const tab = tabs.value.find(item => item.id === id)
+  if (tab?.canonicalDocumentKey && documentController) {
+    const closed = await documentController.requestClose(tab.canonicalDocumentKey)
+    if (closed.status !== 'ready') return
+  }
+
+  removeTabState(id)
+}
+
+function removeTabState(id) {
   const idx = tabs.value.findIndex(tab => tab.id === id)
   if (idx < 0) return
   tabs.value.splice(idx, 1)
@@ -796,6 +844,17 @@ async function removeTab(id) {
     activeTabId.value = tabs.value[Math.max(0, idx - 1)]?.id || ''
   }
   schedulePersist()
+}
+
+async function closeWorkbenchDocument(itemId) {
+  const tab = tabs.value.find(item => item.documentItemId === itemId || item.canonicalDocumentKey === itemId)
+  if (!tab) return { status: 'ready' }
+  const ok = await confirmDiscardEdits(tab.id)
+  if (!ok) return { status: 'cancel' }
+  const result = await documentController?.requestClose(tab.canonicalDocumentKey)
+  if (result?.status !== 'ready') return result || { status: 'cancel' }
+  removeTabState(tab.id)
+  return { status: 'ready' }
 }
 
 async function confirmOpenExternal(tab) {
@@ -820,12 +879,20 @@ async function confirmOpenExternal(tab) {
 // ── 编辑状态管理 ──
 function initEditState(tab) {
   if (!isEditableFile(tab)) return
+  const ownerDocument = tab.canonicalDocumentKey ? documentController?.getDocument(tab.canonicalDocumentKey) : null
+  const text = ownerDocument?.draftText ?? tab.text ?? ''
+  const isDirty = ownerDocument ? ownerDocument.draftText !== ownerDocument.baseText : false
   if (!editStates[tab.id]) {
-    editStates[tab.id] = { text: tab.text || '', isDirty: false }
+    editStates[tab.id] = { text, isDirty }
+  } else if (ownerDocument) {
+    // editStates is a Vue-facing projection; the controller owns the draft.
+    editStates[tab.id].text = text
+    editStates[tab.id].isDirty = isDirty
   }
   if (!tabEditModes[tab.id]) {
     tabEditModes[tab.id] = EDIT_MODE.PREVIEW_ONLY
   }
+  if (tab.canonicalDocumentKey && !ownerDocument) documentController?.updateDraft(tab.canonicalDocumentKey, editStates[tab.id].text)
 }
 
 function onEditorChange(tabId, newText) {
@@ -833,6 +900,11 @@ function onEditorChange(tabId, newText) {
   if (!state) return
   state.text = newText
   const tab = tabs.value.find(t => t.id === tabId)
+  if (tab?.canonicalDocumentKey && documentController?.updateDraft(tab.canonicalDocumentKey, newText)) {
+    const document = documentController.getDocument(tab.canonicalDocumentKey)
+    state.isDirty = Boolean(document && document.draftText !== document.baseText)
+    return
+  }
   state.isDirty = newText !== (tab?.text || '')
 }
 
@@ -871,12 +943,23 @@ async function saveCurrentTab() {
   if (!state?.isDirty) return
 
   try {
-    const encoder = new TextEncoder()
-    const result = await window.electronAPI?.writeFileSync?.(tab.filePath, encoder.encode(state.text))
-    if (result === undefined && !window.electronAPI) {
-      throw new Error('electronAPI unavailable')
+    if (tab.canonicalDocumentKey && documentController) {
+      const result = await documentController.save(tab.canonicalDocumentKey)
+      if (!result.ok) {
+        if (result.reason === 'conflict') ElMessage.warning(i18n.global.t('doc.saveFailed'))
+        else throw new Error(result.reason || 'save failed')
+        return
+      }
+      const document = documentController.getDocument(tab.canonicalDocumentKey)
+      markClean(activeTabId.value, document?.baseText || state.text)
+    } else {
+      const encoder = new TextEncoder()
+      const result = await window.electronAPI?.writeFileSync?.(tab.filePath, encoder.encode(state.text))
+      if (result === undefined && !window.electronAPI) {
+        throw new Error('electronAPI unavailable')
+      }
+      markClean(activeTabId.value, state.text)
     }
-    markClean(activeTabId.value, state.text)
     ElMessage.success(i18n.global.t('doc.saved'))
   } catch (err) {
     ElMessage.error(`${i18n.global.t('doc.saveFailed')}: ${err?.message || err}`)
@@ -893,8 +976,15 @@ async function confirmDiscardEdits(tabId) {
       i18n.global.t('doc.unsavedChanges'),
       { confirmButtonText: i18n.global.t('common.ok'), cancelButtonText: i18n.global.t('common.cancel'), type: 'warning' }
     )
-    // 回退到原始内容，而非用编辑后的文本覆盖
     const tab = tabs.value.find(t => t.id === tabId)
+    if (tab?.canonicalDocumentKey && documentController) {
+      const discarded = documentController.discardDraft(tab.canonicalDocumentKey)
+      if (!discarded) return false
+      state.text = documentController.getDocument(tab.canonicalDocumentKey)?.draftText || ''
+      state.isDirty = false
+      return true
+    }
+    // Inline legacy documents have no document-domain owner.
     state.text = tab?.text || ''
     state.isDirty = false
     return true
@@ -958,6 +1048,34 @@ onActivated(() => {
   // keep-alive 切回时恢复滚动位置
   if (activeTabId.value) restoreDocTabScroll(activeTabId.value)
 })
+
+function createWorkbenchAdapter() {
+  if (workbenchAdapter) return workbenchAdapter
+  const controller = getDocumentController()
+  if (!controller) return null
+  workbenchAdapter = createDocumentWorkbenchAdapter({
+    controller,
+    decideDirty: async () => {
+      try {
+        await ElMessageBox.confirm(
+          i18n.global.t('doc.discardEditsConfirm'),
+          i18n.global.t('doc.unsavedChanges'),
+          { confirmButtonText: i18n.global.t('common.ok'), cancelButtonText: i18n.global.t('common.cancel'), type: 'warning' },
+        )
+        return 'discard'
+      } catch (_) {
+        return 'cancel'
+      }
+    },
+    onClosed: itemId => {
+      const tab = tabs.value.find(item => item.documentItemId === itemId || item.canonicalDocumentKey === itemId)
+      if (tab) removeTabState(tab.id)
+    },
+  })
+  return workbenchAdapter
+}
+
+defineExpose({ createWorkbenchAdapter })
 </script>
 
 <style scoped>

@@ -8,15 +8,15 @@ const source = fs.readFileSync(
   'utf8',
 )
 
-test('document tab switch saves the old scroll position before awaiting dirty confirmation', () => {
+test('document tab switch saves the old scroll position without discarding a draft', () => {
   const watcherStart = source.indexOf('watch(activeTabId')
   const restoreStart = source.indexOf('function restoreDocTabScroll')
   const watcher = source.slice(watcherStart, restoreStart)
   const saveIndex = watcher.indexOf('saveCurrentTabScroll(oldId)')
   const persistIndex = watcher.indexOf('persistDocTabs()')
-  const confirmationIndex = watcher.indexOf('await confirmDiscardEdits(oldId)')
 
   assert.ok(watcherStart >= 0 && restoreStart > watcherStart)
-  assert.ok(saveIndex >= 0 && saveIndex < confirmationIndex)
-  assert.ok(persistIndex >= 0 && persistIndex < confirmationIndex)
+  assert.ok(saveIndex >= 0)
+  assert.ok(persistIndex >= 0)
+  assert.equal(watcher.includes('confirmDiscardEdits(oldId)'), false)
 })

@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-view" :class="themeClass">
+  <div ref="rootRef" class="chat-view" :class="themeClass" tabindex="-1">
     <!-- 会话列表侧边栏 -->
     <SessionList
       :sessions="sessionList"
@@ -86,6 +86,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useClaudeThemeStore } from '../stores/claudeTheme.js'
 import { useChatSession } from '../composables/useChatSession.js'
 import { useChatStream } from '../composables/useChatStream.js'
+import { createChatWorkbenchAdapter } from '../workbench/chatAdapter.mjs'
 import SessionList from '../components/chat/SessionList.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import InputArea from '../components/chat/InputArea.vue'
@@ -126,6 +127,8 @@ const { isStreaming, streamError, sendMessage, stopStreaming, compressContext } 
 const sidebarCollapsed = ref(false)
 const previewImageUrl = ref(null)
 const inputRef = ref(null)
+const rootRef = ref(null)
+let workbenchAdapter = null
 
 // 生命周期
 onMounted(async () => {
@@ -224,6 +227,24 @@ async function onSend(text, images) {
 function onStop() {
   stopStreaming()
 }
+
+function createWorkbenchAdapter() {
+  if (workbenchAdapter) return workbenchAdapter
+  workbenchAdapter = createChatWorkbenchAdapter({
+    getSession: () => ({
+      id: currentSessionId.value,
+      title: currentSession.title,
+      streaming: isStreaming.value,
+    }),
+    activateSession: id => switchSession(id),
+    focus: () => rootRef.value?.focus?.(),
+  })
+  return workbenchAdapter
+}
+
+defineExpose({ createWorkbenchAdapter })
+
+watch([currentSessionId, isStreaming], () => workbenchAdapter?.publish())
 
 // 图片预览（支持 dataUrl 字符串 / 内部格式 {mediaType, data} / {url}）
 function imgPreviewSrc(img) {

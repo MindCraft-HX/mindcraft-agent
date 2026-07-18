@@ -38,6 +38,8 @@ const CONTRACT_PATTERNS = [
   { dir: 'tests', match: f => f === 'ipc-channel-registry.test.cjs' },
   // Workbench architecture contracts
   { dir: 'tests', match: f => /^workbench-.*\.test\.(cjs|mjs)$/.test(f) },
+  { dir: 'tests', match: f => /^document-(identity|controller|workbench-adapter)\.test\.(cjs|mjs)$/.test(f) },
+  { dir: 'tests', match: f => /^document-(repository|ipc)\.test\.cjs$/.test(f) },
   { dir: 'tests', match: f => f === 'close-participant-registry.test.mjs' },
   { dir: 'tests', match: f => f === 'close-handshake.test.cjs' },
   // Extracted pure-helper / IO-without-state module tests (Batch 2+)

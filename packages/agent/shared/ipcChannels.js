@@ -307,6 +307,9 @@ const CORE_CHANNELS = Object.freeze({
   // Window / document
   OPEN_DOCUMENT_CANDIDATE: 'open-document-candidate',
   RESOLVE_DOCUMENT_CANDIDATE: 'resolve-document-candidate',
+  DOCUMENT_DESCRIBE: 'document-describe',
+  DOCUMENT_READ: 'document-read',
+  DOCUMENT_WRITE: 'document-write',
   OPEN_CLAUDE_WIN: 'open-claude-win',
   OPEN_CODEX_WIN: 'open-codex-win',
   OPEN_EXTERNAL_WINDOW: 'open-external-window',

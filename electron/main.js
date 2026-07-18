@@ -74,6 +74,8 @@ const { validateWorkbenchLayout } = require('./workbench/layoutSchema')
 const { registerLayoutIpc } = require('./workbench/layoutIpc')
 const { WINDOW_ROLES, createWindowRoleRegistry } = require('./workbench/windowRoles')
 const { createCloseHandshake } = require('./workbench/closeHandshake')
+const { createDocumentRepository } = require('./documents/documentRepository')
+const { registerDocumentIpc } = require('./documents/documentIpc')
 
 const windowRoles = createWindowRoleRegistry()
 let nextWorkbenchWindowInstance = 0
@@ -347,6 +349,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(CORE_CHANNELS.WINDOW_ROLE_GET, event => windowRoles.getRoleForSender(event.sender))
   createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win })
+  registerDocumentIpc({ ipcMain, roles: windowRoles, repository: createDocumentRepository() })
   registerLayoutIpc({
     ipcMain,
     roles: windowRoles,
