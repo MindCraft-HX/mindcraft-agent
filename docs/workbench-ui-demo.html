@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MindCraft 分屏与终端交互示意</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111315;
+      --surface: #181b1e;
+      --surface-2: #202428;
+      --surface-3: #282d32;
+      --border: #30363d;
+      --border-strong: #454c54;
+      --text: #e6e9ec;
+      --muted: #9ba4ad;
+      --primary: #d97757;
+      --primary-bg: rgba(217, 119, 87, 0.14);
+      --blue: #6ba5d7;
+      --green: #69b887;
+      --terminal: #0d0f11;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      min-width: 880px;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #0c0e10;
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .page {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .explanation {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 14px;
+      border: 1px solid #2d3944;
+      border-radius: 10px;
+      background: #121820;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    .explanation strong {
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .relation {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .relation .nav-token,
+    .relation .split-token {
+      padding: 4px 8px;
+      border-radius: 5px;
+      font-weight: 650;
+    }
+
+    .nav-token { color: #9ac7ed; background: rgba(107, 165, 215, 0.15); }
+    .split-token { color: #efac93; background: var(--primary-bg); }
+    .relation-arrow { color: #65717c; }
+
+    .hint {
+      flex: 1;
+      min-width: 0;
+      color: #c8d0d7;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .reset-btn {
+      padding: 6px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .reset-btn:hover { background: var(--surface-3); }
+
+    .app {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 38px 1fr 24px;
+      overflow: hidden;
+      border: 1px solid #343a40;
+      border-radius: 12px;
+      background: var(--bg);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      padding-left: 14px;
+      border-bottom: 1px solid var(--border);
+      background: #16191c;
+      user-select: none;
+    }
+
+    .app-mark {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 650;
+      color: #cfd5da;
+    }
+
+    .app-dot {
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      border-radius: 5px;
+      color: #fff;
+      background: linear-gradient(135deg, #d97757, #9d4934);
+      font-size: 10px;
+    }
+
+    .project-path {
+      margin: auto;
+      color: #78838d;
+      font-size: 11px;
+    }
+
+    .window-controls {
+      align-self: stretch;
+      display: flex;
+    }
+
+    .window-control {
+      width: 44px;
+      display: grid;
+      place-items: center;
+      color: #7f8992;
+      font-size: 15px;
+    }
+
+    .app-body {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 72px 1fr;
+    }
+
+    .activity-bar {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 10px 7px 8px;
+      border-right: 1px solid var(--border);
+      background: #131619;
+    }
+
+    .activity-btn {
+      position: relative;
+      width: 56px;
+      height: 50px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #8f99a2;
+      cursor: pointer;
+    }
+
+    .activity-btn svg {
+      width: 19px;
+      height: 19px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.65;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .activity-btn span {
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    .activity-btn:hover {
+      color: #dbe0e4;
+      background: var(--surface-2);
+    }
+
+    .activity-btn.active {
+      color: var(--primary);
+      background: var(--primary-bg);
+    }
+
+    .activity-btn.active::before {
+      content: "";
+      position: absolute;
+      left: -7px;
+      top: 11px;
+      bottom: 11px;
+      width: 3px;
+      border-radius: 0 3px 3px 0;
+      background: var(--primary);
+    }
+
+    .activity-spacer { flex: 1; }
+
+    .work-area {
+      min-width: 0;
+      min-height: 0;
+      display: block;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .editors {
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+    }
+
+    .group {
+      min-width: 260px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .group.primary { flex: 1 1 100%; }
+    .group.secondary { flex: 0 0 40%; }
+    .group.is-active { box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.36); }
+    .group.hidden, .divider.hidden { display: none; }
+
+    .group-tabs {
+      min-height: 39px;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+      background: #15181b;
+    }
+
+    .tabs-track {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .tabs-track::-webkit-scrollbar { display: none; }
+
+    .tabs-track.drop-target {
+      background: rgba(107, 165, 215, 0.12);
+      box-shadow: inset 0 0 0 1px rgba(107, 165, 215, 0.55);
+    }
+
+    .tab {
+      max-width: 210px;
+      min-width: 112px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 12px;
+      border: 0;
+      border-right: 1px solid #292e33;
+      background: #181b1e;
+      color: #929ca5;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .tab:active { cursor: grabbing; }
+    .tab.dragging { opacity: 0.42; }
+
+    .tab.active {
+      color: #eef1f3;
+      background: var(--surface);
+      box-shadow: inset 0 2px var(--primary);
+    }
+
+    .tab-icon {
+      width: 15px;
+      height: 15px;
+      display: grid;
+      place-items: center;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 750;
+      color: #fff;
+      background: #59636d;
+    }
+
+    .tab-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    .group-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 6px;
+      border-left: 1px solid var(--border);
+    }
+
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #929ca5;
+      cursor: pointer;
+    }
+
+    .icon-btn:hover { color: #fff; background: var(--surface-3); }
+
+    .icon-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .group-content {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      background: var(--surface);
+    }
+
+    .divider {
+      flex: 0 0 5px;
+      position: relative;
+      background: #101214;
+      cursor: col-resize;
+    }
+
+    .divider::after {
+      content: "";
+      position: absolute;
+      inset: 0 1px;
+      background: var(--border);
+      transition: background 0.15s;
+    }
+
+    .divider:hover::after,
+    .divider.dragging::after { background: var(--primary); }
+
+    .view {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .view-toolbar {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      background: #1b1f22;
+    }
+
+    .view-title { font-size: 13px; font-weight: 650; }
+    .view-subtitle { color: var(--muted); font-size: 11px; }
+    .view-toolbar-spacer { flex: 1; }
+
+    .side-open-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid #4b3b35;
+      border-radius: 6px;
+      background: var(--primary-bg);
+      color: #efad96;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .side-open-btn:hover { border-color: var(--primary); color: #ffd6c7; }
+
+    .agent-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 178px 1fr;
+      min-height: 0;
+    }
+
+    .sessions {
+      padding: 12px;
+      border-right: 1px solid var(--border);
+      background: #15181a;
+    }
+
+    .sessions h4,
+    .doc-outline h4 {
+      margin: 0 0 10px;
+      color: #7f8991;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+    }
+
+    .session-item {
+      margin-bottom: 5px;
+      padding: 8px 9px;
+      border-radius: 6px;
+      color: #9aa4ac;
+      font-size: 11px;
+    }
+
+    .session-item.active { color: #e9ecee; background: var(--surface-3); }
+
+    .conversation {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .messages {
+      flex: 1;
+      padding: 20px clamp(20px, 6vw, 70px);
+      overflow: hidden;
+    }
+
+    .message {
+      max-width: 620px;
+      margin-bottom: 16px;
+      color: #d7dce0;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .message.user {
+      margin-left: auto;
+      padding: 9px 12px;
+      border-radius: 9px;
+      background: #2a2f34;
+    }
+
+    .message-label {
+      margin-bottom: 4px;
+      color: var(--primary);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .composer {
+      margin: 0 18px 16px;
+      padding: 11px 13px;
+      border: 1px solid #3b4248;
+      border-radius: 10px;
+      background: #16191c;
+      color: #6f7982;
+      font-size: 12px;
+    }
+
+    .input-dock {
+      margin: 0 18px 16px;
+      overflow: hidden;
+      border: 1px solid #3b4248;
+      border-radius: 10px;
+      background: #121518;
+      transition: height 0.18s ease;
+    }
+
+    .input-dock.terminal-expanded {
+      height: min(58vh, 520px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dock-tabs {
+      min-height: 31px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 6px;
+      border-bottom: 1px solid #30363c;
+      background: #191d20;
+    }
+
+    .dock-tab {
+      height: 26px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #88939c;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .dock-tab:hover { color: #dce1e4; background: #262b30; }
+
+    .dock-tab.active {
+      color: #f0f2f4;
+      background: #2a3035;
+      box-shadow: inset 0 -2px var(--primary);
+    }
+
+    .dock-tab-terminal.active { color: #9bd7ad; }
+    .dock-spacer { flex: 1; }
+
+    .dock-action {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #84909a;
+      cursor: pointer;
+    }
+
+    .dock-action:hover { color: #fff; background: #292f34; }
+
+    .dock-body {
+      min-height: 0;
+      background: #111416;
+    }
+
+    .dock-body-chat {
+      padding: 11px 13px;
+      color: #6f7982;
+      font-size: 12px;
+    }
+
+    .dock-body-terminal {
+      height: 190px;
+      padding: 11px 13px;
+      overflow: hidden;
+      color: #d3d8dc;
+      font: 12px/1.6 "Cascadia Code", Consolas, monospace;
+    }
+
+    .terminal-expanded .dock-body-terminal {
+      flex: 1;
+      height: auto;
+    }
+
+    .doc-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 145px 1fr;
+      min-height: 0;
+    }
+
+    .doc-outline {
+      padding: 14px 12px;
+      border-right: 1px solid var(--border);
+      background: #16191c;
+      color: #88929a;
+      font-size: 11px;
+      line-height: 2;
+    }
+
+    .paper {
+      padding: 28px clamp(22px, 6vw, 72px);
+      overflow: hidden;
+      background: #1b1e21;
+    }
+
+    .paper h1 { margin: 0 0 14px; font-size: 23px; }
+    .paper h2 { margin-top: 26px; font-size: 16px; color: #d9dde0; }
+    .paper p { color: #aeb6bd; font-size: 12px; line-height: 1.8; }
+
+    .code-block {
+      margin-top: 18px;
+      padding: 14px;
+      border: 1px solid #2d343a;
+      border-radius: 7px;
+      background: #111416;
+      color: #9bc6a8;
+      font: 11px/1.7 Consolas, monospace;
+    }
+
+    .mode-switch {
+      display: flex;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #14171a;
+    }
+
+    .mode-btn {
+      padding: 4px 9px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: #8f99a2;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .mode-btn.active { color: #fff; background: #30363c; }
+
+    .html-workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      overflow: hidden;
+      background: #111416;
+    }
+
+    .html-workspace.split { grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
+
+    .html-source,
+    .html-preview {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .html-source {
+      margin: 0;
+      padding: 20px;
+      background: #111416;
+      color: #c8d1d8;
+      font: 12px/1.7 "Cascadia Code", Consolas, monospace;
+      white-space: pre;
+    }
+
+    .html-source .tag { color: #6ba5d7; }
+    .html-source .attr { color: #d4a96c; }
+    .html-source .value { color: #89bc91; }
+
+    .html-preview {
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      background: #fff;
+      color: #17212b;
+    }
+
+    .preview-card {
+      width: min(420px, 90%);
+      padding: 28px;
+      border: 1px solid #dce3e8;
+      border-radius: 14px;
+      box-shadow: 0 16px 50px rgba(22, 37, 49, 0.13);
+      text-align: center;
+    }
+
+    .preview-card h1 { margin: 0 0 10px; color: #16222c; font-size: 24px; }
+    .preview-card p { margin: 0 0 18px; color: #63717c; font-size: 12px; line-height: 1.7; }
+    .preview-card button { padding: 8px 14px; border: 0; border-radius: 7px; background: #d97757; color: #fff; }
+
+    .chat-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 18px;
+    }
+
+    .chat-bubble {
+      max-width: 78%;
+      margin-bottom: 12px;
+      padding: 9px 11px;
+      border-radius: 9px;
+      color: #cfd5da;
+      background: #24292e;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .chat-bubble.me { align-self: flex-end; background: #37302d; }
+    .chat-input { margin-top: auto; }
+
+    .home-body,
+    .plugins-body {
+      display: grid;
+      place-items: center;
+      flex: 1;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .empty-icon {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      margin: 0 auto 12px;
+      border-radius: 14px;
+      background: var(--surface-3);
+      color: var(--blue);
+      font-size: 22px;
+    }
+
+    .terminal-dim { color: #77818a; }
+    .terminal-green { color: #74c991; }
+    .cursor {
+      display: inline-block;
+      width: 7px;
+      height: 14px;
+      vertical-align: -2px;
+      background: #c9d0d5;
+      animation: blink 1s steps(1) infinite;
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .statusbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 10px;
+      border-top: 1px solid #2f353b;
+      background: #171a1d;
+      color: #818b94;
+      font-size: 10px;
+    }
+
+    .status-project { color: #dca18b; }
+    .status-spacer { flex: 1; }
+    .status-help { color: #9dbbd4; }
+
+    .toast {
+      position: fixed;
+      right: 26px;
+      bottom: 38px;
+      max-width: 420px;
+      padding: 10px 13px;
+      border: 1px solid #47515a;
+      border-radius: 8px;
+      background: #22272b;
+      color: #d9dde0;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4);
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: 0.18s ease;
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1050px) {
+      .agent-body { grid-template-columns: 145px 1fr; }
+      .doc-body { grid-template-columns: 115px 1fr; }
+      .relation { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="explanation">
+      <strong>导航和分屏的关系：</strong>
+      <div class="relation">
+        <span class="nav-token">左侧导航：打开什么</span>
+        <span class="relation-arrow">→</span>
+        <span class="split-token">内容区分屏按钮：放在哪里</span>
+        <span class="relation-arrow">→</span>
+        <span>终端按钮：切换 Agent 输入区</span>
+      </div>
+      <div id="hint" class="hint">试一下：点击左侧“文档”，然后点击内容区右上角“在右侧打开”。</div>
+      <button id="resetBtn" class="reset-btn" type="button">重置演示</button>
+    </header>
+
+    <main class="app">
+      <div class="titlebar">
+        <div class="app-mark"><span class="app-dot">M</span> MindCraft Agent</div>
+        <div class="project-path">项目 A · D:\project\project-a</div>
+        <div class="window-controls" aria-hidden="true">
+          <span class="window-control">−</span>
+          <span class="window-control">□</span>
+          <span class="window-control">×</span>
+        </div>
+      </div>
+
+      <div class="app-body">
+        <nav class="activity-bar" aria-label="主导航">
+          <button class="activity-btn" type="button" data-view="home" title="打开首页">
+            <svg viewBox="0 0 20 20"><path d="m3 9 7-6 7 6v8H4V9"/><path d="M8 17v-5h4v5"/></svg>
+            <span>首页</span>
+          </button>
+          <button class="activity-btn active" type="button" data-view="agent" title="打开或定位项目 Agent">
+            <svg viewBox="0 0 20 20"><path d="m7 5-4 5 4 5M13 5l4 5-4 5"/></svg>
+            <span>项目</span>
+          </button>
+          <button class="activity-btn" type="button" data-view="docs" title="打开或定位文档">
+            <svg viewBox="0 0 20 20"><path d="M5 2.5h6l4 4v11H5z"/><path d="M11 2.5v4h4M7.5 10h5M7.5 13h5"/></svg>
+            <span>文档</span>
+          </button>
+          <button class="activity-btn" type="button" data-view="chat" title="打开或定位简易对话">
+            <svg viewBox="0 0 20 20"><path d="M3 4h11a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8l-4 3v-3H3z"/></svg>
+            <span>对话</span>
+          </button>
+          <button class="activity-btn" type="button" data-view="plugins" title="打开插件">
+            <svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><path d="M14 11v6M11 14h6"/></svg>
+            <span>插件</span>
+          </button>
+          <div class="activity-spacer"></div>
+          <button id="terminalNav" class="activity-btn" type="button" title="在 Agent 输入区切换到当前项目终端">
+            <svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="m5.5 7 3 2.5-3 2.5M10 12h4"/></svg>
+            <span>终端</span>
+          </button>
+          <button class="activity-btn" type="button" title="设置">
+            <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4"/></svg>
+            <span>设置</span>
+          </button>
+        </nav>
+
+        <section class="work-area">
+          <div id="editors" class="editors">
+            <section id="primaryGroup" class="group primary is-active" data-group="primary">
+              <div class="group-tabs">
+                <div class="tabs-track"></div>
+                <div class="group-actions">
+                  <button class="icon-btn split-action" type="button" title="把当前内容放到右侧">
+                    <svg viewBox="0 0 18 18"><rect x="2.5" y="3" width="13" height="12" rx="1.5"/><path d="M9 3v12M12 9h3.5M13.5 7.5 15 9l-1.5 1.5"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="group-content"></div>
+            </section>
+
+            <div id="divider" class="divider hidden" title="拖动改变左右宽度"></div>
+
+            <section id="secondaryGroup" class="group secondary hidden" data-group="secondary">
+              <div class="group-tabs">
+                <div class="tabs-track"></div>
+                <div class="group-actions">
+                  <button class="icon-btn close-group" type="button" title="关闭右侧分屏并合并标签">×</button>
+                </div>
+              </div>
+              <div class="group-content"></div>
+            </section>
+          </div>
+
+        </section>
+      </div>
+
+      <footer class="statusbar">
+        <span class="status-project">● 项目 A</span>
+        <span>main*</span>
+        <span class="status-spacer"></span>
+        <span id="layoutState">单区域</span>
+        <span class="status-help">这是可点击的 UI 示意，不执行真实命令</span>
+      </footer>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const viewMeta = {
+      agent: { label: '项目 A · Claude', icon: 'A', color: '#d97757' },
+      docs: { label: 'README.md', icon: 'D', color: '#6ba5d7' },
+      chat: { label: '简易对话', icon: 'C', color: '#69b887' },
+      home: { label: '首页', icon: 'H', color: '#8f99a2' },
+      plugins: { label: '插件', icon: 'P', color: '#b889d6' }
+    }
+
+    const state = {
+      activeGroup: 'primary',
+      groups: {
+        primary: { items: ['agent'], active: 'agent' },
+        secondary: { items: [], active: null }
+      },
+      split: false,
+      inputMode: 'chat',
+      terminalExpanded: false,
+      docKind: 'markdown',
+      htmlMode: 'source'
+    }
+
+    const hint = document.getElementById('hint')
+    const toast = document.getElementById('toast')
+    const primaryGroup = document.getElementById('primaryGroup')
+    const secondaryGroup = document.getElementById('secondaryGroup')
+    const divider = document.getElementById('divider')
+    const terminalNav = document.getElementById('terminalNav')
+    const layoutState = document.getElementById('layoutState')
+    let toastTimer = null
+
+    function showToast(message) {
+      toast.textContent = message
+      toast.classList.add('show')
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2400)
+    }
+
+    function setHint(message) {
+      hint.textContent = message
+    }
+
+    function groupForView(view) {
+      for (const groupId of ['primary', 'secondary']) {
+        if (state.groups[groupId].items.includes(view)) return groupId
+      }
+      return null
+    }
+
+    function openView(view) {
+      if (!viewMeta[view]) return
+      const existingGroup = groupForView(view)
+      const targetGroup = existingGroup || state.activeGroup
+      const group = state.groups[targetGroup]
+
+      if (!group.items.includes(view)) group.items.push(view)
+      group.active = view
+      state.activeGroup = targetGroup
+
+      if (view === 'docs' || view === 'chat') {
+        setHint(`左侧“${view === 'docs' ? '文档' : '对话'}”只负责打开内容。现在还没有分屏；点击当前区域右上角的分屏图标。`)
+      } else if (view === 'agent') {
+        setHint('“项目”导航负责打开或定位 Agent。分屏位置由内容区域右上角的按钮决定。')
+      } else {
+        setHint('左侧导航选择要打开的内容；需要并排时，再使用内容区域右上角的分屏按钮。')
+      }
+      render()
+    }
+
+    function splitActive(groupId) {
+      const source = state.groups[groupId]
+      const view = source.active
+      if (!view) return
+
+      if (view === 'agent') {
+        showToast('首版不复制 Agent。请先点左侧“文档”或“对话”，再点分屏按钮。')
+        setHint('建议操作：左侧点“文档” → 右上角点分屏。这样得到左侧 Agent、右侧文档。')
+        return
+      }
+
+      if (groupId === 'secondary') {
+        state.activeGroup = 'secondary'
+        showToast('当前内容已经位于右侧分屏。')
+        return
+      }
+
+      state.split = true
+      source.items = source.items.filter(item => item !== view)
+      if (!source.items.length) source.items.push('agent')
+      source.active = source.items.includes('agent') ? 'agent' : source.items[0]
+
+      const target = state.groups.secondary
+      if (!target.items.includes(view)) target.items.push(view)
+      target.active = view
+      state.activeGroup = 'secondary'
+
+      setHint(`现在是左侧 Agent + 右侧${view === 'docs' ? '文档' : '简易对话'}。中间分隔线可以拖动。`)
+      showToast('已在右侧打开。左侧导航没有变，只是内容被摆到了右边。')
+      render()
+    }
+
+    function closeSecondary() {
+      const secondary = state.groups.secondary
+      const primary = state.groups.primary
+      for (const item of secondary.items) {
+        if (!primary.items.includes(item)) primary.items.push(item)
+      }
+      if (secondary.active) primary.active = secondary.active
+      secondary.items = []
+      secondary.active = null
+      state.split = false
+      state.activeGroup = 'primary'
+      setHint('右侧分屏已关闭，内容标签合并回主区域。')
+      render()
+    }
+
+    function setInputMode(mode) {
+      state.inputMode = mode === 'terminal' ? 'terminal' : 'chat'
+      if (state.inputMode === 'chat') state.terminalExpanded = false
+      terminalNav.classList.toggle('active', state.inputMode === 'terminal')
+      setHint(state.inputMode === 'terminal'
+        ? '终端复用了 Agent 原输入框的位置，没有再叠加第二个输入区。点击右侧方框可以向上扩展。'
+        : '已切回 Agent 输入。对话和终端共用同一块底部输入区域。')
+      render()
+    }
+
+    function resetDemo() {
+      state.activeGroup = 'primary'
+      state.groups.primary = { items: ['agent'], active: 'agent' }
+      state.groups.secondary = { items: [], active: null }
+      state.split = false
+      state.inputMode = 'chat'
+      state.terminalExpanded = false
+      state.docKind = 'markdown'
+      state.htmlMode = 'source'
+      primaryGroup.style.flexBasis = ''
+      secondaryGroup.style.flexBasis = '40%'
+      terminalNav.classList.remove('active')
+      setHint('试一下：点击左侧“文档”，然后点击内容区右上角“在右侧打开”。')
+      render()
+    }
+
+    function renderGroup(groupId) {
+      const element = document.querySelector(`[data-group="${groupId}"]`)
+      const group = state.groups[groupId]
+      const tabs = element.querySelector('.tabs-track')
+      const content = element.querySelector('.group-content')
+
+      tabs.innerHTML = group.items.map(view => {
+        const meta = viewMeta[view]
+        return `<button class="tab ${group.active === view ? 'active' : ''}" type="button" draggable="true" data-tab="${view}" data-owner="${groupId}">
+          <span class="tab-icon" style="background:${meta.color}">${meta.icon}</span>
+          <span class="tab-label">${meta.label}</span>
+        </button>`
+      }).join('')
+
+      content.innerHTML = viewTemplate(group.active, groupId)
+      element.classList.toggle('is-active', state.activeGroup === groupId)
+    }
+
+    function viewTemplate(view, groupId) {
+      if (view === 'agent') {
+        return `<div class="view agent-view">
+          <div class="view-toolbar">
+            <span class="view-title">Claude Code</span>
+            <span class="view-subtitle">项目 A · main</span>
+            <span class="view-toolbar-spacer"></span>
+            <span class="view-subtitle">Agent 保持单实例</span>
+          </div>
+          <div class="agent-body">
+            <aside class="sessions"><h4>会话</h4><div class="session-item active">实现登录页面</div><div class="session-item">修复构建错误</div><div class="session-item">整理开发文档</div></aside>
+            <div class="conversation">
+              <div class="messages">
+                <div class="message user">帮我检查项目结构，并启动开发服务。</div>
+                <div class="message"><div class="message-label">CLAUDE</div>项目已加载。输入区上方可以切换“对话 / 终端”，也可以把文档放到右侧边看边改。</div>
+              </div>
+              ${inputDockTemplate()}
+            </div>
+          </div>
+        </div>`
+      }
+
+      if (view === 'docs') {
+        if (state.docKind === 'html') return htmlDocumentTemplate(groupId)
+        return `<div class="view doc-view">
+          <div class="view-toolbar">
+            <span class="view-title">README.md</span>
+            <span class="view-subtitle">预览 · 编辑</span>
+            <span class="view-toolbar-spacer"></span>
+            <button class="side-open-btn" type="button" data-open-html>打开 HTML 示例</button>
+            ${groupId === 'primary' ? '<button class="side-open-btn" type="button" data-side-open="primary">▥ 在右侧打开</button>' : '<span class="view-subtitle">已在右侧</span>'}
+          </div>
+          <div class="doc-body">
+            <aside class="doc-outline"><h4>大纲</h4>项目介绍<br>快速开始<br>开发命令<br>目录结构</aside>
+            <article class="paper"><h1>MindCraft Agent</h1><p>Claude Code 与 Codex 的一体化桌面开发工作区。文档可以和 Agent 并排显示，不需要来回切换页面。</p><h2>快速开始</h2><div class="code-block">npm install<br>npm run dev</div></article>
+          </div>
+        </div>`
+      }
+
+      if (view === 'chat') {
+        return `<div class="view chat-view">
+          <div class="view-toolbar">
+            <span class="view-title">简易对话</span>
+            <span class="view-subtitle">需求讨论</span>
+            <span class="view-toolbar-spacer"></span>
+            ${groupId === 'primary' ? '<button class="side-open-btn" type="button" data-side-open="primary">▥ 在右侧打开</button>' : '<span class="view-subtitle">已在右侧</span>'}
+          </div>
+          <div class="chat-body"><div class="chat-bubble me">帮我梳理这个功能的验收点。</div><div class="chat-bubble">可以。右侧简易对话适合讨论需求，左侧编程 Agent 继续处理代码。</div><div class="composer chat-input">输入问题...</div></div>
+        </div>`
+      }
+
+      const title = view === 'plugins' ? '插件' : '首页'
+      const description = view === 'plugins' ? '插件仍然可以作为普通内容打开。' : '首页展示最近项目和统计信息。'
+      return `<div class="view"><div class="view-toolbar"><span class="view-title">${title}</span></div><div class="${view === 'plugins' ? 'plugins-body' : 'home-body'}"><div><div class="empty-icon">${viewMeta[view].icon}</div><strong>${title}</strong><p>${description}</p></div></div></div>`
+    }
+
+    function inputDockTemplate() {
+      const terminal = state.inputMode === 'terminal'
+      return `<div class="input-dock ${terminal && state.terminalExpanded ? 'terminal-expanded' : ''}">
+        <div class="dock-tabs">
+          <button class="dock-tab ${terminal ? '' : 'active'}" type="button" data-input-mode="chat">对话输入</button>
+          <button class="dock-tab dock-tab-terminal ${terminal ? 'active' : ''}" type="button" data-input-mode="terminal">&gt;_ 终端 · 项目 A</button>
+          <span class="dock-spacer"></span>
+          ${terminal ? '<button class="dock-action" type="button" data-terminal-new title="新建终端">+</button><button class="dock-action" type="button" data-terminal-expand title="扩展或恢复终端">□</button><button class="dock-action" type="button" data-input-mode="chat" title="返回对话输入">×</button>' : ''}
+        </div>
+        ${terminal
+          ? `<div class="dock-body dock-body-terminal"><div><span class="terminal-green">项目 A: PowerShell 7.5.2</span></div><div class="terminal-dim">绑定 D:\\project\\project-a · 切项目不会迁移正在运行的终端</div><br><div>PS D:\\project\\project-a&gt; <span class="cursor"></span></div></div>`
+          : '<div class="dock-body dock-body-chat">输入消息，@ 引用文件，/ 使用命令...</div>'}
+      </div>`
+    }
+
+    function htmlDocumentTemplate(groupId) {
+      const source = `<pre class="html-source"><span class="tag">&lt;!doctype html&gt;</span>\n<span class="tag">&lt;html</span> <span class="attr">lang</span>=<span class="value">&quot;zh-CN&quot;</span><span class="tag">&gt;</span>\n  <span class="tag">&lt;head&gt;</span>\n    <span class="tag">&lt;title&gt;</span>MindCraft Demo<span class="tag">&lt;/title&gt;</span>\n  <span class="tag">&lt;/head&gt;</span>\n  <span class="tag">&lt;body&gt;</span>\n    <span class="tag">&lt;main</span> <span class="attr">class</span>=<span class="value">&quot;card&quot;</span><span class="tag">&gt;</span>\n      <span class="tag">&lt;h1&gt;</span>Hello MindCraft<span class="tag">&lt;/h1&gt;</span>\n      <span class="tag">&lt;p&gt;</span>HTML 默认显示源码，可随时切换预览。<span class="tag">&lt;/p&gt;</span>\n      <span class="tag">&lt;button&gt;</span>开始使用<span class="tag">&lt;/button&gt;</span>\n    <span class="tag">&lt;/main&gt;</span>\n  <span class="tag">&lt;/body&gt;</span>\n<span class="tag">&lt;/html&gt;</span></pre>`
+      const preview = '<div class="html-preview"><div class="preview-card"><h1>Hello MindCraft</h1><p>HTML 默认显示源码，可随时切换到安全预览，也可以左右同时看。</p><button type="button">开始使用</button></div></div>'
+      const body = state.htmlMode === 'source' ? source : state.htmlMode === 'preview' ? preview : source + preview
+      return `<div class="view doc-view">
+        <div class="view-toolbar">
+          <span class="view-title">workbench-ui-demo.html</span>
+          <div class="mode-switch">
+            <button class="mode-btn ${state.htmlMode === 'source' ? 'active' : ''}" type="button" data-html-mode="source">源码</button>
+            <button class="mode-btn ${state.htmlMode === 'preview' ? 'active' : ''}" type="button" data-html-mode="preview">预览</button>
+            <button class="mode-btn ${state.htmlMode === 'split' ? 'active' : ''}" type="button" data-html-mode="split">分屏</button>
+          </div>
+          <span class="view-toolbar-spacer"></span>
+          <button class="side-open-btn" type="button" data-open-markdown>返回 MD 示例</button>
+          ${groupId === 'primary' ? '<button class="side-open-btn" type="button" data-side-open="primary">▥ 在右侧打开</button>' : '<span class="view-subtitle">已在右侧</span>'}
+        </div>
+        <div class="html-workspace ${state.htmlMode === 'split' ? 'split' : ''}">${body}</div>
+      </div>`
+    }
+
+    function render() {
+      primaryGroup.classList.toggle('hidden', false)
+      secondaryGroup.classList.toggle('hidden', !state.split)
+      divider.classList.toggle('hidden', !state.split)
+      renderGroup('primary')
+      if (state.split) renderGroup('secondary')
+
+      const activeView = state.groups[state.activeGroup].active
+      document.querySelectorAll('.activity-btn[data-view]').forEach(button => {
+        button.classList.toggle('active', button.dataset.view === activeView)
+      })
+
+      updateLayoutState()
+    }
+
+    function updateLayoutState() {
+      const parts = [state.split ? '左右分屏' : '单区域']
+      if (state.inputMode === 'terminal') parts.push(state.terminalExpanded ? '终端已扩展' : '输入区终端')
+      layoutState.textContent = parts.join(' · ')
+    }
+
+    document.querySelectorAll('.activity-btn[data-view]').forEach(button => {
+      button.addEventListener('click', () => openView(button.dataset.view))
+    })
+
+    document.getElementById('editors').addEventListener('click', event => {
+      const tab = event.target.closest('[data-tab]')
+      if (tab) {
+        state.activeGroup = tab.dataset.owner
+        state.groups[tab.dataset.owner].active = tab.dataset.tab
+        setHint('点击标签只是在这个区域内切换内容，不会改变左右分屏结构。')
+        render()
+        return
+      }
+
+      const group = event.target.closest('[data-group]')
+      if (group) state.activeGroup = group.dataset.group
+
+      const splitButton = event.target.closest('.split-action')
+      if (splitButton) {
+        splitActive(group?.dataset.group || 'primary')
+        return
+      }
+
+      const sideOpen = event.target.closest('[data-side-open]')
+      if (sideOpen) {
+        splitActive(sideOpen.dataset.sideOpen)
+        return
+      }
+
+      const inputMode = event.target.closest('[data-input-mode]')
+      if (inputMode) {
+        setInputMode(inputMode.dataset.inputMode)
+        return
+      }
+
+      if (event.target.closest('[data-terminal-expand]')) {
+        state.terminalExpanded = !state.terminalExpanded
+        setHint(state.terminalExpanded
+          ? '终端向上扩展，适合查看完整日志；不会再出现第二套输入框。'
+          : '终端已恢复为输入框高度。')
+        render()
+        return
+      }
+
+      if (event.target.closest('[data-terminal-new]')) {
+        showToast('示意：将在项目 A 目录新建一个 PowerShell 标签。')
+        return
+      }
+
+      const htmlMode = event.target.closest('[data-html-mode]')
+      if (htmlMode) {
+        state.htmlMode = htmlMode.dataset.htmlMode
+        setHint(state.htmlMode === 'source'
+          ? 'HTML 默认显示源码，不会一打开就执行页面。'
+          : state.htmlMode === 'preview'
+            ? '预览使用受限 iframe；脚本、导航和外部资源按安全策略限制。'
+            : 'HTML 分屏模式：左边源码，右边安全预览，和 Markdown 的编辑/预览体验一致。')
+        render()
+        return
+      }
+
+      if (event.target.closest('[data-open-html]')) {
+        state.docKind = 'html'
+        state.htmlMode = 'source'
+        viewMeta.docs.label = 'workbench-ui-demo.html'
+        setHint('HTML 已按“源码（默认）/ 预览 / 分屏”打开。点击上方三个模式试试。')
+        render()
+        return
+      }
+
+      if (event.target.closest('[data-open-markdown]')) {
+        state.docKind = 'markdown'
+        viewMeta.docs.label = 'README.md'
+        render()
+        return
+      }
+
+      if (event.target.closest('.close-group')) closeSecondary()
+    })
+
+    terminalNav.addEventListener('click', () => {
+      const agentGroup = groupForView('agent')
+      if (!agentGroup) {
+        showToast('需要先打开项目 Agent，终端会复用 Agent 输入区。')
+        return
+      }
+      state.activeGroup = agentGroup
+      state.groups[agentGroup].active = 'agent'
+      setInputMode(state.inputMode === 'terminal' ? 'chat' : 'terminal')
+    })
+    document.getElementById('resetBtn').addEventListener('click', resetDemo)
+
+    let draggedTab = null
+    document.getElementById('editors').addEventListener('dragstart', event => {
+      const tab = event.target.closest('[data-tab]')
+      if (!tab) return
+      draggedTab = { view: tab.dataset.tab, owner: tab.dataset.owner }
+      tab.classList.add('dragging')
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', JSON.stringify(draggedTab))
+      setHint('把这个标签拖到另一侧的标签栏即可移动；移动的是同一个内容实例，不会复制。')
+    })
+
+    document.getElementById('editors').addEventListener('dragover', event => {
+      const track = event.target.closest('.tabs-track')
+      if (!track || !draggedTab) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      document.querySelectorAll('.tabs-track').forEach(el => el.classList.toggle('drop-target', el === track))
+    })
+
+    document.getElementById('editors').addEventListener('dragleave', event => {
+      const track = event.target.closest('.tabs-track')
+      if (track && !track.contains(event.relatedTarget)) track.classList.remove('drop-target')
+    })
+
+    document.getElementById('editors').addEventListener('drop', event => {
+      const track = event.target.closest('.tabs-track')
+      if (!track || !draggedTab) return
+      event.preventDefault()
+      const targetGroup = track.closest('[data-group]').dataset.group
+      moveTab(draggedTab.view, draggedTab.owner, targetGroup)
+      clearTabDrag()
+    })
+
+    document.getElementById('editors').addEventListener('dragend', clearTabDrag)
+
+    function clearTabDrag() {
+      draggedTab = null
+      document.querySelectorAll('.tab.dragging').forEach(el => el.classList.remove('dragging'))
+      document.querySelectorAll('.tabs-track.drop-target').forEach(el => el.classList.remove('drop-target'))
+    }
+
+    function moveTab(view, sourceId, targetId) {
+      if (!view || sourceId === targetId) return
+      if (targetId === 'secondary' && !state.split) state.split = true
+
+      const source = state.groups[sourceId]
+      const target = state.groups[targetId]
+      source.items = source.items.filter(item => item !== view)
+      if (!target.items.includes(view)) target.items.push(view)
+      target.active = view
+
+      if (!source.items.length) {
+        if (sourceId === 'secondary') {
+          state.split = false
+          source.active = null
+        } else {
+          const fallback = target.items.find(item => item !== view && item !== 'agent') || 'agent'
+          if (target.items.includes(fallback)) target.items = target.items.filter(item => item !== fallback)
+          source.items = [fallback]
+          source.active = fallback
+        }
+      } else {
+        source.active = source.items[0]
+      }
+
+      state.activeGroup = targetId
+      setHint(`已把“${viewMeta[view].label}”移动到${targetId === 'primary' ? '左侧' : '右侧'}。移动保持同一内容实例，未保存编辑不会丢失，也不弹放弃确认。`)
+      render()
+    }
+
+    let dragging = false
+    divider.addEventListener('pointerdown', event => {
+      dragging = true
+      divider.classList.add('dragging')
+      divider.setPointerCapture(event.pointerId)
+    })
+    divider.addEventListener('pointermove', event => {
+      if (!dragging || !state.split) return
+      const rect = document.getElementById('editors').getBoundingClientRect()
+      const primaryPercent = Math.max(30, Math.min(70, ((event.clientX - rect.left) / rect.width) * 100))
+      primaryGroup.style.flex = `0 0 ${primaryPercent}%`
+      secondaryGroup.style.flex = '1 1 auto'
+    })
+    divider.addEventListener('pointerup', event => {
+      dragging = false
+      divider.classList.remove('dragging')
+      divider.releasePointerCapture(event.pointerId)
+    })
+
+    render()
+  </script>
+</body>
+</html>

@@ -91,6 +91,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener(CORE_CHANNELS.EDITOR_OPEN_SEARCH, handler)
   },
   setEditorSearchEnabled: (enabled) => ipcRenderer.send(CORE_CHANNELS.EDITOR_SEARCH_ENABLED, Boolean(enabled)),
+  getWindowRole: () => ipcRenderer.invoke(CORE_CHANNELS.WINDOW_ROLE_GET),
+  loadWorkbenchLayout: () => ipcRenderer.invoke(CORE_CHANNELS.WORKBENCH_LAYOUT_LOAD),
+  saveWorkbenchLayout: (payload) => ipcRenderer.invoke(CORE_CHANNELS.WORKBENCH_LAYOUT_SAVE, payload),
+  onCloseCoordinatorRequest: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on(CORE_CHANNELS.CLOSE_COORDINATOR_REQUEST, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.CLOSE_COORDINATOR_REQUEST, handler)
+  },
+  respondCloseCoordinator: (payload) => ipcRenderer.invoke(CORE_CHANNELS.CLOSE_COORDINATOR_RESPONSE, payload),
 
   // Agent 窗口
   openClaudeWin: () => ipcRenderer.invoke(CORE_CHANNELS.OPEN_CLAUDE_WIN),

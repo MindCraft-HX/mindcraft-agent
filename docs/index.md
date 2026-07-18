@@ -15,6 +15,8 @@ open-source repository.
 | Settings safety | [settings-json-pollution.md](./settings-json-pollution.md) |
 | Build and release | [build-and-deploy.md](./build-and-deploy.md) |
 | Gitee and GitHub publication | [github-publication.md](./github-publication.md) |
+| IDE main layout, split view, and project terminal | [workbench-split-and-terminal.md](./workbench-split-and-terminal.md) |
+| Clickable split-view UI prototype | [workbench-ui-demo.html](./workbench-ui-demo.html) |
 | Contributor workflow | [../CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Security reporting | [../SECURITY.md](../SECURITY.md) |
 

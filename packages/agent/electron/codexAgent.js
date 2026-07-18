@@ -14,6 +14,7 @@ const { getGitInfo } = require('./claudeMetrics')
 const { getCodexPanelStatePaths, getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
 const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
+const { createRuntimeConf } = require('./shared/createRuntimeConf')
 const { deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
 const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
 const { findLegacyUserData } = require('./findLegacyUserData')
@@ -413,7 +414,7 @@ const _codexCfg = createCodexConfigManager({
   Conf,
   normalizeReasoningEffort: normalizeCodexReasoningEffort,
 })
-const codexRuntimeConf = new Conf({ name: 'mindcraft-codex' })
+const codexRuntimeConf = createRuntimeConf(Conf, { name: 'mindcraft-codex' })
 setCodexConfRef(codexRuntimeConf)
 
 const {

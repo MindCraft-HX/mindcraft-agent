@@ -8,7 +8,7 @@ function openClaudeWin({ initUrl, env }) {
     if (claudeWin.isMinimized()) claudeWin.restore()
     claudeWin.show()
     claudeWin.focus()
-    return
+    return claudeWin
   }
 
   claudeWin = new BrowserWindow({
@@ -99,6 +99,7 @@ function openClaudeWin({ initUrl, env }) {
   claudeWin.loadURL(url)
   claudeWin.once('ready-to-show', () => claudeWin.show())
   claudeWin.on('closed', () => { claudeWin = null })
+  return claudeWin
 }
 
 module.exports = { openClaudeWin }

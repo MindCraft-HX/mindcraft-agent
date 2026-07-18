@@ -36,6 +36,10 @@ const CONTRACT_PATTERNS = [
   { dir: 'tests', match: f => f === 'ipc-handle-dedup.test.cjs' },
   // IPC channel parity + registry hard constraint (Batch 3)
   { dir: 'tests', match: f => f === 'ipc-channel-registry.test.cjs' },
+  // Workbench architecture contracts
+  { dir: 'tests', match: f => /^workbench-.*\.test\.(cjs|mjs)$/.test(f) },
+  { dir: 'tests', match: f => f === 'close-participant-registry.test.mjs' },
+  { dir: 'tests', match: f => f === 'close-handshake.test.cjs' },
   // Extracted pure-helper / IO-without-state module tests (Batch 2+)
   { dir: 'tests', match: f => /^codex-.*\.test\.cjs$/.test(f) },
   { dir: 'tests', match: f => /^claude-.*\.test\.cjs$/.test(f) },

@@ -69,6 +69,14 @@ const { createTray } = require('./tray');
 const { fetchImage } = require('./fetchImage');
 const { setupDragOptimization } = require('./dragPerformance');
 const { registerContextMenu } = require('./contextMenu');
+const { createLayoutRepository } = require('./workbench/layoutRepository')
+const { validateWorkbenchLayout } = require('./workbench/layoutSchema')
+const { registerLayoutIpc } = require('./workbench/layoutIpc')
+const { WINDOW_ROLES, createWindowRoleRegistry } = require('./workbench/windowRoles')
+const { createCloseHandshake } = require('./workbench/closeHandshake')
+
+const windowRoles = createWindowRoleRegistry()
+let nextWorkbenchWindowInstance = 0
 
 let initUrl = path.join(__dirname, "../dist/index.html")
 // 开发模式：优先使用 Vite dev server（HMR 支持）
@@ -167,6 +175,7 @@ function createWindow() {
       // enableRemoteModule: true, //打开remote模块
     },
   });
+  windowRoles.registerWindow(win, WINDOW_ROLES.MAIN_WORKBENCH)
 
   //设置ICON
   win.setIcon(path.join(__dirname, "../dist/logo-white.png"));
@@ -336,6 +345,27 @@ app.whenReady().then(async () => {
   // T198: Initialize settings facade before any settings readers
   initSettingsFacade(app.getPath('userData'));
 
+  ipcMain.handle(CORE_CHANNELS.WINDOW_ROLE_GET, event => windowRoles.getRoleForSender(event.sender))
+  createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win })
+  registerLayoutIpc({
+    ipcMain,
+    roles: windowRoles,
+    repository: createLayoutRepository({
+      directory: app.getPath('userData'),
+      validate: validateWorkbenchLayout,
+      createDefault: () => ({
+        version: 1,
+        revision: 0,
+        orientation: 'horizontal',
+        activeGroupId: 'group-primary',
+        groups: [{ id: 'group-primary', size: 1, activeItemId: 'agent:codehub', itemIds: ['agent:codehub'] }],
+        items: { 'agent:codehub': { type: 'agent', singleton: true } },
+        inputDock: { expandedSizePx: 420 },
+      }),
+    }),
+    createWindowInstanceId: () => `workbench-${Date.now()}-${++nextWorkbenchWindowInstance}`,
+  })
+
   if (!process.env.MINDCRAFT_E2E_NO_TRAY) tray = createTray(win, __dirname)
   createStore()
   setupIpcHandlers(NODE_ENV, NODE_PLATFORM);
@@ -361,8 +391,14 @@ app.whenReady().then(async () => {
   })
 
   registerAgentIPCs(ipcMain);
-  ipcMain.handle(CORE_CHANNELS.OPEN_CLAUDE_WIN, () => openClaudeWin({ initUrl, env: NODE_ENV }));
-  ipcMain.handle(CORE_CHANNELS.OPEN_CODEX_WIN, () => openCodexWin({ initUrl, env: NODE_ENV }));
+  ipcMain.handle(CORE_CHANNELS.OPEN_CLAUDE_WIN, () => {
+    const agentWindow = openClaudeWin({ initUrl, env: NODE_ENV })
+    if (agentWindow) windowRoles.registerWindow(agentWindow, WINDOW_ROLES.STANDALONE_AGENT)
+  });
+  ipcMain.handle(CORE_CHANNELS.OPEN_CODEX_WIN, () => {
+    const agentWindow = openCodexWin({ initUrl, env: NODE_ENV })
+    if (agentWindow) windowRoles.registerWindow(agentWindow, WINDOW_ROLES.STANDALONE_AGENT)
+  });
 
   // 通用目录选择（claude 和 codex 共用）
   const { dialog } = require('electron')

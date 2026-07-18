@@ -321,6 +321,13 @@ const CORE_CHANNELS = Object.freeze({
   WINDOW_CLOSE: 'window-close',
   WINDOW_IS_MAXIMIZED: 'window-is-maximized',
   WINDOW_PERFORMANCE_STATE: 'window-performance-state',
+  WINDOW_ROLE_GET: 'window-role-get',
+
+  // Workbench platform (main-workbench only)
+  WORKBENCH_LAYOUT_LOAD: 'workbench-layout-load',
+  WORKBENCH_LAYOUT_SAVE: 'workbench-layout-save',
+  CLOSE_COORDINATOR_REQUEST: 'close-coordinator-request',
+  CLOSE_COORDINATOR_RESPONSE: 'close-coordinator-response',
 
   // Local search
   LOCAL_SEARCH: 'local-search',

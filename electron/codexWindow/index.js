@@ -8,7 +8,7 @@ function openCodexWin({ initUrl, env }) {
     if (codexWin.isMinimized()) codexWin.restore()
     codexWin.show()
     codexWin.focus()
-    return
+    return codexWin
   }
 
   codexWin = new BrowserWindow({
@@ -98,6 +98,7 @@ function openCodexWin({ initUrl, env }) {
   codexWin.loadURL(url)
   codexWin.once('ready-to-show', () => codexWin.show())
   codexWin.on('closed', () => { codexWin = null })
+  return codexWin
 }
 
 module.exports = { openCodexWin }
