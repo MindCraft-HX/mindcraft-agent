@@ -2,6 +2,7 @@ export {
   CODEX_RUNTIME_STATES,
   applyCodexMetrics,
   buildPersistableCodexChat,
+  claimCodexSessionForSend,
   isCodexTurnLocked,
   markCodexAborted,
   markCodexAbortRequested,

@@ -39,9 +39,24 @@ test('CLI args use the public exec --json protocol and preserve resume options',
 
   assert.deepEqual(args.slice(0, 2), ['exec', '--json'])
   assert.ok(args.includes('resume'))
-  assert.equal(args.at(-1), 'thread-1')
+  assert.ok(args.indexOf('resume') < args.indexOf('--image'))
+  assert.equal(args[args.indexOf('resume') + 1], 'thread-1')
   assert.ok(args.includes('--skip-git-repo-check'))
   assert.ok(args.includes('--image'))
+})
+
+test('resume and thread id cannot be consumed as variadic image paths', () => {
+  const args = buildCodexCliArgs({
+    threadId: '019f7471-8e6b-73b1-bdd2-1705d4cdf45f',
+    imagePaths: ['C:/upload.png'],
+  })
+
+  assert.deepEqual(args.slice(-4), [
+    'resume',
+    '019f7471-8e6b-73b1-bdd2-1705d4cdf45f',
+    '--image',
+    'C:/upload.png',
+  ])
 })
 
 test('nested config overrides are serialized without npm package coupling', () => {

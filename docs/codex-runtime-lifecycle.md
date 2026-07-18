@@ -69,6 +69,11 @@ before a background transcript scan can discover it. The completion boundary
 persists the binding again with the resolved `filePath`; renderer scan results
 must never infer ownership from an id prefix or transcript filename.
 
+For resumed turns with images, place the `resume <thread-id>` subcommand before
+all `--image` arguments. The top-level CLI image option is variadic; putting it
+first makes it consume the words `resume` and the thread id as image paths,
+silently starting a new thread instead of resuming the existing one.
+
 ## External CLI Direction
 
 Codex runtime is being migrated to a `CodexCliTransport` that accepts an
@@ -92,3 +97,4 @@ The migration sequence is:
 - queued input starts only after the previous run closes;
 - an interrupted historical transcript remains readable and resumable.
 - a resumed run that rolls onto a new thread id remains bound to one `chatKey`.
+- a resumed turn with images does not create a replacement thread.

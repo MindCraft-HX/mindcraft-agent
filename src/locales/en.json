@@ -717,6 +717,7 @@
 		"fetchingGitDiff": "Fetching git diff…",
 		"fetchingCodeChanges": "Fetching code changes…",
 		"codexBusy": "CodeX is processing the previous request, please try again later",
+		"codexSessionClaimFailed": "Unable to adopt this Codex session. Your input was preserved; please try again.",
 		"deferredHistoryHint": "File {size} KB, {count} overly long outputs at tail, longest {maxLen} KB.",
 		"codexCommand": "Codex command",
 		"skillPrefix": "Skill: ",

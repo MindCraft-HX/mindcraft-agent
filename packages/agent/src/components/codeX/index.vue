@@ -282,6 +282,7 @@ import {
   markCodexTurnAccepted,
   markCodexTurnStarting,
   isCodexTurnLocked,
+  claimCodexSessionForSend,
   mergeCodexUpdatedAt,
   mergeScannedChatsPreservingRuntime,
   sanitizeCodexPersistedMetrics,
@@ -2245,19 +2246,13 @@ async function sendMessage(textOverride = null, targetTab = null) {
   if (!tab.model) tab.model = codexDefaultModel.value || null
   if (!tab.reasoningEffort) tab.reasoningEffort = codexDefaultReasoningEffort.value || null
 
-  // Provider scans may find threads belonging to another Codex client. Keep
-  // them readable, but require an explicit user claim before resuming them.
-  if (tab.cliSessionId && tab._resumeAllowed === false) {
-    const confirmed = window.confirm('This transcript was discovered from an external Codex session. Continue the original thread in MindCraft?')
-    if (!confirmed) return
-    const claimed = await window.electronAPI.codexClaimCliSession?.({
-      sessionId: tab.sessionId,
-      cliSessionId: tab.cliSessionId,
-      filePath: tab.filePath || '',
-    })
-    if (!claimed?.ok) return
-    tab._resumeAllowed = true
-    tab._resumeClaimed = true
+  // Sending from a scanned transcript is the explicit user action that adopts
+  // it. Keep this non-blocking so a failed claim never traps the composer.
+  const claim = await claimCodexSessionForSend(tab, window.electronAPI.codexClaimCliSession)
+  if (!claim.ok) {
+    ElMessage.error({ message: claim.error || t('agent.codexSessionClaimFailed'), showClose: true })
+    nextTick(() => inputEl.value?.focus())
+    return
   }
 
   if (isCodexTurnLocked(tab)) {

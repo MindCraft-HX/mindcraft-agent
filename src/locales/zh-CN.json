@@ -717,6 +717,7 @@
 		"fetchingGitDiff": "正在获取 git diff…",
 		"fetchingCodeChanges": "正在获取代码变更…",
 		"codexBusy": "CodeX 正在处理上一轮请求，请稍后重试",
+		"codexSessionClaimFailed": "无法接管该 Codex 会话，输入内容已保留，请重试",
 		"deferredHistoryHint": "文件 {size} KB，尾部超长输出 {count} 条，最长 {maxLen} KB。",
 		"codexCommand": "Codex 命令",
 		"skillPrefix": "Skill：",

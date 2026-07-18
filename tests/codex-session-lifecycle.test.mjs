@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   CODEX_RUNTIME_STATES,
+  claimCodexSessionForSend,
   isCodexTurnLocked,
   markCodexAbortRequested,
   markCodexDone,
@@ -53,6 +54,40 @@ test('cold-restored session must not stay locked by stale awaitingDone flag', ()
   const restored = { thinking: false, _awaitingDone: false }
   assert.equal(isCodexTurnLocked(restored), false)
   assert.equal(shouldHydrateHistoryFromDisk(restored), true)
+})
+
+test('sending from a scanned transcript claims it without a blocking confirmation', async () => {
+  const tab = {
+    sessionId: 'codex::scan-1',
+    cliSessionId: 'thread-1',
+    filePath: 'C:/thread-1.jsonl',
+    _resumeAllowed: false,
+  }
+  let payload = null
+
+  const result = await claimCodexSessionForSend(tab, async (nextPayload) => {
+    payload = nextPayload
+    return { ok: true }
+  })
+
+  assert.deepEqual(payload, {
+    sessionId: 'codex::scan-1',
+    cliSessionId: 'thread-1',
+    filePath: 'C:/thread-1.jsonl',
+  })
+  assert.deepEqual(result, { ok: true, claimed: true })
+  assert.equal(tab._resumeAllowed, true)
+  assert.equal(tab._resumeClaimed, true)
+})
+
+test('failed scanned-transcript claim leaves the composer session retryable', async () => {
+  const tab = { sessionId: 'codex::scan-1', cliSessionId: 'thread-1', _resumeAllowed: false }
+
+  const result = await claimCodexSessionForSend(tab, async () => ({ ok: false, error: 'claim failed' }))
+
+  assert.deepEqual(result, { ok: false, error: 'claim failed' })
+  assert.equal(tab._resumeAllowed, false)
+  assert.notEqual(tab._resumeClaimed, true)
 })
 
 test('abort request keeps the Codex send lock until authoritative done', () => {

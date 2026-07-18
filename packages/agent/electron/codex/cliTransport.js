@@ -73,10 +73,12 @@ function buildCodexCliArgs({
   }
   if (webSearchMode) args.push('--config', `web_search=${toTomlValue(webSearchMode)}`)
   if (approvalPolicy) args.push('--config', `approval_policy=${toTomlValue(approvalPolicy)}`)
+  if (threadId) args.push('resume', threadId)
+  // `exec --image` accepts one or more paths and greedily consumes `resume`
+  // plus its UUID. Resume-scoped image options must follow the subcommand.
   for (const imagePath of capabilities?.images !== false && Array.isArray(imagePaths) ? imagePaths : []) {
     if (imagePath) args.push('--image', imagePath)
   }
-  if (threadId) args.push('resume', threadId)
   return args
 }
 

@@ -68,6 +68,24 @@ export function isCodexTurnLocked(tab = {}) {
   return Boolean(tab?.thinking || tab?._awaitingDone)
 }
 
+export async function claimCodexSessionForSend(tab = {}, claimSession) {
+  if (!tab?.cliSessionId || tab?._resumeAllowed !== false) return { ok: true, claimed: false }
+  if (typeof claimSession !== 'function') return { ok: false, error: 'Session claim is unavailable' }
+  try {
+    const result = await claimSession({
+      sessionId: tab.sessionId,
+      cliSessionId: tab.cliSessionId,
+      filePath: tab.filePath || '',
+    })
+    if (!result?.ok) return { ok: false, error: result?.error || 'Unable to continue this session' }
+    tab._resumeAllowed = true
+    tab._resumeClaimed = true
+    return { ok: true, claimed: true }
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) }
+  }
+}
+
 export function shouldHydrateHistoryFromDisk(tab = {}) {
   return !isCodexTurnLocked(tab)
 }
