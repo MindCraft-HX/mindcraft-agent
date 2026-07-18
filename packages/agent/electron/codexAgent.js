@@ -476,25 +476,51 @@ function extractCodexAgentMessageText(raw = {}) {
   return ''
 }
 
-function buildCodexAssistantHistoryMessage(text = '') {
+function buildCodexAssistantHistoryMessage(text = '', { phase = '', turnId = '' } = {}) {
   const normalizedText = String(text || '').trim()
   if (!normalizedText) return null
   return {
     role: 'assistant',
     text: normalizedText,
     content: [{ type: 'output_text', text: normalizedText }],
+    ...(phase ? { _codexPhase: phase } : {}),
+    ...(turnId ? { _codexTurnId: turnId } : {}),
   }
 }
 
 function extractCodexAssistantHistoryMessageFromJsonlRow(row = {}) {
   if (!row || typeof row !== 'object') return null
   if (row.type === 'agent_message') {
-    return buildCodexAssistantHistoryMessage(extractCodexAgentMessageText(row))
+    return buildCodexAssistantHistoryMessage(extractCodexAgentMessageText(row), {
+      phase: row.phase || '',
+      turnId: row.internal_chat_message_metadata_passthrough?.turn_id || '',
+    })
   }
   if (row.payload?.type === 'agent_message') {
-    return buildCodexAssistantHistoryMessage(extractCodexAgentMessageText(row.payload))
+    return buildCodexAssistantHistoryMessage(extractCodexAgentMessageText(row.payload), {
+      phase: row.payload.phase || '',
+      turnId: row.payload.internal_chat_message_metadata_passthrough?.turn_id || '',
+    })
   }
   return null
+}
+
+function collapseCodexAssistantPhases(messages = []) {
+  const finalTurns = new Set(messages
+    .filter(message => message?._codexTurnId && message?._codexPhase === 'final_answer')
+    .map(message => message._codexTurnId))
+  const lastCommentaryByTurn = new Map()
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (message?._codexTurnId && message?._codexPhase === 'commentary') {
+      lastCommentaryByTurn.set(message._codexTurnId, index)
+    }
+  }
+  return messages.filter((message, index) => {
+    if (!message?._codexTurnId || message?._codexPhase !== 'commentary') return true
+    if (finalTurns.has(message._codexTurnId)) return false
+    return lastCommentaryByTurn.get(message._codexTurnId) === index
+  })
 }
 
 function normalizeTopLevelCodexStreamEvent(ev = {}) {
@@ -1667,6 +1693,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       const seenMessages = new Set()
       let historyToolCollector = null
       let historyModel = ''
+      let currentTurnId = ''
       let activeTurnTokens = null
 
       function appendHistoryToolAction(action) {
@@ -1717,6 +1744,8 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         if (!row) return
         const parsedTs = Date.parse(row.timestamp || '')
         const ts = Number.isFinite(parsedTs) ? parsedTs : null
+        if (row.type === 'event_msg' && row.payload?.type === 'task_started' && row.payload?.turn_id) currentTurnId = row.payload.turn_id
+        if (row.type === 'turn_context' && row.payload?.turn_id) currentTurnId = row.payload.turn_id
         if (row.type === 'turn_context' && row.payload?.model) historyModel = historyModel || row.payload.model
         if (row.type === 'session_meta' && row.payload?.model) historyModel = historyModel || row.payload.model
 
@@ -1770,7 +1799,13 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
           if (role === 'user' || role === 'assistant' || role === 'system') {
             const text = buildMessageTextFromContent(row.payload.content)
             if (text || hasRenderableMessageContent(row.payload.content)) {
-              pushHistoryMessage(messages, seenMessages, { role, text, content: row.payload.content })
+              pushHistoryMessage(messages, seenMessages, {
+                role, text, content: row.payload.content,
+                ...(role === 'assistant' && row.payload.phase ? { _codexPhase: row.payload.phase } : {}),
+                ...(role === 'assistant' && row.payload.internal_chat_message_metadata_passthrough?.turn_id
+                  ? { _codexTurnId: row.payload.internal_chat_message_metadata_passthrough.turn_id }
+                  : {}),
+              })
             }
           }
           return
@@ -1790,6 +1825,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
         const agentMessage = extractCodexAssistantHistoryMessageFromJsonlRow(row)
         if (agentMessage) {
+          if (!agentMessage._codexTurnId && currentTurnId) agentMessage._codexTurnId = currentTurnId
           pushHistoryMessage(messages, seenMessages, agentMessage)
           return
         }
@@ -1813,6 +1849,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         seenMessages.clear()
         resetHistoryToolCollector()
         historyModel = ''
+        currentTurnId = ''
         activeTurnTokens = null
         for (const line of lines) collectMessage(line)
         if (messages.length >= safePageSize || !pageData.hasMore) break
@@ -1827,11 +1864,12 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       stopCollect({ pendingFlushed: 0 })
 
       const stopProcess = perfStartIpc('codex.readRange.process')
-      const sliced = messages.slice(-safePageSize)
+      const collapsedMessages = collapseCodexAssistantPhases(messages)
+      const sliced = collapsedMessages.slice(-safePageSize)
       const result = {
         messages: sliced.map((message, index) => ({ id: index + 1, ...message })),
-        hasMore: pageData.hasMore || messages.length > sliced.length,
-        totalPages: Math.max(1, pageData.totalPages || Math.ceil(messages.length / safePageSize)),
+        hasMore: pageData.hasMore || collapsedMessages.length > sliced.length,
+        totalPages: Math.max(1, pageData.totalPages || Math.ceil(collapsedMessages.length / safePageSize)),
       }
       stopProcess({ resultMessages: result.messages.length, resultHasMore: result.hasMore ? 1 : 0 })
       return result
@@ -1844,6 +1882,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
     const seenMessages = new Set()
     let historyToolCollector = null
     let historyModel = ''
+    let currentTurnId = ''
     let activeTurnTokens = null
 
     function appendHistoryToolAction(action) {
@@ -1888,6 +1927,8 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       if (!row) return
       const parsedTs = Date.parse(row.timestamp || '')
       const ts = Number.isFinite(parsedTs) ? parsedTs : null
+      if (row.type === 'event_msg' && row.payload?.type === 'task_started' && row.payload?.turn_id) currentTurnId = row.payload.turn_id
+      if (row.type === 'turn_context' && row.payload?.turn_id) currentTurnId = row.payload.turn_id
       if (row.type === 'turn_context' && row.payload?.model) historyModel = historyModel || row.payload.model
       if (row.type === 'session_meta' && row.payload?.model) historyModel = historyModel || row.payload.model
 
@@ -1939,7 +1980,13 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
         if (role === 'user' || role === 'assistant' || role === 'system') {
           const text = buildMessageTextFromContent(row.payload.content)
           if (text || hasRenderableMessageContent(row.payload.content)) {
-            pushHistoryMessage(messages, seenMessages, { role, text, content: row.payload.content })
+            pushHistoryMessage(messages, seenMessages, {
+              role, text, content: row.payload.content,
+              ...(role === 'assistant' && row.payload.phase ? { _codexPhase: row.payload.phase } : {}),
+              ...(role === 'assistant' && row.payload.internal_chat_message_metadata_passthrough?.turn_id
+                ? { _codexTurnId: row.payload.internal_chat_message_metadata_passthrough.turn_id }
+                : {}),
+            })
           }
         }
         return
@@ -1959,6 +2006,7 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
       // agent_message → 作为 assistant 消息收集（含 final_answer 最终回复）
       const agentMessage = extractCodexAssistantHistoryMessageFromJsonlRow(row)
       if (agentMessage) {
+        if (!agentMessage._codexTurnId && currentTurnId) agentMessage._codexTurnId = currentTurnId
         pushHistoryMessage(messages, seenMessages, agentMessage)
         return
       }
@@ -1977,8 +2025,9 @@ function readSessionFileRange(filePath, page = 0, pageSize = 60) {
     historyToolCollector.flushCompleted()
 
     const baseId = -((safePage + 1) * 100000)
+    const collapsedMessages = collapseCodexAssistantPhases(messages)
     return {
-      messages: messages.map((message, index) => ({ id: baseId + index, ...message })),
+      messages: collapsedMessages.map((message, index) => ({ id: baseId + index, ...message })),
       hasMore: pageData.hasMore,
       totalPages: pageData.totalPages,
     }
@@ -4310,6 +4359,7 @@ module.exports = {
     buildRuntimeConfigFromToml,
     extractCodexAgentMessageText,
     extractCodexAssistantHistoryMessageFromJsonlRow,
+    collapseCodexAssistantPhases,
     normalizeTopLevelCodexStreamEvent,
     mergeCodexTurnSnapshotWithSessionMetrics,
     queryCodexStatusBarMetrics,

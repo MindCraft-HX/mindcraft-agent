@@ -80,10 +80,10 @@ all `--image` arguments. The top-level CLI image option is variadic; putting it
 first makes it consume the words `resume` and the thread id as image paths,
 silently starting a new thread instead of resuming the existing one.
 
-After `agent_done`, the renderer may perform one bounded, read-only tail read of
-the resolved transcript. It appends only messages missing from the live stream,
-using provider tool identity and occurrence-aware message keys. Reconciliation
-must never replace live history, scan other sessions, or delay completion.
+Codex transcripts can contain multiple assistant messages for one turn. History
+restoration uses provider `turn_id` and `phase`: a completed turn keeps its
+`final_answer` and hides `commentary`; an interrupted turn without a final answer
+keeps only its last commentary message. Live rendering remains event-driven.
 
 ## External CLI Direction
 

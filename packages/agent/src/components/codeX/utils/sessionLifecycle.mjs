@@ -64,40 +64,6 @@ function clearRuntimeFields(tab, { clearState = true } = {}) {
   return tab
 }
 
-function transcriptMessageKey(message = {}) {
-  if (message?.role === 'tool' && message?.toolUseId) return `tool:${message.toolUseId}`
-  const text = message?.text || ''
-  if (text) return `${message?.role || ''}:${text}`
-  let content = ''
-  if (Array.isArray(message?.content) && message.content.length) {
-    try { content = JSON.stringify(message.content) } catch (_) {}
-  }
-  return `${message?.role || ''}::${content}`
-}
-
-export function reconcileCodexTranscriptTail(existingMessages = [], transcriptMessages = [], { nextId = null } = {}) {
-  const existingCounts = new Map()
-  for (const message of Array.isArray(existingMessages) ? existingMessages : []) {
-    const key = transcriptMessageKey(message)
-    existingCounts.set(key, (existingCounts.get(key) || 0) + 1)
-  }
-
-  const seenTranscriptCounts = new Map()
-  const appended = []
-  for (const message of Array.isArray(transcriptMessages) ? transcriptMessages : []) {
-    const key = transcriptMessageKey(message)
-    const seen = (seenTranscriptCounts.get(key) || 0) + 1
-    seenTranscriptCounts.set(key, seen)
-    if (seen <= (existingCounts.get(key) || 0)) continue
-
-    const next = { ...message }
-    if (typeof nextId === 'function') next.id = nextId()
-    appended.push(next)
-  }
-  existingMessages.push(...appended)
-  return appended
-}
-
 export function isCodexTurnLocked(tab = {}) {
   return Boolean(tab?.thinking || tab?._awaitingDone)
 }
