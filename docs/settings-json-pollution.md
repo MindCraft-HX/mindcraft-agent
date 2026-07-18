@@ -17,7 +17,7 @@
 
 ```
 ~/.claude/settings.json（本机示例，2026-06-15）
-SDK 基线：@anthropic-ai/claude-agent-sdk v0.2.141
+SDK 基线：@anthropic-ai/claude-agent-sdk v0.3.214
 ```
 
 | 字段 | 值 | SDK Settings interface | 判定 |

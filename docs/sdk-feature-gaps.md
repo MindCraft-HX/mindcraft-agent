@@ -1,7 +1,7 @@
 # SDK 未集成功能全景分析
 
 > 创建：2026-06-16
-> Claude SDK 基线：已安装 `@anthropic-ai/claude-agent-sdk` v0.2.141；已评估最新版 v0.3.214
+> Claude SDK 基线：已安装并完成兼容验证 `@anthropic-ai/claude-agent-sdk` v0.3.214
 > Codex 运行时：configured external `codex` executable; validate with `--version` and `exec --help`
 > 验证依据：Claude SDK 类型定义与 Codex CLI 公开帮助输出，非网络文档
 > 关联：`docs/agent-architecture.md`（架构入口）。本文是 SDK 能力与取舍的专题入口；新增 SDK 用法仍需核对本地 `.d.ts`。

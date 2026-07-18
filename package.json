@@ -23,8 +23,9 @@
     "electron:build-prod-ios": "cross-env NODE_ENV=production NODE_PLATFORM=IOS node ./build/build.js --version ; NODE_OPTIONS=--max-old-space-size=4096 vite build --mode prodIos && electron-builder --config=./build/builder.prod.ios.json --mac"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.117",
-    "@anthropic-ai/sdk": "^0.87.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.214",
+    "@anthropic-ai/sdk": "0.93.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
@@ -54,7 +55,8 @@
     "sql.js": "^1.14.1",
     "uuid": "^11.1.0",
     "vue-i18n": "^9.14.4",
-    "vue-katex-auto-render": "^0.2.0"
+    "vue-katex-auto-render": "^0.2.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@electron/notarize": "^3.0.1",

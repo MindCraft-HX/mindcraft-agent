@@ -1,7 +1,7 @@
 # Provider Runtime Dependency Policy
 
 > Assessed: 2026-07-18
-> Baseline: Codex CLI 0.144.5, Claude Code CLI 2.1.214, Claude Agent SDK 0.2.141.
+> Baseline: Codex CLI 0.144.5, Claude Code CLI 2.1.214, Claude Agent SDK 0.3.214.
 > Registry latest at assessment time: 0.144.5, 2.1.214, and 0.3.214 respectively.
 
 This document records how MindCraft integrates and upgrades its programming
@@ -59,9 +59,11 @@ requirements to peers:
 - `@modelcontextprotocol/sdk ^1.29.0`;
 - `zod ^4.0.0`.
 
-The current project has `@anthropic-ai/sdk 0.87.0` and does not declare the
-other two peers at the root. Therefore 0.2.141 -> 0.3.214 is a tested dependency
-migration, not a safe version-string edit.
+MindCraft pins the Agent SDK and its tested peer set at the application root:
+`@anthropic-ai/sdk 0.93.0`, `@modelcontextprotocol/sdk 1.29.0`, and `zod 4.4.3`.
+This prevents duplicate protocol libraries and accidental drift during a clean
+install. Future changes to any member of this set require the same upgrade
+gates as an Agent SDK change.
 
 ## Upgrade Workflow
 
@@ -113,9 +115,9 @@ expands typed user dialogs, message-display hooks, permission-denial events,
 prompt suggestions, command-change events, session mutation APIs, and richer
 runtime/status messages.
 
-Decision: schedule an SDK 0.3.214 compatibility upgrade as a separate task.
-First update peers and preserve current behavior; only after that baseline is
-stable should product features be evaluated. Highest-value candidates are
-typed user dialogs/permission denial, dynamic command updates, and official
-session list/get/delete APIs. Prompt suggestions and progress summaries are
-optional UX experiments, not upgrade blockers.
+Decision: the SDK 0.3.214 compatibility upgrade is complete. The peer set is
+explicit and deduplicated, and no new SDK behavior is enabled by the migration.
+Product features remain separate changes with their own contracts. The
+highest-value candidates are typed user dialogs/permission denial, dynamic
+command updates, and official session list/get/delete APIs. Prompt suggestions
+and progress summaries are optional UX experiments, not upgrade blockers.
