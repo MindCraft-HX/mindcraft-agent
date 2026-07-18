@@ -1,7 +1,7 @@
 # SDK 未集成功能全景分析
 
 > 创建：2026-06-16
-> Claude SDK 版本：`@anthropic-ai/claude-agent-sdk` v0.2.117
+> Claude SDK 基线：已安装 `@anthropic-ai/claude-agent-sdk` v0.2.141；已评估最新版 v0.3.214
 > Codex 运行时：configured external `codex` executable; validate with `--version` and `exec --help`
 > 验证依据：Claude SDK 类型定义与 Codex CLI 公开帮助输出，非网络文档
 > 关联：`docs/agent-architecture.md`（架构入口）。本文是 SDK 能力与取舍的专题入口；新增 SDK 用法仍需核对本地 `.d.ts`。
@@ -180,6 +180,11 @@ and normalizes stdout JSONL into the renderer event contract.
 Required capabilities are `--json` and `exec resume`; optional capabilities are
 probed for images, additional directories, and non-Git workspaces. npm is only
 an installer/update channel, not a runtime dependency.
+
+The production integration decision and upgrade gates are recorded in
+`docs/provider-runtime-dependency-policy.md`. In particular, the current Codex
+SDK wraps the same exec JSONL process and is not a reason to replace the direct
+external CLI transport.
 
 ### 2.1 Event Types Not Fully Handled
 

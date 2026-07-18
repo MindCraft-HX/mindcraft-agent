@@ -87,17 +87,14 @@ keeps only its last commentary message. Live rendering remains event-driven.
 
 ## External CLI Direction
 
-Codex runtime is being migrated to a `CodexCliTransport` that accepts an
-executable path and public CLI capabilities. It must not import
+The external CLI migration is complete. `CodexCliTransport` accepts an
+executable path and probes public CLI capabilities. It must not import
 `@openai/codex-sdk`, locate npm package internals, or assume npm is the install
 channel. npm remains one installer/update mechanism only.
 
-The migration sequence is:
-
-1. Stabilize and test the lifecycle contract.
-2. Run the direct CLI transport with capability probing.
-3. Validate supported CLI versions and packaged Electron behavior.
-4. Keep the external CLI as the sole Codex runtime dependency.
+The configured external CLI is the sole Codex runtime dependency. Version
+governance and the SDK/app-server assessment live in
+`docs/provider-runtime-dependency-policy.md`.
 
 ## Required Regression Cases
 
