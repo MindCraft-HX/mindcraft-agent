@@ -13,7 +13,7 @@
 const fs = require('fs')
 const path = require('path')
 const { app } = require('electron')
-const { getCodexPanelStateReadCandidates } = require('./codexPanelStatePaths')
+const { getCodexPanelStatePaths } = require('./codexPanelStatePaths')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb } = require('./db')
 const { listSessions } = require('./sessionRepository')
@@ -61,12 +61,10 @@ function readClaudePanelState() {
 }
 
 function readCodexPanelState() {
-  const candidates = getCodexPanelStateReadCandidates()
-  for (const candidate of candidates) {
-    const state = readPanelState(candidate)
-    if (state) return state
-  }
-  return null
+  // CodeHub restoration is profile-scoped. The provider panel owns any
+  // one-time legacy migration; this hot path must never read ~/.codex.
+  const { primary } = getCodexPanelStatePaths()
+  return readPanelState(primary)
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +297,7 @@ module.exports = {
     toCodeHubAgentType,
     deriveProjectName,
     extractTabsFromPanelState,
+    readCodexPanelState,
     buildRegistryProjectIndex,
     toSafeTab,
     TAB_WHITELIST,

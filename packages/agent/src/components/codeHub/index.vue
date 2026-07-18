@@ -290,54 +290,9 @@ function onDrop(e, toIndex) {
   reorderUnifiedTab(fromIndex, toIndex)
 }
 
-// T184: unifiedTabs now sources from sessionIndex (persisted panel-state + session-registry).
-// Provider panels push runtime patches via patchRuntimeProjects, not as the tab source.
-// Old collectTabs() path is preserved as dev fallback behind a flag.
-const CODEHUB_USE_LEGACY_TABS = (() => {
-  if (typeof localStorage !== 'undefined' && localStorage.getItem('mcpf_legacy_codehub_tabs') === '1') return true
-  return false
-})()
-
-function collectTabs(panel, agentType, meta) {
-  const stop = perfStart('codehub.collectTabs')
-  const data = panel?.projectTabData
-  if (!data) { stop({ tabs: 0 }); return [] }
-  const result = data.map(p => ({
-    id: `${agentType}:${p.id}`,
-    projectId: p.id,
-    agentType,
-    name: p.name,
-    cwd: p.cwd,
-    cwdLocked: p.cwdLocked,
-    runningCount: p.runningCount,
-    hasPendingTool: p.hasPendingTool,
-    hasDoneNotification: p.hasDoneNotification,
-    createdAt: p.createdAt,
-    iconClass: meta.iconClass,
-    iconStyle: meta.iconStyle,
-  }))
-  stop({ tabs: result.length })
-  return result
-}
-
-const unifiedTabs = computed(() => {
-  // T184 fallback: revert to legacy collectTabs path
-  if (CODEHUB_USE_LEGACY_TABS) {
-    const tabs = []
-    for (const key of agentKeys.value) {
-      if (mountedMap[key]) {
-        const panel = panelRefs[key]
-        if (panel) {
-          tabs.push(...collectTabs(panel, key, getAgentMeta(key)))
-        }
-      }
-    }
-    return orderCodeHubTabs(tabs, tabOrder.value)
-  }
-
-  // T184: Use session index (persisted tabs + runtime patches)
-  return sessionIndex.orderedTabs.value
-})
+// SessionIndex is the sole tab-set authority. Provider panels only patch
+// runtime fields after mount; localStorage may order/select but never add tabs.
+const unifiedTabs = computed(() => sessionIndex.orderedTabs.value)
 
 const activeAgent = computed(() => {
   const tab = unifiedTabs.value.find(t => t.id === activeTabId.value)

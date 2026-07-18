@@ -319,6 +319,14 @@ test('integration: Codex panel-state shape yields correct tabs', () => {
   assert.equal(tabs[0].updatedAt, 1700000003000)
 })
 
+test('CodeHub loader is profile-scoped and does not use Codex legacy candidates', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../packages/agent/electron/codehubSessionIndex.js'), 'utf8')
+
+  assert.match(source, /getCodexPanelStatePaths/)
+  assert.doesNotMatch(source, /getCodexPanelStateReadCandidates/)
+  assert.match(source, /readPanelState\(primary\)/)
+})
+
 test('extractTabsFromPanelState reads hasDoneNotification from project', () => {
   const panelState = {
     projects: [

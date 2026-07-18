@@ -9,6 +9,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 
 // ---------------------------------------------------------------------------
 // Test helpers — mirror the merge logic from useSessionIndex.mjs
@@ -133,6 +134,14 @@ test('empty runtime patch preserves all persisted tabs', () => {
   assert.equal(merged.length, 2)
   assert.ok(merged.find(t => t.id === 'claudeCode:proj-1'))
   assert.ok(merged.find(t => t.id === 'codex:proj-1'))
+})
+
+test('CodeHub renderer has one SessionIndex tab authority and no localStorage legacy mode', () => {
+  const source = fs.readFileSync(new URL('../packages/agent/src/components/codeHub/index.vue', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(source, /mcpf_legacy_codehub_tabs/)
+  assert.doesNotMatch(source, /CODEHUB_USE_LEGACY_TABS/)
+  assert.match(source, /const unifiedTabs = computed\(\(\) => sessionIndex\.orderedTabs\.value\)/)
 })
 
 // ---------------------------------------------------------------------------

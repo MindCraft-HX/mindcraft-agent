@@ -131,6 +131,7 @@ MindCraft 自有数据包括：
 - 会话相关 bug 先读 `docs/session-pitfalls.md`，再动代码。
 - A user title write must persist its `chatKey -> cliSessionId/filePath` binding in the same SQLite transaction. Startup may backfill only explicit legacy user renames from panel state; scan-derived panel titles are never authoritative.
 - SQLite `sessions/session_bindings/session_runtime` is authoritative for session identity and runtime. Legacy session-registry identity fields are read-only fallback and must not overwrite SQLite or panel state.
+- CodeHub tab existence comes only from the current profile's SessionIndex. Provider panels may patch runtime fields after mount; localStorage may select/order known IDs but must not switch tab implementations or read provider legacy directories such as `~/.codex`.
 - panel cache 只能补缺 UI 状态或 runtime 空洞；不能把旧的 model/effort/reasoningEffort 写回覆盖 provider authoritative state。
 - draft 文本可以走 renderer 两级内存缓存，但最终仍应落到 session-registry；不要恢复到每次切 tab 都读写磁盘，也不要用 panel state 做逐键持久化。
 
