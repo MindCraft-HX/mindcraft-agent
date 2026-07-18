@@ -123,6 +123,10 @@ const props = defineProps({
     default: 'internal',
     validator: value => value === 'internal' || value === 'external',
   },
+  surfaceState: {
+    type: Object,
+    default: () => ({ visible: true, active: true, groupId: 'route' }),
+  },
 })
 
 import { ref, computed, watch, watchEffect, onMounted, onUnmounted, nextTick, reactive, provide, inject } from 'vue'
@@ -139,11 +143,14 @@ import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts.js'
 import { perfStart } from '../agentCommon/utils/rendererPerfProbe.mjs'
 import { startActivation, getActivationId } from '../agentCommon/utils/activationContext.js'
 import { createAgentWorkbenchAdapter } from '../../workbench/agentAdapter.mjs'
+import { normalizeSurfaceState } from '../../workbench/surfaceState.mjs'
 
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 const tabPresentation = computed(() => props.tabPresentation)
+const normalizedSurfaceState = computed(() => normalizeSurfaceState(props.surfaceState))
+const isSurfaceActive = computed(() => normalizedSurfaceState.value.active)
 const rootRef = ref(null)
 let workbenchAdapter = null
 
@@ -357,6 +364,7 @@ function createWorkbenchAdapter() {
     },
     reorderProjects: reorderUnifiedTab,
     createProject: createProjectForAgent,
+    getSurfaceState: () => normalizedSurfaceState.value,
     focus: () => rootRef.value?.focus?.(),
   })
   return workbenchAdapter
@@ -523,7 +531,7 @@ onMounted(async () => {
     const idx = unifiedTabs.value.findIndex(t => t.id === activeTabId.value)
     const nextIdx = idx < 0 ? 0 : (idx + 1) % unifiedTabs.value.length
     activateTab(unifiedTabs.value[nextIdx])
-  }, { priority: 10 }))
+  }, { priority: 10, enabled: () => isSurfaceActive.value }))
 
   _shortcutUnregisters.push(register('codehub.prevTab', () => {
     if (!unifiedTabs.value.length) return
@@ -532,7 +540,7 @@ onMounted(async () => {
       ? unifiedTabs.value.length - 1
       : (idx - 1 + unifiedTabs.value.length) % unifiedTabs.value.length
     activateTab(unifiedTabs.value[prevIdx])
-  }, { priority: 10 }))
+  }, { priority: 10, enabled: () => isSurfaceActive.value }))
 
   for (let i = 1; i <= 9; i++) {
     _shortcutUnregisters.push(register(`codehub.tab${i}`, () => {
@@ -540,7 +548,7 @@ onMounted(async () => {
       if (index < unifiedTabs.value.length) {
         activateTab(unifiedTabs.value[index])
       }
-    }, { priority: 10 }))
+    }, { priority: 10, enabled: () => isSurfaceActive.value }))
   }
 })
 
@@ -718,6 +726,7 @@ function openSharedSettings() {
 
 provide('codehubEmbedded', true)
 provide('codehubActiveAgent', activeAgent)
+provide('codehubSurfaceState', normalizedSurfaceState)
 provide('codehubSwitchAgent', activateTab)
 provide('codehubSwitchToAgent', (agentKey) => {
   const existingTab = unifiedTabs.value.find(t => t.agentType === agentKey)

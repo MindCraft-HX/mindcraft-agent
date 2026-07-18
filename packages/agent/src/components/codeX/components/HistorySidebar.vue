@@ -217,9 +217,11 @@ const { register } = useKeyboardShortcuts()
 const _shortcutUnregisters = []
 
 const codehubActiveAgent = inject('codehubActiveAgent', null)
+const codehubSurfaceState = inject('codehubSurfaceState', null)
 const AGENT_KEY = 'codex'
 
 function isPanelActive() {
+  if (codehubSurfaceState?.value?.active === false) return false
   if (!codehubActiveAgent) return true
   return codehubActiveAgent.value === AGENT_KEY
 }

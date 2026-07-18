@@ -13,6 +13,7 @@ export function createAgentWorkbenchAdapter({
   closeProject,
   reorderProjects,
   createProject,
+  getSurfaceState,
   focus,
   requestClose,
 } = {}) {
@@ -38,6 +39,7 @@ export function createAgentWorkbenchAdapter({
       itemId: 'agent:codehub',
       kind: 'agent',
       activeProjectId: String(getActiveProject?.() || ''),
+      surfaceState: getSurfaceState?.() || null,
       tabs,
     }
   }

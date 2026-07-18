@@ -87,13 +87,22 @@ import { useClaudeThemeStore } from '../stores/claudeTheme.js'
 import { useChatSession } from '../composables/useChatSession.js'
 import { useChatStream } from '../composables/useChatStream.js'
 import { createChatWorkbenchAdapter } from '../workbench/chatAdapter.mjs'
+import { normalizeSurfaceState } from '../workbench/surfaceState.mjs'
 import SessionList from '../components/chat/SessionList.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import InputArea from '../components/chat/InputArea.vue'
 
+const props = defineProps({
+  surfaceState: {
+    type: Object,
+    default: () => ({ visible: true, active: true, groupId: 'route' }),
+  },
+})
+
 // 主题
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
+const normalizedSurfaceState = computed(() => normalizeSurfaceState(props.surfaceState))
 
 // 会话管理
 const {
@@ -236,6 +245,7 @@ function createWorkbenchAdapter() {
       title: currentSession.title,
       streaming: isStreaming.value,
     }),
+    getSurfaceState: () => normalizedSurfaceState.value,
     activateSession: id => switchSession(id),
     focus: () => rootRef.value?.focus?.(),
   })
@@ -244,7 +254,12 @@ function createWorkbenchAdapter() {
 
 defineExpose({ createWorkbenchAdapter })
 
-watch([currentSessionId, isStreaming], () => workbenchAdapter?.publish())
+watch([currentSessionId, isStreaming, normalizedSurfaceState], () => workbenchAdapter?.publish())
+
+onUnmounted(() => {
+  workbenchAdapter?.dispose?.()
+  workbenchAdapter = null
+})
 
 // 图片预览（支持 dataUrl 字符串 / 内部格式 {mediaType, data} / {url}）
 function imgPreviewSrc(img) {

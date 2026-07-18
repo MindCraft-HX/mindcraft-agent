@@ -232,7 +232,11 @@ defineOptions({ name: 'codex' })
 const embedded = inject('codehubEmbedded', false)
 const openSharedSettings = inject('codehubOpenSharedSettings', null)
 const codehubActiveAgent = inject('codehubActiveAgent', null)
-const isPanelActive = computed(() => !codehubActiveAgent || codehubActiveAgent.value === 'codex')
+const codehubSurfaceState = inject('codehubSurfaceState', null)
+const isPanelActive = computed(() => (
+  (!codehubSurfaceState || codehubSurfaceState.value?.active !== false)
+  && (!codehubActiveAgent || codehubActiveAgent.value === 'codex')
+))
 const isReady = ref(false)
 
 // Codex 前端 debug 输出开关（需要查看详细日志时改为 true）

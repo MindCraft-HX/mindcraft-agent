@@ -12,10 +12,12 @@ test('agent adapter projects lightweight project tabs without exposing panel dat
       iconClass: 'claude-icon', iconStyle: { color: 'orange' }, messages: ['secret'],
     }],
     getActiveProject: () => 'claude:1',
+    getSurfaceState: () => ({ visible: true, active: true, groupId: 'route' }),
     activateProject: (id, target) => calls.push({ id, target }),
   })
   assert.deepEqual(adapter.getSnapshot(), {
     itemId: 'agent:codehub', kind: 'agent', activeProjectId: 'claude:1',
+    surfaceState: { visible: true, active: true, groupId: 'route' },
     tabs: [{
       id: 'claude:1', projectId: '1', agentType: 'claudeCode', title: 'Project',
       running: true, pending: false, notification: true,
@@ -56,7 +58,9 @@ test('chat adapter activates a session without exposing messages', async () => {
     getSession: () => ({ id: 'chat-1', title: 'Planning', streaming: true, messages: ['secret'] }),
     activateSession: async id => { selected = id },
   })
-  assert.deepEqual(adapter.getSnapshot(), { itemId: 'chat:simple', kind: 'chat', title: 'Planning', sessionId: 'chat-1', streaming: true })
+  assert.deepEqual(adapter.getSnapshot(), {
+    itemId: 'chat:simple', kind: 'chat', title: 'Planning', sessionId: 'chat-1', streaming: true, surfaceState: null,
+  })
   await adapter.activate({ chatTarget: { sessionId: 'chat-2' } })
   assert.equal(selected, 'chat-2')
 })

@@ -310,7 +310,11 @@ onErrorCaptured((err, instance, info) => {
 const embedded = inject('codehubEmbedded', false)
 const openSharedSettings = inject('codehubOpenSharedSettings', null)
 const codehubActiveAgent = inject('codehubActiveAgent', null)
-const isPanelActive = computed(() => !codehubActiveAgent || codehubActiveAgent.value === 'claudeCode')
+const codehubSurfaceState = inject('codehubSurfaceState', null)
+const isPanelActive = computed(() => (
+  (!codehubSurfaceState || codehubSurfaceState.value?.active !== false)
+  && (!codehubActiveAgent || codehubActiveAgent.value === 'claudeCode')
+))
 const isReady = ref(false)
 const initializing = ref(true)
 

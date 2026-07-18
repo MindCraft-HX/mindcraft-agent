@@ -3,7 +3,7 @@ function shallowEqual(left, right) {
 }
 
 /** Public host port for the one resident simple-chat surface. */
-export function createChatWorkbenchAdapter({ getSession, activateSession, focus, requestClose } = {}) {
+export function createChatWorkbenchAdapter({ getSession, getSurfaceState, activateSession, focus, requestClose } = {}) {
   if (typeof getSession !== 'function') throw new Error('chat workbench adapter requires getSession')
   const listeners = new Set()
   let lastSnapshot = null
@@ -16,6 +16,7 @@ export function createChatWorkbenchAdapter({ getSession, activateSession, focus,
       title: String(session.title || ''),
       sessionId: String(session.id || ''),
       streaming: Boolean(session.streaming),
+      surfaceState: getSurfaceState?.() || null,
     }
   }
 
@@ -44,5 +45,9 @@ export function createChatWorkbenchAdapter({ getSession, activateSession, focus,
       return typeof requestClose === 'function' ? requestClose(reason) : Promise.resolve({ status: 'ready' })
     },
     publish,
+    dispose() {
+      listeners.clear()
+      lastSnapshot = null
+    },
   }
 }
