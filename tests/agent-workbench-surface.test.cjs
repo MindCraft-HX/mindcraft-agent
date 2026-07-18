@@ -9,6 +9,9 @@ const codeHub = fs.readFileSync(path.join(root, 'packages', 'agent', 'src', 'com
 const chatView = fs.readFileSync(path.join(root, 'packages', 'agent', 'src', 'views', 'ChatView.vue'), 'utf8')
 
 assert.match(codeHub, /defineExpose\(\{ createWorkbenchAdapter \}\)/)
+assert.match(codeHub, /tabPresentation === 'internal'/)
+assert.match(codeHub, /default: 'internal'/)
+assert.match(codeHub, /workbenchAdapter\?\.dispose\?\.\(\)/)
 assert.match(chatView, /defineExpose\(\{ createWorkbenchAdapter \}\)/)
 assert.equal(codeHub.includes("src/workbench"), false)
 assert.equal(chatView.includes("src/workbench"), false)

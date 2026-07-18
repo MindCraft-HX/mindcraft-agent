@@ -1,7 +1,7 @@
 <template>
   <div ref="rootRef" class="codehub-wrap" :class="themeClass" tabindex="-1">
     <!-- ===== 统一 Tab 栏 ===== -->
-    <div class="codehub-unified-tabs" v-if="indexRestored && unifiedTabs.length > 0">
+    <div class="codehub-unified-tabs" v-if="tabPresentation === 'internal' && indexRestored && unifiedTabs.length > 0">
       <div class="codehub-tab-strip">
         <div class="codehub-tab-track">
           <div
@@ -117,6 +117,14 @@
 <script setup>
 defineOptions({ name: 'codeHub' })
 
+const props = defineProps({
+  tabPresentation: {
+    type: String,
+    default: 'internal',
+    validator: value => value === 'internal' || value === 'external',
+  },
+})
+
 import { ref, computed, watch, watchEffect, onMounted, onUnmounted, nextTick, reactive, provide, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { useClaudeThemeStore } from '../../stores/claudeTheme.js'
@@ -135,6 +143,7 @@ import { createAgentWorkbenchAdapter } from '../../workbench/agentAdapter.mjs'
 const claudeTheme = useClaudeThemeStore()
 const route = useRoute()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
+const tabPresentation = computed(() => props.tabPresentation)
 const rootRef = ref(null)
 let workbenchAdapter = null
 
@@ -341,6 +350,13 @@ function createWorkbenchAdapter() {
       const tab = unifiedTabs.value.find(item => item.id === projectId || String(item.projectId) === String(projectId))
       if (tab) activateTab(tab, target?.chatId || target?.sessionId ? target : null)
     },
+    closeProject(projectId) {
+      const tab = unifiedTabs.value.find(item => item.id === projectId || String(item.projectId) === String(projectId))
+      if (!tab) return false
+      return closeTab(tab)
+    },
+    reorderProjects: reorderUnifiedTab,
+    createProject: createProjectForAgent,
     focus: () => rootRef.value?.focus?.(),
   })
   return workbenchAdapter
@@ -529,6 +545,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  workbenchAdapter?.dispose?.()
+  workbenchAdapter = null
   _shortcutUnregisters.forEach(fn => fn())
   _shortcutUnregisters.length = 0
   _panelWatchCleanups.forEach(fn => fn())
@@ -624,15 +642,16 @@ function closeTab(tab) {
     // Panel not ready — project not yet recovered from disk.
     // Deleting now would only hide from memory; tab would resurrect on restart.
     debugCodeHubTabs('closeTab:panel-not-ready', { tabId: tab.id, agentType: tab.agentType }, { force: true })
-    return
+    return false
   }
   sessionIndex.deleteProjectTab(tab.agentType, tab.projectId)
   panel.deleteProject(tab.projectId)
+  return true
 }
 
 function reorderUnifiedTab(fromIndex, toIndex) {
   const tabs = unifiedTabs.value
-  if (fromIndex < 0 || toIndex < 0 || fromIndex >= tabs.length || toIndex >= tabs.length) return
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= tabs.length || toIndex >= tabs.length) return false
   const ids = [...tabOrder.value]
   // 确保当前所有 tab ID 都在 order 中
   const validIds = new Set(tabs.map(t => t.id))
@@ -642,22 +661,25 @@ function reorderUnifiedTab(fromIndex, toIndex) {
   order.splice(toIndex, 0, item)
   tabOrder.value = order
   saveTabOrder()
+  return true
 }
 
 function createProjectForAgent(agentKey) {
+  if (!isRegistered(agentKey)) return false
   const panel = getPanel(agentKey)
   if (!isPanelReady(panel)) {
     pendingCreateAgent = agentKey
     if (!mountedMap[agentKey]) mountedMap[agentKey] = true
-    return
+    return true
   }
   const projectId = panel.createProject?.()
-  if (projectId == null) return
+  if (projectId == null) return false
   nextTick(() => {
     const tabId = `${agentKey}:${projectId}`
     const tab = unifiedTabs.value.find(t => t.id === tabId)
     if (tab) activateTab(tab)
   })
+  return true
 }
 
 function onAgentSelected(agentKey) {
