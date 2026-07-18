@@ -39,6 +39,12 @@ streaming -> terminal_seen -> transport_closed -> reconciled -> agent_done
 No code may set `streamClosed` merely because it has sent a logical terminal
 event or an `AGENT_DONE` IPC message.
 
+In development, a renderer HMR reload may occur while the main-owned CLI run
+continues. After restoring panel chats, the new renderer reads one lightweight
+active-run snapshot from main and restores `thinking/_awaitingDone` only for
+matching `chatKey` values. This snapshot never scans transcripts, writes
+registry state, or substitutes for the authoritative completion events.
+
 ## Ownership, Cancellation, And Timeouts
 
 - A `chatKey` has at most one owned active `runId`.

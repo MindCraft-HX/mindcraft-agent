@@ -118,6 +118,20 @@ function runThreadRolloverRebindsChatIdentityTest() {
   assert.equal(__test__.bindCodexThreadIdentity(cliSessionIds, 'chat-1', 'thread-new').changed, false)
 }
 
+function runActiveRunSnapshotOmitsClosedSessionsTest() {
+  const sessions = new Map([
+    ['chat-running', { runId: 'run-1', startTime: 1234, streamClosed: false, thread: { id: 'thread-live' } }],
+    ['chat-closed', { runId: 'run-2', startTime: 5678, streamClosed: true, thread: { id: 'thread-closed' } }],
+  ])
+
+  assert.deepEqual(__test__.listActiveCodexRuns(sessions, new Map()), [{
+    chatKey: 'chat-running',
+    runId: 'run-1',
+    cliSessionId: 'thread-live',
+    startedAt: 1234,
+  }])
+}
+
 function runCodexResumeFingerprintTest() {
   const same = __test__.buildCodexSessionFingerprint({
     model: 'deepseek-v4-pro',
@@ -195,6 +209,7 @@ async function run() {
   runDoneSentDoesNotMarkStreamClosedTest()
   runFindSlashCommandSessionByCliIdTest()
   runThreadRolloverRebindsChatIdentityTest()
+  runActiveRunSnapshotOmitsClosedSessionsTest()
   runCodexResumeFingerprintTest()
   runEmptyUpstreamFailureDetectionTest()
   console.log('codex session run ownership tests passed')

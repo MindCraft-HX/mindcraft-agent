@@ -2055,6 +2055,20 @@ const sessionFingerprints = new Map()
 const slowNoticeSent = new Set()
 const codexMetricsPollers = new Map() // sessionId -> { interval, startTime }
 
+function listActiveCodexRuns(sessions = codexSessions, cliIds = cliSessionIds) {
+  const active = []
+  for (const [chatKey, session] of sessions) {
+    if (!chatKey || !session || session.streamClosed) continue
+    active.push({
+      chatKey,
+      runId: session.runId || '',
+      cliSessionId: session.thread?.id || cliIds.get(chatKey) || '',
+      startedAt: Number(session.startTime) || 0,
+    })
+  }
+  return active
+}
+
 function stopCodexMetricsPoller(sessionId, runId = null) {
   const poller = codexMetricsPollers.get(sessionId)
   if (!poller) return false
@@ -3454,6 +3468,8 @@ function setupCodexCliHandlers() {
     return lightResult
   })
 
+  ipcMain.handle(CODEX_CHANNELS.AGENT_ACTIVE_RUNS, () => listActiveCodexRuns())
+
   ipcMain.handle(CODEX_CHANNELS.LIST_SLASH_COMMANDS, async (_, { cwd, sessionId } = {}) => {
     const resolvedCwd = path.resolve(cwd || process.cwd())
     const cacheKey = `${resolvedCwd}::${sessionId || ''}`
@@ -4285,6 +4301,7 @@ module.exports = {
     shouldEmitCodexSessionTerminalSignals,
     waitForCodexSessionRunToClose,
     findCodexSessionForSlashCommands,
+    listActiveCodexRuns,
     bindCodexThreadIdentity,
     finalizeCodexSessionDoneState,
     closeCodexSessionRun,

@@ -285,6 +285,7 @@ import {
   claimCodexSessionForSend,
   mergeCodexUpdatedAt,
   mergeScannedChatsPreservingRuntime,
+  restoreCodexActiveRuns,
   sanitizeCodexPersistedMetrics,
   shouldHydrateHistoryFromDisk,
 } from './utils/codexRuntimeState.mjs'
@@ -3233,6 +3234,8 @@ onMounted(async () => {
       if (!project._settingsLoaded) { project._settingsLoaded = true; loadProjectSettings(project) }
       void refreshProjectSessionsInBackground(project)
     }
+    const activeRuns = await window.electronAPI.codexGetActiveRuns?.() || []
+    restoreCodexActiveRuns(projects.value.flatMap(project => project.chats || []), activeRuns)
   }
   isReady.value = true
   initializing.value = false

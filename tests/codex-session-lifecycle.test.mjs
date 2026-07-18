@@ -9,6 +9,7 @@ import {
   markCodexDone,
   mergeCodexUpdatedAt,
   mergeScannedChatsPreservingRuntime,
+  restoreCodexActiveRuns,
   shouldHydrateHistoryFromDisk,
   shouldSyncThinkingFromMetrics,
 } from '../packages/agent/src/components/codeX/utils/sessionLifecycle.mjs'
@@ -54,6 +55,24 @@ test('cold-restored session must not stay locked by stale awaitingDone flag', ()
   const restored = { thinking: false, _awaitingDone: false }
   assert.equal(isCodexTurnLocked(restored), false)
   assert.equal(shouldHydrateHistoryFromDisk(restored), true)
+})
+
+test('renderer reload restores only main-owned active Codex runs', () => {
+  const running = { sessionId: 'chat-running', thinking: false, _awaitingDone: false, cliSessionId: 'thread-old' }
+  const idle = { sessionId: 'chat-idle', thinking: false, _awaitingDone: false }
+
+  const restored = restoreCodexActiveRuns([running, idle], [{
+    chatKey: 'chat-running',
+    runId: 'run-1',
+    cliSessionId: 'thread-live',
+    startedAt: 1234,
+  }])
+
+  assert.equal(restored, 1)
+  assert.equal(isCodexTurnLocked(running), true)
+  assert.equal(running._thinkingStart, 1234)
+  assert.equal(running.cliSessionId, 'thread-live')
+  assert.equal(isCodexTurnLocked(idle), false)
 })
 
 test('sending from a scanned transcript claims it without a blocking confirmation', async () => {

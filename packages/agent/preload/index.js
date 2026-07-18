@@ -206,6 +206,7 @@ function createAgentBridge(ipcRenderer) {
   codexListSlashCommands: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.LIST_SLASH_COMMANDS, payload),
   codexListLocalSkills: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.LIST_LOCAL_SKILLS, payload),
   codexAgentQueryMetrics: (payload) => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_QUERY_METRICS, payload),
+  codexGetActiveRuns: () => ipcRenderer.invoke(CODEX_CHANNELS.AGENT_ACTIVE_RUNS),
   onCodexAgentMessage: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_MESSAGE, (_, data) => callback(data)),
   onCodexAgentDone: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_DONE, (_, data) => callback(data)),
   onCodexAgentMetrics: (callback) => ipcRenderer.on(CODEX_CHANNELS.AGENT_METRICS, (_, data) => callback(data)),

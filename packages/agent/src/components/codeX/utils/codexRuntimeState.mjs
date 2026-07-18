@@ -17,6 +17,7 @@ export {
   mergeCodexUpdatedAt,
   mergeScannedCodexChats,
   mergeScannedChatsPreservingRuntime,
+  restoreCodexActiveRuns,
   sanitizeCodexPersistedMetrics,
   shouldHydrateHistoryFromDisk,
   shouldSyncThinkingFromMetrics,

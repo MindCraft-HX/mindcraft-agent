@@ -213,6 +213,7 @@ const CODEX_CHANNELS = Object.freeze({
   AGENT_MESSAGE: 'codex-agent-message',
   AGENT_METRICS: 'codex-agent-metrics',
   AGENT_QUERY_METRICS: 'codex-agent-query-metrics',
+  AGENT_ACTIVE_RUNS: 'codex-agent-active-runs',
 
   // Streaming push events
   STREAM_CHUNK: 'codex-stream-chunk',

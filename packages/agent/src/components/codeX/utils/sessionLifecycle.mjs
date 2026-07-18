@@ -121,6 +121,21 @@ export function markCodexTurnStarting(tab, now = Date.now()) {
   return tab
 }
 
+export function restoreCodexActiveRuns(chats = [], activeRuns = []) {
+  const tabsByChatKey = new Map((Array.isArray(chats) ? chats : [])
+    .filter(tab => tab?.sessionId)
+    .map(tab => [tab.sessionId, tab]))
+  let restored = 0
+  for (const run of Array.isArray(activeRuns) ? activeRuns : []) {
+    const tab = tabsByChatKey.get(run?.chatKey)
+    if (!tab) continue
+    markCodexTurnStarting(tab, Number(run.startedAt) || Date.now())
+    if (run.cliSessionId) tab.cliSessionId = run.cliSessionId
+    restored += 1
+  }
+  return restored
+}
+
 export function markCodexIdle(tab) {
   if (!tab) return tab
   setRuntimeState(tab, CODEX_RUNTIME_STATES.IDLE)
