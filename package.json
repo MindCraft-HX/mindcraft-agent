@@ -111,7 +111,7 @@
   },
   "homepage": "https://github.com/MindCraft-HX/mindcraft-agent#readme",
   "build": {
-    "appId": "com.mindcraft.agent",
+    "appId": "com.genitop.mindcraft.agent",
     "productName": "MindCraft-Agent",
     "copyright": "Copyright © 2025 GENITOP",
     "releaseInfo": {
