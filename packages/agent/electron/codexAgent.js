@@ -16,7 +16,7 @@ const { augmentEnvWithBundledRg } = require('./localSearch')
 const { createFileDerivedCache, trackDedup } = require('./shared/localDerivedCache')
 const { createRuntimeConf } = require('./shared/createRuntimeConf')
 const { deleteSessionRecordsByProvider, detachSessionProviderBinding, findSessionRecordByProvider, restorePanelStateFromSessionRegistry } = require('./sessionRegistry')
-const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, claimScannedProviderBinding, upsertRuntimeByProvider, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
+const { findByProviderScan, ensureFromProviderScan, mergeRegistryFields, claimScannedProviderBinding, getOwnedProviderBinding, isOwnedProviderBinding, upsertRuntimeByProvider, setSessionTitle, deleteSession, restorePanelState, backfillUserTitlesFromPanelState } = require('./sessionRepository')
 const { getFullEnv } = require('./shared/shellPathHelper')
 const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
@@ -2048,6 +2048,15 @@ async function listSessionsByCwd(targetCwd) {
     const { getMindCraftUserDataDir } = require('./userDataPath')
     db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
   } catch (_) {}
+  const canonicalBindingByChatKey = new Map()
+  const getCanonicalBinding = (record) => {
+    const chatKey = record?.chatKey || ''
+    if (!chatKey || !db) return null
+    if (!canonicalBindingByChatKey.has(chatKey)) {
+      canonicalBindingByChatKey.set(chatKey, getOwnedProviderBinding(db, chatKey))
+    }
+    return canonicalBindingByChatKey.get(chatKey)
+  }
 
   // T178: scan cache — 用 tree signature 检测文件变更
   const sigStop = perfStartIpc('codex-scan-signature')
@@ -2063,6 +2072,7 @@ async function listSessionsByCwd(targetCwd) {
       if (!record && db) {
         record = ensureFromProviderScan(db, 'codex', raw, { cwd: targetCwd })
       }
+      if (!shouldIncludeCodexScanSummary(record, raw, getCanonicalBinding(record))) continue
       const attached = mergeRegistryFields('codex', raw, record)
       if (attached) sessions.push(attached)
     }
@@ -2086,6 +2096,7 @@ async function listSessionsByCwd(targetCwd) {
       rawSummaries.push(summary)
       // T201: ensure session record in SQLite, merge registry fields
       const record = db ? ensureFromProviderScan(db, 'codex', summary, { cwd: targetCwd }) : null
+      if (!shouldIncludeCodexScanSummary(record, summary, getCanonicalBinding(record))) continue
       const attached = mergeRegistryFields('codex', summary, record)
       if (attached) sessions.push(attached)
     }
@@ -2278,6 +2289,29 @@ function bindCodexThreadIdentity(cliIds, sessionId, threadId) {
   return { changed: previousId !== nextId, previousId, threadId: nextId }
 }
 
+function canRegisterCodexResumeBinding(record, sessionId, cliSessionId) {
+  const provider = record?.provider || null
+  return Boolean(
+    record?.chatKey === sessionId &&
+    provider?.cliSessionId === cliSessionId &&
+    isOwnedProviderBinding(provider)
+  )
+}
+
+function isCodexResumeIdentityMismatch(previousCliSessionId, nextCliSessionId) {
+  return Boolean(
+    previousCliSessionId &&
+    nextCliSessionId &&
+    previousCliSessionId !== nextCliSessionId
+  )
+}
+
+function shouldIncludeCodexScanSummary(record, summary, canonicalBinding) {
+  if (!record?.chatKey || !canonicalBinding?.cliSessionId) return true
+  const scannedThreadId = String(summary?.cliSessionId || summary?.id || '')
+  return scannedThreadId === canonicalBinding.cliSessionId
+}
+
 /** Register Codex external-CLI IPC handlers (query/abort/history/settings). */
 function buildCodexSessionFingerprint({ model, baseURL, apiFormat, reasoningEffort } = {}) {
   return JSON.stringify({
@@ -2341,6 +2375,17 @@ function setupCodexCliHandlers() {
       console.warn('[codex] duplicate query ignored after close wait: session still running. sessionId=', sessionId, 'runId=', settledExisting?.runId || '')
       return { accepted: false, reason: 'session_close_timeout' }
     }
+    let previousCliId = cliSessionIds.get(sessionId) || ''
+    if (!previousCliId) {
+      try {
+        const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
+        const binding = getOwnedProviderBinding(db, sessionId)
+        if (binding?.cliSessionId) {
+          previousCliId = binding.cliSessionId
+          cliSessionIds.set(sessionId, previousCliId)
+        }
+      } catch (_) {}
+    }
     const runId = nextCodexSessionRunId()
     if (settledExisting && settledExisting.thread) {
       console.warn('[codex] query collision: session already running, aborting old and starting new. sessionId=', sessionId)
@@ -2360,7 +2405,6 @@ function setupCodexCliHandlers() {
         apiFormat,
         reasoningEffort,
       })
-      const previousCliId = cliSessionIds.get(sessionId)
       // P0: 不再因 fingerprint 变化阻断 resume，始终尝试恢复旧 thread
       const prevCliId = previousCliId || ''
       const abortController = new AbortController()
@@ -2767,10 +2811,21 @@ function setupCodexCliHandlers() {
             }
 
             if (ev.type === 'thread.started' && ev.thread_id) {
+              if (isCodexResumeIdentityMismatch(prevCliId, ev.thread_id)) {
+                appendCodexTurnDiagnostic({
+                  kind: 'turn.resume-identity-mismatch', diagnosticId, sessionId, runId,
+                  previousCliSessionId: prevCliId, cliSessionId: ev.thread_id,
+                })
+                thread.id = prevCliId
+                cliSessionIds.set(sessionId, prevCliId)
+                const error = new Error(`Codex resume started a different thread (${ev.thread_id})`)
+                error.code = 'CODEX_RESUME_IDENTITY_MISMATCH'
+                throw error
+              }
               const identity = bindCodexThreadIdentity(cliSessionIds, sessionId, ev.thread_id)
               if (identity.changed) {
-                // Codex may roll a resumed transcript onto a new thread id. Bind
-                // it before background scan can classify the new file as external.
+                // A new MindCraft chat acquires its provider identity from the
+                // first thread.started event. Resumed chats must keep their ID.
                 try {
                   const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
                   const result = upsertRuntimeByProvider(db, {
@@ -3336,8 +3391,7 @@ function setupCodexCliHandlers() {
       if (!cliId) continue
       let record = null
       try { record = findByProviderScan(await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) }), 'codex', { cliSessionId: cliId }) } catch (_) {}
-      const isScanIdentity = String(sid).startsWith('codex::scan-')
-      if (!record || record.chatKey !== sid || record.provider?.resumeAllowed === false || record.provider?.source === 'scan' || isScanIdentity && record.provider?.source !== 'user') {
+      if (!canRegisterCodexResumeBinding(record, sid, cliId)) {
         cliSessionIds.delete(sid)
         continue
       }
@@ -4352,6 +4406,9 @@ module.exports = {
     findCodexSessionForSlashCommands,
     listActiveCodexRuns,
     bindCodexThreadIdentity,
+    canRegisterCodexResumeBinding,
+    isCodexResumeIdentityMismatch,
+    shouldIncludeCodexScanSummary,
     finalizeCodexSessionDoneState,
     closeCodexSessionRun,
     markCodexSessionDoneSent,

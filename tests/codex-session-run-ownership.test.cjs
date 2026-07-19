@@ -108,14 +108,40 @@ function runFindSlashCommandSessionByCliIdTest() {
   assert.equal(__test__.findCodexSessionForSlashCommands(sessions, cliSessionIds, 'missing'), null)
 }
 
-function runThreadRolloverRebindsChatIdentityTest() {
-  const cliSessionIds = new Map([['chat-1', 'thread-old']])
+function runNewChatBindsThreadIdentityTest() {
+  const cliSessionIds = new Map()
 
-  const rollover = __test__.bindCodexThreadIdentity(cliSessionIds, 'chat-1', 'thread-new')
+  const binding = __test__.bindCodexThreadIdentity(cliSessionIds, 'chat-1', 'thread-new')
 
-  assert.deepEqual(rollover, { changed: true, previousId: 'thread-old', threadId: 'thread-new' })
+  assert.deepEqual(binding, { changed: true, previousId: '', threadId: 'thread-new' })
   assert.equal(cliSessionIds.get('chat-1'), 'thread-new')
   assert.equal(__test__.bindCodexThreadIdentity(cliSessionIds, 'chat-1', 'thread-new').changed, false)
+}
+
+function runResumeOwnershipContractTest() {
+  const runtimeRecord = {
+    chatKey: 'codex::scan-chat',
+    provider: { cliSessionId: 'thread-runtime', source: 'runtime', resumeAllowed: true, detached: false },
+  }
+  const scanRecord = {
+    chatKey: 'codex::scan-chat',
+    provider: { cliSessionId: 'thread-scan', source: 'scan', resumeAllowed: true, detached: false },
+  }
+
+  assert.equal(__test__.canRegisterCodexResumeBinding(runtimeRecord, 'codex::scan-chat', 'thread-runtime'), true)
+  assert.equal(__test__.canRegisterCodexResumeBinding(scanRecord, 'codex::scan-chat', 'thread-scan'), false)
+  assert.equal(__test__.canRegisterCodexResumeBinding(runtimeRecord, 'codex::other-chat', 'thread-runtime'), false)
+  assert.equal(__test__.isCodexResumeIdentityMismatch('thread-old', 'thread-new'), true)
+  assert.equal(__test__.isCodexResumeIdentityMismatch('thread-old', 'thread-old'), false)
+  assert.equal(__test__.isCodexResumeIdentityMismatch('', 'thread-new'), false)
+
+  const canonical = { cliSessionId: 'thread-old', source: 'user', resumeAllowed: true }
+  assert.equal(__test__.shouldIncludeCodexScanSummary(
+    { chatKey: 'codex::scan-chat' }, { cliSessionId: 'thread-old' }, canonical,
+  ), true)
+  assert.equal(__test__.shouldIncludeCodexScanSummary(
+    { chatKey: 'codex::scan-chat' }, { cliSessionId: 'thread-fragment' }, canonical,
+  ), false)
 }
 
 function runActiveRunSnapshotOmitsClosedSessionsTest() {
@@ -208,7 +234,8 @@ async function run() {
   await runCloseSessionRunMarksClosedAndResolvesCompletionTest()
   runDoneSentDoesNotMarkStreamClosedTest()
   runFindSlashCommandSessionByCliIdTest()
-  runThreadRolloverRebindsChatIdentityTest()
+  runNewChatBindsThreadIdentityTest()
+  runResumeOwnershipContractTest()
   runActiveRunSnapshotOmitsClosedSessionsTest()
   runCodexResumeFingerprintTest()
   runEmptyUpstreamFailureDetectionTest()

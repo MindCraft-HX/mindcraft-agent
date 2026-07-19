@@ -43,6 +43,7 @@ test('CLI args use the public exec --json protocol and preserve resume options',
   assert.equal(args[args.indexOf('resume') + 1], 'thread-1')
   assert.ok(args.includes('--skip-git-repo-check'))
   assert.ok(args.includes('--image'))
+  assert.equal(args.at(-1), '-')
 })
 
 test('resume and thread id cannot be consumed as variadic image paths', () => {
@@ -51,11 +52,12 @@ test('resume and thread id cannot be consumed as variadic image paths', () => {
     imagePaths: ['C:/upload.png'],
   })
 
-  assert.deepEqual(args.slice(-4), [
+  assert.deepEqual(args.slice(-5), [
     'resume',
     '019f7471-8e6b-73b1-bdd2-1705d4cdf45f',
     '--image',
     'C:/upload.png',
+    '-',
   ])
 })
 

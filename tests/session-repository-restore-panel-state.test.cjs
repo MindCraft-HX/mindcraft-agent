@@ -7,8 +7,10 @@ const { createTestDb } = require('../packages/agent/electron/db')
 const sessionsDao = require('../packages/agent/electron/db/dao/sessions')
 const {
   backfillUserTitlesFromPanelState,
+  claimScannedProviderBinding,
   ensureFromProviderScan,
   findByProviderScan,
+  getOwnedProviderBinding,
   restorePanelState,
   setSessionTitle,
   upsertRuntimeByProvider,
@@ -210,6 +212,7 @@ async function runRenamePersistsProviderBindingTest() {
     assert.equal(bindings.length, 2)
     assert.equal(bindings.some(binding => binding.providerKey === 'codex::thread-rename'), true)
     assert.equal(bindings.some(binding => binding.providerKey === 'codex::D:/transcripts/thread-rename.jsonl'), true)
+    assert.equal(bindings.every(binding => binding.source === 'scan'), true)
 
     ensureFromProviderScan(db, 'codex', {
       cliSessionId: 'thread-rename',
@@ -287,6 +290,77 @@ async function runRuntimeWriteCreatesBothProviderBindingsTest() {
     assert.equal(bindings.length, 2)
     assert.equal(findByProviderScan(db, 'claude', { cliSessionId: 'thread-runtime' }).chatKey, 'claude::runtime-chat')
     assert.equal(findByProviderScan(db, 'claude', { filePath: 'D:/transcripts/thread-runtime.jsonl' }).chatKey, 'claude::runtime-chat')
+    setSessionTitle(db, 'claude::runtime-chat', 'Runtime title', {
+      agent: 'claude', cliSessionId: 'thread-runtime', filePath: 'D:/transcripts/thread-runtime.jsonl',
+    })
+    assert.equal(sessionsDao.listSessionBindings(db, 'claude::runtime-chat').every(binding => binding.source === 'runtime'), true)
+  })
+}
+
+async function runRuntimeWriteRejectsSecondOwnedThreadTest() {
+  await withTempDb(async (db) => {
+    assert.equal(upsertRuntimeByProvider(db, {
+      agent: 'codex', chatKey: 'codex::single-thread', cliSessionId: 'thread-first',
+      filePath: 'D:/transcripts/thread-first.jsonl', runtime: { model: 'first-model' },
+    }).ok, true)
+
+    const second = upsertRuntimeByProvider(db, {
+      agent: 'codex', chatKey: 'codex::single-thread', cliSessionId: 'thread-second',
+      filePath: 'D:/transcripts/thread-second.jsonl', runtime: { model: 'second-model' },
+    })
+
+    assert.equal(second.ok, false)
+    assert.match(second.error, /different provider thread/)
+    const bindings = sessionsDao.listSessionBindings(db, 'codex::single-thread')
+    assert.equal(bindings.length, 2)
+    assert.equal(bindings.every(binding => binding.cliSessionId === 'thread-first'), true)
+    assert.equal(sessionsDao.getSessionRuntime(db, 'codex::single-thread').model, 'first-model')
+  })
+}
+
+async function runClaimRejectsSecondOwnedThreadTest() {
+  await withTempDb(async (db) => {
+    sessionsDao.upsertSession(db, {
+      chatKey: 'codex::claim-conflict', agent: 'codex', projectId: '', cwd: 'D:/repo',
+      title: 'Claim conflict', titleSource: 'scan', createdAt: 1, updatedAt: 2, metadata: {},
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::claim-conflict', providerKey: 'codex::thread-owned',
+      cliSessionId: 'thread-owned', source: 'runtime', resumeAllowed: true, updatedAt: 1,
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::claim-conflict', providerKey: 'codex::thread-scanned',
+      cliSessionId: 'thread-scanned', source: 'scan', resumeAllowed: true, updatedAt: 2,
+    })
+
+    const result = claimScannedProviderBinding(db, {
+      agent: 'codex', chatKey: 'codex::claim-conflict', cliSessionId: 'thread-scanned', filePath: '',
+    })
+
+    assert.equal(result.ok, false)
+    assert.match(result.error, /different provider thread/)
+    const scanned = sessionsDao.listSessionBindings(db, 'codex::claim-conflict')
+      .find(binding => binding.cliSessionId === 'thread-scanned')
+    assert.equal(scanned.source, 'scan')
+  })
+}
+
+async function runClaimedBindingSurvivesFreshScanTest() {
+  await withTempDb(async (db) => {
+    const summary = {
+      cliSessionId: 'thread-claimed',
+      filePath: 'D:/transcripts/thread-claimed.jsonl',
+      title: 'Claimed',
+    }
+    const scanned = ensureFromProviderScan(db, 'codex', summary, { cwd: 'D:/repo' })
+    assert.equal(scanned.provider.source, 'scan')
+    assert.equal(claimScannedProviderBinding(db, {
+      agent: 'codex', chatKey: scanned.chatKey, cliSessionId: summary.cliSessionId, filePath: summary.filePath,
+    }).ok, true)
+
+    const rescanned = ensureFromProviderScan(db, 'codex', summary, { cwd: 'D:/repo' })
+    assert.equal(rescanned.provider.source, 'user')
+    assert.equal(rescanned.provider.resumeAllowed, true)
   })
 }
 
@@ -338,6 +412,38 @@ async function runRestoreConvertsDbTimestampsForRendererTest() {
     })
     assert.equal(result.panelState.projects[0].chats[0].createdAt, 100000)
     assert.equal(result.panelState.projects[0].chats[0].updatedAt, 200000)
+    assert.equal(result.panelState.projects[0].chats[0]._resumeAllowed, false)
+  })
+}
+
+async function runRestorePrefersClaimedThreadOverRuntimeFragmentsTest() {
+  await withTempDb(async (db, dir) => {
+    const oldFile = path.join(dir, 'rollout-2026-07-18T20-00-00-thread-old.jsonl')
+    const newFile = path.join(dir, 'rollout-2026-07-18T21-00-00-thread-new.jsonl')
+    fs.writeFileSync(oldFile, 'old')
+    fs.writeFileSync(newFile, 'newer')
+    sessionsDao.upsertSession(db, {
+      chatKey: 'codex::split-chat', agent: 'codex', projectId: 'proj-split', cwd: 'D:/repo',
+      title: 'Split recovery', titleSource: 'user', createdAt: 1, updatedAt: 20, metadata: {},
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::split-chat', providerKey: 'codex::thread-old', cliSessionId: 'thread-old',
+      filePath: oldFile, source: 'user', resumeAllowed: true, updatedAt: 10,
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::split-chat', providerKey: 'codex::thread-new', cliSessionId: 'thread-new',
+      filePath: newFile, source: 'runtime', resumeAllowed: true, updatedAt: 20,
+    })
+
+    assert.equal(getOwnedProviderBinding(db, 'codex::split-chat').cliSessionId, 'thread-old')
+    const result = restorePanelState(db, 'codex', {
+      lastCwd: 'D:/repo', projects: [{ id: 'proj-split', name: 'repo', cwd: 'D:/repo', chats: [] }],
+    })
+    const chat = result.panelState.projects[0].chats[0]
+    assert.equal(chat.cliSessionId, 'thread-old')
+    assert.equal(chat.filePath, oldFile)
+    assert.equal(chat.fileSize, 3)
+    assert.equal(chat._resumeAllowed, true)
   })
 }
 
@@ -351,9 +457,13 @@ async function run() {
   await runLegacyPanelRenameBackfillTest()
   await runScanDoesNotFabricateUpdatedAtTest()
   await runRuntimeWriteCreatesBothProviderBindingsTest()
+  await runRuntimeWriteRejectsSecondOwnedThreadTest()
+  await runClaimRejectsSecondOwnedThreadTest()
+  await runClaimedBindingSurvivesFreshScanTest()
   await runScanRejectsSplitProviderIdentityTest()
   await runRestoreSkipsUnboundSessionTest()
   await runRestoreConvertsDbTimestampsForRendererTest()
+  await runRestorePrefersClaimedThreadOverRuntimeFragmentsTest()
   console.log('session-repository restorePanelState tests passed')
 }
 

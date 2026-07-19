@@ -67,13 +67,22 @@ read-only reconciliation may fill gaps using provider item/event identity. It
 must not duplicate already-rendered messages and must not block completion
 forever.
 
-Codex may emit `thread.started` with a different thread id after MindCraft asks
-to resume an existing thread. Treat this as a provider rollover within the same
-MindCraft chat, not as a new external session. The main process must replace the
-in-memory `chatKey -> cliSessionId` mapping and persist the new provider binding
-before a background transcript scan can discover it. The completion boundary
-persists the binding again with the resolved `filePath`; renderer scan results
-must never infer ownership from an id prefix or transcript filename.
+A MindCraft chat owns exactly one Codex thread. When resuming, `thread.started`
+must equal the requested `cliSessionId`; a different id means resume failed and
+must not be rebound or merged into the chat. Keep the original binding, stop the
+replacement run, and leave any provider-created artifact unowned for scan and
+repair.
+
+Binding ownership is explicit: `scan` is readable but not resumable, while
+`user` (explicit claim) and `runtime` (created by MindCraft) are owned. Renaming
+a session changes title authority only and must preserve binding ownership.
+The main process may cache `chatKey -> cliSessionId`, but a cache miss at send
+time must resolve an owned binding from SQLite before starting a new thread.
+The repository rejects attempts to write or claim a second distinct owned
+thread for the same `chatKey`; this invariant must not depend only on stream
+event ordering or an in-memory guard.
+If historical corruption left several owned thread ids on one chat, scans show
+only the canonical binding; they never concatenate transcript contents.
 
 For resumed turns with images, place the `resume <thread-id>` subcommand before
 all `--image` arguments. The top-level CLI image option is variadic; putting it
@@ -104,5 +113,8 @@ governance and the SDK/app-server assessment live in
 - abort and timeout emit exactly one terminal completion;
 - queued input starts only after the previous run closes;
 - an interrupted historical transcript remains readable and resumable.
-- a resumed run that rolls onto a new thread id remains bound to one `chatKey`.
+- a resumed run that reports a different thread id fails without rebinding.
+- scan bindings require claim; runtime bindings remain resumable after reload.
+- renaming a scanned session does not claim its provider thread.
+- runtime writes and claims reject a second distinct owned thread.
 - a resumed turn with images does not create a replacement thread.

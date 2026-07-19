@@ -79,6 +79,7 @@ function buildCodexCliArgs({
   for (const imagePath of capabilities?.images !== false && Array.isArray(imagePaths) ? imagePaths : []) {
     if (imagePath) args.push('--image', imagePath)
   }
+  if (threadId) args.push('-')
   return args
 }
 

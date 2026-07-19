@@ -53,6 +53,62 @@ function toUnixMilliseconds(value) {
   return seconds ? seconds * 1000 : 0;
 }
 
+function isOwnedProviderBinding(binding = {}) {
+  return Boolean(
+    binding.cliSessionId &&
+    binding.detached !== true &&
+    binding.resumeAllowed !== false &&
+    (binding.source === 'user' || binding.source === 'runtime')
+  );
+}
+
+function selectOwnedProviderBinding(bindings = []) {
+  const uniqueByThread = new Map();
+  for (const binding of bindings) {
+    if (!isOwnedProviderBinding(binding)) continue;
+    const threadId = String(binding.cliSessionId);
+    const current = uniqueByThread.get(threadId);
+    const currentRank = current?.source === 'user' ? 0 : 1;
+    const nextRank = binding.source === 'user' ? 0 : 1;
+    if (!current || nextRank < currentRank || (
+      nextRank === currentRank && toUnixSeconds(binding.updatedAt) < toUnixSeconds(current.updatedAt)
+    )) {
+      uniqueByThread.set(threadId, binding);
+    }
+  }
+  return [...uniqueByThread.values()].sort((a, b) => {
+    const sourceDiff = Number(a.source !== 'user') - Number(b.source !== 'user');
+    if (sourceDiff) return sourceDiff;
+    const timeDiff = toUnixSeconds(a.updatedAt) - toUnixSeconds(b.updatedAt);
+    return timeDiff || String(a.providerKey || '').localeCompare(String(b.providerKey || ''));
+  })[0] || null;
+}
+
+function selectSessionBinding(bindings = []) {
+  return selectOwnedProviderBinding(bindings) || bindings[0] || null;
+}
+
+function getOwnedProviderBinding(db, chatKey) {
+  if (!db || !chatKey) return null;
+  return selectOwnedProviderBinding(sessionsDao().listSessionBindings(db, chatKey));
+}
+
+function validateOwnedProviderThread(bindings = [], cliSessionId = '') {
+  const incomingThreadId = String(cliSessionId || '');
+  if (!incomingThreadId) return { ok: true };
+  const conflictingThreadIds = [...new Set(
+    bindings
+      .filter(isOwnedProviderBinding)
+      .map(binding => String(binding.cliSessionId || ''))
+      .filter(threadId => threadId && threadId !== incomingThreadId),
+  )];
+  if (!conflictingThreadIds.length) return { ok: true };
+  return {
+    ok: false,
+    error: `Session already owns a different provider thread (${conflictingThreadIds.join(', ')})`,
+  };
+}
+
 /** Convert DAO session row → registry-shaped record (camelCase, nested provider). */
 function daoRowToRecord(row, binding, runtime) {
   if (!row) return null;
@@ -135,7 +191,7 @@ function listSessions(db, { agent, registryFallback = true } = {}) {
   return rows.map(row => {
     const bindings = dao.listSessionBindings(db, row.chatKey);
     const runtime = dao.getSessionRuntime(db, row.chatKey);
-    return daoRowToRecord(row, bindings[0], runtime);
+    return daoRowToRecord(row, selectSessionBinding(bindings), runtime);
   });
 }
 
@@ -154,7 +210,7 @@ function getSession(db, chatKey, { registryFallback = true } = {}) {
   if (row) {
     const bindings = dao.listSessionBindings(db, chatKey);
     const runtime = dao.getSessionRuntime(db, chatKey);
-    return daoRowToRecord(row, bindings[0], runtime);
+    return daoRowToRecord(row, selectSessionBinding(bindings), runtime);
   }
 
   if (registryFallback) {
@@ -215,6 +271,9 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
     filePath: String(opts.filePath || ''),
   };
   const providerKeys = agent ? buildProviderKeys(agent, scanInfo) : [];
+  const existingBindings = new Map(
+    dao.listSessionBindings(db, chatKey).map(binding => [binding.providerKey, binding]),
+  );
 
   record.title = String(title || '');
   record.titleSource = 'user';
@@ -233,14 +292,16 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
 
     // A later transcript scan must resolve this same renamed UI session.
     for (const providerKey of providerKeys) {
+      const existingBinding = existingBindings.get(providerKey);
       const binding = dao.upsertSessionBinding(db, {
+        ...(existingBinding || {}),
         chatKey,
         providerKey,
         cliSessionId: scanInfo.cliSessionId,
         filePath: scanInfo.filePath,
-        source: 'user',
-        detached: false,
-        resumeAllowed: true,
+        source: existingBinding?.source || 'scan',
+        detached: existingBinding?.detached === true,
+        resumeAllowed: existingBinding?.resumeAllowed !== false,
         updatedAt: record.updatedAt,
       });
       if (!binding.ok) {
@@ -429,13 +490,14 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
   }
 
   const rt = needsRuntime ? runtime : existingRuntime;
-  return daoRowToRecord(record, {
+  const provider = row?.provider || {
     cliSessionId: scanSummary.cliSessionId || '',
     filePath: scanSummary.filePath || '',
     source: 'scan',
     detached: false,
     resumeAllowed: true,
-  }, rt);
+  };
+  return daoRowToRecord(record, provider, rt);
 }
 
 /**
@@ -475,13 +537,25 @@ function mergeRegistryFields(agent, scanSummary = {}, record = null) {
 function claimScannedProviderBinding(db, { agent, chatKey, cliSessionId, filePath } = {}) {
   const dao = sessionsDao();
   if (!db || !chatKey) return { ok: false, error: 'Missing database or chatKey' };
-  const record = findByProviderScan(db, agent || '', { cliSessionId, filePath });
+  const targetCliSessionId = String(cliSessionId || '');
+  const targetFilePath = String(filePath || '');
+  const record = findByProviderScan(db, agent || '', {
+    cliSessionId: targetCliSessionId,
+    filePath: targetFilePath,
+  });
   if (!record || record.chatKey !== chatKey) return { ok: false, error: 'Provider binding does not belong to this chat' };
   try {
     db.run('BEGIN');
     const bindings = dao.listSessionBindings(db, chatKey);
+    if (String(agent || '') === 'codex') {
+      const ownership = validateOwnedProviderThread(bindings, targetCliSessionId);
+      if (!ownership.ok) throw new Error(ownership.error);
+    }
+    let claimed = 0;
     for (const binding of bindings) {
-      if (binding.cliSessionId !== String(cliSessionId || '') && binding.filePath !== String(filePath || '')) continue;
+      const matchesCliSession = Boolean(targetCliSessionId) && binding.cliSessionId === targetCliSessionId;
+      const matchesFilePath = Boolean(targetFilePath) && binding.filePath === targetFilePath;
+      if (!matchesCliSession && !matchesFilePath) continue;
       const result = dao.upsertSessionBinding(db, {
         ...binding,
         chatKey,
@@ -491,7 +565,9 @@ function claimScannedProviderBinding(db, { agent, chatKey, cliSessionId, filePat
         updatedAt: now(),
       });
       if (!result.ok) throw new Error(result.error || 'Unable to claim provider binding');
+      claimed += 1;
     }
+    if (!claimed) throw new Error('No matching provider binding to claim');
     db.run('COMMIT');
     return { ok: true };
   } catch (error) {
@@ -531,7 +607,12 @@ function upsertRuntimeByProvider(db, { agent, filePath, cliSessionId, chatKey, r
       });
       if (!result.ok) throw new Error(result.error || 'Unable to save session');
     }
-    const existingBindings = new Set(dao.listSessionBindings(db, chatKey).map(binding => binding.providerKey));
+    const bindings = dao.listSessionBindings(db, chatKey);
+    if (String(agent || '') === 'codex') {
+      const ownership = validateOwnedProviderThread(bindings, cliSessionId);
+      if (!ownership.ok) throw new Error(ownership.error);
+    }
+    const existingBindings = new Set(bindings.map(binding => binding.providerKey));
     for (const providerKey of providerKeys) {
       if (existingBindings.has(providerKey)) continue;
       const result = dao.upsertSessionBinding(db, {
@@ -598,7 +679,7 @@ function restorePanelState(db, agent, panelState) {
   let repaired = 0;
 
   for (const row of rows) {
-    const binding = dao.listSessionBindings(db, row.chatKey)[0];
+    const binding = selectSessionBinding(dao.listSessionBindings(db, row.chatKey));
     if (!binding) continue;
     const runtime = dao.getSessionRuntime(db, row.chatKey);
     const record = daoRowToRecord(row, binding, runtime);
@@ -650,7 +731,7 @@ function restorePanelState(db, agent, panelState) {
     const rt = record.runtime || {};
     const fp = provider.filePath || '';
     const fileExists = Boolean(fp && fs.existsSync(fp));
-    const resumeAllowed = provider.resumeAllowed !== false && (!fp || fileExists);
+    const resumeAllowed = isOwnedProviderBinding(provider) && (!fp || fileExists);
     if (fp && !fileExists && !resumeAllowed) continue;
     project.chats.push({
       id: `chat-${record.chatKey}`,
@@ -731,6 +812,8 @@ module.exports = {
   findByProviderScan,
   ensureFromProviderScan,
   mergeRegistryFields,
+  getOwnedProviderBinding,
+  isOwnedProviderBinding,
   claimScannedProviderBinding,
   upsertRuntimeByProvider,
   restorePanelState,
