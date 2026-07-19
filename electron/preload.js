@@ -77,6 +77,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   describeDocument: (filePath) => ipcRenderer.invoke(CORE_CHANNELS.DOCUMENT_DESCRIBE, filePath),
   readDocument: (identity) => ipcRenderer.invoke(CORE_CHANNELS.DOCUMENT_READ, identity),
   writeDocument: (payload) => ipcRenderer.invoke(CORE_CHANNELS.DOCUMENT_WRITE, payload),
+  watchDocument: (identity) => ipcRenderer.invoke(CORE_CHANNELS.DOCUMENT_WATCH, identity),
+  unwatchDocument: (canonicalDocumentKey) => ipcRenderer.invoke(CORE_CHANNELS.DOCUMENT_UNWATCH, canonicalDocumentKey),
+  onDocumentChanged: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on(CORE_CHANNELS.DOCUMENT_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CORE_CHANNELS.DOCUMENT_CHANGED, handler)
+  },
   onMdContent: (callback) => {
     const handler = (_event, data) => callback(data)
     ipcRenderer.on(CORE_CHANNELS.MD_CONTENT, handler)

@@ -891,6 +891,7 @@
 		"saveFailed": "Save failed",
 		"unsavedChanges": "Unsaved Changes",
 		"discardEditsConfirm": "You have unsaved changes. Discard them?",
+		"externalChangeConflict": "The file was changed externally and conflicts with your unsaved edits",
 		"cannotSaveNoPath": "Cannot save: missing file path",
 		"toggleEditMode": "Toggle edit/preview mode"
 	},

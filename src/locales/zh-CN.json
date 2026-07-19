@@ -891,6 +891,7 @@
 		"saveFailed": "保存失败",
 		"unsavedChanges": "未保存的修改",
 		"discardEditsConfirm": "有未保存的修改，确定放弃？",
+		"externalChangeConflict": "文件已被外部修改，与当前未保存的编辑冲突",
 		"cannotSaveNoPath": "无法保存：缺少文件路径",
 		"toggleEditMode": "切换编辑/预览模式"
 	},

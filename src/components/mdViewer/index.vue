@@ -188,9 +188,12 @@ const editStates = reactive({})
 
 // 每个 tab 的编辑模式（仅 markdown）：preview-only | edit-only | split
 const tabEditModes = reactive({})
+// 外部变更静默重载时自增，迫使 viewer 重建（CM 编辑器只在挂载时吸收 props）
+const tabReloadRevisions = reactive({})
 let documentController = null
 let workbenchAdapter = null
 let unregisterDocCloseParticipant = null
+let disposeDocumentChanged = null
 
 // CloseCoordinator document dirty participant：应用真正 quit 前，逐个脏文档
 // 走与关 tab 完全一致的确认/关闭路径（confirmDiscardEdits → requestClose →
@@ -226,11 +229,66 @@ function getDocumentController() {
     const adapter = createDocumentElectronAdapter()
     documentController = createDocumentController(adapter)
     registerDocumentCloseParticipant()
+    registerDocumentChangeListener()
   } catch (_) {
     // Browser fallback keeps inline documents and the legacy non-file path usable.
     documentController = null
   }
   return documentController
+}
+
+// ── 外部变更（DOCUMENT_CHANGED）──
+// main 侧 documentWatchManager 按 canonical key 去重推送；干净文档静默重载，
+// 脏文档由 controller 置 conflict 并提示，保存走 compare-and-save 拦截。
+function registerDocumentChangeListener() {
+  if (disposeDocumentChanged) return
+  try {
+    disposeDocumentChanged = window.electronAPI?.onDocumentChanged?.(handleDocumentChanged) || null
+  } catch (_) {
+    disposeDocumentChanged = null
+  }
+}
+
+function watchDocumentIdentity(identity) {
+  if (!identity?.canonicalDocumentKey) return
+  try { window.electronAPI?.watchDocument?.(identity)?.catch?.(() => {}) } catch (_) {}
+}
+
+function unwatchDocumentTab(tab) {
+  const key = tab?.canonicalDocumentKey
+  if (!key) return
+  if (tabs.value.some(item => item.id !== tab.id && item.canonicalDocumentKey === key)) return
+  try { window.electronAPI?.unwatchDocument?.(key)?.catch?.(() => {}) } catch (_) {}
+}
+
+async function handleDocumentChanged(payload) {
+  const key = payload?.canonicalDocumentKey
+  if (!key || !documentController) return
+  const tab = tabs.value.find(item => item.canonicalDocumentKey === key)
+  if (!tab) return
+  const state = editStates[tab.id]
+  if (!payload.identity) {
+    // 文件已删除或不可读：仅脏文档提示（干净文档保留现有内容，可手动重开）
+    if (state?.isDirty) ElMessage.warning(i18n.global.t('doc.externalChangeConflict'))
+    return
+  }
+  const wasDirty = Boolean(state?.isDirty)
+  try {
+    const result = await documentController.refreshForExternalChange(payload.identity)
+    if (!tabs.value.some(item => item.id === tab.id)) return
+    const document = documentController.getDocument(key)
+    if (!document) return
+    if (result?.ok && !wasDirty) {
+      if (state) {
+        state.text = document.draftText
+        state.isDirty = false
+      }
+      tab.text = document.draftText
+      tabReloadRevisions[tab.id] = (tabReloadRevisions[tab.id] || 0) + 1
+    } else if (document.status === 'conflict') {
+      ElMessage.warning(i18n.global.t('doc.externalChangeConflict'))
+    }
+  } catch (_) {}
 }
 
 function usesDocumentController(payload = {}) {
@@ -398,7 +456,8 @@ const currentViewerKey = computed(() => {
   if (!tab) return ''
   const mode = tabEditModes[tab.id] || ''
   const editable = editStates[tab.id] ? 'edit' : ''
-  return `${tab.id}:${tab.viewerType}:${tab.filePath || tab.name}:${editable}:${mode}`
+  const reload = tabReloadRevisions[tab.id] || 0
+  return `${tab.id}:${tab.viewerType}:${tab.filePath || tab.name}:${editable}:${mode}:${reload}`
 })
 const currentViewerProps = computed(() => {
   const tab = currentTab.value
@@ -484,6 +543,7 @@ async function ensurePayloadContent(payload = {}) {
     // reports a conflict. Do not fall back to the legacy file bridge.
     const document = controller.getDocument(identity.canonicalDocumentKey)
     if (!document) throw new Error(opened.reason || 'document open failed')
+    watchDocumentIdentity(document.identity)
     return {
       ...payload,
       filePath: document.identity.filePath,
@@ -866,11 +926,13 @@ async function removeTab(id) {
 function removeTabState(id) {
   const idx = tabs.value.findIndex(tab => tab.id === id)
   if (idx < 0) return
+  unwatchDocumentTab(tabs.value[idx])
   tabs.value.splice(idx, 1)
   // 清理被删除标签页的滚动位置和编辑状态
   tabScrollTops.delete(id)
   delete editStates[id]
   delete tabEditModes[id]
+  delete tabReloadRevisions[id]
   if (activeTabId.value === id) {
     activeTabId.value = tabs.value[Math.max(0, idx - 1)]?.id || ''
   }

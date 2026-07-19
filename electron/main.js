@@ -76,6 +76,7 @@ const { WINDOW_ROLES, createWindowRoleRegistry } = require('./workbench/windowRo
 const { createCloseHandshake, shouldProceedWithQuit } = require('./workbench/closeHandshake')
 const { createDocumentRepository } = require('./documents/documentRepository')
 const { registerDocumentIpc } = require('./documents/documentIpc')
+const { createDocumentWatchManager } = require('./documents/documentWatchManager')
 
 const windowRoles = createWindowRoleRegistry()
 let nextWorkbenchWindowInstance = 0
@@ -106,6 +107,7 @@ let quitPersistenceStarted = false
 let quitPersistenceFinished = false
 let closeHandshake = null
 let closeHandshakeApproved = false
+let documentWatchManager = null
 
 function queueAssociatedMarkdown(commandLine) {
   const filePath = findAssociatedMarkdownPath(commandLine, { existsSync: fs.existsSync })
@@ -141,6 +143,7 @@ app.on('before-quit', (event) => {
   }
   isAppQuitting = true
   flushSettings()
+  try { documentWatchManager?.dispose() } catch (_) {}
   if (quitPersistenceFinished) return
   event.preventDefault()
   if (quitPersistenceStarted) return
@@ -375,7 +378,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(CORE_CHANNELS.WINDOW_ROLE_GET, event => windowRoles.getRoleForSender(event.sender))
   closeHandshake = createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win })
-  registerDocumentIpc({ ipcMain, roles: windowRoles, repository: createDocumentRepository() })
+  const documentRepository = createDocumentRepository()
+  documentWatchManager = createDocumentWatchManager({
+    describe: documentRepository.describe,
+    send: payload => {
+      if (win && !win.isDestroyed()) win.webContents.send(CORE_CHANNELS.DOCUMENT_CHANGED, payload)
+    },
+  })
+  registerDocumentIpc({ ipcMain, roles: windowRoles, repository: documentRepository, watchManager: documentWatchManager })
   registerLayoutIpc({
     ipcMain,
     roles: windowRoles,
