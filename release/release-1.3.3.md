@@ -13,4 +13,9 @@ MindCraft-Agent v1.3.3 更新日志
 - 修复工作台导航、退出守卫和文档域相关的稳定性问题
 - 修复每轮 token 指标不能立即渲染的问题
 - 修复 mdViewer 保存路径不经过文档域统一处理的问题
+- 修复状态栏 context 分母未使用配置 autoCompactWindow 的问题
+- 修复 HTML 预览交互复杂度导致的显示问题
 - 历史 Claude 会话不再被后续 provider 激活覆盖模型和 effort 设置
+
+性能优化
+- HtmlViewer 分屏预览增加防抖，避免按键时频繁重载 iframe
