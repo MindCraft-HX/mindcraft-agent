@@ -34,7 +34,7 @@
         <iframe
           class="html-frame"
           sandbox=""
-          :srcdoc="draft || fallbackHtml"
+          :srcdoc="previewText || fallbackHtml"
           title="html-preview"
         />
       </div>
@@ -79,6 +79,15 @@ function onEditorInput(newText) {
   emit('update:editorText', newText)
   emit('update:dirty', newText !== (props.text || ''))
 }
+
+// 分屏预览防抖（与 MarkdownEditor 150ms 约定一致）：
+// srcdoc 每次变化都是整个 iframe 文档重载，不能按按键触发。
+const previewText = ref(draft.value)
+let _previewTimer = null
+watch(draft, (val) => {
+  clearTimeout(_previewTimer)
+  _previewTimer = setTimeout(() => { previewText.value = val }, 150)
+})
 
 const fallbackHtml = computed(() => `<!doctype html><html><body><p>${t('doc.htmlEmpty')}</p></body></html>`)
 

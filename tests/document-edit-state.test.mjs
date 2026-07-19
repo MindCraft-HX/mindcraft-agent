@@ -40,6 +40,9 @@ test('HtmlViewer keeps the sandbox iframe and gains a CodeMirror source mode', (
   assert.ok(source.includes('srcdoc'), 'preview must render via srcdoc, not a navigable URL')
   assert.ok(source.includes('CodeMirrorEditor'), 'source mode must use the shared CodeMirror editor')
   assert.ok(source.includes("update:editorText"), 'editor input must flow to the mdViewer edit state')
+  // 分屏预览必须防抖：srcdoc 直接绑 draft 会让每次按键都整页重载 iframe
+  assert.ok(source.includes('_previewTimer'), 'split preview must debounce iframe srcdoc updates')
+  assert.ok(source.includes(':srcdoc="previewText || fallbackHtml"'), 'split iframe must bind the debounced preview text')
 })
 
 test('HtmlViewer keeps an empty dirty draft instead of falling back to the file text', () => {
