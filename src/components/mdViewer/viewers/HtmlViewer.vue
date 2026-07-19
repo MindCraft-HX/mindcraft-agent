@@ -1,50 +1,30 @@
 <template>
   <div class="viewer-html" :class="`viewer-html--${editMode}`">
-    <!-- 预览：sandbox iframe（sanitizer/CSP 属 2B 子门槛） -->
+    <!-- 预览：允许隔离的内联脚本交互，不授予同源或宿主能力。 -->
     <iframe
       v-if="editMode === 'preview-only'"
       class="html-frame"
-      sandbox=""
-      :srcdoc="text || fallbackHtml"
+      :sandbox="HTML_PREVIEW_SANDBOX"
+      :srcdoc="previewDocument"
       title="html-preview"
     />
 
     <!-- 源码（HTML 默认模式） -->
     <CodeMirrorEditor
-      v-else-if="editMode === 'edit-only'"
+      v-else
       ref="editorRef"
       :model-value="draft"
       :ext="ext || 'html'"
       :file-path="filePath"
       @update:model-value="onEditorInput"
     />
-
-    <!-- 分屏：左源码右实时预览 -->
-    <template v-else>
-      <div class="html-split-pane html-split-edit">
-        <CodeMirrorEditor
-          ref="editorRef"
-          :model-value="draft"
-          :ext="ext || 'html'"
-          :file-path="filePath"
-          @update:model-value="onEditorInput"
-        />
-      </div>
-      <div class="html-split-pane html-split-preview">
-        <iframe
-          class="html-frame"
-          sandbox=""
-          :srcdoc="previewText || fallbackHtml"
-          title="html-preview"
-        />
-      </div>
-    </template>
   </div>
 </template>
 
 <script setup>
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { buildHtmlPreviewDocument, HTML_PREVIEW_SANDBOX } from '../htmlPreview.mjs'
 
 const CodeMirrorEditor = defineAsyncComponent(() => import('../editors/CodeMirrorEditor.vue'))
 
@@ -80,16 +60,11 @@ function onEditorInput(newText) {
   emit('update:dirty', newText !== (props.text || ''))
 }
 
-// 分屏预览防抖（与 MarkdownEditor 150ms 约定一致）：
-// srcdoc 每次变化都是整个 iframe 文档重载，不能按按键触发。
-const previewText = ref(draft.value)
-let _previewTimer = null
-watch(draft, (val) => {
-  clearTimeout(_previewTimer)
-  _previewTimer = setTimeout(() => { previewText.value = val }, 150)
-})
-
 const fallbackHtml = computed(() => `<!doctype html><html><body><p>${t('doc.htmlEmpty')}</p></body></html>`)
+const previewDocument = computed(() => buildHtmlPreviewDocument(
+  props.dirty ? props.editorText : props.text,
+  fallbackHtml.value,
+))
 
 function focus() {
   editorRef.value?.focus()
@@ -106,21 +81,6 @@ defineExpose({ focus })
   border-radius: 14px;
   overflow: hidden;
   background: var(--doc-paper, #fff);
-}
-
-.viewer-html--split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-}
-
-.html-split-pane {
-  overflow: auto;
-  min-height: 0;
-}
-
-.html-split-edit {
-  border-right: 1px solid var(--doc-line, #e2e8f0);
 }
 
 .html-frame {

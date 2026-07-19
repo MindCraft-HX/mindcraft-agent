@@ -450,11 +450,10 @@ const modeSegmentButtons = computed(() => {
     ]
   }
   if (viewerType === 'html') {
-    // HTML 源码优先（设计 4.6）：顺序与默认值一致
+    // HTML 源码优先；预览是独立完整页面，不提供低价值的内嵌分屏。
     return [
       { mode: EDIT_MODE.EDIT_ONLY, label: 'doc.source' },
       { mode: EDIT_MODE.PREVIEW_ONLY, label: 'doc.preview' },
-      { mode: EDIT_MODE.SPLIT, label: 'doc.split' },
     ]
   }
   return []

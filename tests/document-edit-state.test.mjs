@@ -1,5 +1,5 @@
 // Contract: HTML 文档是可编辑文档，默认源码模式（设计 4.6）。
-// 预览仍是 sandbox iframe；sanitizer/CSP 属 2B 子门槛。
+// 预览是可交互但非同源的 sandbox iframe；HTML 不提供低价值分屏。
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -12,6 +12,11 @@ import {
   defaultEditMode,
   isEditableFile,
 } from '../src/components/mdViewer/editState.mjs'
+import {
+  buildHtmlPreviewDocument,
+  HTML_PREVIEW_CSP,
+  HTML_PREVIEW_SANDBOX,
+} from '../src/components/mdViewer/htmlPreview.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -34,15 +39,13 @@ test('default edit mode: html opens in source, markdown/code open in preview', (
   assert.equal(defaultEditMode(undefined), EDIT_MODE.PREVIEW_ONLY)
 })
 
-test('HtmlViewer keeps the sandbox iframe and gains a CodeMirror source mode', () => {
+test('HtmlViewer provides isolated interactive preview and CodeMirror source modes only', () => {
   const source = fs.readFileSync(path.join(root, 'src/components/mdViewer/viewers/HtmlViewer.vue'), 'utf8')
-  assert.ok(source.includes('sandbox=""'), 'html preview must stay sandboxed')
+  assert.ok(source.includes(':sandbox="HTML_PREVIEW_SANDBOX"'), 'html preview must stay sandboxed')
   assert.ok(source.includes('srcdoc'), 'preview must render via srcdoc, not a navigable URL')
   assert.ok(source.includes('CodeMirrorEditor'), 'source mode must use the shared CodeMirror editor')
   assert.ok(source.includes("update:editorText"), 'editor input must flow to the mdViewer edit state')
-  // 分屏预览必须防抖：srcdoc 直接绑 draft 会让每次按键都整页重载 iframe
-  assert.ok(source.includes('_previewTimer'), 'split preview must debounce iframe srcdoc updates')
-  assert.ok(source.includes(':srcdoc="previewText || fallbackHtml"'), 'split iframe must bind the debounced preview text')
+  assert.equal(source.includes('html-split-pane'), false, 'html viewer must not retain its own split layout')
 })
 
 test('HtmlViewer keeps an empty dirty draft instead of falling back to the file text', () => {
@@ -60,4 +63,39 @@ test('mdViewer exposes a source-labeled mode segment for html tabs', () => {
   assert.ok(source.includes('modeSegmentButtons'), 'mode segment must be data-driven per viewer type')
   assert.ok(source.includes("label: 'doc.source'"), 'html mode segment must label edit-only as source')
   assert.ok(source.includes('defaultEditMode'), 'mdViewer must derive per-type default modes from editState')
+  const htmlBranch = source.match(/if \(viewerType === 'html'\) \{([\s\S]*?)\n  \}/)?.[1] || ''
+  assert.ok(htmlBranch.includes("label: 'doc.preview'"), 'html mode segment must include preview')
+  assert.equal(htmlBranch.includes('EDIT_MODE.SPLIT'), false, 'html mode segment must not include split')
+})
+
+test('html preview allows isolated inline interaction without same-origin privileges', () => {
+  assert.equal(HTML_PREVIEW_SANDBOX, 'allow-scripts')
+  assert.equal(HTML_PREVIEW_SANDBOX.includes('allow-same-origin'), false)
+  assert.equal(HTML_PREVIEW_SANDBOX.includes('allow-top-navigation'), false)
+  assert.equal(HTML_PREVIEW_SANDBOX.includes('allow-popups'), false)
+  assert.equal(HTML_PREVIEW_SANDBOX.includes('allow-downloads'), false)
+})
+
+test('html preview CSP is offline-first and blocks privileged document capabilities', () => {
+  assert.match(HTML_PREVIEW_CSP, /default-src 'none'/)
+  assert.match(HTML_PREVIEW_CSP, /script-src 'unsafe-inline'/)
+  assert.match(HTML_PREVIEW_CSP, /connect-src 'none'/)
+  assert.match(HTML_PREVIEW_CSP, /object-src 'none'/)
+  assert.match(HTML_PREVIEW_CSP, /frame-src 'none'/)
+  assert.match(HTML_PREVIEW_CSP, /worker-src 'none'/)
+  assert.match(HTML_PREVIEW_CSP, /base-uri 'none'/)
+  assert.match(HTML_PREVIEW_CSP, /form-action 'none'/)
+})
+
+test('html preview injects its CSP before user content', () => {
+  const withHead = buildHtmlPreviewDocument('<!doctype html><html><head><title>Demo</title></head><body><button>Go</button></body></html>')
+  assert.ok(withHead.indexOf('Content-Security-Policy') < withHead.indexOf('<title>Demo</title>'))
+
+  const withoutHead = buildHtmlPreviewDocument('<html><body><script>document.body.dataset.ready = "yes"</script></body></html>')
+  assert.ok(withoutHead.indexOf('<head>') < withoutHead.indexOf('<body>'))
+  assert.equal(withoutHead.includes('allow-scripts'), false, 'sandbox capabilities belong on the iframe, not in user HTML')
+
+  const fragment = buildHtmlPreviewDocument('<button id="demo">Demo</button>')
+  assert.match(fragment, /^<!doctype html><html><head>/)
+  assert.ok(fragment.includes('<body><button id="demo">Demo</button></body>'))
 })
