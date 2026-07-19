@@ -109,6 +109,38 @@ function validateOwnedProviderThread(bindings = [], cliSessionId = '') {
   };
 }
 
+/**
+ * Repair bindings written by the historical Codex thread-splitting bug.
+ * The target must already be the deterministic canonical owned thread. Only
+ * conflicting runtime bindings are removable; a second user-owned thread is
+ * ambiguous and must continue to fail closed.
+ */
+function repairHistoricalCodexOwnedBindings(db, bindings = [], cliSessionId = '') {
+  const targetThreadId = String(cliSessionId || '');
+  const canonical = selectOwnedProviderBinding(bindings);
+  if (!targetThreadId || !canonical || String(canonical.cliSessionId || '') !== targetThreadId) {
+    return { ok: true, bindings };
+  }
+
+  const conflictingBindings = bindings.filter(binding => (
+    isOwnedProviderBinding(binding) &&
+    String(binding.cliSessionId || '') !== targetThreadId
+  ));
+  if (!conflictingBindings.length || conflictingBindings.some(binding => binding.source === 'user')) {
+    return { ok: true, bindings };
+  }
+
+  const dao = sessionsDao();
+  for (const binding of conflictingBindings) {
+    const result = dao.deleteSessionBinding(db, binding.chatKey, binding.providerKey);
+    if (!result.ok) return { ok: false, error: result.error || 'Unable to repair provider binding' };
+  }
+  return {
+    ok: true,
+    bindings: dao.listSessionBindings(db, canonical.chatKey),
+  };
+}
+
 /** Convert DAO session row → registry-shaped record (camelCase, nested provider). */
 function daoRowToRecord(row, binding, runtime) {
   if (!row) return null;
@@ -546,8 +578,11 @@ function claimScannedProviderBinding(db, { agent, chatKey, cliSessionId, filePat
   if (!record || record.chatKey !== chatKey) return { ok: false, error: 'Provider binding does not belong to this chat' };
   try {
     db.run('BEGIN');
-    const bindings = dao.listSessionBindings(db, chatKey);
+    let bindings = dao.listSessionBindings(db, chatKey);
     if (String(agent || '') === 'codex') {
+      const repair = repairHistoricalCodexOwnedBindings(db, bindings, targetCliSessionId);
+      if (!repair.ok) throw new Error(repair.error);
+      bindings = repair.bindings;
       const ownership = validateOwnedProviderThread(bindings, targetCliSessionId);
       if (!ownership.ok) throw new Error(ownership.error);
     }
@@ -607,8 +642,11 @@ function upsertRuntimeByProvider(db, { agent, filePath, cliSessionId, chatKey, r
       });
       if (!result.ok) throw new Error(result.error || 'Unable to save session');
     }
-    const bindings = dao.listSessionBindings(db, chatKey);
+    let bindings = dao.listSessionBindings(db, chatKey);
     if (String(agent || '') === 'codex') {
+      const repair = repairHistoricalCodexOwnedBindings(db, bindings, cliSessionId);
+      if (!repair.ok) throw new Error(repair.error);
+      bindings = repair.bindings;
       const ownership = validateOwnedProviderThread(bindings, cliSessionId);
       if (!ownership.ok) throw new Error(ownership.error);
     }

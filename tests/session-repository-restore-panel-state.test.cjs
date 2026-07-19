@@ -318,6 +318,31 @@ async function runRuntimeWriteRejectsSecondOwnedThreadTest() {
   })
 }
 
+async function runRuntimeWriteRepairsHistoricalRuntimeFragmentsTest() {
+  await withTempDb(async (db) => {
+    sessionsDao.upsertSession(db, {
+      chatKey: 'codex::runtime-repair', agent: 'codex', projectId: '', cwd: 'D:/repo',
+      title: 'Runtime repair', titleSource: 'scan', createdAt: 1, updatedAt: 3, metadata: {},
+    })
+    for (const [threadId, updatedAt] of [['thread-original', 1], ['thread-fragment-a', 2], ['thread-fragment-b', 3]]) {
+      sessionsDao.upsertSessionBinding(db, {
+        chatKey: 'codex::runtime-repair', providerKey: `codex::${threadId}`,
+        cliSessionId: threadId, source: 'runtime', resumeAllowed: true, updatedAt,
+      })
+    }
+
+    const result = upsertRuntimeByProvider(db, {
+      agent: 'codex', chatKey: 'codex::runtime-repair', cliSessionId: 'thread-original',
+      runtime: { model: 'repaired-model' },
+    })
+
+    assert.equal(result.ok, true)
+    const bindings = sessionsDao.listSessionBindings(db, 'codex::runtime-repair')
+    assert.deepEqual([...new Set(bindings.map(binding => binding.cliSessionId))], ['thread-original'])
+    assert.equal(sessionsDao.getSessionRuntime(db, 'codex::runtime-repair').model, 'repaired-model')
+  })
+}
+
 async function runClaimRejectsSecondOwnedThreadTest() {
   await withTempDb(async (db) => {
     sessionsDao.upsertSession(db, {
@@ -342,6 +367,60 @@ async function runClaimRejectsSecondOwnedThreadTest() {
     const scanned = sessionsDao.listSessionBindings(db, 'codex::claim-conflict')
       .find(binding => binding.cliSessionId === 'thread-scanned')
     assert.equal(scanned.source, 'scan')
+  })
+}
+
+async function runClaimRepairsRuntimeFragmentsBehindCanonicalUserThreadTest() {
+  await withTempDb(async (db) => {
+    sessionsDao.upsertSession(db, {
+      chatKey: 'codex::claim-repair', agent: 'codex', projectId: '', cwd: 'D:/repo',
+      title: 'Claim repair', titleSource: 'user', createdAt: 1, updatedAt: 3, metadata: {},
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::claim-repair', providerKey: 'codex::thread-canonical',
+      cliSessionId: 'thread-canonical', source: 'user', resumeAllowed: true, updatedAt: 1,
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::claim-repair', providerKey: 'codex::thread-fragment',
+      cliSessionId: 'thread-fragment', source: 'runtime', resumeAllowed: true, updatedAt: 2,
+    })
+    sessionsDao.upsertSessionBinding(db, {
+      chatKey: 'codex::claim-repair', providerKey: 'codex::D:/transcripts/thread-fragment.jsonl',
+      cliSessionId: 'thread-fragment', filePath: 'D:/transcripts/thread-fragment.jsonl',
+      source: 'runtime', resumeAllowed: true, updatedAt: 3,
+    })
+
+    const result = claimScannedProviderBinding(db, {
+      agent: 'codex', chatKey: 'codex::claim-repair', cliSessionId: 'thread-canonical', filePath: '',
+    })
+
+    assert.equal(result.ok, true)
+    const bindings = sessionsDao.listSessionBindings(db, 'codex::claim-repair')
+    assert.deepEqual([...new Set(bindings.map(binding => binding.cliSessionId))], ['thread-canonical'])
+    assert.equal(bindings.every(binding => binding.source === 'user'), true)
+  })
+}
+
+async function runClaimDoesNotRepairConflictingUserThreadTest() {
+  await withTempDb(async (db) => {
+    sessionsDao.upsertSession(db, {
+      chatKey: 'codex::user-conflict', agent: 'codex', projectId: '', cwd: 'D:/repo',
+      title: 'User conflict', titleSource: 'user', createdAt: 1, updatedAt: 2, metadata: {},
+    })
+    for (const [threadId, updatedAt] of [['thread-user-a', 1], ['thread-user-b', 2]]) {
+      sessionsDao.upsertSessionBinding(db, {
+        chatKey: 'codex::user-conflict', providerKey: `codex::${threadId}`,
+        cliSessionId: threadId, source: 'user', resumeAllowed: true, updatedAt,
+      })
+    }
+
+    const result = claimScannedProviderBinding(db, {
+      agent: 'codex', chatKey: 'codex::user-conflict', cliSessionId: 'thread-user-a', filePath: '',
+    })
+
+    assert.equal(result.ok, false)
+    assert.match(result.error, /different provider thread/)
+    assert.equal(sessionsDao.listSessionBindings(db, 'codex::user-conflict').length, 2)
   })
 }
 
@@ -458,7 +537,10 @@ async function run() {
   await runScanDoesNotFabricateUpdatedAtTest()
   await runRuntimeWriteCreatesBothProviderBindingsTest()
   await runRuntimeWriteRejectsSecondOwnedThreadTest()
+  await runRuntimeWriteRepairsHistoricalRuntimeFragmentsTest()
   await runClaimRejectsSecondOwnedThreadTest()
+  await runClaimRepairsRuntimeFragmentsBehindCanonicalUserThreadTest()
+  await runClaimDoesNotRepairConflictingUserThreadTest()
   await runClaimedBindingSurvivesFreshScanTest()
   await runScanRejectsSplitProviderIdentityTest()
   await runRestoreSkipsUnboundSessionTest()

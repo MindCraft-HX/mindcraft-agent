@@ -3404,7 +3404,10 @@ function setupCodexCliHandlers() {
     try {
       const db = await getDb({ userDataDir: (sessionRegistryOptionsForTest?.userDataDir || getMindCraftUserDataDir()) })
       const result = claimScannedProviderBinding(db, { agent: 'codex', chatKey: sessionId, cliSessionId, filePath })
-      if (result.ok) cliSessionIds.set(sessionId, cliSessionId)
+      if (result.ok) {
+        cliSessionIds.set(sessionId, cliSessionId)
+        await persistDb()
+      }
       return result
     } catch (error) { return { ok: false, error: error?.message || String(error) } }
   })

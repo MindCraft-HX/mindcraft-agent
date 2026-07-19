@@ -82,7 +82,12 @@ The repository rejects attempts to write or claim a second distinct owned
 thread for the same `chatKey`; this invariant must not depend only on stream
 event ordering or an in-memory guard.
 If historical corruption left several owned thread ids on one chat, scans show
-only the canonical binding; they never concatenate transcript contents.
+only the canonical binding; they never concatenate transcript contents. When
+the selected canonical thread is resumed or explicitly claimed, repository
+repair may remove conflicting historical `runtime` bindings from that chat.
+It must never remove a conflicting `user` binding or delete provider
+transcripts; unbound fragments remain provider history and may be scanned as
+separate sessions.
 
 For resumed turns with images, place the `resume <thread-id>` subcommand before
 all `--image` arguments. The top-level CLI image option is variadic; putting it
