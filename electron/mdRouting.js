@@ -6,6 +6,7 @@ let mdViewerReady = false
 let pendingPayloads = []
 let nextPayloadId = 0
 const MAX_PENDING_PAYLOADS = 20
+const PAYLOAD_TTL_MS = 60_000
 
 function setMainWindow(win) {
   mainWin = win
@@ -25,9 +26,17 @@ function withRequestId(payload) {
   }
 }
 
-function pushPendingPayload(payload) {
+function evictExpiredPayloads(now = Date.now()) {
+  if (!pendingPayloads.length) return
+  pendingPayloads = pendingPayloads.filter(
+    entry => typeof entry.enqueuedAt !== 'number' || now - entry.enqueuedAt < PAYLOAD_TTL_MS
+  )
+}
+
+function pushPendingPayload(payload, enqueuedAt = Date.now()) {
   if (!payload) return
-  pendingPayloads.push(payload)
+  evictExpiredPayloads(enqueuedAt)
+  pendingPayloads.push({ payload, enqueuedAt })
   if (pendingPayloads.length > MAX_PENDING_PAYLOADS) {
     pendingPayloads = pendingPayloads.slice(-MAX_PENDING_PAYLOADS)
   }
@@ -54,7 +63,8 @@ function openMdInMain(payload) {
 function registerMdViewerHandlers() {
   ipcMain.handle(CORE_CHANNELS.MD_VIEWER_READY, () => {
     mdViewerReady = true
-    const payloads = [...pendingPayloads]
+    evictExpiredPayloads()
+    const payloads = pendingPayloads.map(entry => entry.payload)
     pendingPayloads = []
     return payloads
   })
@@ -75,15 +85,17 @@ module.exports = {
     resetForTest,
     setReady(value) { mdViewerReady = Boolean(value) },
     drainPendingPayloads() {
-      const payloads = [...pendingPayloads]
+      evictExpiredPayloads()
+      const payloads = pendingPayloads.map(entry => entry.payload)
       pendingPayloads = []
       return payloads
     },
     getState() {
       return {
         mdViewerReady,
-        pendingPayloads: [...pendingPayloads],
+        pendingPayloads: pendingPayloads.map(entry => entry.payload),
       }
     },
+    pushPendingPayload,
   },
 }

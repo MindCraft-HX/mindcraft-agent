@@ -149,6 +149,7 @@ function openInMdViewer() {
   window.electronAPI?.openMdWin?.({
     filePath: props.msg.filePath,
     content: props.msg.readContent || '',
+    source: 'agent-file-link',
   })
 }
 </script>
