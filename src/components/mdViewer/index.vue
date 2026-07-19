@@ -162,6 +162,7 @@ import { resolveDocumentViewerType } from './viewerRegistry.mjs'
 import { createDocumentController } from '@/documents/documentController.mjs'
 import { createDocumentElectronAdapter } from '@/documents/documentElectronAdapter.mjs'
 import { createDocumentWorkbenchAdapter } from '@/documents/documentWorkbenchAdapter.mjs'
+import { getAppCloseCoordinator } from '@/lifecycle/appCloseCoordinator.mjs'
 
 const VIEWER_MAP = {
   markdown: MarkdownViewer,
@@ -189,12 +190,42 @@ const editStates = reactive({})
 const tabEditModes = reactive({})
 let documentController = null
 let workbenchAdapter = null
+let unregisterDocCloseParticipant = null
+
+// CloseCoordinator document dirty participant：应用真正 quit 前，逐个脏文档
+// 走与关 tab 完全一致的确认/关闭路径（confirmDiscardEdits → requestClose →
+// removeTabState）。任一文档被取消则整体 cancel，main 中止退出。
+async function prepareDocumentsForAppQuit() {
+  if (!documentController) return { status: 'ready' }
+  const dirtyKeys = documentController.getSnapshot()
+    .filter(doc => doc.dirty)
+    .map(doc => doc.canonicalDocumentKey)
+  for (const key of dirtyKeys) {
+    const result = await closeWorkbenchDocument(key)
+    if (result.status !== 'ready') return { status: 'cancel' }
+  }
+  return { status: 'ready' }
+}
+
+function registerDocumentCloseParticipant() {
+  if (unregisterDocCloseParticipant) return
+  try {
+    unregisterDocCloseParticipant = getAppCloseCoordinator().registry.register(
+      'document-dirty',
+      prepareDocumentsForAppQuit
+    )
+  } catch (_) {
+    // 无 preload 桥（浏览器调试）或重复注册时不阻塞文档功能。
+    unregisterDocCloseParticipant = null
+  }
+}
 
 function getDocumentController() {
   if (documentController) return documentController
   try {
     const adapter = createDocumentElectronAdapter()
     documentController = createDocumentController(adapter)
+    registerDocumentCloseParticipant()
   } catch (_) {
     // Browser fallback keeps inline documents and the legacy non-file path usable.
     documentController = null

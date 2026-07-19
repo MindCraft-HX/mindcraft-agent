@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { createCloseHandshake } = require('../electron/workbench/closeHandshake')
+const { createCloseHandshake, shouldProceedWithQuit } = require('../electron/workbench/closeHandshake')
 const { WINDOW_ROLES, createWindowRoleRegistry } = require('../electron/workbench/windowRoles')
 
 function createWindow(id) {
@@ -51,4 +51,19 @@ test('close handshake fails safely when renderer never returns a result', async 
   const result = await handshake.requestClose('update')
   assert.equal(result.status, 'error')
   assert.equal(result.reason, 'timeout')
+})
+
+test('shouldProceedWithQuit: ready 继续，cancel/participant error 中止', () => {
+  assert.equal(shouldProceedWithQuit({ status: 'ready' }), true)
+  assert.equal(shouldProceedWithQuit({ status: 'cancel' }), false)
+  assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'participant-error' }), false)
+  assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'exception' }), false)
+})
+
+test('shouldProceedWithQuit: 握手基础设施错误继续退出，避免应用无法退出', () => {
+  assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'timeout' }), true)
+  assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'window-unavailable' }), true)
+  assert.equal(shouldProceedWithQuit(null), true)
+  assert.equal(shouldProceedWithQuit(undefined), true)
+  assert.equal(shouldProceedWithQuit('ready'), true)
 })

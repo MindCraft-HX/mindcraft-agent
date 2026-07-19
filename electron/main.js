@@ -73,7 +73,7 @@ const { createLayoutRepository } = require('./workbench/layoutRepository')
 const { validateWorkbenchLayout } = require('./workbench/layoutSchema')
 const { registerLayoutIpc } = require('./workbench/layoutIpc')
 const { WINDOW_ROLES, createWindowRoleRegistry } = require('./workbench/windowRoles')
-const { createCloseHandshake } = require('./workbench/closeHandshake')
+const { createCloseHandshake, shouldProceedWithQuit } = require('./workbench/closeHandshake')
 const { createDocumentRepository } = require('./documents/documentRepository')
 const { registerDocumentIpc } = require('./documents/documentIpc')
 
@@ -104,6 +104,8 @@ let mainRendererReady = false
 const pendingAssociatedMarkdownPaths = []
 let quitPersistenceStarted = false
 let quitPersistenceFinished = false
+let closeHandshake = null
+let closeHandshakeApproved = false
 
 function queueAssociatedMarkdown(commandLine) {
   const filePath = findAssociatedMarkdownPath(commandLine, { existsSync: fs.existsSync })
@@ -120,6 +122,23 @@ function openQueuedAssociatedMarkdown() {
 }
 
 app.on('before-quit', (event) => {
+  // Phase 2A CloseCoordinator：真正 quit（托盘退出 / 更新安装 / dev 关窗）
+  // 先过 renderer dirty 守卫。ready 或握手基础设施错误（timeout 等）放行；
+  // cancel / participant error 中止本次退出，应用保持运行。
+  if (!closeHandshakeApproved && closeHandshake) {
+    event.preventDefault()
+    closeHandshake.requestClose('quit').then(result => {
+      if (shouldProceedWithQuit(result)) {
+        closeHandshakeApproved = true
+        app.quit()
+      }
+    }).catch(() => {
+      // 握手自身异常（如 renderer 已崩溃）不阻塞退出。
+      closeHandshakeApproved = true
+      app.quit()
+    })
+    return
+  }
   isAppQuitting = true
   flushSettings()
   if (quitPersistenceFinished) return
@@ -245,9 +264,16 @@ function createWindow() {
     clearDragState()
   })
 
-  // 关闭窗口：开发模式直接退出（避免进程残留占用端口），生产模式隐藏到托盘
+  // 关闭窗口：开发模式退出（先经 CloseCoordinator dirty 守卫），生产模式隐藏到托盘
   win.on('close', (e) => {
     if (NODE_ENV === 'development') {
+      if (!closeHandshakeApproved) {
+        // 拦住本次关窗，改走 before-quit → CloseCoordinator 握手；
+        // 放行后 app.quit() 会再次触发 close，那时 closeHandshakeApproved 已为 true。
+        e.preventDefault()
+        app.quit()
+        return
+      }
       globalShortcut.unregisterAll()
       win = null
       app.quit()
@@ -348,7 +374,7 @@ app.whenReady().then(async () => {
   initSettingsFacade(app.getPath('userData'));
 
   ipcMain.handle(CORE_CHANNELS.WINDOW_ROLE_GET, event => windowRoles.getRoleForSender(event.sender))
-  createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win })
+  closeHandshake = createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win })
   registerDocumentIpc({ ipcMain, roles: windowRoles, repository: createDocumentRepository() })
   registerLayoutIpc({
     ipcMain,

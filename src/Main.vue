@@ -212,6 +212,11 @@ import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
 import { storeToRefs } from 'pinia';
 import { usePluginStore } from '@/stores/pluginStore';
 import { createLegacyNavigationAdapter, documentPayloadToIntent } from '@/workbench/navigationIntent.mjs';
+import { getAppCloseCoordinator } from '@/lifecycle/appCloseCoordinator.mjs';
+
+// CloseCoordinator 桥接：主 workbench renderer 存活期间消费 main 的
+// 退出握手请求（dirty participant 在各业务模块内注册，如 mdViewer）。
+getAppCloseCoordinator();
 
 const settingsDrawer = ref(false);
 const activeSetting = ref(null);

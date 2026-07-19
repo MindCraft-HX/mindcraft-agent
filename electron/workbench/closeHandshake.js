@@ -3,6 +3,21 @@
 const { CORE_CHANNELS } = require('../../packages/agent/shared/ipcChannels')
 const { WINDOW_ROLES } = require('./windowRoles')
 
+/**
+ * before-quit 是否继续退出的纯决策：
+ * - ready → 继续；
+ * - cancel / participant error → 中止（用户取消或 dirty participant 失败，
+ *   用户可处理后再退）；
+ * - 握手基础设施错误（timeout / window-unavailable / 无结果）→ 继续，
+ *   避免 renderer 挂死导致应用无法退出。
+ */
+function shouldProceedWithQuit(result) {
+  if (!result || typeof result !== 'object') return true
+  if (result.status === 'ready') return true
+  if (result.status === 'error' && (result.reason === 'timeout' || result.reason === 'window-unavailable')) return true
+  return false
+}
+
 function createCloseHandshake({ ipcMain, roles, getMainWindow, now = () => Date.now(), timeoutMs = 15_000 } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== 'function') throw new Error('ipcMain.handle is required')
   if (!roles || typeof roles.isSenderInRole !== 'function') throw new Error('role registry is required')
@@ -41,4 +56,4 @@ function createCloseHandshake({ ipcMain, roles, getMainWindow, now = () => Date.
   return { requestClose }
 }
 
-module.exports = { createCloseHandshake }
+module.exports = { createCloseHandshake, shouldProceedWithQuit }
