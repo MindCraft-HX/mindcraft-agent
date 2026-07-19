@@ -162,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import ProviderForm from './ProviderForm.vue'
@@ -188,22 +188,11 @@ const confirmDialogRef = ref(null)
 defineProps({ embedded: { type: Boolean, default: false } })
 const emit = defineEmits(['providerActivated'])
 
-// 模型上下文窗口映射（与 electron/mainModules/claudeMetrics.js 保持同步）
-const MODEL_CONTEXT_MAP = [
-  ['opus-4-6', 200000], ['opus-4', 200000], ['opus', 200000],
-  ['sonnet-4-6', 200000], ['sonnet-4', 200000], ['sonnet-3-5', 200000], ['sonnet-3', 200000], ['sonnet', 200000],
-  ['haiku-4-5', 200000], ['haiku-4', 200000], ['haiku-3', 200000], ['haiku', 200000],
-]
-function getModelContextWindow(model) {
-  if (!model) return 200000
-  const lower = model.toLowerCase()
-  for (const [key, size] of MODEL_CONTEXT_MAP) {
-    if (lower.includes(key)) return size
-  }
-  return 200000
-}
+// 自动压缩阈值上限：不对模型窗口做硬编码假设（第三方模型窗口无法穷举，
+// 硬编码表会漂移失真）。autoCompactWindow 是用户自定义全局阈值，SDK 直接使用，
+// 这里只做基本的合理性钳制。
 const compactWindowMin = 10000
-const compactWindowMax = computed(() => getModelContextWindow(currentGlobalModel.value))
+const compactWindowMax = 1000000
 
 const showSettings = ref(false)
 const showExePath = ref(false)
@@ -760,7 +749,7 @@ async function saveCompactWindow() {
     return
   }
   const num = parseInt(raw, 10)
-  const max = compactWindowMax.value
+  const max = compactWindowMax
   if (!Number.isFinite(num) || num <= 0) {
     ElMessage.warning(t('settings.invalidThresholdRange', { min: compactWindowMin, max }))
     return

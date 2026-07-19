@@ -2862,12 +2862,12 @@ function setupClaudeHandlers() {
           }
           // SDK 只从 settings.json 读取 autoCompactWindow（settingSources: ['user']）
           // query() 的 Options 类型不含此字段，显式传参被静默忽略。
-          // 若用户未在设置面板配置过，写入默认值（模型上下文窗口）以确保自动压缩生效。
+          // 若用户未在设置面板配置过，写入固定默认值 200K 以确保自动压缩生效
+          // （不对模型窗口做硬编码假设，第三方模型窗口无法穷举）。
           ;(() => {
             const s = readGlobalSettings()
             if (s.autoCompactWindow === undefined) {
-              const ctxWin = claudeMetrics.getContextWindowForModel(model)
-              s.autoCompactWindow = ctxWin
+              s.autoCompactWindow = 200000
               writeGlobalSettings(s)
             }
           })()
