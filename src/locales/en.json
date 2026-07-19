@@ -499,6 +499,7 @@
 		"compactTitle": "Compacting",
 		"duration": "Elapsed {time}",
 		"runningDuration": "Running {time}",
+		"backgroundTasksRunning": "Background {n}",
 		"loadHistory": "Load History",
 		"loadingHistory": "Loading history…",
 		"startChatHint": "Type a command below to start",

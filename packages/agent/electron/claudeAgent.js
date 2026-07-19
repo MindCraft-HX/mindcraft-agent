@@ -84,6 +84,7 @@ const {
   setInstallingClaudeCode,
 } = require('./claude/environment')
 const { createClaudeBackgroundTaskTracker } = require('./claude/backgroundTaskTracker')
+const { inspectClaudeResumeRecovery } = require('./claude/resumeRecovery')
 
 function getClaudeFreezeDiagEnabled() {
   return getDiagnosticsClaudeFreeze()
@@ -2856,6 +2857,9 @@ function setupClaudeHandlers() {
         }
       }, 30000)
       ;(async () => {
+        const resumeRecovery = resumedSessionId
+          ? await inspectClaudeResumeRecovery(path.join(getClaudeProjectsRootDir(resolvedCwd), `${resumedSessionId}.jsonl`))
+          : null
         const runQuery = async (rid) => {
           const { query } = await loadClaudeAgentSdk()
           // Memory user 模式注入：在首条消息前加上 memory 内容
@@ -2898,6 +2902,7 @@ function setupClaudeHandlers() {
               maxTurns: 200,
               permissionMode: 'default',
               resume: rid,
+              ...(rid && resumeRecovery?.resumeSessionAt ? { resumeSessionAt: resumeRecovery.resumeSessionAt } : {}),
               settingSources: ['user'],
               pathToClaudeCodeExecutable: systemClaudePath,
               thinking: internalConf.get('claudeThinkingEnabled', true)

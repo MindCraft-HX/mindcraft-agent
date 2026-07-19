@@ -61,6 +61,10 @@
     </div>
 
     <div class="sb-right">
+      <span v-if="backgroundTaskCount > 0" class="sb-group sb-background-task">
+        <span class="sb-background-dot"></span>
+        <span class="sb-val">{{ t('agent.backgroundTasksRunning', { n: backgroundTaskCount }) }}</span>
+      </span>
       <span v-if="m.thinking" class="sb-group sb-thinking">
         <span class="sb-dot"></span>
         <span class="sb-val">{{ t('agent.runningDuration', { time: formatDuration(displayDurationMs) }) }}</span>
@@ -116,6 +120,7 @@ const props = defineProps({
   compactHintKey: { type: String, default: 'agent.compactHint' },
   compactingKey: { type: String, default: 'agent.compacting' },
   gitInteractive: { type: Boolean, default: false },
+  backgroundTaskCount: { type: Number, default: 0 },
 })
 const emit = defineEmits(['send-message', 'git-click'])
 const { t } = useI18n()
@@ -284,6 +289,14 @@ function formatDuration(ms) {
   height: 7px;
   border-radius: 50%;
   background: var(--cc-success-text);
+  animation: sb-pulse 1.5s ease-in-out infinite;
+}
+
+.sb-background-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cc-warning);
   animation: sb-pulse 1.5s ease-in-out infinite;
 }
 

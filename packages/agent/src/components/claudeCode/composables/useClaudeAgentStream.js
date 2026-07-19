@@ -68,6 +68,35 @@ function ensureTaskToolUseIds(tab) {
   return tab._taskToolUseIds
 }
 
+function normalizeBackgroundTask(task = {}) {
+  const taskId = String(task.task_id || task.taskId || '')
+  if (!taskId) return null
+  return {
+    taskId,
+    description: String(task.description || ''),
+  }
+}
+
+function replaceActiveBackgroundTasks(tab, tasks = []) {
+  tab._activeBackgroundTasks = tasks.map(normalizeBackgroundTask).filter(Boolean)
+}
+
+function upsertActiveBackgroundTask(tab, task = {}) {
+  const normalized = normalizeBackgroundTask(task)
+  if (!normalized) return
+  const current = Array.isArray(tab._activeBackgroundTasks) ? tab._activeBackgroundTasks : []
+  const next = current.filter(item => item.taskId !== normalized.taskId)
+  next.push(normalized)
+  tab._activeBackgroundTasks = next
+}
+
+function removeActiveBackgroundTask(tab, taskId) {
+  const id = String(taskId || '')
+  if (!id) return
+  const current = Array.isArray(tab._activeBackgroundTasks) ? tab._activeBackgroundTasks : []
+  tab._activeBackgroundTasks = current.filter(item => item.taskId !== id)
+}
+
 function findToolMessage(tab, toolUseId) {
   if (!toolUseId || !Array.isArray(tab?.messages)) return null
   for (let i = tab.messages.length - 1; i >= 0; i--) {
@@ -294,6 +323,7 @@ export function useClaudeAgentStream({
       const subtype = msg.subtype || ''
 
       if (subtype === 'task_started') {
+        upsertActiveBackgroundTask(tab, msg)
         const meta = registerTaskStarted(tab, {
           taskId: msg.task_id,
           description: msg.description || '',
@@ -315,6 +345,15 @@ export function useClaudeAgentStream({
       }
 
       if (subtype === 'task_updated') {
+        const taskStatus = String(msg.patch?.status || '')
+        if (['completed', 'failed', 'killed'].includes(taskStatus)) {
+          removeActiveBackgroundTask(tab, msg.task_id)
+        } else {
+          upsertActiveBackgroundTask(tab, {
+            task_id: msg.task_id,
+            description: msg.patch?.description || '',
+          })
+        }
         const meta = registerTaskUpdated(tab, {
           taskId: msg.task_id,
           patch: msg.patch || {},
@@ -335,6 +374,7 @@ export function useClaudeAgentStream({
       }
 
       if (subtype === 'task_progress') {
+        upsertActiveBackgroundTask(tab, msg)
         const meta = registerTaskUpdated(tab, {
           taskId: msg.task_id,
           patch: {
@@ -358,6 +398,7 @@ export function useClaudeAgentStream({
       }
 
       if (subtype === 'task_notification') {
+        removeActiveBackgroundTask(tab, msg.task_id)
         const terminalStatus = msg.status === 'completed'
           ? 'completed'
           : msg.status === 'failed'
@@ -388,6 +429,11 @@ export function useClaudeAgentStream({
         if (meta.shouldPersistImmediately) {
           saveHistory({ immediate: true })
         }
+        return
+      }
+
+      if (subtype === 'background_tasks_changed') {
+        replaceActiveBackgroundTasks(tab, Array.isArray(msg.tasks) ? msg.tasks : [])
         return
       }
 
@@ -591,6 +637,7 @@ export function useClaudeAgentStream({
   function onAgentDone({ sessionId: chatKey, cliSessionId, filePath, reason = 'completed' }) {
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
+    replaceActiveBackgroundTasks(tab, [])
     if (cliSessionId) window.electronAPI.claudeRegisterCliSessions?.({ [chatKey]: cliSessionId })
     if (filePath) debugLog('agentDone', 'onAgentDone', { filePath })
     if (tab._awaitingCompactResult) {

@@ -6,6 +6,39 @@
 > 验证依据：Claude SDK 类型定义与 Codex CLI 公开帮助输出，非网络文档
 > 关联：`docs/agent-architecture.md`（架构入口）。本文是 SDK 能力与取舍的专题入口；新增 SDK 用法仍需核对本地 `.d.ts`。
 
+### 2026-07-19 compatibility note: interrupted background-task resume
+
+SDK `0.3.214` persists background-task lifecycle state and may auto-continue an
+interrupted turn before consuming the host's next streamed user message. When
+the prior process exited while waiting on `TaskOutput`, the resume sequence can
+append `Continue from where you left off.`, a synthetic `No response
+requested.`, and a stopped task notification, then leave the actual human
+message without an assistant response.
+
+MindCraft handles this in `electron/claude/resumeRecovery.js`:
+
+- Only a fresh Query resume is inspected; an attached live Query is untouched.
+- Transcript reads are tail-first and read-only.
+- Every resumed Query is pinned to the latest safe assistant checkpoint through
+  SDK `resumeSessionAt`. For a linear completed transcript this is equivalent to
+  normal resume; for interrupted or branched transcripts it prevents the CLI
+  from selecting a stale tool branch. If no later safe assistant exists, the
+  checkpoint falls back to the nearest safe point before the unresolved tool.
+- Recovery keeps the same `cliSessionId`. It must not set `forkSession`, merge
+  transcripts, or write repair rows into provider files.
+- `background_tasks_changed` is the authoritative level signal for current
+  background membership; edge notifications remain supported for older flows.
+
+Backward compatibility was checked against the previous packaged baseline:
+Agent SDK `0.2.141` bundles Claude Code CLI `2.1.141`, and both
+`resumeSessionAt` plus the `task_started` / `task_notification` edge events are
+already present there. The level signal is optional. Versions older than
+Claude Code `2.1.141` are outside the verified runtime baseline.
+
+This behavior was validated against the production-shaped async iterable input
+path. A temporary SDK fork returned a normal assistant response and
+`terminal_reason: completed`; the temporary session was deleted after the test.
+
 ## 一、Claude Code SDK — 未集成功能
 
 ### 1.1 SDK 入口函数（5/10 未用）

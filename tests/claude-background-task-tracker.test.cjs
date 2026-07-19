@@ -50,6 +50,28 @@ function runNonTerminalStatusDoesNotCompleteTest() {
   assert.equal(tracker.getActiveCount(), 1)
 }
 
+function runBackgroundTaskLevelSignalReplacesStateTest() {
+  const tracker = createClaudeBackgroundTaskTracker()
+  tracker.updateFromSdkMessage({ type: 'system', subtype: 'task_started', task_id: 'stale-task' })
+
+  tracker.updateFromSdkMessage({
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: [
+      { task_id: 'task-1', description: 'first' },
+      { task_id: 'task-2', description: 'second' },
+    ],
+  })
+  assert.equal(tracker.getActiveCount(), 2)
+
+  tracker.updateFromSdkMessage({
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: [],
+  })
+  assert.equal(tracker.getActiveCount(), 0)
+}
+
 function runPendingDonePayloadTest() {
   const tracker = createClaudeBackgroundTaskTracker()
   const payload = { sessionId: 'sess-1', reason: 'completed' }
@@ -65,4 +87,5 @@ function runPendingDonePayloadTest() {
 runTaskStartedAndNotificationCompletionTest()
 runTerminalStatusVariantsTest()
 runNonTerminalStatusDoesNotCompleteTest()
+runBackgroundTaskLevelSignalReplacesStateTest()
 runPendingDonePayloadTest()

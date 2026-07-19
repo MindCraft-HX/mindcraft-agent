@@ -69,6 +69,7 @@ test('Claude task_notification completion closes runtime task and linked tool ca
   })
 
   assert.equal(getTaskDebugSnapshot(tab).phase, 'running')
+  assert.equal(tab._activeBackgroundTasks.length, 1)
 
   stream.onAgentMessage({
     sessionId: 'sess-1',
@@ -87,6 +88,7 @@ test('Claude task_notification completion closes runtime task and linked tool ca
   assert.equal(snapshot.runtimeSteps[0].status, 'completed')
   assert.equal(snapshot.runtimeSteps[0].description, 'Investigate delete session freeze')
   assert.equal(tab.messages[0].status, 'done')
+  assert.equal(tab._activeBackgroundTasks.length, 0)
   assert.ok(saveCalls.some(call => call.immediate === true))
 })
 
@@ -116,4 +118,37 @@ test('Claude task_notification stopped is terminal', () => {
   const snapshot = getTaskDebugSnapshot(tab)
   assert.equal(snapshot.phase, 'done')
   assert.equal(snapshot.runtimeSteps[0].status, 'deleted')
+  assert.equal(tab._activeBackgroundTasks.length, 0)
+})
+
+test('Claude background_tasks_changed replaces the current-session running snapshot', () => {
+  const { tab, stream } = createHarness()
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [
+        { task_id: 'background-1', description: 'Run tests' },
+        { task_id: 'background-2', description: 'Inspect output' },
+      ],
+    },
+  })
+
+  assert.deepEqual(tab._activeBackgroundTasks, [
+    { taskId: 'background-1', description: 'Run tests' },
+    { taskId: 'background-2', description: 'Inspect output' },
+  ])
+
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [],
+    },
+  })
+
+  assert.deepEqual(tab._activeBackgroundTasks, [])
 })

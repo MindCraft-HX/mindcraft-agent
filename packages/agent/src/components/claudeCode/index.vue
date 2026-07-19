@@ -218,6 +218,7 @@
         :metrics="metricsData"
         :liveDurationMs="metricsLiveDurationMs"
         :compacting="metricsData.compacting"
+        :background-task-count="activeBackgroundTaskCount"
         model-display="claude-short"
         :gitInteractive="true"
         @send-message="sendFromStatusBar"
@@ -881,6 +882,11 @@ const activePlanTaskItems = computed(() => activeTaskViewModel.value.planItems |
 const activeExecutionTaskItems = computed(() => activeTaskViewModel.value.executionItems || [])
 const activeTaskPhase = computed(() => activeTaskState.value.phase || 'idle')
 const activeTaskCollapsed = computed(() => Boolean(activeTaskState.value.collapsed))
+const activeBackgroundTaskCount = computed(() => (
+  Array.isArray(activeTab.value?._activeBackgroundTasks)
+    ? activeTab.value._activeBackgroundTasks.length
+    : 0
+))
 const taskBarVisible = computed(() => {
   const state = activeTaskState.value
   if (!state || state.dismissed || !state.visible) return false

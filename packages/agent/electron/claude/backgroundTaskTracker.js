@@ -14,6 +14,20 @@ function createClaudeBackgroundTaskTracker() {
   function updateFromSdkMessage(msg) {
     if (msg?.type !== 'system') return activeTasks.size
     const subtype = String(msg.subtype || '')
+
+    if (subtype === 'background_tasks_changed') {
+      activeTasks.clear()
+      for (const task of Array.isArray(msg.tasks) ? msg.tasks : []) {
+        const taskId = String(task?.task_id || '')
+        if (!taskId) continue
+        activeTasks.set(taskId, {
+          toolUseId: '',
+          description: task.description || '',
+        })
+      }
+      return activeTasks.size
+    }
+
     const taskId = String(msg.task_id || '')
     if (!taskId) return activeTasks.size
 
