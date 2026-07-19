@@ -1,3 +1,5 @@
+import { workspaceKeyFromCwd } from './workspaceContext.mjs'
+
 function shallowEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
@@ -23,6 +25,20 @@ export function createAgentWorkbenchAdapter({
   const listeners = new Set()
   let lastSnapshot = null
 
+  function getWorkspaceContext() {
+    const active = (getTabs() || []).find(tab => String(tab.id) === String(getActiveProject?.()))
+    const cwd = String(active?.cwd || '')
+    const workspaceKey = workspaceKeyFromCwd(cwd)
+    if (!workspaceKey) return null
+    return {
+      workspaceKey,
+      cwd,
+      label: String(active?.name || ''),
+      agentType: String(active?.agentType || ''),
+      source: 'agent-codehub',
+    }
+  }
+
   function getSnapshot() {
     const tabs = (getTabs() || []).slice(0, 20).map(tab => ({
       id: String(tab.id || ''),
@@ -40,6 +56,7 @@ export function createAgentWorkbenchAdapter({
       kind: 'agent',
       activeProjectId: String(getActiveProject?.() || ''),
       surfaceState: getSurfaceState?.() || null,
+      workspaceContext: getWorkspaceContext(),
       tabs,
     }
   }
@@ -82,9 +99,6 @@ export function createAgentWorkbenchAdapter({
       listeners.clear()
       lastSnapshot = null
     },
-    getWorkspaceContext() {
-      const active = (getTabs() || []).find(tab => String(tab.id) === String(getActiveProject?.()))
-      return active?.cwd ? { workspaceKey: String(active.cwd), cwd: String(active.cwd) } : null
-    },
+    getWorkspaceContext,
   }
 }

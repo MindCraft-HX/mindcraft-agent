@@ -18,6 +18,10 @@ test('agent adapter projects lightweight project tabs without exposing panel dat
   assert.deepEqual(adapter.getSnapshot(), {
     itemId: 'agent:codehub', kind: 'agent', activeProjectId: 'claude:1',
     surfaceState: { visible: true, active: true, groupId: 'route' },
+    workspaceContext: {
+      workspaceKey: 'cwd:d:/repo', cwd: 'D:/repo',
+      label: 'Project', agentType: 'claudeCode', source: 'agent-codehub',
+    },
     tabs: [{
       id: 'claude:1', projectId: '1', agentType: 'claudeCode', title: 'Project',
       running: true, pending: false, notification: true,
@@ -26,7 +30,10 @@ test('agent adapter projects lightweight project tabs without exposing panel dat
   })
   adapter.activate({ agentTarget: { projectId: 'claude:1' } })
   assert.deepEqual(calls, [{ id: 'claude:1', target: { projectId: 'claude:1' } }])
-  assert.deepEqual(adapter.getWorkspaceContext(), { workspaceKey: 'D:/repo', cwd: 'D:/repo' })
+  assert.deepEqual(adapter.getWorkspaceContext(), {
+    workspaceKey: 'cwd:d:/repo', cwd: 'D:/repo',
+    label: 'Project', agentType: 'claudeCode', source: 'agent-codehub',
+  })
 })
 
 test('agent adapter delegates external tab commands and releases subscriptions', () => {
