@@ -18,7 +18,16 @@ export const EDIT_MODE_CYCLE = [
 export const MAX_EDIT_SIZE_BYTES = 1_000_000 // 1MB
 
 /** 可编辑的 viewer 类型 */
-export const EDITABLE_VIEWER_TYPES = new Set(['markdown', 'code'])
+export const EDITABLE_VIEWER_TYPES = new Set(['markdown', 'code', 'html'])
+
+/**
+ * 各 viewer 类型的默认编辑模式：HTML 打开即源码（设计 4.6），其余预览优先。
+ * @param {string} viewerType
+ * @returns {string}
+ */
+export function defaultEditMode(viewerType) {
+  return viewerType === 'html' ? EDIT_MODE.EDIT_ONLY : EDIT_MODE.PREVIEW_ONLY
+}
 
 /**
  * 判断 tab 是否可编辑

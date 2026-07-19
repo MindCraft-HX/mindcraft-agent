@@ -10,31 +10,19 @@
     <div class="doc-toolbar">
       <div class="doc-toolbar-left">
         <el-button :icon="FolderOpened" type="primary" size="small" @click="openFile">{{ $t('doc.openFile') }}</el-button>
-        <!-- MD 编辑/预览模式切换（分段控制器） -->
+        <!-- 编辑/预览模式切换（分段控制器；HTML 默认源码） -->
         <div
-          v-if="currentTab && isEditableFile(currentTab) && currentTab.viewerType === 'markdown'"
+          v-if="currentTab && isEditableFile(currentTab) && modeSegmentButtons.length"
           class="toolbar-segment"
         >
           <button
+            v-for="btn in modeSegmentButtons"
+            :key="btn.mode"
             class="toolbar-segment-btn"
-            :class="{ 'is-active': getCurrentEditMode(activeTabId) === EDIT_MODE.PREVIEW_ONLY }"
-            @click="setEditMode(activeTabId, EDIT_MODE.PREVIEW_ONLY)"
+            :class="{ 'is-active': getCurrentEditMode(activeTabId) === btn.mode }"
+            @click="setEditMode(activeTabId, btn.mode)"
           >
-            {{ $t('doc.preview') }}
-          </button>
-          <button
-            class="toolbar-segment-btn"
-            :class="{ 'is-active': getCurrentEditMode(activeTabId) === EDIT_MODE.EDIT_ONLY }"
-            @click="setEditMode(activeTabId, EDIT_MODE.EDIT_ONLY)"
-          >
-            {{ $t('doc.edit') }}
-          </button>
-          <button
-            class="toolbar-segment-btn"
-            :class="{ 'is-active': getCurrentEditMode(activeTabId) === EDIT_MODE.SPLIT }"
-            @click="setEditMode(activeTabId, EDIT_MODE.SPLIT)"
-          >
-            {{ $t('doc.split') }}
+            {{ $t(btn.label) }}
           </button>
         </div>
         <!-- 保存 (仅可编辑文件) -->
@@ -156,7 +144,7 @@ import PdfViewer from './viewers/PdfViewer.vue'
 import UnsupportedViewer from './viewers/UnsupportedViewer.vue'
 import { createDocumentTab } from './documentPayload.mjs'
 import { createPendingDocumentTab, finalizeDocumentTab } from './documentTabs.mjs'
-import { isEditableFile, EDIT_MODE } from './editState.mjs'
+import { isEditableFile, EDIT_MODE, defaultEditMode } from './editState.mjs'
 import { getDocumentTabScrollOwner } from './documentScrollPolicy.mjs'
 import { resolveDocumentViewerType } from './viewerRegistry.mjs'
 import { createDocumentController } from '@/documents/documentController.mjs'
@@ -451,6 +439,25 @@ const currentViewer = computed(() => VIEWER_MAP[currentTab.value?.viewerType || 
 function getCurrentDocumentTabScrollOwner(tab) {
   return getDocumentTabScrollOwner(tab, getCurrentEditMode(tab?.id))
 }
+const modeSegmentButtons = computed(() => {
+  const viewerType = currentTab.value?.viewerType
+  if (viewerType === 'markdown') {
+    return [
+      { mode: EDIT_MODE.PREVIEW_ONLY, label: 'doc.preview' },
+      { mode: EDIT_MODE.EDIT_ONLY, label: 'doc.edit' },
+      { mode: EDIT_MODE.SPLIT, label: 'doc.split' },
+    ]
+  }
+  if (viewerType === 'html') {
+    // HTML 源码优先（设计 4.6）：顺序与默认值一致
+    return [
+      { mode: EDIT_MODE.EDIT_ONLY, label: 'doc.source' },
+      { mode: EDIT_MODE.PREVIEW_ONLY, label: 'doc.preview' },
+      { mode: EDIT_MODE.SPLIT, label: 'doc.split' },
+    ]
+  }
+  return []
+})
 const currentViewerKey = computed(() => {
   const tab = currentTab.value
   if (!tab) return ''
@@ -463,8 +470,8 @@ const currentViewerProps = computed(() => {
   const tab = currentTab.value
   if (!tab) return {}
   const editable = isEditableFile(tab)
-  const mode = editable && tab.viewerType === 'markdown'
-    ? (tabEditModes[tab.id] || EDIT_MODE.PREVIEW_ONLY)
+  const mode = editable && (tab.viewerType === 'markdown' || tab.viewerType === 'html')
+    ? (tabEditModes[tab.id] || defaultEditMode(tab.viewerType))
     : EDIT_MODE.PREVIEW_ONLY
   const state = editStates[tab.id]
   return {
@@ -983,7 +990,7 @@ function initEditState(tab) {
     editStates[tab.id].isDirty = isDirty
   }
   if (!tabEditModes[tab.id]) {
-    tabEditModes[tab.id] = EDIT_MODE.PREVIEW_ONLY
+    tabEditModes[tab.id] = defaultEditMode(tab.viewerType)
   }
   if (tab.canonicalDocumentKey && !ownerDocument) documentController?.updateDraft(tab.canonicalDocumentKey, editStates[tab.id].text)
 }
@@ -1021,7 +1028,9 @@ function setEditMode(tabId, mode) {
 }
 
 function getCurrentEditMode(tabId) {
-  return tabEditModes[tabId] || EDIT_MODE.PREVIEW_ONLY
+  if (tabEditModes[tabId]) return tabEditModes[tabId]
+  const tab = tabs.value.find(t => t.id === tabId)
+  return defaultEditMode(tab?.viewerType)
 }
 
 // ── 保存 ──

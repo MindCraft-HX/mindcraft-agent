@@ -884,6 +884,7 @@
 		"foldable": "可折叠",
 		"highlighting": "已先展示文本框架，正在补全语法高亮…",
 		"edit": "编辑",
+		"source": "源码",
 		"preview": "预览",
 		"split": "分屏",
 		"save": "保存",
