@@ -83,6 +83,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useClaudeThemeStore } from '../stores/claudeTheme.js'
 import { useChatSession } from '../composables/useChatSession.js'
 import { useChatStream } from '../composables/useChatStream.js'
@@ -140,9 +141,22 @@ const rootRef = ref(null)
 let workbenchAdapter = null
 
 // 生命周期
+const route = useRoute()
+
+// typed intent 目标会话：从路由 query 消费（focus-chat intent 的 chatTarget.sessionId）
+function routeTargetSessionId() {
+  const id = route.query?.sessionId
+  return typeof id === 'string' && id ? id : ''
+}
+
 onMounted(async () => {
   await loadList()
-  // 首页跳转目标会话
+  const queryId = routeTargetSessionId()
+  if (queryId) {
+    await switchSession(queryId)
+    return
+  }
+  // 迁移期兜底：旧 localStorage 写入端已删除（设计 4.4），这里只读一次
   const targetId = localStorage.getItem('mindcraft_agent_chat_target_session')
   if (targetId) {
     localStorage.removeItem('mindcraft_agent_chat_target_session')
@@ -153,6 +167,14 @@ onMounted(async () => {
     await switchSession(sessionList.value[0].id)
   } else {
     await createSession('claude')
+  }
+})
+
+// keep-alive 缓存下再次带着 sessionId 进入 chat 路由时 onMounted 不再触发，
+// 监听 query 变化完成会话切换
+watch(routeTargetSessionId, async (id) => {
+  if (id && id !== currentSessionId.value) {
+    await switchSession(id)
   }
 })
 

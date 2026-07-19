@@ -28,7 +28,7 @@
             <div
               class="sidebar-item"
               :class="{ active: activeIndex === '/main/codeHub', 'has-running': codehubHasRunning && activeIndex !== '/main/codeHub', 'has-notification': !codehubHasRunning && codehubHasNotification && activeIndex !== '/main/codeHub' }"
-              @click="$router.push('/main/codeHub')"
+              @click="openAgentHub"
               :title="$t('nav.project')"
             >
               <div class="sidebar-icon-wrapper">
@@ -58,7 +58,7 @@
             <div
               class="sidebar-item"
               :class="{ active: activeIndex === '/main/chat' }"
-              @click="$router.push('/main/chat')"
+              @click="openChatHome"
               :title="$t('nav.chat')"
             >
               <div class="sidebar-icon-wrapper">
@@ -249,12 +249,24 @@ const route = useRoute();
 const router = useRouter();
 const navigationAdapter = createLegacyNavigationAdapter({ router });
 
+// 侧栏入口统一走 typed navigation intent（设计 4.4）。
+// /main/home、/main/pluginMarket 与插件路由不是 workbench 业务面，保持直接路由。
+function dispatchNavIntent(intent) {
+  void navigationAdapter.dispatch({
+    requestId: `sidebar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    source: 'sidebar',
+    ...intent,
+  })
+}
+const openAgentHub = () => dispatchNavIntent({ type: 'focus-agent' })
+const openChatHome = () => dispatchNavIntent({ type: 'focus-chat' })
+
 const activeIndex = computed(() => {
   return route.meta.parent || "/main/codeHub"
 })
 
-// 文档浏览：直接路由到主窗口内嵌视图（不再弹独立窗口）
-const openMdBrowser = () => router.push('/main/mdViewer')
+// 文档浏览：主窗口内嵌视图（不再弹独立窗口）
+const openMdBrowser = () => dispatchNavIntent({ type: 'open-document', resourceId: 'legacy://document-viewer' })
 
 // 插件：当前激活的插件 ID（通过路由参数判断）
 const pluginActiveId = computed(() => {

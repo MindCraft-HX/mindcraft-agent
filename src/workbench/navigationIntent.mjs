@@ -76,9 +76,13 @@ export function createLegacyNavigationAdapter({ router } = {}) {
       return sessionId ? { path: '/main/chat', query: { sessionId } } : { path: '/main/chat' }
     }
     if (intent.type === 'focus-agent') {
+      // Query keys mirror what CodeHub consumes (route.query.agent /
+      // projectId / chatId / sessionId).
       const query = {}
       if (intent.agentTarget?.agent) query.agent = intent.agentTarget.agent
-      if (intent.agentTarget?.projectId) query.project = intent.agentTarget.projectId
+      if (intent.agentTarget?.projectId) query.projectId = intent.agentTarget.projectId
+      if (intent.agentTarget?.chatId) query.chatId = intent.agentTarget.chatId
+      if (intent.agentTarget?.sessionId) query.sessionId = intent.agentTarget.sessionId
       return Object.keys(query).length ? { path: '/main/codeHub', query } : { path: '/main/codeHub' }
     }
     return null

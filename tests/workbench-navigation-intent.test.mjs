@@ -74,11 +74,37 @@ test('legacy navigation adapter maps typed intents without exposing domain state
   assert.equal(agentResult.accepted, true)
   assert.equal(chatResult.accepted, true)
   assert.equal(documentResult.accepted, true)
+  // query keys mirror what CodeHub consumes: agent / projectId / chatId / sessionId
   assert.deepEqual(routes, [
-    { path: '/main/codeHub', query: { agent: 'codex', project: 'project-1' } },
+    { path: '/main/codeHub', query: { agent: 'codex', projectId: 'project-1' } },
     { path: '/main/chat', query: { sessionId: 'session-1' } },
     { path: '/main/mdViewer' },
   ])
+})
+
+test('focus-agent carries chatId/sessionId through to the CodeHub query', async () => {
+  const routes = []
+  const adapter = createLegacyNavigationAdapter({ router: { push: route => { routes.push(route) } } })
+
+  await adapter.dispatch({
+    requestId: 'agent-2',
+    type: 'focus-agent',
+    agentTarget: { agent: 'claude', projectId: 'p1', chatId: 'c1', sessionId: 's1' },
+  })
+  await adapter.dispatch({ requestId: 'agent-3', type: 'focus-agent' })
+
+  assert.deepEqual(routes, [
+    { path: '/main/codeHub', query: { agent: 'claude', projectId: 'p1', chatId: 'c1', sessionId: 's1' } },
+    { path: '/main/codeHub' },
+  ])
+})
+
+test('focus-chat without a session target routes to the plain chat surface', async () => {
+  const routes = []
+  const adapter = createLegacyNavigationAdapter({ router: { push: route => { routes.push(route) } } })
+  const result = await adapter.dispatch({ requestId: 'chat-2', type: 'focus-chat' })
+  assert.equal(result.accepted, true)
+  assert.deepEqual(routes, [{ path: '/main/chat' }])
 })
 
 test('legacy navigation adapter reports router failures instead of throwing', async () => {

@@ -6,7 +6,7 @@
 
     <div class="home-cards">
       <!-- 开始项目对话 -->
-      <div class="home-card home-card-project" @click="router.push('/main/codeHub')">
+      <div class="home-card home-card-project" @click="openAgentHub">
         <div class="card-head">
           <div class="card-icon-wrap">
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -67,7 +67,7 @@
       </div>
 
       <!-- 浏览文档 -->
-      <div class="home-card home-card-doc" @click="router.push('/main/mdViewer')">
+      <div class="home-card home-card-doc" @click="openDocBrowser">
         <div class="card-head">
           <div class="card-icon-wrap">
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -123,7 +123,7 @@
 
       <!-- 开始对话 -->
       <div class="home-card home-card-chat">
-        <div class="card-head" @click="router.push('/main/chat')">
+        <div class="card-head" @click="openChatHome">
           <div class="card-icon-wrap">
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 6h16a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H11l-6 5V10a4 4 0 0 1 4-4z"/>
@@ -159,7 +159,7 @@
           </template>
         </div>
 
-        <div class="card-foot" @click="router.push('/main/chat')">
+        <div class="card-foot" @click="openChatHome">
           <span class="card-action">{{ $t('home.enterChat') }}</span>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <polyline points="6 3 12 9 6 15"/>
@@ -302,10 +302,25 @@ import { ref, computed, onMounted, onUnmounted, defineAsyncComponent } from 'vue
 import { useRouter } from 'vue-router'
 import { useClaudeThemeStore } from '@mindcraft/agent'
 import { useHomeData, formatNumber, formatTime } from '@/components/Home/useHomeData.js'
+import { createLegacyNavigationAdapter } from '@/workbench/navigationIntent.mjs'
 
 const TokenChart = defineAsyncComponent(() => import('@/components/Home/TokenChart.vue'))
 
 const router = useRouter()
+// 首页入口统一走 typed navigation intent（设计 4.4），不直接操作路由/写 localStorage
+const navigationAdapter = createLegacyNavigationAdapter({ router })
+
+function dispatchNavIntent(intent) {
+  void navigationAdapter.dispatch({
+    requestId: `home-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    source: 'home',
+    ...intent,
+  })
+}
+
+const openAgentHub = () => dispatchNavIntent({ type: 'focus-agent' })
+const openDocBrowser = () => dispatchNavIntent({ type: 'open-document', resourceId: 'legacy://document-viewer' })
+const openChatHome = () => dispatchNavIntent({ type: 'focus-chat' })
 const claudeTheme = useClaudeThemeStore()
 const themeClass = computed(() => `cc-theme-${claudeTheme.theme}`)
 
@@ -424,15 +439,20 @@ function handleInstallUpdate() {
 }
 
 function openChat(chat) {
-  localStorage.setItem('mindcraft_agent_chat_target_session', chat.id)
-  router.push('/main/chat')
+  // typed intent 携带 sessionId，由 ChatView 从路由 query 消费并切换内部会话
+  dispatchNavIntent({ type: 'focus-chat', chatTarget: { sessionId: chat.id } })
 }
 
 function openProjectEntry(proj) {
-  const query = { agent: proj.agentType, projectId: proj.projectId }
-  if (proj.chatId !== '' && proj.chatId != null) query.chatId = proj.chatId
-  if (proj.sessionId) query.sessionId = proj.sessionId
-  router.push({ path: '/main/codeHub', query })
+  dispatchNavIntent({
+    type: 'focus-agent',
+    agentTarget: {
+      agent: proj.agentType,
+      projectId: proj.projectId,
+      chatId: proj.chatId || '',
+      sessionId: proj.sessionId || '',
+    },
+  })
 }
 
 function dirPath(filePath) {
