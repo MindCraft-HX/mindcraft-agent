@@ -98,6 +98,14 @@ test('claude provider activation syncs official runtime settings without legacy 
     /confSet\('claudeProviders', \{ providers, activeIdx \}\)/,
     'T195: confSet claudeProviders legacy write projection must be removed',
   )
+  const saveStart = source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.SET_PROVIDERS')
+  const saveEnd = source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.ACTIVATE_PROVIDER', saveStart)
+  assert.doesNotMatch(
+    source.slice(saveStart, saveEnd),
+    /confSet|patchClaudeRuntimeSettings/,
+    'saving provider rows must not activate or project runtime configuration',
+  )
+  assert.match(source.slice(saveStart, saveEnd), /previousActive\?\.id[\s\S]*Active provider changes require activation/)
   assert.match(
     source,
     /ipcMain\.handle\(CLAUDE_CHANNELS\.ACTIVATE_PROVIDER[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(\{[\s\S]*\.\.\.runtimeConfig,[\s\S]*effortLevel/,
@@ -108,16 +116,19 @@ test('claude provider activation syncs official runtime settings without legacy 
     /const patch = \{ model: actualModel, effortLevel \}/,
     'official runtime projection must include provider effort together with the model',
   )
-  assert.match(
-    activationBody,
-    /setClaudePrefs\(\{[\s\S]*tierModels,[\s\S]*selectedTier,[\s\S]*model: model \|\| '',[\s\S]*effortLevel,[\s\S]*\}\)/,
-    'expected one app-owned runtime snapshot before resolving active Claude runtime',
-  )
   assert.doesNotMatch(
     activationBody,
-    /confSet\('(tierModels|claudeSelectedTier|claudeModel|claudeEffortLevel)'/,
-    'provider activation must not create partial projections or intermediate official settings writes',
+    /setClaudePrefs|confSet\('(tierModels|claudeSelectedTier|claudeModel|claudeEffortLevel)'/,
+    'provider activation must not persist a second copy of provider defaults outside SQLite',
   )
+  assert.match(activationBody, /active\.tierModels = tierModels[\s\S]*active\.selectedTier = selectedTier[\s\S]*active\.effortLevel = effortLevel/)
+  assert.match(activationBody, /catch \(e\) \{[\s\S]*writeClaudeProviders\(previousState\)[\s\S]*rolledBack/)
+  assert.match(source, /function readActiveClaudeProviderDefaults\(\)/)
+  assert.match(source, /normalizeClaudeTierData\(active\.config \|\| \{\}, \{[\s\S]*tierModels: active\.tierModels,[\s\S]*selectedTier: active\.selectedTier/)
+  assert.match(source, /GET_EFFORT_LEVEL, async \(\) => \{[\s\S]*readClaudeProviders\(\)[\s\S]*return readEffortLevel\(\)/)
+  assert.match(source, /GET_SELECTED_TIER, async \(\) => \{[\s\S]*readClaudeProviders\(\)[\s\S]*readActiveClaudeProviderDefaults\(\)\.selectedTier/)
+  assert.match(source, /setClaudeProvidersStateShadow\(getProviders\(db, 'claude'\)\)/)
+  assert.match(source, /activeIdx: activeIdx >= 0 && activeIdx < providers\.length \? activeIdx : -1/)
 })
 
 test('claude reused query failures finalize the run instead of leaving session stuck in running state', () => {

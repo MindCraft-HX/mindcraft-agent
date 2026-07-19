@@ -72,11 +72,6 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
     const valid = ['low', 'medium', 'high', 'xhigh']
     if (!valid.includes(level)) return
     slashEffortLevel.value = level
-    if (modelPanelStateCache) {
-      modelPanelStateCache.effort = level
-      modelPanelStateCacheTime = Date.now()
-    }
-    await window.electronAPI?.claudeSetEffortLevel?.(level)
     await onEffortChange?.(level, getActiveTab?.() || null)
   }
 

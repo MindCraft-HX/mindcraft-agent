@@ -28,9 +28,10 @@ const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
-const { getClaudePref, setClaudePref, setClaudePrefs, getDiagnosticsClaudeFreeze, setDiagnosticsClaudeFreeze } = require('./settingsFacade')
+const { getClaudePref, setClaudePref, getDiagnosticsClaudeFreeze, setDiagnosticsClaudeFreeze } = require('./settingsFacade')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const { getProviders, setProviders } = require('./db/providerStorage')
+const { normalizeClaudeTierData } = require('./db/providerStorage/claudeShape')
 const { CLAUDE_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
 const {
   cloneWithFallback: cloneSkillRepoWithFallback,
@@ -1448,7 +1449,7 @@ function setupClaudeHandlers() {
     const activeIdx = Number.isInteger(payload.activeIdx) ? payload.activeIdx : 0
     return {
       providers,
-      activeIdx: activeIdx >= 0 && activeIdx < providers.length ? activeIdx : 0,
+      activeIdx: activeIdx >= 0 && activeIdx < providers.length ? activeIdx : -1,
     }
   }
 
@@ -1551,22 +1552,12 @@ function setupClaudeHandlers() {
     return true
   })
   function readEffortLevel() {
-    const effort = confGet('claudeEffortLevel', 'medium')
-    // SDK Settings interface 合法值：low/medium/high/xhigh（不含 max）
-    // 兼容旧值 'max'：自动升迁为 xhigh
-    if (effort === 'max') return 'xhigh'
-    const valid = ['low', 'medium', 'high', 'xhigh']
-    return valid.includes(effort) ? effort : 'medium'
+    return readActiveClaudeProviderDefaults().effortLevel
   }
-  ipcMain.handle(CLAUDE_CHANNELS.GET_EFFORT_LEVEL, () => readEffortLevel())
-  ipcMain.handle(CLAUDE_CHANNELS.SET_EFFORT_LEVEL, (_, effort) => {
-    // SDK Settings interface 合法值：low/medium/high/xhigh（不含 max）
-    const valid = ['low', 'medium', 'high', 'xhigh']
-    if (!valid.includes(effort)) return false
-    confSet('claudeEffortLevel', effort)
-    return true
+  ipcMain.handle(CLAUDE_CHANNELS.GET_EFFORT_LEVEL, async () => {
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
+    return readEffortLevel()
   })
-
   ipcMain.handle(CLAUDE_CHANNELS.GET_THINKING_ENABLED, () => {
     return internalConf.get('claudeThinkingEnabled', true)
   })
@@ -1860,26 +1851,53 @@ function setupClaudeHandlers() {
     return ['system', 'user', 'off'].includes(mode) ? mode : 'system'
   }
 
-  function readPrimaryModel() {
-    const tier = confGet('claudeSelectedTier', 'sonnet')
-    const tierModels = readTierModelsFromConf()
-    const tierModel = tierModels[tier]?.trim()
-    let model = tierModel || confGet('claudeModel', '')
-    if (!model) {
-      const sj = readSystemSettingsJson()
-      if (sj) {
-        const env = sj.env && typeof sj.env === 'object' ? sj.env : {}
-        // T198: tier 已从 confGet 正确解析（settingsFacade 优先），无需从 sj.model 重新推导
-        const envMap = {
-          haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-          sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-          opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL,
-          reasoning: env.ANTHROPIC_REASONING_MODEL,
-        }
-        model = String(envMap[tier] || sj.defaultModel || '').trim()
+  function readActiveClaudeProviderDefaults() {
+    const providersState = getClaudeProvidersStateShadow()
+    const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
+    const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
+    const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
+
+    if (active) {
+      const tierData = normalizeClaudeTierData(active.config || {}, {
+        tierModels: active.tierModels,
+        selectedTier: active.selectedTier,
+      })
+      const requestedEffort = String(active.effortLevel ?? active.config?.effortLevel ?? '').trim().toLowerCase()
+      return {
+        activeProvider: active,
+        selectedTier: tierData.selectedTier,
+        tierModels: tierData.tierModels,
+        model: tierData.tierModels[tierData.selectedTier] || null,
+        effortLevel: requestedEffort === 'max'
+          ? 'xhigh'
+          : (['low', 'medium', 'high', 'xhigh'].includes(requestedEffort) ? requestedEffort : 'medium'),
       }
     }
-    return model || null
+
+    // Read-only compatibility path for installations without a provider row.
+    const selectedTier = confGet('claudeSelectedTier', 'sonnet')
+    const storedModels = confGet('tierModels', {}) || {}
+    const systemModels = readTierModelsFromSystemSettings()
+    const tierModels = {
+      haiku: String(storedModels.haiku || systemModels.haiku || '').trim(),
+      sonnet: String(storedModels.sonnet || systemModels.sonnet || '').trim(),
+      opus: String(storedModels.opus || systemModels.opus || '').trim(),
+      reasoning: String(storedModels.reasoning || systemModels.reasoning || '').trim(),
+    }
+    const requestedEffort = String(confGet('claudeEffortLevel', 'medium')).trim().toLowerCase()
+    return {
+      activeProvider: null,
+      selectedTier,
+      tierModels,
+      model: tierModels[selectedTier] || String(confGet('claudeModel', '')).trim() || null,
+      effortLevel: requestedEffort === 'max'
+        ? 'xhigh'
+        : (['low', 'medium', 'high', 'xhigh'].includes(requestedEffort) ? requestedEffort : 'medium'),
+    }
+  }
+
+  function readPrimaryModel() {
+    return readActiveClaudeProviderDefaults().model || null
   }
 
   /** 从 ~/.claude/settings.json 读取作为兜底（不覆盖，只读取） */
@@ -1897,10 +1915,9 @@ function setupClaudeHandlers() {
    */
   function resolveEffectiveRuntimeConfig() {
     const providersState = getClaudeProvidersStateShadow()
-    const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
-    const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
-    const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
-    const selectedTier = confGet('claudeSelectedTier', 'sonnet')
+    const defaults = readActiveClaudeProviderDefaults()
+    const active = defaults.activeProvider
+    const selectedTier = defaults.selectedTier
 
     const fallbackModel = {
       haiku: null,
@@ -1909,21 +1926,18 @@ function setupClaudeHandlers() {
       reasoning: null,
     }
 
-    const mergedTierModels = {
-      haiku: String(active?.tierModels?.haiku ?? confGet('tierModels.haiku', '')).trim(),
-      sonnet: String(active?.tierModels?.sonnet ?? confGet('tierModels.sonnet', '')).trim(),
-      opus: String(active?.tierModels?.opus ?? confGet('tierModels.opus', '')).trim(),
-      reasoning: String(active?.tierModels?.reasoning ?? confGet('tierModels.reasoning', '')).trim(),
-    }
+    const mergedTierModels = defaults.tierModels
 
     let nextApiKey = String(active?.key ?? confGet('claudeApiKey', '')).trim()
     let nextBaseURL = String(active?.url ?? confGet('claudeBaseURL', '')).trim()
-    let nextModel = (mergedTierModels[selectedTier] || '').trim()
-      || String(confGet('claudeModel', '')).trim()
+    let nextModel = String(defaults.model || '').trim()
+      || (!active ? String(confGet('claudeModel', '')).trim() : '')
       || fallbackModel[selectedTier]
 
-    // 如果 app 存储中没有 key/URL/model，兜底从 ~/.claude/settings.json 读取
-    if (!nextApiKey || !nextBaseURL || !nextModel) {
+    // Only installations without a provider row may use legacy official
+    // settings. An incomplete active provider must never borrow credentials or
+    // model defaults from a previously active provider.
+    if (!active && (!nextApiKey || !nextBaseURL || !nextModel)) {
       const sj = readSystemSettingsJson()
       if (sj) {
         // 从 env 字段读取
@@ -1958,6 +1972,7 @@ function setupClaudeHandlers() {
       model: nextModel,
       selectedTier,
       tierModels: mergedTierModels,
+      effortLevel: defaults.effortLevel,
       providersState,
       activeProvider: active,
     }
@@ -2114,7 +2129,7 @@ function setupClaudeHandlers() {
       const nextState = data || { providers: [], activeIdx: 0 }
       const result = setProviders(db, 'claude', nextState)
       if (result.ok) {
-        setClaudeProvidersStateShadow(nextState)
+        setClaudeProvidersStateShadow(getProviders(db, 'claude'))
         await persistDb()
       }
       return result.ok
@@ -2147,7 +2162,6 @@ function setupClaudeHandlers() {
     if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
     return readPrimaryModel()
   })
-  ipcMain.handle(CLAUDE_CHANNELS.SET_MODEL, (_, model) => { confSet('claudeModel', model); return true })
   ipcMain.handle(CLAUDE_CHANNELS.SET_KEY, (_, key) => { confSet('claudeApiKey', key); return true })
   ipcMain.handle(CLAUDE_CHANNELS.SET_BASE_URL, (_, url) => { confSet('claudeBaseURL', url); return true })
   ipcMain.handle(CLAUDE_CHANNELS.GET_MODELS, () => confGet('claudeModels', defaultModels))
@@ -2171,17 +2185,25 @@ function setupClaudeHandlers() {
   })
   ipcMain.handle(CLAUDE_CHANNELS.GET_PROVIDERS, async () => readClaudeProviders())
   ipcMain.handle(CLAUDE_CHANNELS.SET_PROVIDERS, async (_, data) => {
-    const ok = await writeClaudeProviders(data)
-    if (!ok) return { ok: false, error: 'DB write failed' }
-    // 同步更新 key/url 为当前激活的 provider（写入 ~/.claude/settings.json）
-    const active = data.providers?.[data.activeIdx ?? 0]
-    if (active) {
-      confSet('claudeApiKey', active.key || '')
-      confSet('claudeBaseURL', active.url || '')
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
+    const previousState = getClaudeProvidersStateShadow()
+    const previousActive = previousState.providers?.[previousState.activeIdx] || null
+    const providers = Array.isArray(data?.providers) ? data.providers : []
+    let activeIdx = -1
+    if (previousActive?.id) {
+      activeIdx = providers.findIndex(provider => provider?.id === previousActive.id)
+      if (providers.length > 0 && activeIdx < 0) {
+        return { ok: false, error: 'Active provider changes require activation' }
+      }
     }
+    const ok = await writeClaudeProviders({ providers, activeIdx })
+    if (!ok) return { ok: false, error: 'DB write failed' }
+    if (providers.length === 0) resetAgentRuntime('providers-cleared')
     return { ok: true }
   })
   ipcMain.handle(CLAUDE_CHANNELS.ACTIVATE_PROVIDER, async (_, data) => {
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
+    const previousState = JSON.parse(JSON.stringify(getClaudeProvidersStateShadow()))
     const providers = Array.isArray(data?.providers) ? data.providers : []
     const activeIdx = Number.isInteger(data?.activeIdx) ? data.activeIdx : -1
     const selectedTier = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(data?.selectedTier)
@@ -2206,39 +2228,38 @@ function setupClaudeHandlers() {
     const requestedEffort = String(data?.effortLevel || active?.effortLevel || active?.config?.effortLevel || '').trim().toLowerCase()
     const effortLevel = ['low', 'medium', 'high', 'xhigh'].includes(requestedEffort) ? requestedEffort : 'medium'
 
+    if (active) {
+      active.tierModels = tierModels
+      active.selectedTier = selectedTier
+      active.effortLevel = effortLevel
+    }
+
     // Write providers to SQLite via repository (T195: legacy confSet projection removed)
     const wrote = await writeClaudeProviders({ providers, activeIdx })
     if (!wrote) return { ok: false, error: 'DB write failed', model }
 
-    // Project the active provider into one app-owned runtime snapshot. SQLite
-    // remains authoritative; this snapshot only supports synchronous runtime
-    // and renderer reads between repository loads.
-    setClaudePrefs({
-      tierModels,
-      selectedTier,
-      model: model || '',
-      effortLevel,
-    })
     const runtimeConfig = resolveEffectiveRuntimeConfig()
-    patchClaudeRuntimeSettings(buildClaudeRuntimeSettingsPatch({
-      ...runtimeConfig,
-      effortLevel,
-    }))
+    try {
+      patchClaudeRuntimeSettings(buildClaudeRuntimeSettingsPatch({
+        ...runtimeConfig,
+        effortLevel,
+      }))
+    } catch (e) {
+      const rolledBack = await writeClaudeProviders(previousState)
+      return {
+        ok: false,
+        error: `Runtime settings projection failed: ${e?.message || e}`,
+        rolledBack,
+      }
+    }
 
     resetAgentRuntime('provider-activated')
     return { ok: true, model: runtimeConfig.model || model, effortLevel }
   })
-  ipcMain.handle(CLAUDE_CHANNELS.GET_SELECTED_TIER, () => {
-    // 统一通过 confGet 读取 tier（settingsFacade 优先，settings.json 兜底）
-    return confGet('claudeSelectedTier', 'sonnet')
+  ipcMain.handle(CLAUDE_CHANNELS.GET_SELECTED_TIER, async () => {
+    if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
+    return readActiveClaudeProviderDefaults().selectedTier
   })
-  ipcMain.handle(CLAUDE_CHANNELS.SET_SELECTED_TIER, (_, tier) => {
-    const valid = ['haiku', 'sonnet', 'opus', 'reasoning']
-    if (!valid.includes(tier)) return false
-    confSet('claudeSelectedTier', tier)
-    return true
-  })
-
   const TIER_ENV_MAP = {
     haiku: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     sonnet: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
@@ -2258,32 +2279,8 @@ function setupClaudeHandlers() {
   }
 
   function readTierModelsFromConf() {
-    const providersState = getClaudeProvidersStateShadow()
-    const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
-    const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
-    const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
-    const activeModels = active?.tierModels && typeof active.tierModels === 'object' ? active.tierModels : {}
-    const settingsModels = readTierModelsFromSystemSettings()
-    const storedModels = confGet('tierModels', {}) || {}
-
-    const models = {
-      haiku: String(activeModels.haiku || settingsModels.haiku || storedModels.haiku || '').trim(),
-      sonnet: String(activeModels.sonnet || settingsModels.sonnet || storedModels.sonnet || '').trim(),
-      opus: String(activeModels.opus || settingsModels.opus || storedModels.opus || '').trim(),
-      reasoning: String(activeModels.reasoning || settingsModels.reasoning || storedModels.reasoning || '').trim(),
-    }
-    return models
+    return readActiveClaudeProviderDefaults().tierModels
   }
-  function writeTierModelsToConf(models) {
-    confSet('tierModels', {
-      haiku: (models.haiku || '').trim(),
-      sonnet: (models.sonnet || '').trim(),
-      opus: (models.opus || '').trim(),
-      reasoning: (models.reasoning || '').trim(),
-    })
-    return true
-  }
-
   function buildTierEnv() {
     const tierModels = readTierModelsFromConf()
     const env = {}
@@ -2297,11 +2294,6 @@ function setupClaudeHandlers() {
     if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
     return readTierModelsFromConf()
   })
-  ipcMain.handle(CLAUDE_CHANNELS.SET_TIER_MODELS, (_, data) => {
-    if (!data || typeof data !== 'object') return false
-    return writeTierModelsToConf(data)
-  })
-
   // 从 mindcraft-electron 导入 Claude 配置（手动触发）
   ipcMain.handle(CLAUDE_CHANNELS.IMPORT_LEGACY_CONFIG, (_, customPath) => {
     const imported = { providers: 0, tierModels: false }
@@ -2463,24 +2455,19 @@ function setupClaudeHandlers() {
     const providers = Array.isArray(providersState?.providers) ? providersState.providers : []
     const activeIdx = Number.isInteger(providersState?.activeIdx) ? providersState.activeIdx : -1
     const active = activeIdx >= 0 && activeIdx < providers.length ? providers[activeIdx] : null
-    const selectedTier = confGet('claudeSelectedTier', 'sonnet')
-
-    const tierModels = {
-      haiku: String(active?.tierModels?.haiku ?? confGet('tierModels.haiku', '')).trim(),
-      sonnet: String(active?.tierModels?.sonnet ?? confGet('tierModels.sonnet', '')).trim(),
-      opus: String(active?.tierModels?.opus ?? confGet('tierModels.opus', '')).trim(),
-      reasoning: String(active?.tierModels?.reasoning ?? confGet('tierModels.reasoning', '')).trim(),
-    }
+    const defaults = readActiveClaudeProviderDefaults()
+    const selectedTier = defaults.selectedTier
+    const tierModels = defaults.tierModels
 
     let apiKey = String(active?.key ?? confGet('claudeApiKey', '')).trim()
     let baseURL = String(active?.url ?? confGet('claudeBaseURL', '')).trim()
 
-    // 兜底到 settings.json
-    if (!apiKey) apiKey = fromFile.apiKey
-    if (!baseURL) baseURL = fromFile.baseURL
+    // Legacy fallback applies only when SQLite has no active provider.
+    if (!active && !apiKey) apiKey = fromFile.apiKey
+    if (!active && !baseURL) baseURL = fromFile.baseURL
     if (baseURL && !baseURL.endsWith('/')) baseURL += '/'
 
-    let defaultModel = tierModels[selectedTier] || fromFile.model || null
+    let defaultModel = defaults.model || (!active ? fromFile.model : null) || null
 
     return { apiKey, baseURL, model: defaultModel, tierModels, selectedTier }
   }

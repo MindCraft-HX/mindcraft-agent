@@ -586,6 +586,7 @@ async function addProvider() {
 async function copyProvider(i) {
   const src = settingsForm.value.providers[i]
   const copy = JSON.parse(JSON.stringify(src))
+  delete copy.id
   copy.name = (copy.name || t('settings.unnamed')) + t('settings.copySuffix')
   settingsForm.value.providers.splice(i + 1, 0, copy)
   await persistProviders()

@@ -371,20 +371,6 @@ function setClaudePref(key, value) {
   _scheduleFlush();
 }
 
-/**
- * Update related Claude runtime preferences as one derived snapshot.
- * SQLite provider rows remain authoritative; this snapshot supports
- * synchronous runtime and renderer reads between repository loads.
- */
-function setClaudePrefs(values) {
-  if (!values || typeof values !== 'object' || Array.isArray(values)) return;
-  const s = _ensureSection('claudePrefs');
-  for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined) s[key] = value;
-  }
-  _scheduleFlush();
-}
-
 // ---------------------------------------------------------------------------
 // Public: Misc KV (generic settings)
 // ---------------------------------------------------------------------------
@@ -476,7 +462,6 @@ module.exports = {
   setCodexDefault,
   getClaudePref,
   setClaudePref,
-  setClaudePrefs,
   getMisc,
   setMisc,
   getDiagnosticsClaudeFreeze,

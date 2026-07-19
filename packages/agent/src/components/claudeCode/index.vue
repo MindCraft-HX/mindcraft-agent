@@ -2780,7 +2780,6 @@ const {
   autosizeSchedule: textareaAutosize.scheduleResize,  // Phase 5: rAF 合并
   onEffortChange: (level, tab) => {
     const effort = normalizeClaudeEffort(level) || 'medium'
-    claudeDefaultEffort.value = effort
     if (tab) {
       tab.effort = effort
       persistClaudeTabMeta(tab)
