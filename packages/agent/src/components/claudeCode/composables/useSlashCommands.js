@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { perfStart } from '../../agentCommon/utils/rendererPerfProbe.mjs'
 
-export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputText, focusInput, autosizeSchedule }) {
+export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputText, focusInput, autosizeSchedule, onEffortChange }) {
   const slashCommands = ref([
     { cmd: '/model', desc: '选择模型（本地命令）' },
     { cmd: '/memory', desc: '管理项目记忆（查看/添加/删除）' },
@@ -32,13 +32,22 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
     modelPanelStateCacheTime = 0
   }
 
+  function applyModelPanelState(defaults = {}) {
+    const tab = getActiveTab?.() || null
+    const tabEffort = String(tab?.effort || '').trim().toLowerCase()
+    const tabModel = String(tab?.model || '').trim()
+    slashEffortLevel.value = ['low', 'medium', 'high', 'xhigh'].includes(tabEffort)
+      ? tabEffort
+      : defaults.effort
+    slashModelName.value = tabModel || defaults.modelName
+    slashThinkingEnabled.value = defaults.thinking
+  }
+
   async function loadModelPanelState(opts = {}) {
     try {
       const force = opts?.force === true
       if (!force && modelPanelStateCache && Date.now() - modelPanelStateCacheTime < MODEL_PANEL_STATE_TTL_MS) {
-        slashEffortLevel.value = modelPanelStateCache.effort
-        slashModelName.value = modelPanelStateCache.modelName
-        slashThinkingEnabled.value = modelPanelStateCache.thinking
+        applyModelPanelState(modelPanelStateCache)
         return
       }
       // 读取全局 conf
@@ -48,16 +57,14 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
         window.electronAPI?.claudeGetSelectedTier?.(),
         window.electronAPI?.claudeGetThinkingEnabled?.(),
       ])
-      slashEffortLevel.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
       const tierLabel = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', reasoning: 'Reasoning' }
-      slashModelName.value = model || tierLabel[tier] || '未配置模型'
-      slashThinkingEnabled.value = thinking !== false
       modelPanelStateCache = {
-        effort: slashEffortLevel.value,
-        modelName: slashModelName.value,
-        thinking: slashThinkingEnabled.value,
+        effort: ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium',
+        modelName: model || tierLabel[tier] || '未配置模型',
+        thinking: thinking !== false,
       }
       modelPanelStateCacheTime = Date.now()
+      applyModelPanelState(modelPanelStateCache)
     } catch (_) {}
   }
 
@@ -70,6 +77,7 @@ export function useSlashCommands({ getActiveTab, getCwd, getInputText, setInputT
       modelPanelStateCacheTime = Date.now()
     }
     await window.electronAPI?.claudeSetEffortLevel?.(level)
+    await onEffortChange?.(level, getActiveTab?.() || null)
   }
 
   async function toggleThinking() {

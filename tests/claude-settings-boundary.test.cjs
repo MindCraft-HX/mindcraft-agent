@@ -6,6 +6,7 @@ const path = require('node:path')
 const repoRoot = path.resolve(__dirname, '..')
 const claudeAgentPath = path.join(repoRoot, 'packages/agent/electron/claudeAgent.js')
 const claudeProviderFormPath = path.join(repoRoot, 'packages/agent/src/components/claudeCode/components/ProviderForm.vue')
+const claudeApiSettingPath = path.join(repoRoot, 'packages/agent/src/components/claudeCode/components/APISetting.vue')
 
 test('claude settings writes strip MindCraft-owned fields before writing official settings.json', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
@@ -64,6 +65,9 @@ test('claude memory inject mode is MindCraft-owned and persisted outside officia
 
 test('claude provider activation syncs official runtime settings without legacy projection', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
+  const activationStart = source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.ACTIVATE_PROVIDER')
+  const activationEnd = source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.GET_SELECTED_TIER', activationStart)
+  const activationBody = source.slice(activationStart, activationEnd)
 
   assert.match(
     source,
@@ -74,6 +78,13 @@ test('claude provider activation syncs official runtime settings without legacy 
     source,
     /function buildClaudeRuntimeSettingsPatch\(/,
     'expected helper to build runtime settings patch from active provider config',
+  )
+  const resolverStart = source.indexOf('function resolveEffectiveRuntimeConfig()')
+  const resolverEnd = source.indexOf('function buildClaudeRuntimeSettingsPatch(', resolverStart)
+  assert.doesNotMatch(
+    source.slice(resolverStart, resolverEnd),
+    /confSet\(/,
+    'runtime resolution must stay read-only; projection belongs to explicit activation/setter paths',
   )
   assert.match(
     source,
@@ -89,8 +100,23 @@ test('claude provider activation syncs official runtime settings without legacy 
   )
   assert.match(
     source,
-    /ipcMain\.handle\(CLAUDE_CHANNELS\.ACTIVATE_PROVIDER[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(runtimeConfig\)\)/,
+    /ipcMain\.handle\(CLAUDE_CHANNELS\.ACTIVATE_PROVIDER[\s\S]*const runtimeConfig = resolveEffectiveRuntimeConfig\(\)[\s\S]*patchClaudeRuntimeSettings\(buildClaudeRuntimeSettingsPatch\(\{[\s\S]*\.\.\.runtimeConfig,[\s\S]*effortLevel/,
     'expected provider activation to sync official runtime settings from active provider in main process',
+  )
+  assert.match(
+    source,
+    /const patch = \{ model: actualModel, effortLevel \}/,
+    'official runtime projection must include provider effort together with the model',
+  )
+  assert.match(
+    activationBody,
+    /setClaudePrefs\(\{[\s\S]*tierModels,[\s\S]*selectedTier,[\s\S]*model: model \|\| '',[\s\S]*effortLevel,[\s\S]*\}\)/,
+    'expected one app-owned runtime snapshot before resolving active Claude runtime',
+  )
+  assert.doesNotMatch(
+    activationBody,
+    /confSet\('(tierModels|claudeSelectedTier|claudeModel|claudeEffortLevel)'/,
+    'provider activation must not create partial projections or intermediate official settings writes',
   )
 })
 
@@ -180,5 +206,22 @@ test('claude provider config editor keeps MindCraft app fields out of official c
     source,
     /configObj = sanitizeClaudeConfig\(JSON\.parse\(jsonText\.value \|\| '\{\}'\)\)/,
     'expected save action to emit sanitized config',
+  )
+})
+
+test('claude provider UI persists and restores provider-specific model defaults', () => {
+  const formSource = fs.readFileSync(claudeProviderFormPath, 'utf8')
+  const settingSource = fs.readFileSync(claudeApiSettingPath, 'utf8')
+
+  assert.match(formSource, /selectedTier:\s*tierKey\.value/)
+  assert.match(formSource, /effortLevel:\s*effort\.value/)
+  assert.match(settingSource, /resolveClaudeProviderDefaults\(provider/)
+  assert.match(settingSource, /effortLevel:\s*settingsEffortLevel\.value/)
+  const activationStart = settingSource.indexOf('async function applyAndActivate(activeIdx)')
+  const activationEnd = settingSource.indexOf('\nfunction buildClaudeSettingsFromProvider', activationStart)
+  assert.doesNotMatch(
+    settingSource.slice(activationStart, activationEnd),
+    /claudePatchSettingsJson/,
+    'provider activation must leave official runtime settings writes to main process',
   )
 })

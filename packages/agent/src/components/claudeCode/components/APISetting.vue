@@ -167,6 +167,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import ProviderForm from './ProviderForm.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import { resolveClaudeProviderDefaults } from '../utils/claudeProviderDefaults.mjs'
 
 const { t, te, locale } = useI18n()
 
@@ -455,14 +456,7 @@ async function openSettings() {
     settingsForm.value.activeIdx = active >= 0 && active < stored.providers.length ? active : 0
     settingsForm.value.selectedIdx = settingsForm.value.activeIdx
     const activeP = settingsForm.value.providers[settingsForm.value.activeIdx]
-    if (activeP?.tierModels) {
-      settingsTierModels.value = {
-        haiku: (activeP.tierModels.haiku || '').trim(),
-        sonnet: (activeP.tierModels.sonnet || '').trim(),
-        opus: (activeP.tierModels.opus || '').trim(),
-        reasoning: (activeP.tierModels.reasoning || '').trim(),
-      }
-    }
+    applyProviderDefaults(activeP)
   } else {
     settingsForm.value.providers = []
     settingsForm.value.activeIdx = -1
@@ -551,18 +545,29 @@ async function persistProviders() {
   }
 }
 
-async function applyAndActivate(activeIdx, opts = {}) {
-  const writeSettings = opts.writeSettings !== false
+function applyProviderDefaults(provider) {
+  const defaults = resolveClaudeProviderDefaults(provider, {
+    selectedTier: settingsSelectedTierKey.value,
+    effortLevel: settingsEffortLevel.value,
+  })
+  settingsTierModels.value = { ...defaults.tierModels }
+  settingsSelectedTierKey.value = defaults.selectedTier
+  settingsEffortLevel.value = defaults.effortLevel
+  return defaults
+}
+
+async function applyAndActivate(activeIdx) {
   const activeP = settingsForm.value.providers[activeIdx]
-  const tierModels = {
-    haiku: activeP?.tierModels?.haiku?.trim() || '',
-    sonnet: activeP?.tierModels?.sonnet?.trim() || '',
-    opus: activeP?.tierModels?.opus?.trim() || '',
-    reasoning: activeP?.tierModels?.reasoning?.trim() || '',
-  }
-  const targetModel = tierModels[settingsSelectedTierKey.value]?.trim()
+  const defaults = applyProviderDefaults(activeP)
+  const tierModels = defaults.tierModels
+  const targetModel = defaults.model
     || tierItems.find(t => t.key === settingsSelectedTierKey.value)?.defaultModel
     || ''
+  if (activeP) {
+    activeP.tierModels = { ...tierModels }
+    activeP.selectedTier = defaults.selectedTier
+    activeP.effortLevel = defaults.effortLevel
+  }
   try {
     const res = await window.electronAPI?.claudeActivateProvider?.({
       providers: JSON.parse(JSON.stringify(settingsForm.value.providers)),
@@ -570,6 +575,7 @@ async function applyAndActivate(activeIdx, opts = {}) {
       selectedTier: settingsSelectedTierKey.value,
       tierModels,
       model: targetModel,
+      effortLevel: settingsEffortLevel.value,
     })
     if (res && res.ok === false) {
       throw new Error(res.error || 'DB write failed')
@@ -577,15 +583,6 @@ async function applyAndActivate(activeIdx, opts = {}) {
     currentGlobalModel.value = res?.model || targetModel
     await window.electronAPI?.claudeSetPermissionPolicy?.(settingsPermissionPolicy.value)
     await window.electronAPI?.claudeSetLanguage?.(settingsLanguage.value)
-    await window.electronAPI?.claudeSetEffortLevel?.(settingsEffortLevel.value)
-    if (writeSettings && activeP?.config) {
-      // Only patch official runtime fields; provider key/url stay in MindCraft storage.
-      // T198: 写入实际模型 ID（非 tier 名），确保 SDK 直接使用正确模型
-      const patch = { model: targetModel || settingsSelectedTierKey.value }
-      if (activeP.config.env) patch.env = JSON.parse(JSON.stringify(activeP.config.env))
-      await window.electronAPI?.claudePatchSettingsJson?.(patch)
-      fullSettingsJson.value = { ...fullSettingsJson.value, ...patch }
-    }
     return true
   } catch (e) {
     console.warn('[APISetting] applyAndActivate failed:', e?.message || e)
@@ -712,7 +709,7 @@ async function handleProviderFormSave(payload) {
     settingsPermissionPolicy.value = payload.permissionPolicy
     settingsLanguage.value = payload.language
     settingsEffortLevel.value = payload.effortLevel
-    const ok = await applyAndActivate(settingsForm.value.activeIdx, { writeSettings: true })
+    const ok = await applyAndActivate(settingsForm.value.activeIdx)
     if (!ok) return
     emit('providerActivated')
   } else {
@@ -869,26 +866,8 @@ async function activateProviderByIdx(i) {
   selectProvider(i)
   settingsForm.value.activeIdx = i
   const activeP = settingsForm.value.providers[i]
-  if (activeP?.tierModels) {
-    settingsTierModels.value = {
-      haiku: (activeP.tierModels.haiku || '').trim(),
-      sonnet: (activeP.tierModels.sonnet || '').trim(),
-      opus: (activeP.tierModels.opus || '').trim(),
-      reasoning: (activeP.tierModels.reasoning || '').trim(),
-    }
-  }
-  // T198: config.model 现为实际模型 ID，需反向匹配以恢复正确的 tier
-  if (activeP?.config?.model) {
-    if (['haiku', 'sonnet', 'opus', 'reasoning'].includes(activeP.config.model)) {
-      settingsSelectedTierKey.value = activeP.config.model
-    } else {
-      const env = activeP.config.env || {}
-      if (env.ANTHROPIC_DEFAULT_SONNET_MODEL === activeP.config.model) settingsSelectedTierKey.value = 'sonnet'
-      else if (env.ANTHROPIC_DEFAULT_OPUS_MODEL === activeP.config.model) settingsSelectedTierKey.value = 'opus'
-      else if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL === activeP.config.model) settingsSelectedTierKey.value = 'haiku'
-    }
-  }
-  const ok = await applyAndActivate(i, { writeSettings: true })
+  applyProviderDefaults(activeP)
+  const ok = await applyAndActivate(i)
   if (ok) emit('providerActivated')
 }
 
@@ -990,14 +969,22 @@ async function importFromFile(i) {
         else if (env.ANTHROPIC_DEFAULT_OPUS_MODEL === sj.model) tierFromConfig = 'opus'
         else if (env.ANTHROPIC_DEFAULT_HAIKU_MODEL === sj.model) tierFromConfig = 'haiku'
       }
-      if (tierFromConfig) settingsSelectedTierKey.value = tierFromConfig
+      if (tierFromConfig) {
+        p.selectedTier = tierFromConfig
+        settingsSelectedTierKey.value = tierFromConfig
+      }
+      const importedEffort = String(sj.effortLevel || '').trim().toLowerCase()
+      if (['low', 'medium', 'high', 'xhigh'].includes(importedEffort)) {
+        p.effortLevel = importedEffort
+        settingsEffortLevel.value = importedEffort
+      }
       settingsTierModels.value = {
         haiku: sHaiku.trim(),
         sonnet: sSonnet.trim(),
         opus: sOpus.trim(),
         reasoning: sReasoning.trim(),
       }
-      const ok = await applyAndActivate(i, { writeSettings: true })
+      const ok = await applyAndActivate(i)
       if (!ok) return
       emit('providerActivated')
     } else {
@@ -1041,7 +1028,7 @@ async function removeProvider(i) {
     return
   }
   if (settingsForm.value.activeIdx >= 0) {
-    const ok = await applyAndActivate(settingsForm.value.activeIdx, { writeSettings: true })
+    const ok = await applyAndActivate(settingsForm.value.activeIdx)
     if (ok) emit('providerActivated')
   } else {
     await persistProviders()

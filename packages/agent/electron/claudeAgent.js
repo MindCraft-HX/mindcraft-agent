@@ -28,7 +28,7 @@ const { findLegacyUserData } = require('./findLegacyUserData')
 const { t: lt } = require('./localeHelper')
 const { getMindCraftUserDataDir } = require('./userDataPath')
 const { getDb, persistDb } = require('./db/index')
-const { getClaudePref, setClaudePref, getDiagnosticsClaudeFreeze, setDiagnosticsClaudeFreeze } = require('./settingsFacade')
+const { getClaudePref, setClaudePref, setClaudePrefs, getDiagnosticsClaudeFreeze, setDiagnosticsClaudeFreeze } = require('./settingsFacade')
 const { previewLocalCliConfig, annotateConflicts, commitImport } = require('./db/import/index')
 const { getProviders, setProviders } = require('./db/providerStorage')
 const { CLAUDE_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
@@ -1368,7 +1368,7 @@ function setupClaudeHandlers() {
     // 兼容旧键名 -> settings.json 字段映射
     if (key === 'claudeApiKey') return s.env?.ANTHROPIC_AUTH_TOKEN || s.apiKey || def
     if (key === 'claudeBaseURL') return s.env?.ANTHROPIC_BASE_URL || s.apiBaseUrl || def
-    if (key === 'claudeEffortLevel') return s.effortLevel || def
+    if (key === 'claudeEffortLevel') return _resolveFacadePref('effortLevel', 'claudeEffortLevel', s.effortLevel || def)
     if (key === 'claudeSelectedTier') {
       // 优先从 settingsFacade 读取 tier（T198：与 settings.json model 字段解耦）
       const stored = getClaudePref('selectedTier')
@@ -1413,7 +1413,10 @@ function setupClaudeHandlers() {
     } else if (key === 'claudeBaseURL') {
       s.env = s.env || {}
       s.env.ANTHROPIC_BASE_URL = val
-    } else if (key === 'claudeEffortLevel') s.effortLevel = val
+    } else if (key === 'claudeEffortLevel') {
+      setClaudePref('effortLevel', val)
+      s.effortLevel = val
+    }
     else if (key === 'claudeSelectedTier') {
       // 主存储：tier 存 settingsFacade（T198 解耦）
       setClaudePref('selectedTier', val)
@@ -1949,12 +1952,6 @@ function setupClaudeHandlers() {
 
     if (nextBaseURL && !nextBaseURL.endsWith('/')) nextBaseURL += '/'
 
-    // 回写统一后的字段，确保后续所有入口读取到一致值
-    confSet('claudeApiKey', nextApiKey)
-    confSet('claudeBaseURL', nextBaseURL)
-    confSet('claudeModel', nextModel)
-    confSet('tierModels', mergedTierModels)
-
     return {
       apiKey: nextApiKey,
       baseURL: nextBaseURL,
@@ -1979,7 +1976,10 @@ function setupClaudeHandlers() {
     if (runtimeConfig?.tierModels?.reasoning) env.ANTHROPIC_REASONING_MODEL = runtimeConfig.tierModels.reasoning
     // 写入实际模型 ID 而非 tier 名（T198 解耦：SDK 直接使用实际模型，不依赖内部 tier 映射）
     const actualModel = runtimeConfig?.model || runtimeConfig?.tierModels?.[selectedTier] || selectedTier
-    const patch = { model: actualModel }
+    const effortLevel = ['low', 'medium', 'high', 'xhigh'].includes(runtimeConfig?.effortLevel)
+      ? runtimeConfig.effortLevel
+      : readEffortLevel()
+    const patch = { model: actualModel, effortLevel }
     if (Object.keys(env).length) patch.env = env
     return patch
   }
@@ -2203,18 +2203,30 @@ function setupClaudeHandlers() {
     }
     const requestedModel = typeof data?.model === 'string' ? data.model.trim() : ''
     const model = requestedModel || (tierModels[selectedTier] || '').trim() || fallbackModel[selectedTier]
+    const requestedEffort = String(data?.effortLevel || active?.effortLevel || active?.config?.effortLevel || '').trim().toLowerCase()
+    const effortLevel = ['low', 'medium', 'high', 'xhigh'].includes(requestedEffort) ? requestedEffort : 'medium'
 
     // Write providers to SQLite via repository (T195: legacy confSet projection removed)
     const wrote = await writeClaudeProviders({ providers, activeIdx })
     if (!wrote) return { ok: false, error: 'DB write failed', model }
 
-    // tierModels 仍写入 internalConf（独立的配置，不通过 provider repository）
-    internalConf.set('tierModels', tierModels)
+    // Project the active provider into one app-owned runtime snapshot. SQLite
+    // remains authoritative; this snapshot only supports synchronous runtime
+    // and renderer reads between repository loads.
+    setClaudePrefs({
+      tierModels,
+      selectedTier,
+      model: model || '',
+      effortLevel,
+    })
     const runtimeConfig = resolveEffectiveRuntimeConfig()
-    patchClaudeRuntimeSettings(buildClaudeRuntimeSettingsPatch(runtimeConfig))
+    patchClaudeRuntimeSettings(buildClaudeRuntimeSettingsPatch({
+      ...runtimeConfig,
+      effortLevel,
+    }))
 
     resetAgentRuntime('provider-activated')
-    return { ok: true, model }
+    return { ok: true, model: runtimeConfig.model || model, effortLevel }
   })
   ipcMain.handle(CLAUDE_CHANNELS.GET_SELECTED_TIER, () => {
     // 统一通过 confGet 读取 tier（settingsFacade 优先，settings.json 兜底）

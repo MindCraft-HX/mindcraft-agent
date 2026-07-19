@@ -358,16 +358,30 @@ function setCodexDefault(key, value) {
 // Public: Claude internal prefs
 // ---------------------------------------------------------------------------
 
-/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'|'selectedTier'} key */
+/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'|'selectedTier'|'effortLevel'} key */
 function getClaudePref(key) {
   const s = _getSection('claudePrefs');
   return s[key];
 }
 
-/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'|'selectedTier'} key */
+/** @param {'permissionPolicy'|'language'|'model'|'executablePath'|'tierModels'|'selectedTier'|'effortLevel'} key */
 function setClaudePref(key, value) {
   const s = _ensureSection('claudePrefs');
   s[key] = value;
+  _scheduleFlush();
+}
+
+/**
+ * Update related Claude runtime preferences as one derived snapshot.
+ * SQLite provider rows remain authoritative; this snapshot supports
+ * synchronous runtime and renderer reads between repository loads.
+ */
+function setClaudePrefs(values) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return;
+  const s = _ensureSection('claudePrefs');
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) s[key] = value;
+  }
   _scheduleFlush();
 }
 
@@ -462,6 +476,7 @@ module.exports = {
   setCodexDefault,
   getClaudePref,
   setClaudePref,
+  setClaudePrefs,
   getMisc,
   setMisc,
   getDiagnosticsClaudeFreeze,

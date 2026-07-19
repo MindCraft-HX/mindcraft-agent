@@ -133,6 +133,7 @@ MindCraft 自有数据包括：
 - SQLite `sessions/session_bindings/session_runtime` is authoritative for session identity and runtime. Legacy session-registry identity fields are read-only fallback and must not overwrite SQLite or panel state.
 - CodeHub tab existence comes only from the current profile's SessionIndex. Provider panels may patch runtime fields after mount; localStorage may select/order known IDs but must not switch tab implementations or read provider legacy directories such as `~/.codex`.
 - panel cache 只能补缺 UI 状态或 runtime 空洞；不能把旧的 model/effort/reasoningEffort 写回覆盖 provider authoritative state。
+- Claude active-provider defaults are `selectedTier + tierModels + effortLevel` from the SQLite provider row. Main projects them as one derived `app-settings` runtime snapshot and one official settings write before SDK reset, then notifies renderer surfaces. New chats and unsent drafts copy those defaults; provider activation may update the current Claude chat, but must not rewrite unrelated historical session runtime metadata.
 - draft 文本可以走 renderer 两级内存缓存，但最终仍应落到 session-registry；不要恢复到每次切 tab 都读写磁盘，也不要用 panel state 做逐键持久化。
 
 关键异步事实：

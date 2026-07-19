@@ -493,6 +493,8 @@ function onSave() {
       key: form.key,
       url: form.url,
       tierModels,
+      selectedTier: tierKey.value,
+      effortLevel: effort.value,
       config: configObj,
     },
     selectedTier: tierKey.value,

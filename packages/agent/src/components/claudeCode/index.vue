@@ -391,6 +391,7 @@ import {
   markClaudeTurnStarting,
   sanitizeClaudePersistedMetrics,
 } from './utils/claudeRuntimeState.mjs'
+import { shouldApplyClaudeProviderDefaultsToChat } from './utils/claudeProviderDefaults.mjs'
 import { resolveToolMeta, resolveToolLabel, resolveToolIconKey } from '../agentCommon/tools/toolMeta.js'
 import {
   adoptScannedClaudeSession,
@@ -581,18 +582,22 @@ const sessionInstructionRef = ref(null)
 const activeSessionInstructionEnabled = ref(false)
 const claudeDefaultModel = ref('')
 const claudeDefaultEffort = ref('medium')
+const claudeDefaultTier = ref('sonnet')
 
 async function loadClaudeModelDefaults() {
   try {
-    const [model, effort] = await Promise.all([
+    const [model, effort, tier] = await Promise.all([
       window.electronAPI?.claudeGetModel?.() || Promise.resolve(''),
       window.electronAPI?.claudeGetEffortLevel?.() || Promise.resolve('medium'),
+      window.electronAPI?.claudeGetSelectedTier?.() || Promise.resolve('sonnet'),
     ])
     claudeDefaultModel.value = String(model || '').trim()
     claudeDefaultEffort.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
+    claudeDefaultTier.value = normalizeClaudeModelTier(tier) || 'sonnet'
   } catch (_) {
     claudeDefaultModel.value = ''
     claudeDefaultEffort.value = 'medium'
+    claudeDefaultTier.value = 'sonnet'
   }
 }
 
@@ -2017,7 +2022,7 @@ function createChat() {
     fileSize: null,
     model: claudeDefaultModel.value || null,
     effort: claudeDefaultEffort.value || 'medium',
-    modelTier: null,
+    modelTier: claudeDefaultTier.value || 'sonnet',
     runMode: 'edit_automatically',
     draftText: '',
     inputHistory: [],
@@ -2773,6 +2778,15 @@ const {
   setInputText: (v) => { inputText.value = v },
   focusInput: () => nextTick(() => inputEl.value?.focus()),
   autosizeSchedule: textareaAutosize.scheduleResize,  // Phase 5: rAF 合并
+  onEffortChange: (level, tab) => {
+    const effort = normalizeClaudeEffort(level) || 'medium'
+    claudeDefaultEffort.value = effort
+    if (tab) {
+      tab.effort = effort
+      persistClaudeTabMeta(tab)
+      saveHistory()
+    }
+  },
 })
 
 function setupHistoryTopObserver() {
@@ -2948,27 +2962,20 @@ async function handleProviderActivated() {
     window.electronAPI?.claudeRegisterCliSessions?.(allRegistrations)
   }
 
-  const tab = activeTab.value
-  if (!tab) return
-  window.electronAPI?.claudeAgentAbort?.(tab.sessionId)
-  // 同步更新状态栏模型显示
+  // Refresh defaults even when there is no active chat. The next chat must be
+  // created from the newly activated provider, not stale renderer state.
   await loadClaudeModelDefaults()
   invalidateModelPanelStateCache()
 
-  let selectedTier = ''
-  try {
-    selectedTier = normalizeClaudeModelTier(await window.electronAPI?.claudeGetSelectedTier?.())
-  } catch (_) {
-    selectedTier = ''
-  }
-
   const nextModel = String(claudeDefaultModel.value || '').trim()
   const nextEffort = normalizeClaudeEffort(claudeDefaultEffort.value) || 'medium'
-  const nextTier = selectedTier || normalizeClaudeModelTier(tab.modelTier) || 'sonnet'
+  const nextTier = normalizeClaudeModelTier(claudeDefaultTier.value) || 'sonnet'
+  const activeId = activeTab.value?.id || ''
 
   for (const project of projects.value) {
     if (!project?.chats) continue
     for (const chat of project.chats) {
+      if (!shouldApplyClaudeProviderDefaultsToChat(chat, activeId)) continue
       chat.model = nextModel
       chat.effort = nextEffort
       chat.modelTier = nextTier
@@ -2980,8 +2987,17 @@ async function handleProviderActivated() {
   slashModelName.value = nextModel || slashModelName.value
   slashEffortLevel.value = nextEffort
   metricsData.value.model = nextModel
-  pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
+  const tab = activeTab.value
+  if (tab) {
+    window.electronAPI?.claudeAgentAbort?.(tab.sessionId)
+    pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
+  }
   saveHistory()
+}
+
+function onMindCraftProviderActivated(event) {
+  if (event?.detail?.agentType !== 'claude') return
+  void handleProviderActivated()
 }
 
 function abortSession() {
@@ -3783,6 +3799,7 @@ onMounted(() => {
   // 关键路径：立即注册监听器和基础初始化，不阻塞首屏渲染
   window.addEventListener('beforeunload', persistActiveInputDraft)
   window.addEventListener('beforeunload', flushHistoryOnUnload)
+  window.addEventListener('mindcraft-provider-activated', onMindCraftProviderActivated)
   window.electronAPI.onClaudeAgentMessage(onAgentMessage)
   window.electronAPI.onClaudeAgentDone((payload) => {
     onAgentDone(payload)
@@ -3925,6 +3942,7 @@ onUnmounted(() => {
   _clearPlanReviewTimeout()
   window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushHistoryOnUnload)
+  window.removeEventListener('mindcraft-provider-activated', onMindCraftProviderActivated)
   void persistActiveInputDraft()
   flushHistoryOnUnload()
   sessionDraft.dispose()
