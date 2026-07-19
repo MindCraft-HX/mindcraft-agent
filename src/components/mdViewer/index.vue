@@ -943,23 +943,19 @@ async function saveCurrentTab() {
   if (!state?.isDirty) return
 
   try {
-    if (tab.canonicalDocumentKey && documentController) {
-      const result = await documentController.save(tab.canonicalDocumentKey)
-      if (!result.ok) {
-        if (result.reason === 'conflict') ElMessage.warning(i18n.global.t('doc.saveFailed'))
-        else throw new Error(result.reason || 'save failed')
-        return
-      }
-      const document = documentController.getDocument(tab.canonicalDocumentKey)
-      markClean(activeTabId.value, document?.baseText || state.text)
-    } else {
-      const encoder = new TextEncoder()
-      const result = await window.electronAPI?.writeFileSync?.(tab.filePath, encoder.encode(state.text))
-      if (result === undefined && !window.electronAPI) {
-        throw new Error('electronAPI unavailable')
-      }
-      markClean(activeTabId.value, state.text)
+    // 文档域是 file-backed 文档保存的唯一入口（typed compare-and-save）。
+    // 无 canonical 身份的 tab 不允许绕过 documentController 直接写文件。
+    if (!tab.canonicalDocumentKey || !documentController) {
+      throw new Error('document domain unavailable')
     }
+    const result = await documentController.save(tab.canonicalDocumentKey)
+    if (!result.ok) {
+      if (result.reason === 'conflict') ElMessage.warning(i18n.global.t('doc.saveFailed'))
+      else throw new Error(result.reason || 'save failed')
+      return
+    }
+    const document = documentController.getDocument(tab.canonicalDocumentKey)
+    markClean(activeTabId.value, document?.baseText || state.text)
     ElMessage.success(i18n.global.t('doc.saved'))
   } catch (err) {
     ElMessage.error(`${i18n.global.t('doc.saveFailed')}: ${err?.message || err}`)
