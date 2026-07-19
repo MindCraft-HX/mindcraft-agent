@@ -144,6 +144,7 @@ import PdfViewer from './viewers/PdfViewer.vue'
 import UnsupportedViewer from './viewers/UnsupportedViewer.vue'
 import { createDocumentTab } from './documentPayload.mjs'
 import { createPendingDocumentTab, finalizeDocumentTab } from './documentTabs.mjs'
+import { serializeDocTabs, migrateDocTabsPayload } from './documentTabsPersistence.mjs'
 import { isEditableFile, EDIT_MODE, defaultEditMode } from './editState.mjs'
 import { getDocumentTabScrollOwner } from './documentScrollPolicy.mjs'
 import { resolveDocumentViewerType } from './viewerRegistry.mjs'
@@ -600,30 +601,14 @@ async function saveRecentDoc(payload = {}) {
 const DOC_TABS_STORE_KEY = 'openDocTabs'
 
 async function persistDocTabs() {
-  // 只持久化有 filePath 的 tab（聊天内联文档没有 filePath，重启后无法恢复内容，保留空 tab 无意义）
-  const tabsToSave = tabs.value
-    .filter(t => t.filePath)
-    .map(t => ({
-      id: t.id,
-      filePath: t.filePath,
-      name: t.name,
-      ext: t.ext,
-      viewerType: t.viewerType,
-    }))
-  // 持久化滚动位置（仅保留仍然存在的 tab）
-  const tabIdSet = new Set(tabs.value.map(t => t.id))
-  const scrollTops = {}
-  for (const [id, top] of tabScrollTops) {
-    if (tabIdSet.has(id)) {
-      scrollTops[id] = top
-    }
-  }
+  // 序列化契约（documentTabsPersistence.mjs）：只持久化有 filePath 的 tab
+  // （聊天内联文档重启后无法恢复内容），字段白名单 + version 由契约模块保证
   try {
-    await window.electronAPI?.setSetting?.(DOC_TABS_STORE_KEY, {
-      tabs: tabsToSave,
+    await window.electronAPI?.setSetting?.(DOC_TABS_STORE_KEY, serializeDocTabs({
+      tabs: tabs.value,
       activeTabId: activeTabId.value,
-      scrollTops,
-    })
+      scrollTops: Object.fromEntries(tabScrollTops),
+    }))
   } catch (e) {
     console.error('[docPersist] persistDocTabs failed:', e)
   }
@@ -639,16 +624,13 @@ function schedulePersist() {
 
 async function restoreDocTabs() {
   try {
-    const saved = await window.electronAPI?.getSetting?.(DOC_TABS_STORE_KEY)
+    // 版本化迁移：legacy v0 自动升迁，未来版本/坏结构拒绝恢复（不猜）
+    const saved = migrateDocTabsPayload(await window.electronAPI?.getSetting?.(DOC_TABS_STORE_KEY))
     if (!saved?.tabs?.length) return
 
     // 恢复滚动位置（在创建 tab 之前填充 Map，后续 watch/restoreDocTabScroll 会用到）
-    if (saved.scrollTops && !Array.isArray(saved.scrollTops)) {
-      for (const [id, top] of Object.entries(saved.scrollTops)) {
-        if (typeof top === 'number' && top >= 0) {
-          tabScrollTops.set(id, top)
-        }
-      }
+    for (const [id, top] of Object.entries(saved.scrollTops)) {
+      tabScrollTops.set(id, top)
     }
 
     // 添加 pending tabs（仅元信息，不加载内容）
