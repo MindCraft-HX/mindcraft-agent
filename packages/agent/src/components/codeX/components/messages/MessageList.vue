@@ -27,7 +27,7 @@
       <div class="empty-sub">{{ $t('agent.startChatHint') }}</div>
     </div>
 
-    <div v-for="msg in tab.messages" :key="msg.id" v-memo="[msg.text, msg.status, msg.toolError, msg.expanded]" class="msg-row" :data-msg-id="msg.id" :class="msg.role">
+    <div v-for="msg in tab.messages" :key="msg.id" v-memo="[msg.text, msg.status, msg.toolError, msg.expanded, msg._turnTokens]" class="msg-row" :data-msg-id="msg.id" :class="msg.role">
       <MessageItem
         :msg="msg"
         :toolIcon="toolIcon"
