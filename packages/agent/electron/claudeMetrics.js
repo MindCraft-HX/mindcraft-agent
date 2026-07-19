@@ -107,7 +107,7 @@ function computeAndCacheClaudeAggregate(cliSessionId) {
     cacheReadTokens: tokenMetrics.cacheReadTokens || 0,
     cacheCreationTokens: tokenMetrics.cacheCreationTokens || 0,
     contextUsage: tokenMetrics.contextUsage || 0,
-    contextWindow: tokenMetrics.contextWindow || 0,
+    contextWindow: preferConfiguredContextWindow(tokenMetrics.contextWindow || 0),
     durationMs: tokenMetrics.durationMs || 0,
     speedOutputPerSec: speedMetrics?.outputTokensPerSec || 0,
   }
@@ -433,6 +433,8 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     contextWindow = getContextWindowForModel('')
   }
 
+  contextWindow = preferConfiguredContextWindow(contextWindow)
+
   const costUsd = estimateCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
 
   return {
@@ -701,6 +703,37 @@ function getContextWindowForModel(model) {
   return 200000
 }
 
+// 用户配置的自动压缩窗口（~/.claude/settings.json -> autoCompactWindow）。
+// 配置后作为状态栏上下文百分比的分母，与 SDK 实际压缩阈值保持一致；
+// 未配置时回退到模型表。带 mtime 缓存，避免每次计算都读盘。
+let _autoCompactWindowCache = { mtimeMs: -1, value: null }
+let _autoCompactWindowTestOverride = undefined
+function getConfiguredAutoCompactWindow() {
+  if (_autoCompactWindowTestOverride !== undefined) return _autoCompactWindowTestOverride
+  try {
+    const p = path.join(os.homedir(), '.claude', 'settings.json')
+    const stat = fs.statSync(p)
+    if (stat.mtimeMs !== _autoCompactWindowCache.mtimeMs) {
+      const s = JSON.parse(fs.readFileSync(p, 'utf8'))
+      const v = Number(s && s.autoCompactWindow)
+      _autoCompactWindowCache = {
+        mtimeMs: stat.mtimeMs,
+        value: Number.isFinite(v) && v > 0 ? Math.round(v) : null,
+      }
+    }
+    return _autoCompactWindowCache.value
+  } catch (_) {
+    return null
+  }
+}
+
+// 分母选择：仅在原本会显示圆环（contextWindow > 0）时用配置值覆盖，
+// 避免空会话因配置存在而凭空出现 0% 圆环。
+function preferConfiguredContextWindow(contextWindow) {
+  if (!(contextWindow > 0)) return contextWindow
+  return getConfiguredAutoCompactWindow() || contextWindow
+}
+
 function estimateCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens) {
   const perMillion = { input: 3.0, output: 15.0, cacheRead: 0.3, cacheCreation: 3.75 }
   const regularInputTokens = Math.max(0, inputTokens - cacheCreationTokens)
@@ -763,7 +796,7 @@ async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
     cacheReadTokens: tokenMetrics.cacheReadTokens || 0,
     cacheCreationTokens: tokenMetrics.cacheCreationTokens || 0,
     contextUsage: tokenMetrics.contextUsage || 0,
-    contextWindow: tokenMetrics.contextWindow || 0,
+    contextWindow: preferConfiguredContextWindow(tokenMetrics.contextWindow || 0),
     contextSource: tokenMetrics.contextSource || '',
     contextSampleAt: tokenMetrics.contextSampleAt || 0,
     compactBoundaryContextUsage: tokenMetrics.compactBoundaryContextUsage || 0,
@@ -802,6 +835,8 @@ module.exports = {
   pollMetrics,
   resetSession,
   getContextWindowForModel,
+  getConfiguredAutoCompactWindow,
+  preferConfiguredContextWindow,
   parseClaudeTimestampMs,
   normalizeClaudeUsageForUi,
   __test__: {
@@ -814,5 +849,10 @@ module.exports = {
     pickClaudeTurnDurationMs,
     parseClaudeTimestampMs,
     getContextWindowForModel,
+    getConfiguredAutoCompactWindow,
+    preferConfiguredContextWindow,
+    setConfiguredAutoCompactWindowForTest(value) {
+      _autoCompactWindowTestOverride = value
+    },
   },
 }

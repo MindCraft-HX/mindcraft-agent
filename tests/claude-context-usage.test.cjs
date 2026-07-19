@@ -446,7 +446,23 @@ function runHistoryTurnTokensAggregateOneUserTurnTest() {
   })
 }
 
+function runConfiguredAutoCompactWindowPreferredTest() {
+  // 未配置：保持模型表/既有值，0 不被凭空造出
+  __test__.setConfiguredAutoCompactWindowForTest(null)
+  assert.equal(__test__.getConfiguredAutoCompactWindow(), null)
+  assert.equal(__test__.preferConfiguredContextWindow(200000), 200000)
+  assert.equal(__test__.preferConfiguredContextWindow(0), 0)
+  // 配置 256K：覆盖模型表分母；0 仍然保持 0（空会话不显示圆环）
+  __test__.setConfiguredAutoCompactWindowForTest(256000)
+  assert.equal(__test__.getConfiguredAutoCompactWindow(), 256000)
+  assert.equal(__test__.preferConfiguredContextWindow(200000), 256000)
+  assert.equal(__test__.preferConfiguredContextWindow(0), 0)
+  __test__.setConfiguredAutoCompactWindowForTest(null)
+}
+
 function run() {
+  // 固定为“未配置”，避免宿主机 ~/.claude/settings.json 的 autoCompactWindow 泄漏进断言
+  __test__.setConfiguredAutoCompactWindowForTest(null)
   runNativeClaudeModelTest()
   runThirdPartyClaudeSdkModelTest()
   runUnknownModelFallsBackToConservativeSumTest()
@@ -466,6 +482,7 @@ function run() {
   runDefaultMetricsUseLatestTurnNotWholeSessionTest()
   runHistoryTurnTokensAggregateOneUserTurnTest()
   runLatestSessionCwdFromLinesTest()
+  runConfiguredAutoCompactWindowPreferredTest()
   console.log('claude context usage tests passed')
 }
 

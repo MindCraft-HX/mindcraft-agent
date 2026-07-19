@@ -223,7 +223,7 @@ function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
   const normalized = claudeMetrics.normalizeClaudeUsageForUi(usage, msg?.message?.model || msg?.model || fallbackModel || '')
   const contextUsage = (normalized.inputTokens || 0) + (normalized.cacheReadTokens || 0) + (normalized.outputTokens || 0)
   const contextWindow = contextUsage > 0
-    ? claudeMetrics.getContextWindowForModel(msg?.message?.model || msg?.model || fallbackModel || '')
+    ? claudeMetrics.preferConfiguredContextWindow(claudeMetrics.getContextWindowForModel(msg?.message?.model || msg?.model || fallbackModel || ''))
     : 0
   return {
     inputTokens: normalized.inputTokens || 0,
@@ -246,7 +246,7 @@ function extractClaudeCompactBoundaryMetricsFromSdkMessage(msg, fallbackModel = 
   if (!contextUsage) return null
   return {
     contextUsage,
-    contextWindow: claudeMetrics.getContextWindowForModel(msg?.model || fallbackModel || ''),
+    contextWindow: claudeMetrics.preferConfiguredContextWindow(claudeMetrics.getContextWindowForModel(msg?.model || fallbackModel || '')),
     contextSource: 'compact-boundary',
     contextSampleAt: claudeMetrics.parseClaudeTimestampMs(msg?.timestamp) || 0,
   }
