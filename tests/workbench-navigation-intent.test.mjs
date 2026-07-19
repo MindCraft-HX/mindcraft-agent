@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  createIntentDispatcher,
   createIntentQueue,
   createLegacyNavigationAdapter,
   documentPayloadToIntent,
@@ -112,4 +113,27 @@ test('legacy navigation adapter reports router failures instead of throwing', as
     router: { push: () => Promise.reject(new Error('route failed')) },
   }).dispatch({ requestId: 'fail-1', type: 'focus-chat' })
   assert.deepEqual(result, { accepted: false, requestId: 'fail-1', reason: 'route failed' })
+})
+
+test('intent dispatcher centralizes requestId generation and source labeling', () => {
+  const dispatched = []
+  const dispatchNavIntent = createIntentDispatcher({
+    adapter: { dispatch: raw => { dispatched.push(raw); return Promise.resolve({ accepted: true }) } },
+    source: 'home',
+  })
+
+  dispatchNavIntent({ type: 'focus-chat' })
+  dispatchNavIntent({ type: 'focus-chat', chatTarget: { sessionId: 's1' } })
+
+  assert.equal(dispatched.length, 2)
+  for (const raw of dispatched) {
+    assert.equal(raw.source, 'home')
+    assert.match(raw.requestId, /^home-\d+-\d+$/)
+  }
+  // 同一 dispatcher 内 requestId 单调唯一（queue 幂等去重可直接依赖）
+  assert.notEqual(dispatched[0].requestId, dispatched[1].requestId)
+  // 业务字段原样透传
+  assert.deepEqual(dispatched[1].chatTarget, { sessionId: 's1' })
+
+  assert.throws(() => createIntentDispatcher({}), /adapter\.dispatch is required/)
 })

@@ -471,7 +471,7 @@ const currentViewerProps = computed(() => {
   if (!tab) return {}
   const editable = isEditableFile(tab)
   const mode = editable && (tab.viewerType === 'markdown' || tab.viewerType === 'html')
-    ? (tabEditModes[tab.id] || defaultEditMode(tab.viewerType))
+    ? getCurrentEditMode(tab.id)
     : EDIT_MODE.PREVIEW_ONLY
   const state = editStates[tab.id]
   return {
@@ -485,6 +485,7 @@ const currentViewerProps = computed(() => {
     editMode: mode,
     isEditable: editable,
     editorText: state?.text ?? tab.text,
+    dirty: Boolean(state?.isDirty),
   }
 })
 const currentContextDir = computed(() => {

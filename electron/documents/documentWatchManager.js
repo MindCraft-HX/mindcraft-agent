@@ -67,14 +67,20 @@ function createDocumentWatchManager({
     armWatcher(entry)
     const current = describe(entry.filePath)
     if (!current?.ok) {
+      // 同一失败状态（如文件已删除）只通知一次；状态恢复后清零，
+      // 之后再次失败会重新通知。
+      const reason = current?.reason || 'describe-failed'
+      if (entry.lastNotifiedFailure === reason) return
+      entry.lastNotifiedFailure = reason
       send({
         canonicalDocumentKey: entry.canonicalDocumentKey,
         filePath: entry.filePath,
         identity: null,
-        reason: current?.reason || 'describe-failed',
+        reason,
       })
       return
     }
+    entry.lastNotifiedFailure = null
     const signature = current.signature
     if (sameSignature(signature, entry.selfWriteSignature)) {
       entry.selfWriteSignature = null
@@ -97,6 +103,8 @@ function createDocumentWatchManager({
     const existing = watchers.get(key)
     if (existing) {
       if (identity.signature) existing.lastNotifiedSignature = identity.signature
+      // 重新 watch 视为一次状态重置：之后的失败需要重新通知。
+      existing.lastNotifiedFailure = null
       return { ok: true, alreadyWatching: true }
     }
     const entry = {
@@ -105,6 +113,7 @@ function createDocumentWatchManager({
       watcher: null,
       timer: null,
       lastNotifiedSignature: identity.signature || null,
+      lastNotifiedFailure: null,
       selfWriteSignature: null,
     }
     watchers.set(key, entry)

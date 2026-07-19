@@ -110,8 +110,9 @@ autoCompactWindow?: number;
 
 ### 5. `effortLevel` → 修正为 `xhigh` ✅
 
-- **调用链**：SelectModel.vue / useSlashCommands.js → `claudeSetEffortLevel` IPC → `confSet` → `s.effortLevel`
+- **原调用链（v1）**：SelectModel.vue / useSlashCommands.js → `claudeSetEffortLevel` IPC → `confSet` → `s.effortLevel`
 - **实施**：全代码 `max`→`xhigh`（SelectModel, ProviderForm, APISetting, SlashPopup, useSlashCommands 共 7 处），handler 白名单同步，旧值 `max` 启动时自动升迁
+- **后续（provider 重构 `da96739`）**：`claudeSetEffortLevel` IPC 已删除；effortLevel 改为 provider 配置字段（`active.effortLevel` / `runtimeConfig.effortLevel`），经 provider 更新链路写入，`confGet` 仍以 `s.effortLevel` 作兼容回退
 
 ### 6. `theme` → 启动迁移清理 ✅
 
@@ -139,10 +140,11 @@ autoCompactWindow?: number;
 - `claudeAgent.js` `claude-write-settings-json` IPC handler — 已删除
 - `preload/index.js` `claudeWriteSettingsJson` bridge — 已删除
 
-### 9. 补全 API ✅
+### 9. 补全 API ✅ → 已随 provider 重构移除
 
-- `claude-set-model` / `claude-set-selected-tier` IPC handlers — 已注册
-- `preload/index.js` `claudeSetModel` / `claudeSetSelectedTier` bridges — 已注册
+- ~~`claude-set-model` / `claude-set-selected-tier` IPC handlers — 已注册~~
+- ~~`preload/index.js` `claudeSetModel` / `claudeSetSelectedTier` bridges — 已注册~~
+- **后续（provider 重构 `da96739`）**：上述 handlers 与 bridges 已删除；模型/档位选择并入 provider 配置（`model` / `selectedTier` / `tierModels`），经 provider 更新链路持久化
 
 ### 10. 一次性启动迁移 ✅
 

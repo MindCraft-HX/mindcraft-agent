@@ -302,21 +302,16 @@ import { ref, computed, onMounted, onUnmounted, defineAsyncComponent } from 'vue
 import { useRouter } from 'vue-router'
 import { useClaudeThemeStore } from '@mindcraft/agent'
 import { useHomeData, formatNumber, formatTime } from '@/components/Home/useHomeData.js'
-import { createLegacyNavigationAdapter } from '@/workbench/navigationIntent.mjs'
+import { createLegacyNavigationAdapter, createIntentDispatcher } from '@/workbench/navigationIntent.mjs'
 
 const TokenChart = defineAsyncComponent(() => import('@/components/Home/TokenChart.vue'))
 
 const router = useRouter()
 // 首页入口统一走 typed navigation intent（设计 4.4），不直接操作路由/写 localStorage
-const navigationAdapter = createLegacyNavigationAdapter({ router })
-
-function dispatchNavIntent(intent) {
-  void navigationAdapter.dispatch({
-    requestId: `home-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    source: 'home',
-    ...intent,
-  })
-}
+const dispatchNavIntent = createIntentDispatcher({
+  adapter: createLegacyNavigationAdapter({ router }),
+  source: 'home',
+})
 
 const openAgentHub = () => dispatchNavIntent({ type: 'focus-agent' })
 const openDocBrowser = () => dispatchNavIntent({ type: 'open-document', resourceId: 'legacy://document-viewer' })

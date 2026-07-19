@@ -42,6 +42,16 @@ test('HtmlViewer keeps the sandbox iframe and gains a CodeMirror source mode', (
   assert.ok(source.includes("update:editorText"), 'editor input must flow to the mdViewer edit state')
 })
 
+test('HtmlViewer keeps an empty dirty draft instead of falling back to the file text', () => {
+  const viewer = fs.readFileSync(path.join(root, 'src/components/mdViewer/viewers/HtmlViewer.vue'), 'utf8')
+  // 用户删空内容后 editorText=''（falsy）：draft 必须以 dirty 草稿为准，
+  // 否则 remount 恢复原文、保存却写出空文件（显示与落盘不一致）。
+  assert.ok(viewer.includes('props.dirty ? props.editorText'), 'dirty draft (even empty) must be authoritative')
+  assert.ok(viewer.includes('!props.dirty && draft.value'), 'async-load refill must not clobber a dirty draft')
+  const host = fs.readFileSync(path.join(root, 'src/components/mdViewer/index.vue'), 'utf8')
+  assert.ok(host.includes('dirty: Boolean(state?.isDirty)'), 'mdViewer must pass the dirty flag down to viewers')
+})
+
 test('mdViewer exposes a source-labeled mode segment for html tabs', () => {
   const source = fs.readFileSync(path.join(root, 'src/components/mdViewer/index.vue'), 'utf8')
   assert.ok(source.includes('modeSegmentButtons'), 'mode segment must be data-driven per viewer type')

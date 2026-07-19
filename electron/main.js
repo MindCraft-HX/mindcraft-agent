@@ -124,11 +124,20 @@ function openQueuedAssociatedMarkdown() {
 }
 
 app.on('before-quit', (event) => {
-  // Phase 2A CloseCoordinator：真正 quit（托盘退出 / 更新安装 / dev 关窗）
+  // Phase 2A CloseCoordinator：真正 quit（托盘退出 / dev 关窗）
   // 先过 renderer dirty 守卫。ready 或握手基础设施错误（timeout 等）放行；
   // cancel / participant error 中止本次退出，应用保持运行。
-  if (!closeHandshakeApproved && closeHandshake) {
+  // 更新安装路径除外：prepareForUpdateInstall 已销毁托盘/快捷键，
+  // 握手若被取消会让应用处于半拆解状态，该路径直接放行。
+  if (!closeHandshakeApproved && closeHandshake && !isQuittingForUpdate) {
     event.preventDefault()
+    // 托盘退出时窗口常处于隐藏/最小化：先还原窗口，否则 dirty 确认
+    // 对话框不可见，握手只能空等超时并 fail-open 丢弃未保存内容。
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore()
+      if (!win.isVisible()) win.show()
+      win.focus()
+    }
     closeHandshake.requestClose('quit').then(result => {
       if (shouldProceedWithQuit(result)) {
         closeHandshakeApproved = true
@@ -377,7 +386,10 @@ app.whenReady().then(async () => {
   initSettingsFacade(app.getPath('userData'));
 
   ipcMain.handle(CORE_CHANNELS.WINDOW_ROLE_GET, event => windowRoles.getRoleForSender(event.sender))
-  closeHandshake = createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win })
+  // 60s 上限与 renderer registry 的 45s participant 超时配套：
+  // renderer 先回话（participant-timeout 中止退出），main 的 60s 只兜
+  // renderer 挂死的基础设施超时（fail-open 放行）。
+  closeHandshake = createCloseHandshake({ ipcMain, roles: windowRoles, getMainWindow: () => win, timeoutMs: 60_000 })
   const documentRepository = createDocumentRepository()
   documentWatchManager = createDocumentWatchManager({
     describe: documentRepository.describe,

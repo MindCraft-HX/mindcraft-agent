@@ -54,6 +54,7 @@ const props = defineProps({
   filePath: { type: String, default: '' },
   editMode: { type: String, default: 'preview-only' },
   editorText: { type: String, default: '' },
+  dirty: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:editorText', 'update:dirty'])
@@ -61,11 +62,14 @@ const emit = defineEmits(['update:editorText', 'update:dirty'])
 const { t } = useI18n()
 
 const editorRef = ref(null)
-const draft = ref(props.editorText || props.text || '')
+// dirty 时 editorText 是权威草稿（用户可能已删空，空串必须原样保留，
+// 否则 remount 会把原文填回来，保存时写出的却是空文件）；
+// 非 dirty 时草稿等于原文，空 editorText 表示尚未初始化，回退原文。
+const draft = ref(props.dirty ? props.editorText : (props.editorText || props.text || ''))
 
-// 异步文件加载完成后同步 draft（否则编辑器显示空白）
+// 异步文件加载完成后同步 draft（否则编辑器显示空白）；dirty 草稿不回填。
 watch(() => props.text, (newText) => {
-  if (draft.value === '' && newText) {
+  if (!props.dirty && draft.value === '' && newText) {
     draft.value = newText
   }
 }, { immediate: true })

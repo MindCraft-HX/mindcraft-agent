@@ -118,6 +118,30 @@ test('describe failure notifies with null identity and reason', async () => {
   assert.equal(h.sent[0].reason, 'stat-failed')
 })
 
+test('persistent describe failure notifies once per state transition', async () => {
+  const h = createHarness()
+  h.manager.watchDocument(identity('k1', 'D:/repo/a.md', sig(1)))
+  h.setCurrent({ ok: false, reason: 'stat-failed' })
+  // 同一失败状态下的后续 fs 事件不重复通知
+  h.fire(); h.fire(); h.fire()
+  await sleep(40)
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.sent[0].identity, null)
+  // 状态恢复（文件重建）→ 正常 changed 通知，并清零失败记录
+  h.setCurrent({ ok: true, filePath: 'D:/repo/a.md', canonicalDocumentKey: 'k1', signature: sig(5) })
+  h.fire()
+  await sleep(40)
+  assert.equal(h.sent.length, 2)
+  assert.equal(h.sent[1].reason, 'changed')
+  // 再次失败 → 重新通知一次
+  h.setCurrent({ ok: false, reason: 'stat-failed' })
+  h.fire()
+  await sleep(40)
+  assert.equal(h.sent.length, 3)
+  assert.equal(h.sent[2].identity, null)
+  assert.equal(h.sent[2].reason, 'stat-failed')
+})
+
 test('every handled event rearms the watcher (atomic rename replaces inode)', async () => {
   const h = createHarness()
   h.manager.watchDocument(identity('k1', 'D:/repo/a.md', sig(1)))

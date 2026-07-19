@@ -58,6 +58,9 @@ test('shouldProceedWithQuit: ready 继续，cancel/participant error 中止', ()
   assert.equal(shouldProceedWithQuit({ status: 'cancel' }), false)
   assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'participant-error' }), false)
   assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'exception' }), false)
+  // participant 超时（如人工确认对话框无人应答）中止退出，不能
+  // fail-open 丢弃未保存内容；只有 main 侧基础设施 timeout 才放行。
+  assert.equal(shouldProceedWithQuit({ status: 'error', reason: 'participant-timeout' }), false)
 })
 
 test('shouldProceedWithQuit: 握手基础设施错误继续退出，避免应用无法退出', () => {

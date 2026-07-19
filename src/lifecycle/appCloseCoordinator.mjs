@@ -35,11 +35,16 @@ let singleton = null
  * 主 workbench renderer 的应用级单例。Main.vue setup 顶层调用以保证桥接
  * 在任意路由下都存活；业务模块（mdViewer document dirty participant 等）
  * 通过它拿到 registry 注册 participant。
+ *
+ * timeoutMs=45s：document-dirty participant 会弹人工确认对话框，10s 默认
+ * 值对人工操作太短；45s < main 侧握手 60s 兜底，保证 renderer 先回话
+ * （participant-timeout → 中止退出），main 的超时只覆盖 renderer 挂死。
  */
 export function getAppCloseCoordinator() {
   if (!singleton) {
     singleton = createAppCloseCoordinator({
       api: typeof window !== 'undefined' ? window.electronAPI : null,
+      timeoutMs: 45_000,
     })
   }
   return singleton

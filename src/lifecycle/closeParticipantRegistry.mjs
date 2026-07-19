@@ -6,8 +6,11 @@ function withTimeout(promise, timeoutMs, participantId) {
   let timer
   return Promise.race([
     Promise.resolve(promise),
+    // participant-timeout 与 main 侧基础设施 timeout 区分：participant
+    // 未在时限内应答（如人工确认对话框无人操作）应中止退出，而不是
+    // fail-open 丢弃未保存内容。
     new Promise(resolve => {
-      timer = setTimeout(() => resolve({ status: 'error', participantId, reason: 'timeout' }), timeoutMs)
+      timer = setTimeout(() => resolve({ status: 'error', participantId, reason: 'participant-timeout' }), timeoutMs)
     }),
   ]).finally(() => clearTimeout(timer))
 }

@@ -211,7 +211,7 @@ import { SharedSettings, useClaudeThemeStore } from '@mindcraft/agent';
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
 import { storeToRefs } from 'pinia';
 import { usePluginStore } from '@/stores/pluginStore';
-import { createLegacyNavigationAdapter, documentPayloadToIntent } from '@/workbench/navigationIntent.mjs';
+import { createLegacyNavigationAdapter, createIntentDispatcher, documentPayloadToIntent } from '@/workbench/navigationIntent.mjs';
 import { getAppCloseCoordinator } from '@/lifecycle/appCloseCoordinator.mjs';
 
 // CloseCoordinator 桥接：主 workbench renderer 存活期间消费 main 的
@@ -247,17 +247,16 @@ const closeWin = () => window.electronAPI?.close()
 
 const route = useRoute();
 const router = useRouter();
+// 文档打开等主进程 push 的 intent 自带 requestId，直接走 adapter；
+// 侧栏入口走 dispatcher 工厂统一生成 requestId 与 source。
 const navigationAdapter = createLegacyNavigationAdapter({ router });
 
 // 侧栏入口统一走 typed navigation intent（设计 4.4）。
 // /main/home、/main/pluginMarket 与插件路由不是 workbench 业务面，保持直接路由。
-function dispatchNavIntent(intent) {
-  void navigationAdapter.dispatch({
-    requestId: `sidebar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    source: 'sidebar',
-    ...intent,
-  })
-}
+const dispatchNavIntent = createIntentDispatcher({
+  adapter: navigationAdapter,
+  source: 'sidebar',
+});
 const openAgentHub = () => dispatchNavIntent({ type: 'focus-agent' })
 const openChatHome = () => dispatchNavIntent({ type: 'focus-chat' })
 

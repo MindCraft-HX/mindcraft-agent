@@ -35,6 +35,6 @@ test('turns a participant timeout into an error aggregate', async () => {
   const registry = createCloseParticipantRegistry({ timeoutMs: 100 })
   registry.register('document', () => new Promise(() => {}))
   assert.deepEqual(await registry.beforeCloseAll({ requestId: 'close-3' }), {
-    requestId: 'close-3', status: 'error', participantId: 'document', reason: 'timeout',
+    requestId: 'close-3', status: 'error', participantId: 'document', reason: 'participant-timeout',
   })
 })

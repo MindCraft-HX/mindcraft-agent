@@ -101,6 +101,25 @@ export function createLegacyNavigationAdapter({ router } = {}) {
   }
 }
 
+/**
+ * Home / 侧栏等入口共用的 dispatch 工厂：集中 requestId 生成与 source
+ * 标注，调用方只描述业务 intent（type / agentTarget / chatTarget /
+ * resourceId）。requestId 由 时间戳 + 实例内序号 组成，同一 dispatcher
+ * 内单调唯一，queue 幂等去重可直接依赖。
+ */
+export function createIntentDispatcher({ adapter, source } = {}) {
+  if (!adapter || typeof adapter.dispatch !== 'function') throw new Error('adapter.dispatch is required')
+  const label = boundedString(source, 128) || 'unknown'
+  let sequence = 0
+  return function dispatchNavIntent(intent) {
+    void adapter.dispatch({
+      requestId: `${label}-${Date.now()}-${++sequence}`,
+      source: label,
+      ...intent,
+    })
+  }
+}
+
 export function documentPayloadToIntent(payload = {}) {
   const requestId = boundedString(payload.__mdRequestId, 128)
   const resourceId = boundedString(payload.filePath)
