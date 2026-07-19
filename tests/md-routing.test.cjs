@@ -96,3 +96,57 @@ test('drain evicts payloads that expired while waiting for mdViewer ready', () =
   assert.equal(drained.length, 0)
   assert.equal(__test__.getState().pendingPayloads.length, 0)
 })
+
+test('openMdInMain rejects payloads without a bounded filePath', () => {
+  __test__.resetForTest()
+  const win = createFakeWindow()
+  setMainWindow(win)
+
+  assert.equal(openMdInMain(null), false)
+  assert.equal(openMdInMain('D:/repo/docs/A.md'), false)
+  assert.equal(openMdInMain({}), false)
+  assert.equal(openMdInMain({ filePath: '' }), false)
+  assert.equal(openMdInMain({ filePath: 42 }), false)
+  assert.equal(openMdInMain({ filePath: 'x'.repeat(1025) }), false)
+
+  assert.equal(win.sent.length, 0)
+  assert.equal(__test__.getState().pendingPayloads.length, 0)
+  assert.equal(win.shown, false)
+})
+
+test('normalizeMdPayload keeps whitelisted fields and drops invalid ones', () => {
+  __test__.resetForTest()
+
+  const normalized = __test__.normalizeMdPayload({
+    filePath: 'D:/repo/docs/A.md',
+    name: 'A.md',
+    content: '# hello',
+    source: 'agent-file-link',
+    openMode: 'mdViewer',
+    size: 128,
+    evil: 'dropped',
+    __mdRequestId: 'spoofed-id',
+  })
+
+  assert.deepEqual(normalized, {
+    filePath: 'D:/repo/docs/A.md',
+    name: 'A.md',
+    content: '# hello',
+    source: 'agent-file-link',
+    openMode: 'mdViewer',
+    size: 128,
+  })
+})
+
+test('normalizeMdPayload drops oversized content and invalid openMode/size', () => {
+  __test__.resetForTest()
+
+  const normalized = __test__.normalizeMdPayload({
+    filePath: 'D:/repo/docs/big.md',
+    content: 'x'.repeat(2_000_001),
+    openMode: 'rm-rf',
+    size: -1,
+  })
+
+  assert.deepEqual(normalized, { filePath: 'D:/repo/docs/big.md' })
+})

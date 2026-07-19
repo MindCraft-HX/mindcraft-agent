@@ -8,6 +8,37 @@ let nextPayloadId = 0
 const MAX_PENDING_PAYLOADS = 20
 const PAYLOAD_TTL_MS = 60_000
 
+// main 侧 intent payload 校验（设计 4.4 双侧校验）：字段白名单 + 长度界定。
+const MAX_FILE_PATH_LENGTH = 1024
+const MAX_NAME_LENGTH = 256
+const MAX_SOURCE_LENGTH = 128
+const MAX_CONTENT_LENGTH = 2_000_000
+const OPEN_MODES = new Set(['mdViewer', 'textViewer'])
+
+function boundedString(value, max) {
+  return typeof value === 'string' && value.length > 0 && value.length <= max ? value : ''
+}
+
+function normalizeMdPayload(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const filePath = boundedString(raw.filePath, MAX_FILE_PATH_LENGTH)
+  if (!filePath) return null
+  const payload = { filePath }
+  const name = boundedString(raw.name, MAX_NAME_LENGTH)
+  if (name) payload.name = name
+  // 超长 content 直接丢弃：viewer 会按 filePath 走 file-backed 懒加载。
+  if (typeof raw.content === 'string' && raw.content.length <= MAX_CONTENT_LENGTH) {
+    payload.content = raw.content
+  }
+  const source = boundedString(raw.source, MAX_SOURCE_LENGTH)
+  if (source) payload.source = source
+  if (OPEN_MODES.has(raw.openMode)) payload.openMode = raw.openMode
+  if (typeof raw.size === 'number' && Number.isFinite(raw.size) && raw.size >= 0) {
+    payload.size = raw.size
+  }
+  return payload
+}
+
 function setMainWindow(win) {
   mainWin = win
   if (win && !win.isDestroyed()) {
@@ -42,8 +73,11 @@ function pushPendingPayload(payload, enqueuedAt = Date.now()) {
   }
 }
 
-function openMdInMain(payload) {
-  if (!mainWin || mainWin.isDestroyed()) return
+function openMdInMain(rawPayload) {
+  if (!mainWin || mainWin.isDestroyed()) return false
+
+  const payload = normalizeMdPayload(rawPayload)
+  if (!payload) return false
 
   const routedPayload = withRequestId(payload)
   if (routedPayload) {
@@ -58,6 +92,7 @@ function openMdInMain(payload) {
   mainWin.focus()
 
   mainWin.webContents.send(CORE_CHANNELS.OPEN_MD_VIEWER, routedPayload)
+  return true
 }
 
 function registerMdViewerHandlers() {
@@ -97,5 +132,6 @@ module.exports = {
       }
     },
     pushPendingPayload,
+    normalizeMdPayload,
   },
 }
