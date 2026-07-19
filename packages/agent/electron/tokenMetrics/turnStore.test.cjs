@@ -346,6 +346,80 @@ test('compact-boundary may legitimately lower context', () => {
   assert.strictEqual(snap.contextWindow, 200000)
 })
 
+test('compact-boundary resets context, rejects delayed pre-compact samples, and allows later growth', () => {
+  reset()
+  beginTurn({ provider: 'claude', chatKey: 'test-chat' })
+
+  applySample({
+    provider: 'claude',
+    source: 'sdk-live',
+    scope: 'turn-live',
+    contextSource: 'usage-estimate',
+    contextSampleAt: Date.parse('2026-07-19T06:35:47.556Z'),
+    chatKey: 'test-chat',
+    contextUsage: 166752,
+    contextWindow: 200000,
+  })
+  applySample({
+    provider: 'claude',
+    source: 'context-snapshot',
+    scope: 'session-context',
+    contextSource: 'compact-boundary',
+    contextSampleAt: Date.parse('2026-07-19T06:39:19.332Z'),
+    chatKey: 'test-chat',
+    contextUsage: 22539,
+    contextWindow: 200000,
+  })
+
+  let snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.contextUsage, 22539)
+  assert.strictEqual(snap.contextSource, 'compact-boundary')
+
+  // A poll started before compaction may finish later. Its provider timestamp
+  // must keep it from restoring the pre-compact value.
+  applySample({
+    provider: 'claude',
+    source: 'jsonl-poll',
+    scope: 'turn-live',
+    contextSource: 'usage-estimate',
+    contextSampleAt: Date.parse('2026-07-19T06:35:47.556Z'),
+    chatKey: 'test-chat',
+    contextUsage: 166752,
+    contextWindow: 200000,
+  })
+  snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.contextUsage, 22539)
+  assert.strictEqual(snap.contextSource, 'compact-boundary')
+
+  applySample({
+    provider: 'claude',
+    source: 'jsonl-poll',
+    scope: 'turn-live',
+    contextSource: 'usage-estimate',
+    contextSampleAt: Date.parse('2026-07-19T06:39:32.184Z'),
+    chatKey: 'test-chat',
+    contextUsage: 46363,
+    contextWindow: 200000,
+  })
+  snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.contextUsage, 46363)
+  assert.strictEqual(snap.contextSource, 'usage-estimate')
+
+  applySample({
+    provider: 'claude',
+    source: 'sdk-live',
+    scope: 'turn-live',
+    contextSource: 'usage-estimate',
+    contextSampleAt: Date.parse('2026-07-19T07:15:59.737Z'),
+    chatKey: 'test-chat',
+    contextUsage: 165069,
+    contextWindow: 200000,
+  })
+  snap = getCurrentSnapshot('test-chat')
+  assert.strictEqual(snap.contextUsage, 165069)
+  assert.strictEqual(snap.contextSource, 'usage-estimate')
+})
+
 // ==================== clearCurrentTurn ====================
 
 test('clearCurrentTurn removes unfinalized turn', () => {

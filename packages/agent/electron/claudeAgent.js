@@ -232,6 +232,22 @@ function extractClaudeLiveUsageMetricsFromSdkMessage(msg, fallbackModel = '') {
     contextUsage,
     contextWindow,
     contextSource: 'usage-estimate',
+    contextSampleAt: claudeMetrics.parseClaudeTimestampMs(msg?.timestamp) || 0,
+  }
+}
+
+function extractClaudeCompactBoundaryMetricsFromSdkMessage(msg, fallbackModel = '') {
+  if (msg?.type !== 'system' || msg?.subtype !== 'compact_boundary') return null
+  const meta = msg.compactMetadata || msg.compact_metadata || {}
+  const postTokens = toNonNegativeMetricNumber(meta.postTokens ?? meta.post_tokens)
+  const preTokens = toNonNegativeMetricNumber(meta.preTokens ?? meta.pre_tokens)
+  const contextUsage = postTokens || preTokens
+  if (!contextUsage) return null
+  return {
+    contextUsage,
+    contextWindow: claudeMetrics.getContextWindowForModel(msg?.model || fallbackModel || ''),
+    contextSource: 'compact-boundary',
+    contextSampleAt: claudeMetrics.parseClaudeTimestampMs(msg?.timestamp) || 0,
   }
 }
 
@@ -330,6 +346,7 @@ function emitClaudeMetricsViaStore(sender, sample, sessionId, model, extra = {})
     contextUsage: sample.contextUsage,
     contextWindow: sample.contextWindow,
     contextSource: sample.contextSource,
+    contextSampleAt: sample.contextSampleAt,
     durationMs: sample.durationMs,
     costUsd: sample.costUsd,
   })
@@ -3053,6 +3070,7 @@ function setupClaudeHandlers() {
           // Phase 3：TurnStore — 开始新 turn
           beginTurn({ provider: 'claude', chatKey, startedAt: Date.now() })
           const sdkUsageAccumulator = createClaudeTurnUsageAccumulator()
+          let latestHandledCompactSampleAt = 0
           // 启动 metrics 轮询器。只推送真实 transcript 样本，不伪造中间值；
           // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
@@ -3065,6 +3083,19 @@ function setupClaudeHandlers() {
               tokenSinceMs: pollStart,
             })
             if (metrics) {
+              const compactBoundarySampleAt = toNonNegativeMetricNumber(metrics.compactBoundarySampleAt)
+              if ((metrics.compactBoundaryContextUsage || 0) > 0 && compactBoundarySampleAt > latestHandledCompactSampleAt) {
+                emitClaudeMetricsViaStore(s.event?.sender, {
+                  source: 'context-snapshot',
+                  scope: 'session-context',
+                  providerSessionId: cliId,
+                  contextUsage: metrics.compactBoundaryContextUsage,
+                  contextWindow: metrics.compactBoundaryContextWindow || metrics.contextWindow,
+                  contextSource: 'compact-boundary',
+                  contextSampleAt: compactBoundarySampleAt,
+                }, sessionId, model || '')
+                latestHandledCompactSampleAt = compactBoundarySampleAt
+              }
               liveSampleCounts.jsonlPollCount += 1
               if ((metrics.inputTokens || 0) > 0 || (metrics.outputTokens || 0) > 0 || (metrics.cacheReadTokens || 0) > 0 || (metrics.cacheCreationTokens || 0) > 0) liveSampleCounts.sawLiveTurnTokens = true
               // Phase 3：TurnStore — jsonl transcript 已经按 tokenSinceMs 隔离到当前 turn。
@@ -3079,6 +3110,8 @@ function setupClaudeHandlers() {
                 cacheCreationTokens: metrics.cacheCreationTokens,
                 contextUsage: metrics.contextUsage,
                 contextWindow: metrics.contextWindow,
+                contextSource: metrics.contextSource,
+                contextSampleAt: metrics.contextSampleAt,
                 durationMs: metrics.durationMs,
                 costUsd: metrics.costUsd,
                 allowTurnTokens: true,
@@ -3139,6 +3172,19 @@ function setupClaudeHandlers() {
               const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
               if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
               safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.uuid })
+            }
+            const compactBoundaryMetrics = extractClaudeCompactBoundaryMetricsFromSdkMessage(msg, model || '')
+            if (compactBoundaryMetrics) {
+              emitClaudeMetricsViaStore(sender, {
+                source: 'context-snapshot',
+                scope: 'session-context',
+                providerSessionId: cliSessionIds.get(chatKey) || '',
+                ...compactBoundaryMetrics,
+              }, sessionId, model || '')
+              latestHandledCompactSampleAt = Math.max(
+                latestHandledCompactSampleAt,
+                toNonNegativeMetricNumber(compactBoundaryMetrics.contextSampleAt),
+              )
             }
             const liveUsageMetrics = extractClaudeLiveUsageMetricsFromSdkMessage(msg, model || '')
             if (liveUsageMetrics) {
@@ -4031,6 +4077,7 @@ module.exports = {
     finalizeClaudeDoneReason,
     buildClaudeFinalTurnMetricsFromResultUsage,
     extractClaudeLiveUsageMetricsFromSdkMessage,
+    extractClaudeCompactBoundaryMetricsFromSdkMessage,
     getClaudeProjectsRootDir,
     readClaudeSessionMeta,
     readClaudeSessionMetaByFilePath,

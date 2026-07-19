@@ -2988,7 +2988,6 @@ async function handleProviderActivated() {
   metricsData.value.model = nextModel
   const tab = activeTab.value
   if (tab) {
-    window.electronAPI?.claudeAgentAbort?.(tab.sessionId)
     pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
   }
   saveHistory()
@@ -3516,19 +3515,6 @@ const {
   isReadTool,
   inferToolFailureFromText,
   createToolMessage,
-  onCompactBoundary(postTokens) {
-    const tab = activeTab.value
-    const contextWindow = (tab?.metrics?.contextWindow || metricsData.value.contextWindow || 200000)
-    if (tab) {
-      tab.metrics = {
-        ...(tab.metrics || {}),
-        contextUsage: postTokens,
-        contextWindow,
-      }
-    }
-    metricsData.value.contextUsage = postTokens
-    metricsData.value.contextWindow = contextWindow
-  },
   onNewMessage: bumpScrollCount,
   trimMessages,
   onPendingApproval: playAskSound,

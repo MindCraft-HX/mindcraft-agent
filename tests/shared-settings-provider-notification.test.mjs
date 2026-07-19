@@ -22,3 +22,21 @@ test('embedded Claude panel consumes shared provider activation notifications', 
   assert.match(source, /addEventListener\('mindcraft-provider-activated', onMindCraftProviderActivated\)/)
   assert.match(source, /removeEventListener\('mindcraft-provider-activated', onMindCraftProviderActivated\)/)
 })
+
+test('Claude renderer provider refresh never aborts the newly activated runtime', () => {
+  const source = fs.readFileSync(
+    new URL('../packages/agent/src/components/claudeCode/index.vue', import.meta.url),
+    'utf8',
+  )
+  const start = source.indexOf('async function handleProviderActivated()')
+  const end = source.indexOf('\nfunction onMindCraftProviderActivated', start)
+  const body = source.slice(start, end)
+
+  assert.ok(start >= 0 && end > start, 'handleProviderActivated must remain inspectable')
+  assert.match(body, /await loadClaudeModelDefaults\(\)/)
+  assert.doesNotMatch(
+    body,
+    /claudeAgentAbort/,
+    'main-process resetAgentRuntime already stops old queries; a late renderer abort can kill the first new-provider turn',
+  )
+})

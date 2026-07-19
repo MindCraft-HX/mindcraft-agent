@@ -117,6 +117,7 @@ function runAssistantUsageUpdatesContextEstimateTest() {
 
 function runClaudeAgentLiveUsageEmitsContextEstimateTest() {
   const metrics = claudeAgentTest.extractClaudeLiveUsageMetricsFromSdkMessage({
+    timestamp: '2026-07-19T06:35:47.556Z',
     message: {
       model: 'deepseek-v4-pro',
       usage: {
@@ -136,6 +137,26 @@ function runClaudeAgentLiveUsageEmitsContextEstimateTest() {
     contextUsage: 630100,
     contextWindow: 200000,
     contextSource: 'usage-estimate',
+    contextSampleAt: Date.parse('2026-07-19T06:35:47.556Z'),
+  })
+}
+
+function runClaudeAgentCompactBoundaryEmitsConfirmedContextTest() {
+  const metrics = claudeAgentTest.extractClaudeCompactBoundaryMetricsFromSdkMessage({
+    type: 'system',
+    subtype: 'compact_boundary',
+    timestamp: '2026-07-19T06:39:19.332Z',
+    compactMetadata: {
+      preTokens: 167027,
+      postTokens: 22539,
+    },
+  }, 'kimi-k3')
+
+  assert.deepEqual(metrics, {
+    contextUsage: 22539,
+    contextWindow: 200000,
+    contextSource: 'compact-boundary',
+    contextSampleAt: Date.parse('2026-07-19T06:39:19.332Z'),
   })
 }
 
@@ -174,6 +195,9 @@ function runCompactBoundaryProvidesContextTest() {
   assert.equal(metrics.contextUsage, 4580)
   assert.equal(metrics.contextWindow, 200000)
   assert.equal(metrics.contextSource, 'compact-boundary')
+  assert.equal(metrics.contextSampleAt, Date.parse('2026-06-26T10:00:00.000Z'))
+  assert.equal(metrics.compactBoundaryContextUsage, 4580)
+  assert.equal(metrics.compactBoundarySampleAt, Date.parse('2026-06-26T10:00:00.000Z'))
 }
 
 function runLatestSessionCwdFromLinesTest() {
@@ -237,6 +261,9 @@ function runCompactBoundaryThenAssistantUsageUsesLaterEstimateTest() {
   assert.equal(metrics.contextUsage, 123598)
   assert.equal(metrics.contextWindow, 200000)
   assert.equal(metrics.contextSource, 'usage-estimate')
+  assert.equal(metrics.contextSampleAt, Date.parse('2026-06-26T10:10:00.000Z'))
+  assert.equal(metrics.compactBoundaryContextUsage, 4580)
+  assert.equal(metrics.compactBoundarySampleAt, Date.parse('2026-06-26T10:00:00.000Z'))
 }
 
 function runAssistantUsageBeforeCompactBoundaryPreservesCompactContextTest() {
@@ -429,6 +456,7 @@ function run() {
   runClaudeContextWindowMappingTest()
   runAssistantUsageUpdatesContextEstimateTest()
   runClaudeAgentLiveUsageEmitsContextEstimateTest()
+  runClaudeAgentCompactBoundaryEmitsConfirmedContextTest()
   runClaudeAgentFinalResultUsageDoesNotEmitContextEstimateTest()
   runCompactBoundaryProvidesContextTest()
   runClaudeHistoryTurnTokensUsesUnifiedSemanticsTest()

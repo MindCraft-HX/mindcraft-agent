@@ -270,9 +270,14 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
   let lastContextWindow = null
   let lastContextOrder = -1
   let lastContextSource = ''
+  let lastContextSampleAt = 0
   let latestUsageContextUsage = 0
   let latestUsageContextWindow = 0
   let latestUsageContextOrder = -1
+  let latestUsageContextSampleAt = 0
+  let compactBoundaryContextUsage = 0
+  let compactBoundaryContextWindow = 0
+  let compactBoundarySampleAt = 0
   const turnUsageTotals = {
     inputTokens: 0,
     outputTokens: 0,
@@ -308,6 +313,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           latestUsageContextUsage = usageContext
           latestUsageContextWindow = getContextWindowForModel(entryModel)
           latestUsageContextOrder = lineIndex
+          latestUsageContextSampleAt = typeof ts === 'number' ? ts : 0
         }
         addNormalizedUsageToTotals(turnUsageTotals, normalized)
         inputTokens = turnUsageTotals.inputTokens
@@ -331,6 +337,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
           lastContextSource = 'system-context'
+          lastContextSampleAt = typeof ts === 'number' ? ts : 0
         }
         if (data.input_tokens && !data.usage) {
           const model = data.model || data.model_name || parsed.model || parsed.model_name || ''
@@ -340,6 +347,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
           lastContextSource = 'system-context'
+          lastContextSampleAt = typeof ts === 'number' ? ts : 0
         }
       }
 
@@ -347,6 +355,13 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
         const meta = parsed.compactMetadata || parsed.compact_metadata || {}
         const preTokens = toSafeTokenCount(meta.preTokens ?? meta.pre_tokens)
         const postTokens = toSafeTokenCount(meta.postTokens ?? meta.post_tokens)
+        const compactTokens = postTokens || preTokens
+        const compactIsInScope = tokenSinceMs === null || (typeof ts === 'number' && ts >= tokenSinceMs)
+        if (compactTokens > 0 && compactIsInScope) {
+          compactBoundaryContextUsage = compactTokens
+          compactBoundaryContextWindow = getContextWindowForModel('')
+          compactBoundarySampleAt = typeof ts === 'number' ? ts : 0
+        }
         if (postTokens > 0) {
           contextUsage = postTokens
           contextWindow = getContextWindowForModel('')
@@ -354,6 +369,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
           lastContextSource = 'compact-boundary'
+          lastContextSampleAt = typeof ts === 'number' ? ts : 0
         } else if (preTokens > 0) {
           contextUsage = preTokens
           contextWindow = getContextWindowForModel('')
@@ -361,6 +377,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
           lastContextWindow = contextWindow
           lastContextOrder = lineIndex
           lastContextSource = 'compact-boundary'
+          lastContextSampleAt = typeof ts === 'number' ? ts : 0
         }
       }
     } catch (_) {}
@@ -402,6 +419,7 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     contextUsage = latestUsageContextUsage
     contextWindow = latestUsageContextWindow || getContextWindowForModel('')
     lastContextSource = 'usage-estimate'
+    lastContextSampleAt = latestUsageContextSampleAt
   } else if (lastContextUsage !== null) {
     contextUsage = lastContextUsage
     contextWindow = lastContextWindow || getContextWindowForModel('')
@@ -425,6 +443,10 @@ function collectClaudeTokenMetricsFromLines(lines, options = {}) {
     contextUsage,
     contextWindow,
     contextSource: lastContextSource || (contextUsage > 0 ? 'usage-estimate' : ''),
+    contextSampleAt: lastContextSampleAt || 0,
+    compactBoundaryContextUsage,
+    compactBoundaryContextWindow,
+    compactBoundarySampleAt,
     costUsd,
     durationMs: lastTurnDurationMs,
   }
@@ -742,6 +764,11 @@ async function pollMetrics(cliSessionId, cwd, model, thinking, options = {}) {
     cacheCreationTokens: tokenMetrics.cacheCreationTokens || 0,
     contextUsage: tokenMetrics.contextUsage || 0,
     contextWindow: tokenMetrics.contextWindow || 0,
+    contextSource: tokenMetrics.contextSource || '',
+    contextSampleAt: tokenMetrics.contextSampleAt || 0,
+    compactBoundaryContextUsage: tokenMetrics.compactBoundaryContextUsage || 0,
+    compactBoundaryContextWindow: tokenMetrics.compactBoundaryContextWindow || 0,
+    compactBoundarySampleAt: tokenMetrics.compactBoundarySampleAt || 0,
     durationMs: tokenMetrics.durationMs || 0,
     speedOutputPerSec: outputPerSec,
     gitBranch: gitInfo?.branch || '',
@@ -775,6 +802,7 @@ module.exports = {
   pollMetrics,
   resetSession,
   getContextWindowForModel,
+  parseClaudeTimestampMs,
   normalizeClaudeUsageForUi,
   __test__: {
     getClaudeSystemContextUsageFromData,

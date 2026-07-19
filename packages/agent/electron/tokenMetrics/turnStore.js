@@ -43,6 +43,7 @@ const stores = new Map()
  * @property {number} costUsd
  * @property {string} contextSource
  * @property {number} contextAuthority
+ * @property {number} contextSampleAt
  * @property {string[]} sources
  * @property {number} updatedAt
  */
@@ -64,6 +65,7 @@ const stores = new Map()
  * @property {number} costUsd
  * @property {string} contextSource
  * @property {number} contextAuthority
+ * @property {number} contextSampleAt
  * @property {string[]} sources
  * @property {number} updatedAt
  * @property {number} finalizedAt
@@ -143,11 +145,18 @@ function normalizeContextSource(sample = {}) {
   }
 }
 
+function normalizeContextSampleAt(value) {
+  const sampleAt = Number(value)
+  return Number.isFinite(sampleAt) && sampleAt > 0 ? sampleAt : 0
+}
+
 function shouldAcceptContextValue({
   nextValue,
   previousValue,
   nextSource,
   previousSource,
+  nextSampleAt,
+  previousSampleAt,
 } = {}) {
   const next = Number(nextValue)
   const previous = Number(previousValue)
@@ -158,10 +167,22 @@ function shouldAcceptContextValue({
 
   const nextAuthority = getContextAuthority(nextSource)
   const previousAuthority = getContextAuthority(previousSource)
+  const nextAt = normalizeContextSampleAt(nextSampleAt)
+  const previousAt = normalizeContextSampleAt(previousSampleAt)
 
   if (nextSource === 'carry-forward') return false
+  if (nextAt && previousAt && nextAt < previousAt) return false
   if (nextAuthority > previousAuthority) return true
-  if (nextAuthority < previousAuthority) return false
+  if (nextAuthority < previousAuthority) {
+    // compact-boundary is a one-time authoritative reset. A later provider
+    // usage sample must be allowed to resume normal context growth, while a
+    // delayed pre-compact poll remains rejected by its older provider time.
+    if (previousSource === 'compact-boundary' && nextSource === 'usage-estimate') {
+      if (nextAt && previousAt) return nextAt > previousAt
+      return next >= previous
+    }
+    return false
+  }
 
   if (nextSource === 'usage-estimate' && next < previous) return false
   return true
@@ -169,25 +190,35 @@ function shouldAcceptContextValue({
 
 function updateSessionContextSnapshot(snapshot, sample = {}) {
   const contextSource = normalizeContextSource(sample) || snapshot.contextSource || ''
-  if (shouldAcceptContextValue({
+  const contextSampleAt = normalizeContextSampleAt(sample.contextSampleAt)
+  const previousContextSource = snapshot.contextSource || ''
+  const previousContextSampleAt = normalizeContextSampleAt(snapshot.contextSampleAt)
+  const shouldUpdateContextUsage = shouldAcceptContextValue({
     nextValue: sample.contextUsage,
     previousValue: snapshot.contextUsage,
     nextSource: contextSource,
-    previousSource: snapshot.contextSource,
-  })) {
-    snapshot.contextUsage = Number(sample.contextUsage) || 0
-    snapshot.contextSource = contextSource
-    snapshot.contextAuthority = getContextAuthority(contextSource)
-  }
-  if (shouldAcceptContextValue({
+    previousSource: previousContextSource,
+    nextSampleAt: contextSampleAt,
+    previousSampleAt: previousContextSampleAt,
+  })
+  const shouldUpdateContextWindow = shouldAcceptContextValue({
     nextValue: sample.contextWindow,
     previousValue: snapshot.contextWindow,
     nextSource: contextSource,
-    previousSource: snapshot.contextSource,
-  })) {
+    previousSource: previousContextSource,
+    nextSampleAt: contextSampleAt,
+    previousSampleAt: previousContextSampleAt,
+  })
+  if (shouldUpdateContextUsage) {
+    snapshot.contextUsage = Number(sample.contextUsage) || 0
+  }
+  if (shouldUpdateContextWindow) {
     snapshot.contextWindow = Number(sample.contextWindow) || 0
-    if (!snapshot.contextSource) snapshot.contextSource = contextSource
-    snapshot.contextAuthority = getContextAuthority(snapshot.contextSource || contextSource)
+  }
+  if (shouldUpdateContextUsage || shouldUpdateContextWindow) {
+    snapshot.contextSource = contextSource
+    snapshot.contextAuthority = getContextAuthority(contextSource)
+    snapshot.contextSampleAt = contextSampleAt || previousContextSampleAt
   }
   snapshot.durationMs = sample.durationMs ?? snapshot.durationMs ?? 0
   snapshot.costUsd = sample.costUsd ?? snapshot.costUsd ?? 0
@@ -210,18 +241,12 @@ function buildLiveSnapshot(sample) {
     contextWindow: sample.contextWindow ?? 0,
     contextSource: normalizeContextSource(sample) || '',
     contextAuthority: getContextAuthority(normalizeContextSource(sample) || ''),
+    contextSampleAt: normalizeContextSampleAt(sample.contextSampleAt),
     durationMs: sample.durationMs ?? 0,
     costUsd: sample.costUsd ?? 0,
     sources: [sample.source || 'unknown'],
     updatedAt: Date.now(),
   }
-}
-
-function pickSessionMetricValue(nextValue, previousValue) {
-  const next = Number(nextValue)
-  if (Number.isFinite(next) && next > 0) return next
-  const previous = Number(previousValue)
-  return Number.isFinite(previous) && previous > 0 ? previous : 0
 }
 
 function buildFinalSnapshot(turn, sample) {
@@ -242,6 +267,7 @@ function buildFinalSnapshot(turn, sample) {
     contextWindow: live.contextWindow ?? 0,
     contextSource: live.contextSource || '',
     contextAuthority: live.contextAuthority || 0,
+    contextSampleAt: live.contextSampleAt || 0,
     durationMs: sample.durationMs ?? live.durationMs ?? 0,
     costUsd: sample.costUsd ?? live.costUsd ?? 0,
     sources: [...new Set([...(live.sources || []), sample.source || 'unknown'])],
@@ -254,17 +280,23 @@ function mergeLiveSnapshot(existing, sample) {
   const sources = new Set(existing.sources || [])
   if (sample.source) sources.add(sample.source)
   const contextSource = normalizeContextSource(sample) || existing.contextSource || ''
+  const contextSampleAt = normalizeContextSampleAt(sample.contextSampleAt)
+  const previousContextSampleAt = normalizeContextSampleAt(existing.contextSampleAt)
   const shouldUpdateContextUsage = shouldAcceptContextValue({
     nextValue: sample.contextUsage,
     previousValue: existing.contextUsage,
     nextSource: contextSource,
     previousSource: existing.contextSource,
+    nextSampleAt: contextSampleAt,
+    previousSampleAt: previousContextSampleAt,
   })
   const shouldUpdateContextWindow = shouldAcceptContextValue({
     nextValue: sample.contextWindow,
     previousValue: existing.contextWindow,
     nextSource: contextSource,
     previousSource: existing.contextSource,
+    nextSampleAt: contextSampleAt,
+    previousSampleAt: previousContextSampleAt,
   })
 
   return {
@@ -280,6 +312,9 @@ function mergeLiveSnapshot(existing, sample) {
     contextAuthority: (shouldUpdateContextUsage || shouldUpdateContextWindow)
       ? getContextAuthority(contextSource)
       : (existing.contextAuthority || 0),
+    contextSampleAt: (shouldUpdateContextUsage || shouldUpdateContextWindow)
+      ? (contextSampleAt || previousContextSampleAt)
+      : previousContextSampleAt,
     durationMs: sample.durationMs ?? existing.durationMs ?? 0,
     costUsd: sample.costUsd ?? existing.costUsd ?? 0,
     sources: [...sources],
@@ -306,6 +341,7 @@ function beginTurn({ provider, chatKey, providerSessionId, startedAt } = {}) {
   const previousFinal = s.currentTurn?.finalized || null
   const carriedContextUsage = Number(previousFinal?.contextUsage)
   const carriedContextWindow = Number(previousFinal?.contextWindow)
+  const carriedContextSampleAt = normalizeContextSampleAt(previousFinal?.contextSampleAt)
   s.currentTurn = {
     turnId,
     provider: provider || 'unknown',
@@ -318,6 +354,7 @@ function beginTurn({ provider, chatKey, providerSessionId, startedAt } = {}) {
         contextSource: 'carry-forward',
         contextUsage: Number.isFinite(carriedContextUsage) ? carriedContextUsage : 0,
         contextWindow: Number.isFinite(carriedContextWindow) ? carriedContextWindow : 0,
+        contextSampleAt: carriedContextSampleAt,
       })
       : null,
     finalized: null,

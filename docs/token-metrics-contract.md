@@ -1,6 +1,6 @@
 ﻿# Token Metrics Contract
 
-> Last updated: 2026-07-05
+> Last updated: 2026-07-19
 > Purpose: replace ad-hoc token metric fixes with a strict data contract for ClaudeCode and CodeX.
 
 ## 1. Decision
@@ -77,6 +77,8 @@ Rules:
 - Claude transcript restore must identify user-turn boundaries. Without an explicit `tokenSinceMs`, JSONL metrics may summarize only the latest user turn for StatusBar; they must never sum the whole transcript as current-turn `in/out/cache`.
 - Claude history/footer restore must aggregate all assistant usage samples inside the same user turn and attach the final `_turnTokens` to the last renderable assistant message in that turn. Tool-result-only `user` entries are not new turn boundaries.
 - Claude context may also update from explicit context samples. Current reliable transcript source is `compact_boundary`; the legacy `system context_usage` branch is accepted only if the provider emits it. SDK `query.getContextUsage()` must stay manual/diagnostic until proven non-blocking in the app runtime.
+- Context samples carry `contextSampleAt`, the provider event timestamp. TurnStore uses it to reject delayed pre-compaction samples and to allow real post-compaction usage to resume growth after a `compact_boundary` reset. Arrival order alone is not authoritative because the 1s JSONL poll can finish after a newer SDK event.
+- `compact_boundary` must enter TurnStore through the main-process adapter. Renderer stream handlers may render the compact message, but must not maintain a second context value or update whichever tab happens to be active.
 - `result.usage` must not be used as context. If `result.usage` is missing token fields, finalization must preserve the live/request aggregate instead of replacing it with zeros.
 - Do not call `query.getContextUsage()` from 1s polling or live usage events. It is a control request over the active CLI transport, not a cheap metric getter in the current integration.
 - If no valid live SDK/JSONL usage exists before turn end, UI must not fake token growth.
@@ -119,6 +121,7 @@ Claude history restore is now also part of this boundary: the main process annot
   - `scope`: `turn-live` / `turn-final` / `session-context` / `session-total`
   - `source`: provider source name
   - `provider`: `claude` / `codex`
+  - `contextSampleAt`: provider event timestamp used only for context ordering
 - TurnStore should accept current-turn tokens only from `turn-live` or `turn-final` samples.
 - Session context updates must not carry `in/out/cache`.
 - Frontend metrics updates must consume snapshots, not raw usage.
@@ -177,6 +180,7 @@ Interpretation:
 
 - CodeX long sessions never show session cumulative totals as current-turn `in/cache`.
 - Claude compact context never pollutes current-turn tokens.
+- Claude context resets to `compact_boundary.postTokens`, rejects delayed pre-compact samples, and then accepts newer post-compact usage growth.
 - StatusBar and TokenMetaRow share the same final snapshot contract for completed turns, but remain different consumers.
 - Refreshing a session does not convert historical aggregate into current turn metrics.
 - Starting a new CodeX turn does not briefly revive the previous turn's `in/out/cache` while waiting for the first live sample.
