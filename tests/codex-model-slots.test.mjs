@@ -6,6 +6,14 @@ import {
   CODEX_MODEL_SLOT_FALLBACKS,
 } from '../packages/agent/src/components/codeX/utils/modelSlots.mjs'
 
+test('CodeX fallback model slots use the current MindCraft defaults', () => {
+  assert.deepEqual(CODEX_MODEL_SLOT_FALLBACKS, [
+    'gpt-5.6-terra',
+    'gpt-5.6-sol',
+    'gpt-5.6-luna',
+  ])
+})
+
 test('buildCodexModelSlots groups by active provider and keeps session model as current selection', () => {
   const result = buildCodexModelSlots({
     storedProviders: {
@@ -63,7 +71,15 @@ test('buildCodexModelSlots de-duplicates fallback models against the primary def
 
   assert.deepEqual(result.items, [
     { id: 'gpt-5.5', slot: 'default' },
-    { id: 'gpt-5.3-codex', slot: 'alt2' },
-    { id: 'gpt-5.2', slot: 'alt3' },
+    { id: 'gpt-5.6-terra', slot: 'alt1' },
+    { id: 'gpt-5.6-sol', slot: 'alt2' },
+    { id: 'gpt-5.6-luna', slot: 'alt3' },
   ])
+})
+
+test('simple chat reads the same CodeX fallback list instead of maintaining another model set', async () => {
+  const fs = await import('node:fs/promises')
+  const source = await fs.readFile(new URL('../packages/agent/src/components/chat/InputArea.vue', import.meta.url), 'utf8')
+  assert.match(source, /CODEX_MODEL_SLOT_FALLBACKS\.map/)
+  assert.equal(source.includes("value: 'gpt-4o'"), false)
 })

@@ -1,4 +1,6 @@
-export const CODEX_MODEL_SLOT_FALLBACKS = ['gpt-5.5', 'gpt-5.3-codex', 'gpt-5.2']
+// Defaults used only when the active provider has not configured a model slot.
+// Stored provider models and existing sessions always take precedence.
+export const CODEX_MODEL_SLOT_FALLBACKS = ['gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-5.6-luna']
 
 function normalizeProvidersState(stored) {
   const providers = Array.isArray(stored)

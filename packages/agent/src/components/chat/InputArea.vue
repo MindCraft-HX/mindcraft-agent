@@ -128,7 +128,7 @@ import { useI18n } from 'vue-i18n'
 import ImageAttachmentBar from '../agentCommon/components/ImageAttachmentBar.vue'
 import { useImageAttachments } from '../agentCommon/composables/useImageAttachments.js'
 import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
-import { buildCodexModelSlots } from '../codeX/utils/modelSlots.mjs'
+import { buildCodexModelSlots, CODEX_MODEL_SLOT_FALLBACKS } from '../codeX/utils/modelSlots.mjs'
 
 const { t } = useI18n()
 
@@ -243,11 +243,7 @@ const CLAUDE_FALLBACK_MODELS = [
   { label: 'Opus · claude-opus-4-20250514', value: 'claude-opus-4-20250514' },
   { label: 'Haiku · claude-3-5-haiku-20241022', value: 'claude-3-5-haiku-20241022' },
 ]
-const CODEX_FALLBACK_MODELS = [
-  { label: 'gpt-4o', value: 'gpt-4o' },
-  { label: 'gpt-4o-mini', value: 'gpt-4o-mini' },
-  { label: 'o3-mini', value: 'o3-mini' },
-]
+const CODEX_FALLBACK_MODELS = CODEX_MODEL_SLOT_FALLBACKS.map(model => ({ label: model, value: model }))
 
 function buildClaudeOptions() {
   const state = claudeProvidersState.value
