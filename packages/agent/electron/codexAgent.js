@@ -413,6 +413,7 @@ const CONFIG_TOML_FILE = path.join(CODEX_CONFIG_DIR, 'config.toml')
 let SESSIONS_DIR = path.join(CODEX_CONFIG_DIR, 'sessions')
 let sessionRegistryOptionsForTest = null
 const CODEX_METRICS_POLL_INTERVAL_MS = 1000
+const CODEX_LIVE_GIT_REFRESH_COOLDOWN_MS = 5000
 const CODEX_SESSION_LOAD_LOG_MAX_BYTES = DEFAULT_MAX_BYTES
 
 // ---- CodeX Config Manager (factory — needs constants above) ----
@@ -2703,6 +2704,17 @@ function setupCodexCliHandlers() {
               transcriptAdvanced = didCodexTranscriptAdvance(s.__transcriptStat, nextTranscriptStat)
               s.__transcriptStat = nextTranscriptStat
             } catch (_) {}
+            if (transcriptAdvanced) {
+              resetTurnTimeout()
+              const now = Date.now()
+              const lastGitRefresh = s.__lastGitRefreshAt || 0
+              if (now - lastGitRefresh >= CODEX_LIVE_GIT_REFRESH_COOLDOWN_MS) {
+                try {
+                  await getGitInfo(s.cwd || '', { forceRefresh: true })
+                  s.__lastGitRefreshAt = now
+                } catch (_) {}
+              }
+            }
             const liveMetrics = extractLatestCodexLiveTurnMetricsFromJsonl(filePath, {
               model: model || '',
               turnStartedAt: s.startTime || pollStart,
@@ -2735,13 +2747,12 @@ function setupCodexCliHandlers() {
                 contextWindow: metrics.contextWindow,
                 durationMs: metrics.durationMs,
                 costUsd: metrics.costUsd,
+                gitBranch: metrics.gitBranch || '',
+                gitChanges: metrics.gitChanges || 0,
                 rawUsage: metrics.rawUsage || null,
               }, sessionId, model || '')
             }
             if (sawJsonlPollSample) liveSampleCounts.jsonlPollCount += 1
-            // A growing transcript proves Codex is still active even if the
-            // CLI stdout can go silent after a logical terminal event.
-            if (transcriptAdvanced) resetTurnTimeout()
           }, CODEX_METRICS_POLL_INTERVAL_MS)
           startCodexMetricsPoller(sessionId, { interval: pollInterval, startTime: pollStart, runId })
 
@@ -2998,8 +3009,6 @@ function setupCodexCliHandlers() {
                 },
               }, sessionId, model || '', {
                 speedOutputPerSec: 0,
-                gitBranch: '',
-                gitChanges: 0,
                 usageApiSessionPct: null,
               })
               // 从 TurnStore snapshot 构建 perTurnTokens（与 StatusBar 同源）
