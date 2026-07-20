@@ -186,4 +186,24 @@ test('CodeX logical terminal keeps ownership until the transport finalizer runs'
     /currentSession\.streamClosed\s*=\s*true[\s\S]{0,500}AGENT_DONE/,
     'logical terminal handling must not mark a stream closed before sending done',
   )
+  assert.match(
+    source,
+    /armCodexTerminalCloseWatchdog/,
+    'expected logical completion to arm a bounded owned-transport close watchdog',
+  )
+  assert.match(
+    source,
+    /forceCloseAfterTerminal/,
+    'expected the watchdog to close only the active run transport',
+  )
+  assert.match(
+    source,
+    /if \(ev\.type === 'thread\.error' \|\| ev\.type === 'turn\.failed'\)[\s\S]{0,300}doneReason = 'failed'/,
+    'expected failed transport events to select the failed done reason',
+  )
+  assert.match(
+    source,
+    /triggerDone\('failed'\)/,
+    'expected failed logical terminals to remain failed after forced transport cleanup',
+  )
 })

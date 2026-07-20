@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { shouldStopTurnTimeoutOnEvent } = require('../packages/agent/electron/codexTurnState.js')
 
-test('logical terminal Codex events keep the watchdog until transport closes', () => {
+test('raw terminal events keep the idle watchdog until drain confirms the logical terminal', () => {
   assert.equal(shouldStopTurnTimeoutOnEvent('turn.completed'), false)
   assert.equal(shouldStopTurnTimeoutOnEvent('turn.failed'), false)
   assert.equal(shouldStopTurnTimeoutOnEvent('task_complete'), false)

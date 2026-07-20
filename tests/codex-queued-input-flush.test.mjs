@@ -5,7 +5,6 @@ import {
   resolveQueuedInputFlushTarget,
   canFlushQueuedInputTarget,
   shouldQueueRejectedCodexInput,
-  shouldRetryRejectedCodexInput,
 } from '../packages/agent/src/components/codeX/utils/queuedInputFlush.mjs'
 
 test('resolveQueuedInputFlushTarget finds queued tab and owner project', () => {
@@ -59,9 +58,4 @@ test('shouldQueueRejectedCodexInput queues transient busy rejections', () => {
   assert.equal(shouldQueueRejectedCodexInput({ accepted: false, reason: 'session_close_timeout' }), true)
   assert.equal(shouldQueueRejectedCodexInput({ accepted: false, reason: 'missing_api_key' }), false)
   assert.equal(shouldQueueRejectedCodexInput(null), false)
-})
-
-test('shouldRetryRejectedCodexInput only retries close timeout rejections', () => {
-  assert.equal(shouldRetryRejectedCodexInput({ accepted: false, reason: 'session_close_timeout' }), true)
-  assert.equal(shouldRetryRejectedCodexInput({ accepted: false, reason: 'session_already_running' }), false)
 })

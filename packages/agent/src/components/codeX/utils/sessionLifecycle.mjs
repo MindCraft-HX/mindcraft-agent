@@ -5,6 +5,7 @@ export const CODEX_RUNTIME_STATES = Object.freeze({
   STARTING: 'starting',
   STREAMING: 'streaming',
   TERMINAL_SEEN: 'terminal_seen',
+  TERMINAL_ERROR_SEEN: 'terminal_error_seen',
   DONE: 'done',
   FAILED: 'failed',
   ABORT_REQUESTED: 'abort_requested',
@@ -100,6 +101,7 @@ export function shouldSyncThinkingFromMetrics({
     return Boolean(currentThinking || awaitingDone)
       && ![
         CODEX_RUNTIME_STATES.TERMINAL_SEEN,
+        CODEX_RUNTIME_STATES.TERMINAL_ERROR_SEEN,
         CODEX_RUNTIME_STATES.DONE,
         CODEX_RUNTIME_STATES.FAILED,
         CODEX_RUNTIME_STATES.ABORT_REQUESTED,
@@ -148,6 +150,7 @@ export function markCodexTurnAccepted(tab, metricsDefaults = {}) {
   const state = getRuntimeState(tab)
   if ([
     CODEX_RUNTIME_STATES.TERMINAL_SEEN,
+    CODEX_RUNTIME_STATES.TERMINAL_ERROR_SEEN,
     CODEX_RUNTIME_STATES.DONE,
     CODEX_RUNTIME_STATES.FAILED,
     CODEX_RUNTIME_STATES.ABORT_REQUESTED,
@@ -161,15 +164,14 @@ export function markCodexTurnAccepted(tab, metricsDefaults = {}) {
   return tab
 }
 
-export function markCodexQueued(tab, { messageId = null, text = null, now = Date.now() } = {}) {
+export function markCodexQueued(tab, { messageId = null, text = null } = {}) {
   if (!tab) return tab
   setRuntimeState(tab, CODEX_RUNTIME_STATES.QUEUED)
   if (typeof text === 'string') tab._queuedInput = text
   if (messageId != null) tab._queuedInputMessageId = messageId
   tab._awaitingDone = true
-  tab.thinking = true
-  if (!tab._thinkingStart) tab._thinkingStart = now
-  if (tab.metrics) tab.metrics.thinking = true
+  tab.thinking = false
+  if (tab.metrics) tab.metrics.thinking = false
   return tab
 }
 
@@ -178,6 +180,7 @@ export function markCodexStreamActivity(tab, _msg = null, now = Date.now()) {
   const state = getRuntimeState(tab)
   if ([
     CODEX_RUNTIME_STATES.TERMINAL_SEEN,
+    CODEX_RUNTIME_STATES.TERMINAL_ERROR_SEEN,
     CODEX_RUNTIME_STATES.DONE,
     CODEX_RUNTIME_STATES.FAILED,
     CODEX_RUNTIME_STATES.ABORT_REQUESTED,
@@ -216,10 +219,13 @@ export function markCodexDone(tab, { cliSessionId, filePath, reason = 'completed
   return tab
 }
 
-export function markCodexFailed(tab, _error = null) {
+export function markCodexTerminalErrorSeen(tab, _error = null) {
   if (!tab) return tab
-  setRuntimeState(tab, CODEX_RUNTIME_STATES.FAILED)
-  clearRuntimeFields(tab)
+  setRuntimeState(tab, CODEX_RUNTIME_STATES.TERMINAL_ERROR_SEEN)
+  tab.thinking = false
+  tab._awaitingDone = true
+  tab.currentAssistantId = null
+  if (tab.metrics) tab.metrics.thinking = false
   return tab
 }
 
@@ -255,7 +261,7 @@ export function applyCodexMetrics(tab, data = {}) {
   }
   if (tab.metrics) tab.metrics.thinking = Boolean(tab.thinking)
   if (nextThinking && tab.thinking) {
-    if (![CODEX_RUNTIME_STATES.TERMINAL_SEEN, CODEX_RUNTIME_STATES.ABORT_REQUESTED].includes(runtimeState)) {
+    if (![CODEX_RUNTIME_STATES.TERMINAL_SEEN, CODEX_RUNTIME_STATES.TERMINAL_ERROR_SEEN, CODEX_RUNTIME_STATES.ABORT_REQUESTED].includes(runtimeState)) {
       setRuntimeState(tab, CODEX_RUNTIME_STATES.STREAMING)
       tab._awaitingDone = true
       if (!tab._thinkingStart) tab._thinkingStart = Date.now() - (data.durationMs || 0)

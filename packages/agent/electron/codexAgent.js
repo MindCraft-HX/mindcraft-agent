@@ -46,6 +46,7 @@ const { perfStartIpc, perfCount } = require('./shared/mainPerfProbe')
 const { getAgentProtocol } = require('./agentProtocolBridge')
 const { CODEX_CHANNELS, CORE_CHANNELS } = require('../shared/ipcChannels')
 const {
+  armCodexTerminalCloseWatchdog,
   canStartCodexSessionRun,
   didCodexTranscriptAdvance,
   markCodexTerminalSeen,
@@ -2537,6 +2538,7 @@ function setupCodexCliHandlers() {
       // 以下变量在 try / finally 之间共享（let 在 try 块内声明则 finally 无法访问）
           let doneSent = false
           let logicalTerminalHandled = false
+          let logicalTerminalReason = 'completed'
       let pendingItemIds = new Set()
       let thread = null
       ;(async () => {
@@ -2811,15 +2813,38 @@ function setupCodexCliHandlers() {
             }
           }
 
-          function triggerDone() {
+          function triggerDone(reason = 'completed') {
             if (logicalTerminalHandled) { console.log(`[codex] triggerDone: terminal already handled, skipping. sessionId=${sessionId}`); return }
             const currentSession = codexSessions.get(sessionId)
             if (currentSession?.runId !== runId) { console.warn(`[codex] triggerDone: session gone or runId mismatch. currentRunId=${currentSession?.runId} expected=${runId} sessionId=${sessionId}`); return }
             logicalTerminalHandled = true
+            logicalTerminalReason = reason === 'failed' ? 'failed' : 'completed'
             drainTimer = null
+            if (turnTimeout) {
+              clearTimeout(turnTimeout)
+              turnTimeout = null
+            }
+            currentSession.__turnTimeout = null
             // A terminal event means answer rendering is complete, not that the
-            // The CLI transport has exited. Keep ownership until finally closes it.
+            // CLI transport has exited. Keep ownership until finally closes it,
+            // but bound inherited stdout/descendant-process hangs to this run.
             markCodexTerminalSeen(currentSession)
+            armCodexTerminalCloseWatchdog(currentSession, {
+              onTimeout: () => {
+                const activeSession = codexSessions.get(sessionId)
+                if (activeSession?.runId !== runId || activeSession.streamClosed) return
+                const forced = thread?.forceCloseAfterTerminal?.() === true
+                appendCodexTurnDiagnostic({
+                  kind: 'turn.transport-close-forced',
+                  diagnosticId,
+                  sessionId,
+                  runId,
+                  cliSessionId: thread?.id || '',
+                  forced,
+                })
+                if (CODEX_DEBUG) console.warn(`[codex] terminal transport close forced: sessionId=${sessionId} runId=${runId} forced=${forced}`)
+              },
+            })
             console.log(`[codex] terminal seen; waiting for transport close: sessionId=${sessionId} cliId=${thread?.id || ''}`)
           }
 
@@ -3132,6 +3157,7 @@ function setupCodexCliHandlers() {
 
             if (ev.type === 'thread.error' || ev.type === 'turn.failed') {
               resultReceived = true
+              doneReason = 'failed'
               const session = codexSessions.get(sessionId)
               if (session?.runId === runId) session.resultReceived = true
               if (ev.type === 'turn.failed' && isEmptyUpstreamCodexFailure(ev)) {
@@ -3161,6 +3187,7 @@ function setupCodexCliHandlers() {
                 sessionId,
                 msg: { type: 'system', subtype: 'error', message: { content: [{ type: 'text', text: lt('codex.error', { error: errorText }) }] } },
               })
+              triggerDone('failed')
             }
 
             // ---- CodeX 二进制 compact（压缩）事件处理 ----
@@ -3228,6 +3255,7 @@ function setupCodexCliHandlers() {
         } catch (err) {
           exitCode = -1
           const errMsg = err?.message || String(err)
+          const terminalCloseForced = Boolean(logicalTerminalHandled && sessionState.terminalCloseForced)
           const canEmitTerminalSignals = shouldEmitCodexSessionTerminalSignals(codexSessions, sessionId, runId)
           appendCodexTurnDiagnostic({
             kind: 'turn.catch',
@@ -3239,10 +3267,16 @@ function setupCodexCliHandlers() {
             errorMessage: errMsg,
             canEmitTerminalSignals,
             resultReceived,
+            terminalCloseForced,
           })
 
+          if (terminalCloseForced) {
+            exitCode = 0
+            doneReason = logicalTerminalReason
+            resultReceived = true
+          }
           // 用户主动中断不算错误
-          if (err?.name === 'AbortError' || errMsg.includes('AbortError') || errMsg.includes('The operation was aborted')) {
+          else if (err?.name === 'AbortError' || errMsg.includes('AbortError') || errMsg.includes('The operation was aborted')) {
             doneReason = resolveCodexDoneReasonFromError(err)
             resultReceived = true // 阻止发送错误消息
             if (canEmitTerminalSignals) {

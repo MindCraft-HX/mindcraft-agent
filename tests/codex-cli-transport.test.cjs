@@ -152,3 +152,59 @@ test('malformed JSON terminates the owned child before propagating the parser er
   await assert.rejects(consume, /non-JSON stdout/)
   assert.deepEqual(calls, [{ command: 'taskkill.exe', args: ['/pid', '4242', '/t', '/f'] }])
 })
+
+test('post-terminal forced close treats the owned process signal as successful transport cleanup', async () => {
+  const calls = []
+  const child = new EventEmitter()
+  child.pid = 4242
+  child.exitCode = null
+  child.killed = false
+  child.stdin = new PassThrough()
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  const client = new CodexCliClient({
+    executablePath: 'codex.exe', env: {}, platform: 'win32',
+    spawnImpl() { return child },
+    execFileImpl(command, args) { calls.push({ command, args }) },
+  })
+  const thread = client.startThread()
+  const { events } = await thread.runStreamed('hello')
+  const seen = []
+  const consume = (async () => { for await (const event of events) seen.push(event) })()
+
+  child.stdout.write('{"type":"turn.completed","usage":{}}\n')
+  await waitFor(() => seen.length === 1)
+  assert.equal(thread.forceCloseAfterTerminal(), true)
+  child.emit('exit', null, 'SIGTERM')
+
+  await consume
+  assert.deepEqual(calls, [{ command: 'taskkill.exe', args: ['/pid', '4242', '/t', '/f'] }])
+})
+
+test('post-terminal close releases inherited stdout after the root process already exited', async () => {
+  const child = new EventEmitter()
+  child.pid = 4242
+  child.exitCode = null
+  child.killed = false
+  child.stdin = new PassThrough()
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  const client = new CodexCliClient({
+    executablePath: 'codex.exe', env: {}, platform: 'win32',
+    spawnImpl() { return child },
+    execFileImpl() { throw new Error('root process already exited') },
+  })
+  const thread = client.startThread()
+  const { events } = await thread.runStreamed('hello')
+  const seen = []
+  const consume = (async () => { for await (const event of events) seen.push(event) })()
+
+  child.stdout.write('{"type":"turn.completed","usage":{}}\n')
+  await waitFor(() => seen.length === 1)
+  child.exitCode = 0
+  child.emit('exit', 0, null)
+  assert.equal(thread.forceCloseAfterTerminal(), true)
+
+  await consume
+  assert.equal(child.stdout.destroyed, true)
+})

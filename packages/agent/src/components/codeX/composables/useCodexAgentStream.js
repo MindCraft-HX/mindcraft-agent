@@ -11,7 +11,7 @@ import { buildFunctionCallToolState } from '../utils/functionCallToolPreview.mjs
 import {
   markCodexDone,
   markCodexAbortRequested,
-  markCodexFailed,
+  markCodexTerminalErrorSeen,
   markCodexStreamActivity,
   markCodexTerminalSeen,
 } from '../utils/codexRuntimeState.mjs'
@@ -624,7 +624,7 @@ export function useCodexAgentStream({
     }
 
     if (msg.type === 'turn.failed') {
-      markCodexFailed(tab, msg.error || msg.message)
+      markCodexTerminalErrorSeen(tab, msg.error || msg.message)
       const errorText = msg.error?.message || msg.message || 'Turn 执行失败'
       pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${errorText}` })
       throttledScroll(tab.id)
@@ -650,8 +650,9 @@ export function useCodexAgentStream({
         return
       }
       if (msg.subtype === 'error') {
-        // thread.error / turn.failed 发来的系统级错误，清理状态并显示
-        markCodexFailed(tab, msg)
+        // Error rendering is not ownership release. Keep the send lock until
+        // the main-process finalizer emits the authoritative AGENT_DONE.
+        markCodexTerminalErrorSeen(tab, msg)
         const lastThinking = [...tab.messages].reverse().find(
           m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
         )

@@ -89,6 +89,8 @@ class CodexCliThread {
     this.id = threadId || null
     this.threadOptions = threadOptions
     this.child = null
+    this.lines = null
+    this.terminalCloseForced = false
   }
 
   async runStreamed(input, { signal } = {}) {
@@ -96,6 +98,7 @@ class CodexCliThread {
   }
 
   async *runStreamedInternal(input, { signal } = {}) {
+    this.terminalCloseForced = false
     const imagePaths = Array.isArray(input)
       ? input.filter(part => part?.type === 'local_image').map(part => part.path).filter(Boolean)
       : []
@@ -145,6 +148,7 @@ class CodexCliThread {
     }
     child.stdin.end(prompt)
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
+    this.lines = lines
     let consumedNormally = false
     try {
       for await (const line of lines) {
@@ -165,7 +169,7 @@ class CodexCliThread {
         error.name = 'AbortError'
         throw error
       }
-      if (result.code !== 0 || result.signal) {
+      if (!this.terminalCloseForced && (result.code !== 0 || result.signal)) {
         const detail = result.signal ? `signal ${result.signal}` : `code ${result.code ?? 1}`
         throw new Error(`Codex CLI exited with ${detail}: ${Buffer.concat(stderrChunks).toString('utf8')}`)
       }
@@ -179,7 +183,31 @@ class CodexCliThread {
         terminateOwnedChild(child, { platform: this.client.platform, execFileImpl: this.client.execFile })
       }
       this.child = null
+      this.lines = null
+      this.terminalCloseForced = false
     }
+  }
+
+  forceCloseAfterTerminal() {
+    if (!this.child) return false
+    this.terminalCloseForced = true
+    const child = this.child
+    const terminated = terminateOwnedChild(child, { platform: this.client.platform, execFileImpl: this.client.execFile })
+    // A descendant can inherit stdout after the root process has already
+    // exited. Closing this run's read side releases the iterator even when the
+    // old root PID can no longer be targeted by taskkill.
+    let readSideClosed = false
+    try {
+      if (this.lines) {
+        this.lines.close()
+        readSideClosed = true
+      }
+      if (child.stdout && !child.stdout.destroyed) {
+        child.stdout.destroy()
+        readSideClosed = true
+      }
+    } catch (_) {}
+    return terminated || readSideClosed
   }
 
   cancel() {

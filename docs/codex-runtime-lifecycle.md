@@ -52,11 +52,18 @@ registry state, or substitutes for the authoritative completion events.
   `runId` before changing session state or sending terminal signals.
 - Abort targets only the child process owned by the active MindCraft run. It
   must not kill processes by executable name.
-- A watchdog records provider event activity and, once available, transcript
-  growth. Logical terminal events do not disable the watchdog before transport
-  closure.
-- A terminal run that does not close within its bounded timeout is failed or
-  aborted exactly once. It must never silently unlock a second writer.
+- Before `terminal_seen`, the idle watchdog records provider event activity and,
+  once available, transcript growth. After `terminal_seen`, that watchdog is
+  replaced by a five-second transport-close grace window.
+- If stdout or a descendant process still holds the transport after that grace,
+  terminate only the active run's owned process tree. A completed turn remains
+  `completed`; a failed turn remains `failed`. This cleanup is not a user abort
+  and must not emit the ten-minute timeout message. If the root process already
+  exited but a descendant inherited stdout, close only that run's transport read
+  side so the iterator can finish.
+- Renderer error output and `session_close_timeout` stop visible thinking but do
+  not clear `_awaitingDone`. Queued input is retained without polling and starts
+  only after the matching authoritative `agent_done` arrives.
 
 ## Transcript Authority
 
@@ -113,10 +120,12 @@ governance and the SDK/app-server assessment live in
 ## Required Regression Cases
 
 - logical terminal event arrives before transport closure;
+- a descendant process keeps stdout open after logical completion;
 - transcript continues growing after a logical terminal event;
 - old run cleanup cannot mutate a replacement run;
 - abort and timeout emit exactly one terminal completion;
 - queued input starts only after the previous run closes;
+- renderer errors cannot unlock a run before `agent_done`;
 - an interrupted historical transcript remains readable and resumable.
 - a resumed run that reports a different thread id fails without rebinding.
 - scan bindings require claim; runtime bindings remain resumable after reload.

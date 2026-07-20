@@ -36,7 +36,3 @@ export function shouldQueueRejectedCodexInput(result = {}) {
   const reason = String(result?.reason || '')
   return reason === 'session_already_running' || reason === 'session_close_timeout'
 }
-
-export function shouldRetryRejectedCodexInput(result = {}) {
-  return String(result?.reason || '') === 'session_close_timeout'
-}

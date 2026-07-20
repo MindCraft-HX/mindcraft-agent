@@ -277,7 +277,7 @@ import {
   useAgentMetricsController,
 } from '../agentCommon/composables/useAgentMetricsController.js'
 import { buildHistoryLoadGuard } from './utils/historyLoadSafety.mjs'
-import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput, shouldRetryRejectedCodexInput } from './utils/queuedInputFlush.mjs'
+import { canFlushQueuedInputTarget, resolveQueuedInputFlushTarget, shouldQueueRejectedCodexInput } from './utils/queuedInputFlush.mjs'
 import {
   applyCodexMetrics,
   markCodexAbortRequested,
@@ -1231,7 +1231,6 @@ const { refreshSessions, cancelScheduledRefresh } = useScheduledSessionRefresh({
 })
 const showScrollPrevBtn = ref(false)
 let scrollPrevCurrentId = null
-const queuedRetryTimers = new Map()
 
 const activeProject = computed(() => projects.value.find(p => p.id === activeProjectId.value) || null)
 const activeTab = computed(() => {
@@ -2405,27 +2404,15 @@ async function sendMessage(textOverride = null, targetTab = null) {
         ...buildNewTurnMetrics(tab),
         sessionId: tab.sessionId,
         model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
-        thinking: true,
+        thinking: false,
       }
       if (tab.id === activeChatId.value) {
         syncActiveMetricsFromTab(tab, {
           model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
           compacting: !!tab._compacting,
         })
-        startMetricsTimer(tab._thinkingStart)
       }
       saveHistory()
-      if (shouldRetryRejectedCodexInput(queryResult) && !queuedRetryTimers.has(tab.sessionId)) {
-        const timer = setTimeout(async () => {
-          queuedRetryTimers.delete(tab.sessionId)
-          if (!tab._queuedInput) return
-          const retryText = tab._queuedInput
-          tab._queuedInput = ''
-          markCodexIdle(tab)
-          await sendMessage(retryText, tab)
-        }, 1200)
-        queuedRetryTimers.set(tab.sessionId, timer)
-      }
       return
     }
     // 非 queueable 拒绝（IPC 异常或意外返回值）：不清除用户消息，仅清理 thinking 状态。
@@ -3274,8 +3261,6 @@ onUnmounted(() => {
   window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushOnUnload)
   for (const sessionId of codexDoneMetricsRetryTimers.keys()) clearCodexDoneMetricsRetry(sessionId)
-  for (const timer of queuedRetryTimers.values()) clearTimeout(timer)
-  queuedRetryTimers.clear()
   void persistActiveInputDraft()
   flushOnUnload()
   sessionDraft.dispose()

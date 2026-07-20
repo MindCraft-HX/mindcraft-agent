@@ -9,6 +9,7 @@ import {
   markCodexDone,
   markCodexQueued,
   markCodexStreamActivity,
+  markCodexTerminalErrorSeen,
   markCodexTerminalSeen,
   markCodexTurnStarting,
   sanitizeCodexPersistedMetrics,
@@ -67,6 +68,21 @@ test('stream activity after terminal_seen does not reopen running state', () => 
   assert.equal(tab._thinkingStart, null)
 })
 
+test('terminal error stops visible thinking but keeps the send lock until done', () => {
+  const tab = { thinking: true, _awaitingDone: true, _thinkingStart: 1000, metrics: { thinking: true } }
+
+  markCodexTerminalErrorSeen(tab, { message: 'transport still closing' })
+
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._awaitingDone, true)
+  assert.equal(tab._thinkingStart, 1000)
+  assert.equal(tab.metrics.thinking, false)
+
+  applyCodexMetrics(tab, { thinking: true, durationMs: 5000 })
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._awaitingDone, true)
+})
+
 test('abort requested keeps send lock until aborted clears it', () => {
   const tab = { thinking: true, _awaitingDone: true, _thinkingStart: 1000, currentAssistantId: 'a1' }
 
@@ -84,19 +100,20 @@ test('abort requested keeps send lock until aborted clears it', () => {
   assert.equal(Object.hasOwn(tab, '_codexRuntimeState'), false)
 })
 
-test('queued state keeps runtime lock and persistable cleanup removes memory-only state', () => {
+test('queued state keeps runtime lock without displaying a new running timer', () => {
   const tab = {
     sessionId: 'sid-1',
     thinking: false,
     _awaitingDone: false,
-    _thinkingStart: null,
+    _thinkingStart: 1000,
     metrics: { thinking: false },
   }
 
-  markCodexQueued(tab, { text: 'retry me', messageId: 42, now: 3000 })
+  markCodexQueued(tab, { text: 'retry me', messageId: 42 })
 
-  assert.equal(tab.thinking, true)
+  assert.equal(tab.thinking, false)
   assert.equal(tab._awaitingDone, true)
+  assert.equal(tab._thinkingStart, 1000)
   assert.equal(tab._queuedInput, 'retry me')
   assert.equal(tab._queuedInputMessageId, 42)
 
