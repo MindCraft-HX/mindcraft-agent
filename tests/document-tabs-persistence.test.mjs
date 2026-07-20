@@ -87,3 +87,15 @@ test('mdViewer wires both persist and restore through the contract module', () =
   assert.ok(source.includes('migrateDocTabsPayload('), 'restore path must migrate via the contract')
   assert.ok(!source.includes('tabsToSave'), 'legacy inline serializer must be gone')
 })
+
+test('document tab overflow keeps the window-controls reservation outside the scroll track', () => {
+  const source = fs.readFileSync(path.join(root, 'src/components/mdViewer/index.vue'), 'utf8')
+  const scrollStart = source.indexOf('<div ref="docTabsBarRef" class="doc-tabs-scroll">')
+  const scrollEnd = source.indexOf('      <div class="doc-tabs-window-spacer" aria-hidden="true"></div>', scrollStart)
+
+  assert.ok(scrollStart >= 0, 'document tabs need a dedicated scroll track')
+  assert.ok(scrollEnd > scrollStart, 'window-controls reservation must be a sibling after the scroll track')
+  assert.equal(source.slice(scrollStart, scrollEnd).includes('drag-spacer'), false, 'scroll track must not contain the absolute drag spacer')
+  assert.match(source, /\.doc-tabs-scroll\s*\{[\s\S]*?overflow-x:\s*auto;/)
+  assert.match(source, /\.doc-tabs-window-spacer\s*\{[\s\S]*?flex:\s*0 0 var\(--mc-window-controls-width, 138px\);/)
+})

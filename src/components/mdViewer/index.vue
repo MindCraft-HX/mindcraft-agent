@@ -46,39 +46,40 @@
     <!-- 自定义标签栏支持拖拽排序 + 键盘导航 + 无障碍 -->
     <div
       v-if="tabs.length"
-      ref="docTabsBarRef"
       class="doc-tabs-bar"
       role="tablist"
       aria-label="文档标签页"
       @wheel="onTabsWheel"
-    >
-      <div class="doc-tabs">
-        <div
-          v-for="(tab, idx) in tabs"
-          :key="tab.id"
-          class="doc-tab"
-          :class="{ active: tab.id === activeTabId, 'drag-over': dragOverIndex === idx, dragging: dragIndex === idx }"
-          role="tab"
-          :aria-selected="tab.id === activeTabId ? 'true' : 'false'"
-          :tabindex="tab.id === activeTabId ? 0 : -1"
-          draggable="true"
-          @click="activeTabId = tab.id"
-          @keydown="onTabKeydown($event, idx)"
-          @dragstart="onTabDragStart($event, idx)"
-          @dragover.prevent="onTabDragOver($event, idx)"
-          @dragleave="onTabDragLeave"
-          @dragend="onTabDragEnd"
-          @drop="onTabDrop($event, idx)"
-          @contextmenu.prevent="openTabContextMenu($event, tab.id)"
-        >
-          <span class="doc-tab-label">
-            <el-icon v-if="tab.isLoading" class="doc-tab-loading"><Loading /></el-icon>
-            <span class="doc-tab-text">{{ tab.name }}</span>
-          </span>
-          <button class="doc-tab-close" type="button" @click.stop="removeTab(tab.id)" :tabindex="-1">×</button>
+      >
+      <div ref="docTabsBarRef" class="doc-tabs-scroll">
+        <div class="doc-tabs">
+          <div
+            v-for="(tab, idx) in tabs"
+            :key="tab.id"
+            class="doc-tab"
+            :class="{ active: tab.id === activeTabId, 'drag-over': dragOverIndex === idx, dragging: dragIndex === idx }"
+            role="tab"
+            :aria-selected="tab.id === activeTabId ? 'true' : 'false'"
+            :tabindex="tab.id === activeTabId ? 0 : -1"
+            draggable="true"
+            @click="activeTabId = tab.id"
+            @keydown="onTabKeydown($event, idx)"
+            @dragstart="onTabDragStart($event, idx)"
+            @dragover.prevent="onTabDragOver($event, idx)"
+            @dragleave="onTabDragLeave"
+            @dragend="onTabDragEnd"
+            @drop="onTabDrop($event, idx)"
+            @contextmenu.prevent="openTabContextMenu($event, tab.id)"
+          >
+            <span class="doc-tab-label">
+              <el-icon v-if="tab.isLoading" class="doc-tab-loading"><Loading /></el-icon>
+              <span class="doc-tab-text">{{ tab.name }}</span>
+            </span>
+            <button class="doc-tab-close" type="button" @click.stop="removeTab(tab.id)" :tabindex="-1">×</button>
+          </div>
         </div>
       </div>
-      <div class="drag-spacer"></div>
+      <div class="doc-tabs-window-spacer" aria-hidden="true"></div>
     </div>
 
     <Teleport to="body">
@@ -1362,27 +1363,40 @@ defineExpose({ createWorkbenchAdapter })
   padding: 0 12px;
   min-height: 44px;
   height: 44px;
-  overflow-x: auto;
   -webkit-app-region: drag;
-  overflow-y: hidden;
   user-select: none;
-  scrollbar-gutter: stable;
 }
 
-.doc-tabs-bar::-webkit-scrollbar { height: 8px; }
-.doc-tabs-bar::-webkit-scrollbar-track { background: var(--cc-bg-tertiary, transparent); }
-.doc-tabs-bar::-webkit-scrollbar-thumb {
+.doc-tabs-scroll {
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  -webkit-app-region: drag;
+}
+
+.doc-tabs-scroll::-webkit-scrollbar { height: 8px; }
+.doc-tabs-scroll::-webkit-scrollbar-track { background: var(--cc-bg-tertiary, transparent); }
+.doc-tabs-scroll::-webkit-scrollbar-thumb {
   background: var(--cc-border-strong, #64748b);
   border-radius: 999px;
 }
-.doc-tabs-bar::-webkit-scrollbar-thumb:hover { background: var(--doc-accent); }
+.doc-tabs-scroll::-webkit-scrollbar-thumb:hover { background: var(--doc-accent); }
 
 .doc-tabs {
   display: flex;
   align-items: center;
   gap: 0;
   min-width: max-content;
-  padding-right: var(--mc-window-controls-width, 138px);
+}
+
+.doc-tabs-window-spacer {
+  align-self: stretch;
+  flex: 0 0 var(--mc-window-controls-width, 138px);
+  min-width: var(--mc-window-controls-width, 138px);
+  -webkit-app-region: no-drag;
 }
 
 .doc-tab {
