@@ -9,23 +9,6 @@
               <span class="git-drawer-title">{{ $t('git.changes') || 'Workspace Changes' }}</span>
               <span v-if="branch" class="git-drawer-branch">🔀 {{ branch }}</span>
             </div>
-            <div class="git-drawer-header-right">
-              <button
-                class="git-drawer-btn"
-                :title="$t('git.refresh') || 'Refresh'"
-                @click="handleRefresh"
-                :disabled="loading"
-              >
-                <svg class="git-drawer-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 7a5.5 5.5 0 1 1-1.8-4.1"/><polyline points="12.5 2.5 12.5 5.5 9.5 5.5"/></svg>
-              </button>
-              <button
-                class="git-drawer-btn git-drawer-close"
-                @click="emit('update:modelValue', false)"
-                :title="$t('common.close') || 'Close'"
-              >
-                <svg class="git-drawer-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="10" y2="10"/><line x1="10" y1="4" x2="4" y2="10"/></svg>
-              </button>
-            </div>
           </div>
 
           <!-- Loading -->
@@ -397,46 +380,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.git-drawer-header-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.git-drawer-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--cc-text-secondary, #888);
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s;
-}
-
-.git-drawer-btn:hover {
-  background: var(--cc-bg-hover, #333);
-  color: var(--cc-text-primary, #e0e0e0);
-}
-
-.git-drawer-btn .git-drawer-icon {
-  display: block;
-}
-
-.git-drawer-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.git-drawer-close:hover {
-  color: var(--cc-danger-text, #f44336);
 }
 
 /* ── Loading / Empty ── */
