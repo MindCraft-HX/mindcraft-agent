@@ -10,6 +10,20 @@ test('API Base catalog separates Claude and Codex protocol presets', () => {
   const codex = getApiBasePresets('codex')
 
   assert.ok(claude.some(item => item.id === 'anthropic'))
+  assert.deepEqual(claude.find(item => item.id === 'kimi-api-anthropic'), {
+    id: 'kimi-api-anthropic',
+    agentType: 'claude',
+    label: 'Kimi API',
+    url: 'https://api.moonshot.cn/anthropic',
+    keywords: ['kimi', 'moonshot', '月之暗面'],
+  })
+  assert.deepEqual(claude.find(item => item.id === 'kimi-coding-plan-anthropic'), {
+    id: 'kimi-coding-plan-anthropic',
+    agentType: 'claude',
+    label: 'Kimi Coding Plan',
+    url: 'https://api.kimi.com/coding/',
+    keywords: ['kimi', 'coding', 'plan', '月之暗面'],
+  })
   assert.ok(claude.every(item => item.agentType === 'claude'))
   assert.ok(codex.some(item => item.id === 'openai' && item.apiFormat === 'responses'))
   assert.ok(codex.some(item => item.id === 'deepseek' && item.apiFormat === 'chat'))
