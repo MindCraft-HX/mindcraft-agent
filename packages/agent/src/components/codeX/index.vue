@@ -2079,10 +2079,6 @@ async function handleRenameChat(session, newName) {
   if (!p) return
   const chat = p.chats.find(c => c.id === session.id)
   if (!chat) return
-  if (!chat.cliSessionId && !chat.filePath) {
-    ElMessage.warning(t('agent.renameFirst'))
-    return
-  }
   try {
     const result = await window.electronAPI?.setSessionTitle?.({
       agent: 'codex',

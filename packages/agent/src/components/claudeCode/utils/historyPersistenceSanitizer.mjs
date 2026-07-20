@@ -1,5 +1,6 @@
 import {
   getClaudeChatBindingKey,
+  getClaudeChatKey,
   getClaudeSessionFilePath,
   usesLegacyCliSessionAsChatKey,
 } from './claudeSessionIdentity.mjs'
@@ -21,28 +22,49 @@ function scoreBoundChat(chat) {
   return score
 }
 
+function shouldReplaceChat(existing, candidate) {
+  const existingChatKey = getClaudeChatKey(existing)
+  const candidateChatKey = getClaudeChatKey(candidate)
+  if (existingChatKey && existingChatKey === candidateChatKey) {
+    const timeDiff = toTime(candidate?.updatedAt || candidate?.createdAt) - toTime(existing?.updatedAt || existing?.createdAt)
+    if (timeDiff) return timeDiff > 0
+  }
+  return scoreBoundChat(candidate) > scoreBoundChat(existing)
+}
+
 function dedupeProjectChats(chats = []) {
   const output = []
-  const boundIndexByKey = new Map()
+  const indexByKey = new Map()
+
+  function getKeys(chat) {
+    const keys = []
+    const chatKey = getClaudeChatKey(chat)
+    const bindingKey = getClaudeChatBindingKey(chat)
+    if (chatKey) keys.push(`chat:${chatKey}`)
+    if (bindingKey) keys.push(bindingKey)
+    return keys
+  }
 
   for (const chat of Array.isArray(chats) ? chats : []) {
-    const key = getClaudeChatBindingKey(chat)
-    if (!key) {
+    const keys = getKeys(chat)
+    if (!keys.length) {
       output.push(chat)
       continue
     }
 
-    const existingIndex = boundIndexByKey.get(key)
+    const existingIndex = keys.map(key => indexByKey.get(key)).find(index => index != null)
     if (existingIndex == null) {
-      boundIndexByKey.set(key, output.length)
+      const index = output.length
+      for (const key of keys) indexByKey.set(key, index)
       output.push(chat)
       continue
     }
 
     const existing = output[existingIndex]
-    if (scoreBoundChat(chat) > scoreBoundChat(existing)) {
+    if (shouldReplaceChat(existing, chat)) {
       output[existingIndex] = chat
     }
+    for (const key of [...getKeys(existing), ...keys]) indexByKey.set(key, existingIndex)
   }
 
   return output

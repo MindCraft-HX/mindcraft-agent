@@ -163,6 +163,38 @@ test('claude project sanitizer remaps active chat when duplicate active entry is
   assert.equal(result.activeChatId, 'chat-new')
 })
 
+test('claude history payload dedupes different transcripts that share one stable chatKey', () => {
+  const result = sanitizeClaudeProjectsForPersistence({
+    activeProjectId: 'proj-1',
+    activeChatId: 'chat-old',
+    projects: [{
+      id: 'proj-1',
+      chats: [
+        {
+          id: 'chat-old',
+          sessionId: 'session-chat-stable',
+          cliSessionId: 'cli-old',
+          filePath: 'C:/Users/me/.claude/projects/repo/cli-old.jsonl',
+          updatedAt: '2026-07-20T08:00:00.000Z',
+          fileSize: 50_000_000,
+        },
+        {
+          id: 'chat-latest',
+          sessionId: 'session-chat-stable',
+          cliSessionId: 'cli-latest',
+          filePath: 'C:/Users/me/.claude/projects/repo/cli-latest.jsonl',
+          updatedAt: '2026-07-20T09:00:00.000Z',
+          fileSize: 2_000_000,
+        },
+      ],
+    }],
+  })
+
+  assert.deepEqual(result.projects[0].chats.map(chat => chat.id), ['chat-latest'])
+  assert.equal(result.activeProjectId, 'proj-1')
+  assert.equal(result.activeChatId, 'chat-latest')
+})
+
 test('claude history load sanitizes persisted duplicate chats before applying projects', async () => {
   let restoredProjects = null
   let restoredActiveProjectId = null

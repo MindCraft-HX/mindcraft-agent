@@ -2155,12 +2155,15 @@ async function refreshProjectSessionsInBackground(p) {
     // 如果切换期间用户已切走，放弃更新
     if (p.id !== activeProjectId.value) return null
 
-    // 建立缓存索引：filePath -> chat，同时用 cliSessionId(即文件名不含扩展名) 做备用索引
+    // 建立缓存索引：稳定 chatKey 优先，filePath / cliSessionId 用于兼容旧数据
+    const cacheByChatKey = {}
     const cacheByPath = {}
     const cacheBySid = {}
     for (const c of p.chats || []) {
+      const chatKey = getClaudeChatKey(c)
       const sessionFilePath = getClaudeSessionFilePath(c)
       const cliSessionId = getClaudeCliSessionId(c)
+      if (chatKey) cacheByChatKey[chatKey] = c
       if (sessionFilePath) cacheByPath[sessionFilePath] = c
       if (cliSessionId) cacheBySid[cliSessionId] = c
     }
@@ -2177,7 +2180,8 @@ async function refreshProjectSessionsInBackground(p) {
       if (p.id !== activeProjectId.value) { applyStop({ activationId: getActivationId() }); return }
       const scannedCliSessionId = s.cliSessionId || s.id || ''
       const normalizedPath = (s.filePath || '').replace(/\\/g, '/')
-      const cached = cacheByPath[normalizedPath] || cacheBySid[scannedCliSessionId] || null
+      const cachedByStableChatKey = s.chatKey ? cacheByChatKey[s.chatKey] || null : null
+      const cached = cachedByStableChatKey || cacheByPath[normalizedPath] || cacheBySid[scannedCliSessionId] || null
       const rawTitle = s.title || ''
       const name = rawTitle
         ? rawTitle.slice(0, 35).trim() + (rawTitle.length > 35 ? '...' : '')
@@ -2185,6 +2189,22 @@ async function refreshProjectSessionsInBackground(p) {
       const pendingChat = !cached
         ? findPendingClaudeSessionForAdoption(p.chats || [], { activeChatId: activeChatId.value, scannedSessionId: scannedCliSessionId })
         : null
+
+      const canonicalBindingChanged = Boolean(cachedByStableChatKey && (
+        (scannedCliSessionId && getClaudeCliSessionId(cachedByStableChatKey) !== scannedCliSessionId) ||
+        (normalizedPath && getClaudeSessionFilePath(cachedByStableChatKey) !== normalizedPath)
+      ))
+      if (canonicalBindingChanged) {
+        cachedByStableChatKey.cliSessionId = scannedCliSessionId || null
+        cachedByStableChatKey.filePath = s.filePath || ''
+        cachedByStableChatKey._messagesLoaded = false
+        if (shouldReloadClaudeChatFromDisk(cachedByStableChatKey)) {
+          cachedByStableChatKey.messages = []
+          if (cachedByStableChatKey.id === activeChatId.value) s._needReloadActiveChat = true
+        }
+        if (normalizedPath) cacheByPath[normalizedPath] = cachedByStableChatKey
+        if (scannedCliSessionId) cacheBySid[scannedCliSessionId] = cachedByStableChatKey
+      }
 
       if (!cached) {
         if (pendingChat) {
@@ -2243,6 +2263,9 @@ async function refreshProjectSessionsInBackground(p) {
         else p.chats.splice(insertAt, 0, newChat)
         const newChatKey = getClaudeChatKey(newChat)
         const newCliSessionId = getClaudeCliSessionId(newChat)
+        if (newChatKey) cacheByChatKey[newChatKey] = newChat
+        if (newChat.filePath) cacheByPath[getClaudeSessionFilePath(newChat)] = newChat
+        if (newCliSessionId) cacheBySid[newCliSessionId] = newChat
         if (newChatKey && newCliSessionId) {
           window.electronAPI?.claudeRegisterCliSessions?.({ [newChatKey]: newCliSessionId })
         }
@@ -2509,10 +2532,6 @@ async function handleRenameChat(session, newName) {
   if (!p) return
   const chat = p.chats.find(c => c.id === session.id)
   if (!chat) return
-  if (!chat.cliSessionId && !chat.filePath) {
-    ElMessage.warning(t('agent.renameFirst'))
-    return
-  }
   try {
     const result = await window.electronAPI?.setSessionTitle?.({
       agent: 'claude',

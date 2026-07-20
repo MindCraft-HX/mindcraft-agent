@@ -19,6 +19,7 @@ const {
   findByProviderScan,
   ensureFromProviderScan,
   mergeRegistryFields,
+  resolveClaudeProviderBinding,
   upsertRuntimeByProvider,
   setSessionTitle,
   deleteSession,
@@ -527,6 +528,37 @@ function buildClaudeAgentDonePayload({
   }
 }
 
+function getClaudeSdkSessionId(message) {
+  return typeof message?.session_id === 'string' ? message.session_id.trim() : ''
+}
+
+function validateClaudeSessionIdentity({
+  expectedSessionId = '',
+  currentSessionId = '',
+  incomingSessionId = '',
+} = {}) {
+  const expected = String(expectedSessionId || '').trim()
+  const current = String(currentSessionId || '').trim()
+  const incoming = String(incomingSessionId || '').trim()
+  if (!incoming) return { ok: true, sessionId: current || expected }
+  const owned = expected || current
+  if (owned && owned !== incoming) {
+    return {
+      ok: false,
+      error: `Claude resume returned a different Claude session (${incoming}); expected ${owned}`,
+    }
+  }
+  return { ok: true, sessionId: incoming }
+}
+
+function mergeActiveClaudeScanSummary(raw, record) {
+  if (record?.provider?.cliSessionId) {
+    const scannedCliSessionId = String(raw?.cliSessionId || raw?.id || '')
+    if (scannedCliSessionId && scannedCliSessionId !== String(record.provider.cliSessionId)) return null
+  }
+  return mergeRegistryFields('claude', raw, record)
+}
+
 /** 扫描项目根目录下所有 .jsonl 会话文件，返回带时间戳和标题的会话列表 */
 async function scanCliSessionsForProject(cwd) {
   const stop = perfStartIpc('claude-scan-sessions')
@@ -564,7 +596,7 @@ async function scanCliSessionsForProject(cwd) {
           // 合法异常：registry record 缺失，允许一次 repair 写
           record = ensureFromProviderScan(db, 'claude', raw, { cwd })
         }
-        const summary = mergeRegistryFields('claude', raw, record)
+        const summary = mergeActiveClaudeScanSummary(raw, record)
         if (summary) result.push(summary)
       }
       attachStop({ sessions: result.length, cacheHit: 1 })
@@ -627,7 +659,7 @@ async function scanCliSessionsForProject(cwd) {
       rawSummaries.push(raw)
       // T201: ensure session record in SQLite, merge registry fields into summary
       const record = db ? ensureFromProviderScan(db, 'claude', raw, { cwd }) : null
-      const summary = mergeRegistryFields('claude', raw, record)
+      const summary = mergeActiveClaudeScanSummary(raw, record)
       if (summary) result.push(summary)
     }
     attachStop({ sessions: result.length, cacheHit: 0 })
@@ -2720,6 +2752,16 @@ function setupClaudeHandlers() {
 
   ipcMain.handle(CLAUDE_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, runMode, model: modelOverride, effort: effortOverride, modelTier: modelTierOverride, sessionInstruction }) => {
     const chatKey = sessionId
+    let sessionDb = null
+    try { sessionDb = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
+    if (sessionDb && chatKey) {
+      const resolution = resolveClaudeProviderBinding(sessionDb, chatKey, { repair: true })
+      if (!resolution.ok) throw new Error(`Claude session binding conflict: ${resolution.error}`)
+      if (resolution.binding?.cliSessionId) {
+        cliSessionIds.set(chatKey, resolution.binding.cliSessionId)
+      }
+      if (resolution.repaired) await persistDb()
+    }
     if (!claudeProvidersStateShadow) await readClaudeProviders().catch(() => null)
     const runtime = resolveEffectiveRuntimeConfig()
     const apiKey = runtime.apiKey
@@ -2822,6 +2864,7 @@ function setupClaudeHandlers() {
       // 允许 resume 的条件：有 cliSessionId 且为有效 UUID 格式（CLI --resume 要求 UUID）
       const isValidUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
       const resumedSessionId = (previousCliSessionId && isValidUuid(previousCliSessionId)) ? previousCliSessionId : undefined
+      if (previousCliSessionId && !resumedSessionId) cliSessionIds.delete(chatKey)
 
       // 记录模型切换和 resume 状态
       if (previousModel && previousModel !== model) {
@@ -3164,19 +3207,25 @@ function setupClaudeHandlers() {
             const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
             gotAnyMessage = true
             backgroundTaskTracker.updateFromSdkMessage(msg)
+            const incomingCliSessionId = getClaudeSdkSessionId(msg)
+            const identity = validateClaudeSessionIdentity({
+              expectedSessionId: resumedSessionId || '',
+              currentSessionId: cliSessionIds.get(chatKey) || '',
+              incomingSessionId: incomingCliSessionId,
+            })
+            if (!identity.ok) {
+              try { abortController.abort() } catch (_) {}
+              throw new Error(identity.error)
+            }
             // 尽早注册 cliSessionId，并通知渲染进程用于精确匹配 pending chat
-            if (msg?.session_id) {
-              if (!cliSessionIds.has(chatKey)) {
-                cliSessionIds.set(chatKey, msg.session_id)
+            if (incomingCliSessionId && !cliSessionIds.has(chatKey)) {
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
-                safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.session_id })
-              }
-            } else if (msg?.uuid && !cliSessionIds.has(chatKey)) {
-              cliSessionIds.set(chatKey, msg.uuid)
-              const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-              if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.uuid, pendingMeta, { chatKey })
-              safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: msg.uuid })
+                if (pendingMeta) {
+                  const saved = await writeClaudeSessionMeta(resolvedCwd, incomingCliSessionId, pendingMeta, { chatKey })
+                  if (!saved?.ok) throw new Error(saved?.error || 'Unable to bind Claude session')
+                }
+                cliSessionIds.set(chatKey, incomingCliSessionId)
+                safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: incomingCliSessionId })
             }
             const compactBoundaryMetrics = extractClaudeCompactBoundaryMetricsFromSdkMessage(msg, model || '')
             if (compactBoundaryMetrics) {
@@ -3260,18 +3309,20 @@ function setupClaudeHandlers() {
               await sendCompletedDoneIfReady(sender, null, { force: true })
             }
             if (msg.type === 'result') {
-              if (msg.session_id) {
-                cliSessionIds.set(chatKey, msg.session_id)
+              if (incomingCliSessionId) {
                 sessionModels.set(chatKey, model)
                 const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                if (pendingMeta) await writeClaudeSessionMeta(resolvedCwd, msg.session_id, pendingMeta, { chatKey })
+                if (pendingMeta) {
+                  const saved = await writeClaudeSessionMeta(resolvedCwd, incomingCliSessionId, pendingMeta, { chatKey })
+                  if (!saved?.ok) throw new Error(saved?.error || 'Unable to persist Claude session runtime')
+                }
               }
               // Phase 4：emitClaudeMetricsViaStore 已在 safeSend 前调用（TurnStore 已 finalize）
               resultReceived = true
               const sessionCwd = agentSessions.get(chatKey)?.cwd || resolvedCwd
               const donePayload = buildClaudeAgentDonePayload({
                 sessionId,
-                cliSessionId: msg.session_id,
+                cliSessionId: incomingCliSessionId || cliSessionIds.get(chatKey) || '',
                 cwd: sessionCwd,
                 reason: 'completed',
               })
@@ -3293,26 +3344,17 @@ function setupClaudeHandlers() {
           const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
           const errMsg = err?.message || String(err)
           if (err?.message?.includes('No conversation found') && resumedSessionId) {
-            // session 失效，自动重试（不带 resume）
-            console.log(`[Claude] resume 失败 (No conversation found)，chatKey=${chatKey.slice(-8)}，cliSessionId=${resumedSessionId}，将创建新会话`)
-            cliSessionIds.delete(chatKey)
-            sessionModels.delete(chatKey)
-            try {
-              await runQuery(undefined)
-              exitCode = 0
-            } catch (err2) {
-              safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
-                sessionId,
-                msg: {
-                  type: 'system',
-                  subtype: 'error',
-                  message: { content: [{ type: 'text', text: `Claude SDK 异常：${err2?.message || err2}` }] },
-                },
-              })
-            }
+            console.warn(`[Claude] resume 失败 (No conversation found)，chatKey=${chatKey.slice(-8)}，cliSessionId=${resumedSessionId}，已阻止无上下文分支`)
+            safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
+              sessionId,
+              msg: {
+                type: 'system',
+                subtype: 'error',
+                message: { content: [{ type: 'text', text: `Claude SDK 异常：${errMsg}。为避免创建无上下文分支，本次未自动新建会话。` }] },
+              },
+            })
           } else if (errMsg.includes('maximum number of turns') || errMsg.includes('maxTurns')) {
-            // maxTurns 耗尽：清除旧 session 避免后续 resume 死循环
-            cliSessionIds.delete(chatKey)
+            // maxTurns 是本次 query 的边界，保留原 UUID；新建无上下文会话不是恢复策略。
             sessionModels.delete(chatKey)
             safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
               sessionId,
@@ -3352,35 +3394,8 @@ function setupClaudeHandlers() {
           const s = agentSessions.get(chatKey)
           if (!resultReceived && s) {
             const fallbackCliSessionId = cliSessionIds.get(chatKey) || ''
-            // 如果错误发生在流式首条消息之前，cliSessionId 未注册。
-            // 兜底扫描项目目录，按修改时间找本次查询创建的 .jsonl（误差窗口 60s）。
             let finalCliSessionId = fallbackCliSessionId
             let sessionFileIntegrity = null
-            if (!finalCliSessionId && (s.cwd || resolvedCwd)) {
-              try {
-                const projectDir = getClaudeProjectsRootDir(s.cwd || resolvedCwd)
-                if (fs.existsSync(projectDir)) {
-                  const now = Date.now()
-                  const candidate = fs.readdirSync(projectDir)
-                    .filter(f => f.endsWith('.jsonl'))
-                    .map(f => {
-                      const fp = path.join(projectDir, f)
-                      try { return { id: f.replace(/\.jsonl$/, ''), mtime: fs.statSync(fp).mtimeMs, fp } }
-                      catch (_) { return null }
-                    })
-                    .filter(Boolean)
-                    .filter(c => now - c.mtime < 60000)
-                    .sort((a, b) => b.mtime - a.mtime)[0]
-                  if (candidate) {
-                    finalCliSessionId = candidate.id
-                    cliSessionIds.set(chatKey, finalCliSessionId)
-                    const pendingMeta = pendingSessionMetaByChatKey.get(chatKey)
-                    if (pendingMeta) await writeClaudeSessionMeta(s.cwd || resolvedCwd, finalCliSessionId, pendingMeta, { chatKey })
-                    console.log(`[Claude] fallback scan found cliSessionId: ${finalCliSessionId.slice(0,8)}...`)
-                  }
-                }
-              } catch (_) {}
-            }
             if (finalCliSessionId && (s.cwd || resolvedCwd)) {
               const jsonlPath = path.join(getClaudeProjectsRootDir(s.cwd || resolvedCwd), `${finalCliSessionId}.jsonl`)
               sessionFileIntegrity = analyzeClaudeJsonlFileIntegrity(jsonlPath)
@@ -3538,9 +3553,14 @@ function setupClaudeHandlers() {
     }
   })
 
-  ipcMain.handle(CLAUDE_CHANNELS.REGISTER_CLI_SESSIONS, (_, map) => {
+  ipcMain.handle(CLAUDE_CHANNELS.REGISTER_CLI_SESSIONS, async (_, map) => {
+    let db = null
+    try { db = await getDb({ userDataDir: getMindCraftUserDataDir() }) } catch (_) {}
     for (const [sid, cliId] of Object.entries(map || {})) {
-      if (cliId) cliSessionIds.set(sid, cliId)
+      if (!cliId) continue
+      const resolution = db ? resolveClaudeProviderBinding(db, sid) : null
+      if (resolution && !resolution.ok) continue
+      cliSessionIds.set(sid, resolution?.binding?.cliSessionId || cliId)
     }
   })
 
@@ -4083,10 +4103,13 @@ module.exports = {
     buildClaudeFinalTurnMetricsFromResultUsage,
     extractClaudeLiveUsageMetricsFromSdkMessage,
     extractClaudeCompactBoundaryMetricsFromSdkMessage,
+    getClaudeSdkSessionId,
+    mergeActiveClaudeScanSummary,
     getClaudeProjectsRootDir,
     readClaudeSessionMeta,
     readClaudeSessionMetaByFilePath,
     resolveClaudeDoneReasonFromError,
+    validateClaudeSessionIdentity,
     scanCliSessionsForProject,
     buildClaudeHistoryTurnTokensFromEntry,
     setSessionRegistryOptionsForTest: (options) => {

@@ -22,6 +22,53 @@ function runDonePayloadDefaultReasonTest() {
   })
 }
 
+function runSdkSessionIdentityUsesOnlySessionIdTest() {
+  assert.equal(__test__.getClaudeSdkSessionId({
+    uuid: 'message-uuid',
+    session_id: 'session-uuid',
+  }), 'session-uuid')
+  assert.equal(__test__.getClaudeSdkSessionId({ uuid: 'message-uuid' }), '')
+}
+
+function runSdkSessionIdentityRejectsResumeRolloverTest() {
+  assert.deepEqual(__test__.validateClaudeSessionIdentity({
+    expectedSessionId: 'session-original',
+    currentSessionId: 'session-original',
+    incomingSessionId: 'session-original',
+  }), { ok: true, sessionId: 'session-original' })
+
+  const mismatch = __test__.validateClaudeSessionIdentity({
+    expectedSessionId: 'session-original',
+    currentSessionId: 'session-original',
+    incomingSessionId: 'session-branch',
+  })
+  assert.equal(mismatch.ok, false)
+  assert.match(mismatch.error, /different Claude session/)
+}
+
+function runScanSummaryKeepsOnlyActiveClaudeHeadTest() {
+  const record = {
+    chatKey: 'session-chat-stable',
+    provider: {
+      cliSessionId: 'session-active',
+      filePath: 'D:/sessions/session-active.jsonl',
+      source: 'runtime',
+      resumeAllowed: true,
+    },
+  }
+  assert.equal(__test__.mergeActiveClaudeScanSummary({
+    cliSessionId: 'session-superseded',
+    filePath: 'D:/sessions/session-superseded.jsonl',
+  }, record), null)
+
+  const active = __test__.mergeActiveClaudeScanSummary({
+    cliSessionId: 'session-active',
+    filePath: 'D:/sessions/session-active.jsonl',
+  }, record)
+  assert.equal(active.chatKey, 'session-chat-stable')
+  assert.equal(active.cliSessionId, 'session-active')
+}
+
 function runDonePayloadFallbackPathTest() {
   const payload = __test__.buildClaudeAgentDonePayload({
     sessionId: 'sess-2',
@@ -245,6 +292,9 @@ async function runScanSessionsIncludesMetaTest() {
 
 async function run() {
   runDonePayloadDefaultReasonTest()
+  runSdkSessionIdentityUsesOnlySessionIdTest()
+  runSdkSessionIdentityRejectsResumeRolloverTest()
+  runScanSummaryKeepsOnlyActiveClaudeHeadTest()
   runDonePayloadFallbackPathTest()
   runDonePayloadExplicitReasonTest()
   runDoneReasonResolutionTest()

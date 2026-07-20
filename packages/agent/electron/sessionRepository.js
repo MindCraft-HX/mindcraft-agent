@@ -84,7 +84,158 @@ function selectOwnedProviderBinding(bindings = []) {
   })[0] || null;
 }
 
-function selectSessionBinding(bindings = []) {
+function isActiveClaudeProviderBinding(binding = {}) {
+  return Boolean(
+    binding.cliSessionId &&
+    binding.detached !== true &&
+    binding.resumeAllowed !== false
+  );
+}
+
+function getClaudeBindingActivitySeconds(binding = {}) {
+  let activity = toUnixSeconds(binding.updatedAt);
+  const filePath = String(binding.filePath || '');
+  if (!filePath) return activity;
+  try {
+    activity = Math.max(activity, Math.floor(fs.statSync(filePath).mtimeMs / 1000));
+  } catch (_) {}
+  return activity;
+}
+
+function resolveClaudeProviderBindingFromRows(bindings = []) {
+  const groups = new Map();
+  for (const binding of bindings) {
+    if (!isActiveClaudeProviderBinding(binding)) continue;
+    const threadId = String(binding.cliSessionId);
+    const group = groups.get(threadId) || [];
+    group.push(binding);
+    groups.set(threadId, group);
+  }
+  if (!groups.size) return { ok: true, binding: null, threadBindings: [] };
+
+  const userOwnedThreadIds = [...groups.entries()]
+    .filter(([, group]) => group.some(binding => binding.source === 'user'))
+    .map(([threadId]) => threadId);
+  if (userOwnedThreadIds.length > 1) {
+    return {
+      ok: false,
+      error: `Session owns multiple user-owned provider threads (${userOwnedThreadIds.join(', ')})`,
+    };
+  }
+
+  const candidateThreadIds = userOwnedThreadIds.length
+    ? userOwnedThreadIds
+    : [...groups.keys()];
+  candidateThreadIds.sort((left, right) => {
+    const leftUpdatedAt = Math.max(...groups.get(left).map(getClaudeBindingActivitySeconds));
+    const rightUpdatedAt = Math.max(...groups.get(right).map(getClaudeBindingActivitySeconds));
+    return rightUpdatedAt - leftUpdatedAt || left.localeCompare(right);
+  });
+
+  const threadId = candidateThreadIds[0];
+  const threadBindings = groups.get(threadId);
+  const sourceRank = source => source === 'user' ? 0 : source === 'runtime' ? 1 : 2;
+  const representative = [...threadBindings].sort((a, b) => {
+    const sourceDiff = sourceRank(a.source) - sourceRank(b.source);
+    if (sourceDiff) return sourceDiff;
+    return toUnixSeconds(b.updatedAt) - toUnixSeconds(a.updatedAt);
+  })[0];
+  const fileBinding = [...threadBindings]
+    .filter(binding => binding.filePath)
+    .sort((a, b) => getClaudeBindingActivitySeconds(b) - getClaudeBindingActivitySeconds(a))[0];
+  const activityUpdatedAt = Math.max(...threadBindings.map(getClaudeBindingActivitySeconds));
+
+  return {
+    ok: true,
+    binding: {
+      ...representative,
+      cliSessionId: threadId,
+      filePath: fileBinding?.filePath || representative.filePath || '',
+      updatedAt: activityUpdatedAt,
+    },
+    threadBindings,
+  };
+}
+
+function detachSupersededClaudeBindings(db, bindings, activeCliSessionId) {
+  const dao = sessionsDao();
+  for (const binding of bindings) {
+    if (!isActiveClaudeProviderBinding(binding)) continue;
+    if (String(binding.cliSessionId) === String(activeCliSessionId)) continue;
+    const result = dao.upsertSessionBinding(db, {
+      ...binding,
+      detached: true,
+      resumeAllowed: false,
+      updatedAt: now(),
+    });
+    if (!result.ok) return result;
+  }
+  return { ok: true };
+}
+
+function findAdoptableClaudeScanOwner(db, providerKeys, targetChatKey, cliSessionId) {
+  const dao = sessionsDao();
+  const owners = new Map();
+  for (const providerKey of providerKeys) {
+    const owner = dao.findSessionByProviderKey(db, providerKey);
+    if (!owner || owner.chatKey === targetChatKey) continue;
+    owners.set(owner.chatKey, owner);
+  }
+  if (!owners.size) return { ok: true, owner: null, bindings: [] };
+  if (owners.size > 1) {
+    return { ok: false, error: 'Provider keys belong to multiple Claude sessions' };
+  }
+
+  const owner = [...owners.values()][0];
+  if (
+    owner.agent !== 'claude' ||
+    !String(owner.chatKey || '').startsWith('claude::scan-') ||
+    owner.titleSource === 'user'
+  ) {
+    return { ok: false, error: `Provider key already belongs to ${owner.chatKey}` };
+  }
+
+  const bindings = dao.listSessionBindings(db, owner.chatKey);
+  const ownerThreadIds = [...new Set(bindings.map(binding => String(binding.cliSessionId || '')).filter(Boolean))];
+  if (ownerThreadIds.length > 1 || (cliSessionId && ownerThreadIds.some(threadId => threadId !== String(cliSessionId)))) {
+    return { ok: false, error: `Scan owner ${owner.chatKey} contains a different provider thread` };
+  }
+  return { ok: true, owner, bindings };
+}
+
+function resolveClaudeProviderBinding(db, chatKey, { repair = false } = {}) {
+  if (!db || !chatKey) return { ok: false, error: 'Missing database or chatKey' };
+  const dao = sessionsDao();
+  const bindings = dao.listSessionBindings(db, chatKey);
+  const resolution = resolveClaudeProviderBindingFromRows(bindings);
+  if (!resolution.ok || !repair || !resolution.binding) return resolution;
+
+  const hasSupersededBindings = bindings.some(binding => (
+    isActiveClaudeProviderBinding(binding) &&
+    String(binding.cliSessionId) !== String(resolution.binding.cliSessionId)
+  ));
+  if (!hasSupersededBindings) return resolution;
+
+  try {
+    db.run('BEGIN');
+    const detached = detachSupersededClaudeBindings(db, bindings, resolution.binding.cliSessionId);
+    if (!detached.ok) throw new Error(detached.error || 'Unable to detach superseded Claude bindings');
+    db.run('COMMIT');
+    return {
+      ...resolveClaudeProviderBindingFromRows(dao.listSessionBindings(db, chatKey)),
+      repaired: true,
+    };
+  } catch (error) {
+    try { db.run('ROLLBACK'); } catch (_) {}
+    return { ok: false, error: error.message };
+  }
+}
+
+function selectSessionBinding(bindings = [], agent = '') {
+  if (String(agent || '') === 'claude') {
+    const resolution = resolveClaudeProviderBindingFromRows(bindings);
+    return resolution.ok ? resolution.binding : null;
+  }
   return selectOwnedProviderBinding(bindings) || bindings[0] || null;
 }
 
@@ -223,7 +374,7 @@ function listSessions(db, { agent, registryFallback = true } = {}) {
   return rows.map(row => {
     const bindings = dao.listSessionBindings(db, row.chatKey);
     const runtime = dao.getSessionRuntime(db, row.chatKey);
-    return daoRowToRecord(row, selectSessionBinding(bindings), runtime);
+    return daoRowToRecord(row, selectSessionBinding(bindings, row.agent), runtime);
   });
 }
 
@@ -242,7 +393,7 @@ function getSession(db, chatKey, { registryFallback = true } = {}) {
   if (row) {
     const bindings = dao.listSessionBindings(db, chatKey);
     const runtime = dao.getSessionRuntime(db, chatKey);
-    return daoRowToRecord(row, selectSessionBinding(bindings), runtime);
+    return daoRowToRecord(row, selectSessionBinding(bindings, row.agent), runtime);
   }
 
   if (registryFallback) {
@@ -296,16 +447,22 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
   if (!db) return { ok: false, error: 'DB unavailable' };
   const dao = sessionsDao();
   const row = dao.getSession(db, chatKey);
-  const record = row || { chatKey, createdAt: now() };
-  const agent = record.agent || String(opts.agent || '');
+  const requestedAgent = String(opts.agent || '');
   const scanInfo = {
     cliSessionId: String(opts.cliSessionId || ''),
     filePath: String(opts.filePath || ''),
   };
+  const agent = row?.agent || requestedAgent;
   const providerKeys = agent ? buildProviderKeys(agent, scanInfo) : [];
-  const existingBindings = new Map(
-    dao.listSessionBindings(db, chatKey).map(binding => [binding.providerKey, binding]),
-  );
+  const adoption = agent === 'claude'
+    ? findAdoptableClaudeScanOwner(db, providerKeys, chatKey, scanInfo.cliSessionId)
+    : { ok: true, owner: null, bindings: [] };
+  if (!adoption.ok) return adoption;
+  const record = row || {
+    ...(adoption.owner || {}),
+    chatKey,
+    createdAt: adoption.owner?.createdAt || now(),
+  };
 
   record.title = String(title || '');
   record.titleSource = 'user';
@@ -316,11 +473,26 @@ function setSessionTitle(db, chatKey, title, opts = {}) {
 
   try {
     db.run('BEGIN');
+    if (adoption.owner) {
+      const deleted = dao.deleteSession(db, adoption.owner.chatKey);
+      if (!deleted.ok) throw new Error(deleted.error || 'Unable to release Claude scan binding');
+    }
     const result = dao.upsertSession(db, recordToDaoParams(record));
     if (!result.ok) {
       db.run('ROLLBACK');
       return result;
     }
+    for (const transferredBinding of adoption.bindings) {
+      const transferred = dao.upsertSessionBinding(db, {
+        ...transferredBinding,
+        chatKey,
+      });
+      if (!transferred.ok) throw new Error(transferred.error || 'Unable to transfer Claude scan binding');
+    }
+
+    const existingBindings = new Map(
+      dao.listSessionBindings(db, chatKey).map(binding => [binding.providerKey, binding]),
+    );
 
     // A later transcript scan must resolve this same renamed UI session.
     for (const providerKey of providerKeys) {
@@ -388,7 +560,9 @@ function findByProviderScan(db, agent, scanInfo = {}, opts = {}) {
     const row = dao.findSessionByProviderKey(db, providerKey);
     if (row) {
       const runtime = dao.getSessionRuntime(db, row.chatKey);
-      return daoRowToRecord(row, row.provider, runtime);
+      const bindings = dao.listSessionBindings(db, row.chatKey);
+      const binding = selectSessionBinding(bindings, row.agent || agent);
+      return binding ? daoRowToRecord(row, binding, runtime) : null;
     }
   }
   return null;
@@ -522,7 +696,9 @@ function ensureFromProviderScan(db, agent, scanSummary = {}, project = {}) {
   }
 
   const rt = needsRuntime ? runtime : existingRuntime;
-  const provider = row?.provider || {
+  const selectedProvider = row ? selectSessionBinding(existingBindings, row.agent || agent) : null;
+  if (row && !selectedProvider) return null;
+  const provider = selectedProvider || {
     cliSessionId: scanSummary.cliSessionId || '',
     filePath: scanSummary.filePath || '',
     source: 'scan',
@@ -585,6 +761,12 @@ function claimScannedProviderBinding(db, { agent, chatKey, cliSessionId, filePat
       bindings = repair.bindings;
       const ownership = validateOwnedProviderThread(bindings, targetCliSessionId);
       if (!ownership.ok) throw new Error(ownership.error);
+    } else if (String(agent || '') === 'claude') {
+      const resolution = resolveClaudeProviderBindingFromRows(bindings);
+      if (!resolution.ok) throw new Error(resolution.error);
+      if (resolution.binding && targetCliSessionId && resolution.binding.cliSessionId !== targetCliSessionId) {
+        throw new Error(`Session already owns a different provider thread (${resolution.binding.cliSessionId})`);
+      }
     }
     let claimed = 0;
     for (const binding of bindings) {
@@ -632,15 +814,37 @@ function upsertRuntimeByProvider(db, { agent, filePath, cliSessionId, chatKey, r
   const timestamp = now();
   try {
     db.run('BEGIN');
+    const adoption = String(agent || '') === 'claude'
+      ? findAdoptableClaudeScanOwner(db, providerKeys, chatKey, cliSessionId)
+      : { ok: true, owner: null, bindings: [] };
+    if (!adoption.ok) throw new Error(adoption.error);
+
     const row = dao.getSession(db, chatKey);
+    if (adoption.owner) {
+      const deleted = dao.deleteSession(db, adoption.owner.chatKey);
+      if (!deleted.ok) throw new Error(deleted.error || 'Unable to release Claude scan binding');
+    }
     if (!row) {
       const result = dao.upsertSession(db, {
         chatKey,
         agent: agent || '',
-        createdAt: timestamp,
-        updatedAt: timestamp,
+        projectId: adoption.owner?.projectId || '',
+        cwd: adoption.owner?.cwd || '',
+        title: adoption.owner?.title || '',
+        titleSource: adoption.owner?.titleSource || '',
+        description: adoption.owner?.description || '',
+        metadata: adoption.owner?.metadata || {},
+        createdAt: adoption.owner?.createdAt || timestamp,
+        updatedAt: adoption.owner?.updatedAt || timestamp,
       });
       if (!result.ok) throw new Error(result.error || 'Unable to save session');
+    }
+    for (const binding of adoption.bindings) {
+      const transferred = dao.upsertSessionBinding(db, {
+        ...binding,
+        chatKey,
+      });
+      if (!transferred.ok) throw new Error(transferred.error || 'Unable to transfer Claude scan binding');
     }
     let bindings = dao.listSessionBindings(db, chatKey);
     if (String(agent || '') === 'codex') {
@@ -649,10 +853,34 @@ function upsertRuntimeByProvider(db, { agent, filePath, cliSessionId, chatKey, r
       bindings = repair.bindings;
       const ownership = validateOwnedProviderThread(bindings, cliSessionId);
       if (!ownership.ok) throw new Error(ownership.error);
+    } else if (String(agent || '') === 'claude') {
+      const resolution = resolveClaudeProviderBindingFromRows(bindings);
+      if (!resolution.ok) throw new Error(resolution.error);
+      if (resolution.binding) {
+        const detached = detachSupersededClaudeBindings(db, bindings, resolution.binding.cliSessionId);
+        if (!detached.ok) throw new Error(detached.error || 'Unable to detach superseded Claude bindings');
+        bindings = dao.listSessionBindings(db, chatKey);
+        if (cliSessionId && String(cliSessionId) !== String(resolution.binding.cliSessionId)) {
+          throw new Error(`Session already owns a different provider thread (${resolution.binding.cliSessionId})`);
+        }
+      }
     }
-    const existingBindings = new Set(bindings.map(binding => binding.providerKey));
+    const existingBindings = new Map(bindings.map(binding => [binding.providerKey, binding]));
     for (const providerKey of providerKeys) {
-      if (existingBindings.has(providerKey)) continue;
+      const existingBinding = existingBindings.get(providerKey);
+      if (existingBinding) {
+        if (String(agent || '') === 'claude' && existingBinding.source === 'scan') {
+          const promoted = dao.upsertSessionBinding(db, {
+            ...existingBinding,
+            source: 'runtime',
+            detached: false,
+            resumeAllowed: true,
+            updatedAt: timestamp,
+          });
+          if (!promoted.ok) throw new Error(promoted.error || 'Unable to promote Claude runtime binding');
+        }
+        continue;
+      }
       const result = dao.upsertSessionBinding(db, {
         chatKey,
         providerKey,
@@ -717,7 +945,7 @@ function restorePanelState(db, agent, panelState) {
   let repaired = 0;
 
   for (const row of rows) {
-    const binding = selectSessionBinding(dao.listSessionBindings(db, row.chatKey));
+    const binding = selectSessionBinding(dao.listSessionBindings(db, row.chatKey), row.agent);
     if (!binding) continue;
     const runtime = dao.getSessionRuntime(db, row.chatKey);
     const record = daoRowToRecord(row, binding, runtime);
@@ -851,6 +1079,7 @@ module.exports = {
   ensureFromProviderScan,
   mergeRegistryFields,
   getOwnedProviderBinding,
+  resolveClaudeProviderBinding,
   isOwnedProviderBinding,
   claimScannedProviderBinding,
   upsertRuntimeByProvider,
