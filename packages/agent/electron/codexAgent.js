@@ -4,7 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { getMindCraftUserDataDir } = require('./userDataPath')
-const { getDb } = require('./db')
+const { getDb, listProviders } = require('./db')
 const { DEFAULT_MAX_BYTES, appendLogLineWithRotation } = require('./diagnosticsFileUtils')
 const { logMetricSample, logTurnSampleSummary } = require('./tokenMetrics/diagnostics')
 const { beginTurn, submitSample, clearCurrentTurn, getCurrentSnapshot, getFinalSnapshot, removeStore, clearAllStores } = require('./tokenMetrics/turnStore')
@@ -434,6 +434,48 @@ const {
   CODEX_SANDBOX_MODES,
   CODEX_SANDBOX_MIGRATE,
 } = _codexCfg
+
+function getActiveCodexProviderRuntimeFromRows(rows = []) {
+  const activeProvider = Array.isArray(rows) ? rows.find(provider => provider?.isActive) : null
+  if (!activeProvider) return {}
+
+  return buildRuntimeConfigFromProvider({
+    key: activeProvider.config?.key || '',
+    url: activeProvider.config?.url || '',
+    model: activeProvider.config?.model || '',
+    reasoningEffort: activeProvider.config?.reasoningEffort || '',
+    apiFormat: activeProvider.config?.apiFormat || '',
+    tomlText: activeProvider.config?.tomlText || '',
+  })
+}
+
+function mergeCodexRequestRuntime(fallbackRuntime = {}, activeProviderRuntime = {}) {
+  if (!activeProviderRuntime || typeof activeProviderRuntime !== 'object') return { ...fallbackRuntime }
+
+  // Provider transport settings must come from SQLite, the configured authority.
+  // The fallback remains only for legacy recovery or profiles without providers.
+  return {
+    apiKey: activeProviderRuntime.apiKey || fallbackRuntime.apiKey || '',
+    baseURL: activeProviderRuntime.baseURL || fallbackRuntime.baseURL || '',
+    model: activeProviderRuntime.model || fallbackRuntime.model || '',
+    reasoningEffort: activeProviderRuntime.reasoningEffort || fallbackRuntime.reasoningEffort || '',
+    apiFormat: activeProviderRuntime.apiFormat || fallbackRuntime.apiFormat || 'responses',
+  }
+}
+
+async function readCodexRuntimeConfigForRequest() {
+  const fallbackRuntime = readRuntimeConfig()
+  try {
+    const db = await getDb({ userDataDir: getMindCraftUserDataDir() })
+    return mergeCodexRequestRuntime(
+      fallbackRuntime,
+      getActiveCodexProviderRuntimeFromRows(listProviders(db, 'codex')),
+    )
+  } catch (_) {
+    // DB unavailability must not prevent existing legacy configurations from running.
+    return fallbackRuntime
+  }
+}
 
 function getCodexUploadsDir() {
   return path.join(getMindCraftUserDataDir(), 'codex-tmp-uploads')
@@ -2330,7 +2372,7 @@ function shouldResumeCodexSession({ previousCliId } = {}) {
 
 function setupCodexCliHandlers() {
   ipcMain.handle(CODEX_CHANNELS.AGENT_QUERY, async (event, { prompt, images, cwd, sessionId, networkAccessEnabled, webSearchMode, additionalDirectories, sandboxMode: frontendSandbox, model: modelOverride, reasoningEffort: reasoningEffortOverride }) => {
-    const runtime = readRuntimeConfig()
+    const runtime = await readCodexRuntimeConfigForRequest()
     if (CODEX_DEBUG) console.log('[codex-diag] readRuntimeConfig:', {
       hasApiKey: !!runtime.apiKey,
       baseURL: runtime.baseURL,
@@ -4184,7 +4226,7 @@ function setupCodexCliHandlers() {
   }
 
   async function runCodexChatStream(event, { chatId, messages, model, tools, max_tokens, reasoning }) {
-    const rt = readRuntimeConfig()
+    const rt = await readCodexRuntimeConfigForRequest()
     if (!rt.apiKey) throw new Error(lt('noApiKey'))
 
     const baseURL = rt.baseURL || 'https://api.openai.com/v1'
@@ -4417,6 +4459,8 @@ module.exports = {
     markCodexSessionDoneSent,
     parseSimpleTomlContent,
     buildRuntimeConfigFromToml,
+    getActiveCodexProviderRuntimeFromRows,
+    mergeCodexRequestRuntime,
     extractCodexAgentMessageText,
     extractCodexAssistantHistoryMessageFromJsonlRow,
     collapseCodexAssistantPhases,

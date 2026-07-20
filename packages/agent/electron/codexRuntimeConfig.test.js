@@ -27,6 +27,8 @@ const {
   __test__: {
     parseSimpleTomlContent,
     buildRuntimeConfigFromToml,
+    getActiveCodexProviderRuntimeFromRows,
+    mergeCodexRequestRuntime,
     extractCodexAgentMessageText,
     extractCodexAssistantHistoryMessageFromJsonlRow,
     normalizeTopLevelCodexStreamEvent,
@@ -151,6 +153,40 @@ api_format = "chat"
     model: 'gpt-5.5',
     reasoningEffort: 'high',
     apiFormat: 'responses',
+  })
+})
+
+test('request runtime uses the active SQLite provider instead of stale legacy provider settings', () => {
+  const legacyRuntime = {
+    apiKey: 'legacy-key',
+    baseURL: 'https://legacy.example.com/v1',
+    model: 'legacy-model',
+    reasoningEffort: 'medium',
+    apiFormat: 'responses',
+  }
+  const activeProviderRuntime = getActiveCodexProviderRuntimeFromRows([
+    {
+      isActive: false,
+      config: { model: 'other-model', apiFormat: 'responses' },
+    },
+    {
+      isActive: true,
+      config: {
+        key: 'kimi-key',
+        url: 'https://api.kimi.com/coding/v1',
+        model: 'kimi-k3',
+        reasoningEffort: 'high',
+        apiFormat: 'chat',
+      },
+    },
+  ])
+
+  assert.deepEqual(mergeCodexRequestRuntime(legacyRuntime, activeProviderRuntime), {
+    apiKey: 'kimi-key',
+    baseURL: 'https://api.kimi.com/coding/v1',
+    model: 'kimi-k3',
+    reasoningEffort: 'high',
+    apiFormat: 'chat',
   })
 })
 

@@ -134,6 +134,7 @@ MindCraft 自有数据包括：
 - CodeHub tab existence comes only from the current profile's SessionIndex. Provider panels may patch runtime fields after mount; localStorage may select/order known IDs but must not switch tab implementations or read provider legacy directories such as `~/.codex`.
 - panel cache 只能补缺 UI 状态或 runtime 空洞；不能把旧的 model/effort/reasoningEffort 写回覆盖 provider authoritative state。
 - Claude active-provider defaults are `selectedTier + tierModels + effortLevel` from the active SQLite provider row. Main writes one official runtime projection before SDK reset, then notifies renderer surfaces. `/model` changes only the current session; new chats and unsent drafts copy provider defaults, while unrelated historical sessions retain their own runtime metadata. Legacy app/official values are read-only fallback when no provider exists.
+- Codex request transport (`key`, `baseURL`, `model`, `reasoningEffort`, `apiFormat`) resolves from the active SQLite provider row at send time. `~/.codex/providers.json`, `config.toml`, and electron-conf are recovery fallbacks only; a stale fallback must never override an active provider's `apiFormat` or bypass the Chat-Completions proxy.
 - draft 文本可以走 renderer 两级内存缓存，但最终仍应落到 session-registry；不要恢复到每次切 tab 都读写磁盘，也不要用 panel state 做逐键持久化。
 
 关键异步事实：
