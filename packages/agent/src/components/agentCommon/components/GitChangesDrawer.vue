@@ -16,14 +16,14 @@
                 @click="handleRefresh"
                 :disabled="loading"
               >
-                🔄
+                <svg class="git-drawer-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 7a5.5 5.5 0 1 1-1.8-4.1"/><polyline points="12.5 2.5 12.5 5.5 9.5 5.5"/></svg>
               </button>
               <button
                 class="git-drawer-btn git-drawer-close"
                 @click="emit('update:modelValue', false)"
                 :title="$t('common.close') || 'Close'"
               >
-                ✕
+                <svg class="git-drawer-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="10" y2="10"/><line x1="10" y1="4" x2="4" y2="10"/></svg>
               </button>
             </div>
           </div>
@@ -424,6 +424,10 @@ onBeforeUnmount(() => {
 .git-drawer-btn:hover {
   background: var(--cc-bg-hover, #333);
   color: var(--cc-text-primary, #e0e0e0);
+}
+
+.git-drawer-btn .git-drawer-icon {
+  display: block;
 }
 
 .git-drawer-btn:disabled {
