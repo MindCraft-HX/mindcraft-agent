@@ -32,7 +32,14 @@
 
         <div class="setting-group">
           <label class="setting-label">{{ $t('settings.apiUrl') }}</label>
-          <input class="setting-input" v-model="form.url" placeholder="https://api.mindcraft.com.cn/v1" />
+          <ApiBaseInput
+            :model-value="form.url"
+            agent-type="codex"
+            input-class="setting-input"
+            placeholder="https://api.mindcraft.com.cn/v1"
+            @update:model-value="updateBaseUrl"
+            @preset-selected="applyApiBasePreset"
+          />
         </div>
 
         <div class="setting-group">
@@ -97,6 +104,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import ApiBaseInput from '../../agentCommon/components/ApiBaseInput.vue'
 
 const { t } = useI18n()
 import {
@@ -205,6 +213,16 @@ function syncManagedTomlFromForm() {
     apiKey: form.key,
   })
   tomlText.value = mergeManagedProviderToml(tomlText.value, managedToml)
+}
+
+function updateBaseUrl(value) {
+  form.url = String(value || '')
+}
+
+function applyApiBasePreset(preset) {
+  if (preset?.apiFormat === 'chat' || preset?.apiFormat === 'responses') {
+    apiFormat.value = preset.apiFormat
+  }
 }
 
 function formatAuthJson() {

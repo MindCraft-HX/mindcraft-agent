@@ -30,8 +30,13 @@
         </div>
         <div class="setting-group">
           <label class="setting-label">Base URL <span class="setting-hint">{{ $t('settings.optional') }}</span></label>
-          <input class="setting-input" v-model="form.url" @change="syncFormToJson"
-            placeholder="https://api.mindcraft.com.cn" />
+          <ApiBaseInput
+            :model-value="form.url"
+            agent-type="claude"
+            input-class="setting-input"
+            placeholder="https://api.mindcraft.com.cn"
+            @update:model-value="updateBaseUrl"
+          />
           <div class="setting-tip">{{ $t('settings.baseUrlHintExtended') }}</div>
         </div>
         <div class="setting-group">
@@ -155,6 +160,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import ApiBaseInput from '../../agentCommon/components/ApiBaseInput.vue'
 
 const { t } = useI18n()
 
@@ -373,6 +379,11 @@ function formatJson() {
   } catch (_) {
     ElMessage.error(t('settings.jsonFormatError'))
   }
+}
+
+function updateBaseUrl(value) {
+  form.url = String(value || '')
+  syncFormToJson()
 }
 
 const toggleHideAttribution = computed(() => {
