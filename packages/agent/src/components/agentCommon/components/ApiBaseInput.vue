@@ -11,6 +11,15 @@
       @input="onInput"
       @keydown="onKeydown"
     />
+    <button
+      type="button"
+      class="api-base-input__toggle"
+      aria-label="Show API Base presets"
+      :aria-expanded="open && showAll"
+      @mousedown.prevent="togglePresetMenu"
+    >
+      <svg class="api-base-input__chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><polyline points="3 4.5 6 7.5 9 4.5"/></svg>
+    </button>
     <div v-if="open && suggestions.length" class="api-base-input__menu" role="listbox">
       <button
         v-for="(preset, index) in suggestions"
@@ -33,7 +42,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { searchApiBasePresets } from '../utils/apiBaseCatalog.mjs'
+import { getApiBasePresets, searchApiBasePresets } from '../utils/apiBaseCatalog.mjs'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -46,26 +55,40 @@ const emit = defineEmits(['update:modelValue', 'preset-selected'])
 const rootRef = ref(null)
 const inputRef = ref(null)
 const open = ref(false)
+const showAll = ref(false)
 const activeIndex = ref(-1)
-const suggestions = computed(() => searchApiBasePresets(props.agentType, props.modelValue))
+const suggestions = computed(() => showAll.value
+  ? getApiBasePresets(props.agentType)
+  : searchApiBasePresets(props.agentType, props.modelValue))
 
 watch(suggestions, () => { activeIndex.value = -1 })
 
 function onInput(event) {
   emit('update:modelValue', event.target.value)
+  showAll.value = false
   open.value = true
+}
+
+function togglePresetMenu() {
+  const shouldOpenAll = !(open.value && showAll.value)
+  showAll.value = shouldOpenAll
+  open.value = shouldOpenAll
+  activeIndex.value = -1
+  inputRef.value?.focus()
 }
 
 function selectPreset(preset) {
   emit('update:modelValue', preset.url)
   emit('preset-selected', preset)
   open.value = false
+  showAll.value = false
   inputRef.value?.focus()
 }
 
 function onKeydown(event) {
   if (event.key === 'Escape') {
     open.value = false
+    showAll.value = false
     return
   }
   if (!suggestions.value.length) return
@@ -83,7 +106,10 @@ function onKeydown(event) {
 }
 
 function onDocumentPointerDown(event) {
-  if (rootRef.value && !rootRef.value.contains(event.target)) open.value = false
+  if (rootRef.value && !rootRef.value.contains(event.target)) {
+    open.value = false
+    showAll.value = false
+  }
 }
 
 onMounted(() => document.addEventListener('pointerdown', onDocumentPointerDown, true))
@@ -93,12 +119,20 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 <style scoped>
 .api-base-input { position: relative; }
 .api-base-input__field {
-  width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--cc-border-strong);
+  width: 100%; box-sizing: border-box; padding: 8px 40px 8px 12px; border: 1px solid var(--cc-border-strong);
   border-radius: 6px; outline: none; background: var(--cc-bg-input); color: var(--cc-text); font-size: 13px;
   transition: border-color 0.15s;
 }
 .api-base-input__field:focus { border-color: var(--cc-primary); background: var(--cc-bg-elevated); }
 .api-base-input__field::placeholder { color: var(--cc-text-faint); }
+.api-base-input__toggle {
+  display: flex; align-items: center; justify-content: center;
+  position: absolute; z-index: 2; top: 1px; right: 1px; width: 34px; height: calc(100% - 2px);
+  border: 0; border-left: 1px solid var(--cc-border-strong); border-radius: 0 5px 5px 0;
+  background: var(--cc-bg-input); color: var(--cc-text-dim); cursor: pointer;
+}
+.api-base-input__chevron { display: block; }
+.api-base-input__toggle:hover { background: var(--cc-bg-hover); color: var(--cc-text); }
 .api-base-input__menu {
   position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
   max-height: 264px; overflow-y: auto; border: 1px solid var(--cc-border-strong);

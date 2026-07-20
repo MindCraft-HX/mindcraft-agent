@@ -571,11 +571,8 @@ async function editProviderByIdx(i) {
   showProviderForm.value = true
 }
 
-async function addProvider() {
-  // 从磁盘读取当前 config.toml 作为初始模板，保留已有配置（trust 等）
-  let latestToml = ''
-  try { latestToml = await window.electronAPI?.codexReadConfigToml?.() || '' } catch (_) {}
-  const p = { name: '', key: '', url: '', model: '', reasoningEffort: '', apiFormat: 'responses', authJson: {}, tomlText: latestToml || buildManagedProviderToml({}) }
+function addProvider() {
+  const p = { name: '', key: '', url: '', model: '', reasoningEffort: '', apiFormat: 'responses', authJson: {}, tomlText: '' }
   settingsForm.value.providers.push(p)
   settingsForm.value.selectedIdx = settingsForm.value.providers.length - 1
   editingNewProvider.value = true
