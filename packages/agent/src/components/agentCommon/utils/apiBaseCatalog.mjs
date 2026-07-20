@@ -1,4 +1,5 @@
 const API_BASE_PRESETS = Object.freeze([
+  { id: 'mindcraft-api-anthropic', agentType: 'claude', label: 'MindCraft API', url: 'https://api.mindcraft.com.cn', keywords: ['mindcraft', 'mc'] },
   { id: 'anthropic', agentType: 'claude', label: 'Anthropic', url: 'https://api.anthropic.com', keywords: ['claude', 'official'] },
   { id: 'volcengine-agentplan', agentType: 'claude', label: '火山 AgentPlan', url: 'https://ark.cn-beijing.volces.com/api/coding', keywords: ['volcengine', 'ark', '火山'] },
   { id: 'doubao-seed', agentType: 'claude', label: '豆包 Seed', url: 'https://ark.cn-beijing.volces.com/api/compatible', keywords: ['doubao', 'volcengine', '豆包'] },
@@ -12,6 +13,7 @@ const API_BASE_PRESETS = Object.freeze([
   { id: 'openrouter-anthropic', agentType: 'claude', label: 'OpenRouter', url: 'https://openrouter.ai/api', keywords: ['openrouter', 'router'] },
   { id: 'therouter-anthropic', agentType: 'claude', label: 'TheRouter', url: 'https://api.therouter.ai', keywords: ['therouter', 'router'] },
 
+  { id: 'mindcraft-api', agentType: 'codex', label: 'MindCraft API', url: 'https://api.mindcraft.com.cn/v1', keywords: ['mindcraft', 'mc'] },
   { id: 'openai', agentType: 'codex', label: 'OpenAI', url: 'https://api.openai.com/v1', apiFormat: 'responses', keywords: ['openai', 'official', 'gpt'] },
   { id: 'volcengine-agentplan-codex', agentType: 'codex', label: '火山 AgentPlan', url: 'https://ark.cn-beijing.volces.com/api/coding/v3', apiFormat: 'chat', keywords: ['volcengine', 'ark', '火山'] },
   { id: 'doubao-seed-codex', agentType: 'codex', label: '豆包 Seed', url: 'https://ark.cn-beijing.volces.com/api/v3', apiFormat: 'chat', keywords: ['doubao', 'volcengine', '豆包'] },

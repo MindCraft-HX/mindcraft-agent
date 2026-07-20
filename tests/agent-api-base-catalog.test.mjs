@@ -10,6 +10,10 @@ test('API Base catalog separates Claude and Codex protocol presets', () => {
   const codex = getApiBasePresets('codex')
 
   assert.ok(claude.some(item => item.id === 'anthropic'))
+  assert.equal(claude[0].id, 'mindcraft-api-anthropic')
+  assert.deepEqual(claude[0], { id: 'mindcraft-api-anthropic', agentType: 'claude', label: 'MindCraft API', url: 'https://api.mindcraft.com.cn', keywords: ['mindcraft', 'mc'] })
+  assert.equal(codex[0].id, 'mindcraft-api')
+  assert.deepEqual(codex[0], { id: 'mindcraft-api', agentType: 'codex', label: 'MindCraft API', url: 'https://api.mindcraft.com.cn/v1', keywords: ['mindcraft', 'mc'] })
   assert.deepEqual(claude.find(item => item.id === 'kimi-api-anthropic'), {
     id: 'kimi-api-anthropic',
     agentType: 'claude',
@@ -43,6 +47,8 @@ test('API Base catalog supports case-insensitive fuzzy lookup by name, URL, and 
   assert.deepEqual(searchApiBasePresets('claude', '智谱').map(item => item.id), ['zhipu-anthropic'])
   assert.deepEqual(searchApiBasePresets('codex', 'siliconflow.cn/v1').map(item => item.id), ['siliconflow'])
   assert.deepEqual(searchApiBasePresets('codex', 'coding plan').map(item => item.id), ['kimi-coding-plan'])
+  assert.deepEqual(searchApiBasePresets('claude', 'mindcraft').map(item => item.id), ['mindcraft-api-anthropic'])
+  assert.deepEqual(searchApiBasePresets('codex', 'mindcraft').map(item => item.id), ['mindcraft-api'])
 })
 
 test('API Base catalog does not advertise unsupported agent types', () => {
