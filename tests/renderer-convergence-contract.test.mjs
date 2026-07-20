@@ -6,6 +6,7 @@ import { join, relative } from 'node:path'
 const rootDir = process.cwd()
 const componentsDir = join(rootDir, 'packages', 'agent', 'src', 'components')
 const sharedStatusBarPath = join(componentsDir, 'agentCommon', 'components', 'StatusBarMetrics.vue')
+const codexIndexPath = join(componentsDir, 'codeX', 'index.vue')
 
 function collectFiles(dir, predicate, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -48,6 +49,20 @@ test('shared StatusBarMetrics keeps provider differences as props', () => {
   assert.match(source, /compactingKey/)
   assert.doesNotMatch(source, /codexAutoCompactDesc/)
   assert.doesNotMatch(source, /claudeCode/)
+})
+
+test('shared StatusBarMetrics exposes an optional finalizing state', () => {
+  const source = readFileSync(sharedStatusBarPath, 'utf8')
+
+  assert.match(source, /finalizing:\s*\{\s*type:\s*Boolean,\s*default:\s*false\s*\}/)
+  assert.match(source, /agent\.finalizing/)
+})
+
+test('CodeX shows finalizing only while awaiting authoritative done after thinking stops', () => {
+  const source = readFileSync(codexIndexPath, 'utf8')
+
+  assert.match(source, /:finalizing="Boolean\(activeTab\?\._awaitingDone && !activeTab\?\.thinking\)"/)
+  assert.match(source, /isCodexTurnLocked\(activeTab\) \? \$t\('agent\.queueMsg'\)/)
 })
 
 console.log('renderer convergence contract test passed')

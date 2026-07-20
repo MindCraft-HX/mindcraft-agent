@@ -499,6 +499,7 @@
 		"compactTitle": "压缩中",
 		"duration": "用时 {time}",
 		"runningDuration": "运行中 {time}",
+		"finalizing": "正在收尾",
 		"backgroundTasksRunning": "后台任务 {n}",
 		"loadHistory": "加载历史",
 		"loadingHistory": "加载历史消息…",
