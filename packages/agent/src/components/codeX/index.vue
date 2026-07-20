@@ -2257,10 +2257,14 @@ async function sendMessage(textOverride = null, targetTab = null) {
   }
 
   if (isCodexTurnLocked(tab)) {
+    const hadQueuedInput = Boolean(tab._queuedInput)
     tab._queuedInput = text
     if (!isQueuedFlush) {
       inputText.value = ''
       void sessionDraft.clearDraftForChat(tab)
+      if (!hadQueuedInput) {
+        ElMessage.info({ message: t('agent.codexQueued'), duration: 1600 })
+      }
     }
     return
   }

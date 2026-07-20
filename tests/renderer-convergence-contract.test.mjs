@@ -65,4 +65,11 @@ test('CodeX shows finalizing only while awaiting authoritative done after thinki
   assert.match(source, /isCodexTurnLocked\(activeTab\) \? \$t\('agent\.queueMsg'\)/)
 })
 
+test('CodeX acknowledges the first queued message without starting a second run', () => {
+  const source = readFileSync(codexIndexPath, 'utf8')
+
+  assert.match(source, /const hadQueuedInput = Boolean\(tab\._queuedInput\)/)
+  assert.match(source, /ElMessage\.info\(\{ message: t\('agent\.codexQueued'\), duration: 1600 \}\)/)
+})
+
 console.log('renderer convergence contract test passed')

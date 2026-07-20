@@ -500,6 +500,7 @@
 		"duration": "Elapsed {time}",
 		"runningDuration": "Running {time}",
 		"finalizing": "Finalizing",
+		"codexQueued": "Next message queued",
 		"backgroundTasksRunning": "Background {n}",
 		"loadHistory": "Load History",
 		"loadingHistory": "Loading history…",
