@@ -19,11 +19,15 @@ MindCraft handles this in `electron/claude/resumeRecovery.js`:
 
 - Only a fresh Query resume is inspected; an attached live Query is untouched.
 - Transcript reads are tail-first and read-only.
-- Every resumed Query is pinned to the latest safe assistant checkpoint through
-  SDK `resumeSessionAt`. For a linear completed transcript this is equivalent to
-  normal resume; for interrupted or branched transcripts it prevents the CLI
-  from selecting a stale tool branch. If no later safe assistant exists, the
-  checkpoint falls back to the nearest safe point before the unresolved tool.
+- A resumed Query is pinned by walking the current tail entry's `parentUuid`
+  chain to the nearest completed, non-synthetic assistant text message. File
+  order is not branch order: a later JSONL row can belong to an abandoned branch
+  and its UUID may not be addressable by the CLI. Thinking-only rows and any
+  `stop_reason: tool_use` fragments are not safe checkpoints. An unresolved tool
+  tail uses the same graph rule and falls back before the tool call. Async Agent
+  launches are tracked by `toolUseResult.agentId` / `backgroundTaskId` and
+  task-notification status; a fresh Query with unfinished tasks rolls back before
+  the earliest launch so SDK stopped-task replay cannot consume the human input.
 - Recovery keeps the same `cliSessionId`. It must not set `forkSession`, merge
   transcripts, or write repair rows into provider files.
 - `background_tasks_changed` is the authoritative level signal for current
@@ -38,6 +42,16 @@ Claude Code `2.1.141` are outside the verified runtime baseline.
 This behavior was validated against the production-shaped async iterable input
 path. A temporary SDK fork returned a normal assistant response and
 `terminal_reason: completed`; the temporary session was deleted after the test.
+
+### 2026-07-21 compatibility note: manual abort ownership
+
+`Query.close()` returns before every async consumer/finalizer has necessarily
+finished. MindCraft therefore keeps a per-Query `runId` and retains ownership
+until the owned finalizer completes. Abort requests close the Query but do not
+delete the `chatKey` entry or emit `AGENT_DONE` directly. Pollers, stream events,
+terminal signals, TurnStore cleanup, and map deletion must all verify the same
+`runId`; renderer input remains locked in `abort_requested` until that terminal
+event arrives. An old finalizer must never mutate a replacement run.
 
 ## 一、Claude Code SDK — 未集成功能
 
