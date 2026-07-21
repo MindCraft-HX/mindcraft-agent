@@ -151,7 +151,7 @@ test('claude reused query failures finalize the run instead of leaving session s
   )
   assert.match(
     source,
-    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*clearCurrentTurn\(chatKey\)[\s\S]*agentSessions\.delete\(chatKey\)[\s\S]*pendingSessionMetaByChatKey\.delete\(chatKey\)/,
+    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*clearCurrentTurn\(chatKey\)[\s\S]*deleteClaudeRunIfOwned\(agentSessions, chatKey, existingSession\.runId\)[\s\S]*pendingSessionMetaByChatKey\.delete\(chatKey\)/,
     'expected reused-query failure finalizer to clear runtime state after terminal failure',
   )
 })

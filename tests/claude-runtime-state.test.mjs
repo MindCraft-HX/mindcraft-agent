@@ -4,8 +4,8 @@ import assert from 'node:assert/strict'
 import {
   applyClaudeMetrics,
   buildPersistableClaudeChat,
+  isClaudeAbortPending,
   isClaudeTurnLocked,
-  markClaudeAborted,
   markClaudeAbortRequested,
   markClaudeDone,
   markClaudeIdle,
@@ -77,7 +77,7 @@ test('late metrics thinking does not own runtime state after done', () => {
   assert.equal(tab.metrics.thinking, false)
 })
 
-test('abort requested clears UI running and aborted unlocks runtime', () => {
+test('abort remains locked until the owned runtime confirms completion', () => {
   const tab = { thinking: true, _thinkingStart: 1000, currentAssistantId: 'a1' }
 
   markClaudeAbortRequested(tab)
@@ -86,11 +86,13 @@ test('abort requested clears UI running and aborted unlocks runtime', () => {
   assert.equal(tab._thinkingStart, null)
   assert.equal(tab.currentAssistantId, null)
   assert.equal(isClaudeTurnLocked(tab), true)
+  assert.equal(isClaudeAbortPending(tab), true)
 
-  markClaudeAborted(tab)
+  markClaudeDone(tab, { reason: 'aborted' })
 
   assert.equal(tab.thinking, false)
   assert.equal(isClaudeTurnLocked(tab), false)
+  assert.equal(isClaudeAbortPending(tab), false)
   assert.equal(tab._claudeRuntimeState, 'aborted')
 })
 

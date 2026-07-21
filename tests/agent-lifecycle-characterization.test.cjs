@@ -13,23 +13,29 @@ const codexAgentPath = path.join(repoRoot, 'packages/agent/electron/codexAgent.j
 
 test('Claude abort: abortController.abort() fires before query.close()', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
+  const abortBody = source.slice(
+    source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.AGENT_ABORT'),
+    source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE'),
+  )
 
-  // Abort handler at claude-agent-abort
   assert.match(
-    source,
-    /ipcMain\.handle\(CLAUDE_CHANNELS\.AGENT_ABORT[\s\S]*abortController\?\.abort[\s\S]*query\?\.close/,
+    abortBody,
+    /abortController\?\.abort[\s\S]*query\?\.close/,
     'expected abort controller to be aborted before query.close() in claude-agent-abort',
   )
 })
 
-test('Claude abort: sends agent-done with reason "aborted" after cleanup', () => {
+test('Claude abort: retains run ownership and defers done to the finalizer', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
-
-  assert.match(
-    source,
-    /ipcMain\.handle\(CLAUDE_CHANNELS\.AGENT_ABORT[\s\S]*agentSessions\.delete\(chatKey\)[\s\S]*CLAUDE_CHANNELS\.AGENT_DONE[\s\S]*reason:\s*'aborted'/,
-    'expected agent-done with aborted reason after session cleanup',
+  const abortBody = source.slice(
+    source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.AGENT_ABORT'),
+    source.indexOf('ipcMain.handle(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE'),
   )
+
+  assert.match(abortBody, /s\.abortRequested\s*=\s*true/)
+  assert.doesNotMatch(abortBody, /agentSessions\.delete|deleteClaudeRunIfOwned/)
+  assert.doesNotMatch(abortBody, /CLAUDE_CHANNELS\.AGENT_DONE/)
+  assert.match(source, /const doneReason = s\.abortRequested[\s\S]*\? 'aborted'/)
 })
 
 test('CodeX abort: abortController.abort() fires before thread cancel', () => {
@@ -67,7 +73,7 @@ test('Claude runtime change: aborts old query before creating new one', () => {
   // Pattern: detect runtimeChanged → abort + close → delete → continue (not return)
   assert.match(
     source,
-    /runtimeChanged[\s\S]*abortController\?\.abort[\s\S]*query\?\.close[\s\S]*agentSessions\.delete\(chatKey\)/,
+    /runtimeChanged[\s\S]*abortController\?\.abort[\s\S]*query\?\.close[\s\S]*deleteClaudeRunIfOwned\(agentSessions, chatKey, existing\.runId\)/,
     'expected old query to be aborted, closed, and removed on runtime change',
   )
 })
@@ -152,14 +158,13 @@ test('Claude done: finally block cleans up turn store and metrics poller', () =>
   )
 })
 
-test('Claude done: agentSessions.delete happens after done event emission', () => {
+test('Claude done: cleanup deletes only the owned run', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
 
-  // The "finally 统一发送" comment and agentSessions.delete should appear near each other
   assert.match(
     source,
-    /finally 统一发送[\s\S]*agentSessions\.delete\(chatKey\)/,
-    'expected agent-done to be emitted in finally block, followed by session cleanup',
+    /finally 统一发送[\s\S]*const releasedOwnedRun = deleteClaudeRunIfOwned\(agentSessions, chatKey, runId\)[\s\S]*fallbackDonePayload && releasedOwnedRun/,
+    'expected final cleanup to verify and release only the current run',
   )
 })
 
