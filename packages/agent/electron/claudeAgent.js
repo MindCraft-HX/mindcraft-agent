@@ -86,6 +86,7 @@ const {
 } = require('./claude/environment')
 const { createClaudeBackgroundTaskTracker } = require('./claude/backgroundTaskTracker')
 const { inspectClaudeResumeRecovery } = require('./claude/resumeRecovery')
+const { deleteClaudeRunIfOwned, ownsClaudeRun } = require('./claude/runOwnership')
 
 function getClaudeFreezeDiagEnabled() {
   return getDiagnosticsClaudeFreeze()
@@ -2723,14 +2724,20 @@ function setupClaudeHandlers() {
   // 这里的 `sessionId` 是 renderer/runtime chat key（T130 中称为 chatKey），
   // 不是 Claude SDK 的 CLI session UUID。真实 CLI UUID 存在 cliSessionIds 中，
   // 并对应磁盘上的 `<cliSessionId>.jsonl`。磁盘 artifact 不应使用 chatKey 定位。
-  const agentSessions = new Map()  // chatKey -> { query, event, abortController, model, cwd }
+  const agentSessions = new Map()  // chatKey -> { runId, query, event, abortController, model, cwd }
   const cliSessionIds = new Map()  // chatKey -> SDK session_id (for resume)
   const sessionModels = new Map()  // chatKey -> model used by last completed query
-  const metricsPollers = new Map() // chatKey -> { interval, startTime, lastCliSessionId }
+  const metricsPollers = new Map() // chatKey -> { runId, interval, startTime }
   const slowNoticeSent = new Set() // chatKey 已提示"响应较慢"
   const slashCommandsCache = new Map() // key -> { ts, commands }
   const compactSummaries = new Map() // chatKey -> { summary, trigger, updatedAt }
   const pendingSessionMetaByChatKey = new Map() // chatKey -> meta waiting for first cliSessionId
+  let agentRunSequence = 0
+
+  function nextClaudeRunId() {
+    agentRunSequence += 1
+    return `claude-run-${agentRunSequence}`
+  }
 
   function resetAgentRuntime(_reason) {
     for (const [sid, session] of agentSessions.entries()) {
@@ -2794,8 +2801,8 @@ function setupClaudeHandlers() {
     }
 
     async function finalizeReusedQueryFailure(existingSession, err) {
-      const runtimeSession = agentSessions.get(chatKey)
-      const sessionRef = runtimeSession || existingSession || {}
+      if (agentSessions.get(chatKey) !== existingSession) return
+      const sessionRef = existingSession || {}
       const sender = sessionRef.event?.sender || event.sender
       const reason = resolveClaudeDoneReasonFromError(err)
       const donePayload = buildClaudeAgentDonePayload({
@@ -2815,13 +2822,15 @@ function setupClaudeHandlers() {
       })
       safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, donePayload)
       clearCurrentTurn(chatKey)
-      agentSessions.delete(chatKey)
+      deleteClaudeRunIfOwned(agentSessions, chatKey, existingSession.runId)
       pendingSessionMetaByChatKey.delete(chatKey)
     }
 
     // 复用仍在运行的 Query（首轮 result 后 SDK 可能仍保持会话，需要 streamInput 续写）
     const existing = agentSessions.get(chatKey)
-    if (existing && existing.query) {
+    if (existing) {
+      if (existing.abortRequested) return false
+      if (!existing.query) return false
       // 当前会话正在运行时若切换了模型，关闭旧会话并按新模型重新创建。
       const runtimeChanged = (
         (existing.model || '') !== (model || '') ||
@@ -2832,7 +2841,7 @@ function setupClaudeHandlers() {
         try { existing.abortController?.abort?.() } catch (_) {}
         try { existing.query?.close?.() } catch (_) {}
         // 只清除 SDK Query 对象，保留 cliSessionIds 以便 resume 对话历史。
-        agentSessions.delete(chatKey)
+        deleteClaudeRunIfOwned(agentSessions, chatKey, existing.runId)
         console.log(`[Claude] 检测到运行时配置变更，chatKey=${chatKey.slice(-8)}，已中止旧查询。` +
           `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
           `cliSessionId: ${cliSessionIds.get(chatKey) || '(none)'}`)
@@ -2859,6 +2868,7 @@ function setupClaudeHandlers() {
     }
 
     return new Promise((resolve) => {
+      const runId = nextClaudeRunId()
       const previousModel = sessionModels.get(chatKey)
       const previousCliSessionId = cliSessionIds.get(chatKey)
       // 允许 resume 的条件：有 cliSessionId 且为有效 UUID 格式（CLI --resume 要求 UUID）
@@ -2883,11 +2893,28 @@ function setupClaudeHandlers() {
       let exitCode = 0
       const resolvedCwd = path.resolve(cwd || process.cwd())
       const extraDirs = additionalDirsFromUserText(resolvedCwd, prompt || '')
+      const getOwnedSession = () => ownsClaudeRun(agentSessions, chatKey, runId)
+        ? agentSessions.get(chatKey)
+        : null
+      const getOwnedSender = () => getOwnedSession()?.event?.sender || event.sender
+      const sessionRun = {
+        runId,
+        query: null,
+        event,
+        abortController,
+        model,
+        cwd: resolvedCwd,
+        baseURL,
+        apiKey,
+        runMode: mode,
+        abortRequested: false,
+      }
+      agentSessions.set(chatKey, sessionRun)
       const bootWatch = setTimeout(() => {
-        if (!gotAnyMessage) {
+        if (!gotAnyMessage && ownsClaudeRun(agentSessions, chatKey, runId)) {
           if (slowNoticeSent.has(chatKey)) return
           slowNoticeSent.add(chatKey)
-          const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+          const sender = getOwnedSender()
           safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
             sessionId,
             msg: {
@@ -2904,7 +2931,9 @@ function setupClaudeHandlers() {
           ? await inspectClaudeResumeRecovery(path.join(getClaudeProjectsRootDir(resolvedCwd), `${resumedSessionId}.jsonl`))
           : null
         const runQuery = async (rid) => {
+          if (!ownsClaudeRun(agentSessions, chatKey, runId) || sessionRun.abortRequested) return
           const { query } = await loadClaudeAgentSdk()
+          if (!ownsClaudeRun(agentSessions, chatKey, runId) || sessionRun.abortRequested) return
           // Memory user 模式注入：在首条消息前加上 memory 内容
           let effectivePrompt = prompt
           const memInjectMode = readMemoryInjectMode()
@@ -3004,7 +3033,7 @@ function setupClaudeHandlers() {
                 }
                 // AskUserQuestion：发给前端让用户选择，等待回答后继续
                 if (nameLower === 'askuserquestion' || nameLower === 'ask_user_question') {
-                  const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+                  const sender = getOwnedSender()
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                   const answers = await new Promise((resolve) => {
                     pendingPermissionResolvers.set(requestId, resolve)
@@ -3018,7 +3047,7 @@ function setupClaudeHandlers() {
                 }
                 // ExitPlanMode：专用计划审查流程（不论 runMode 是什么，始终让用户审查）
                 if (nameLower === 'exitplanmode' || nameLower === 'exit_plan_mode') {
-                  const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+                  const sender = getOwnedSender()
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                   const plan = input.plan || ''
                   const planFilePath = input.planFilePath || ''
@@ -3044,7 +3073,7 @@ function setupClaudeHandlers() {
                   }
                   return { behavior: 'allow', updatedInput }
                 }
-                if (agentSessions.get(chatKey)?.runMode === 'edit_automatically') {
+                if (getOwnedSession()?.runMode === 'edit_automatically') {
                   return { behavior: 'allow', updatedInput: input }
                 }
                 if (permissionPolicy === 'allow_all') {
@@ -3053,7 +3082,7 @@ function setupClaudeHandlers() {
                 if (permissionPolicy === 'read_only') {
                   return { behavior: 'deny', message: lt('perm.readonly') }
                 }
-                const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+                const sender = getOwnedSender()
                 const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                 const msg = {
                   id: requestId,
@@ -3080,13 +3109,13 @@ function setupClaudeHandlers() {
                 PostCompact: [{
                   hooks: [async (hookInput) => {
                     const summary = hookInput?.compact_summary || ''
-                    if (summary && typeof summary === 'string') {
+                    if (summary && typeof summary === 'string' && ownsClaudeRun(agentSessions, chatKey, runId)) {
                       compactSummaries.set(chatKey, {
                         summary,
                         trigger: hookInput?.trigger || 'manual',
                         updatedAt: Date.now(),
                       })
-                      const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+                      const sender = getOwnedSender()
                       safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, {
                         sessionId,
                         msg: {
@@ -3105,16 +3134,11 @@ function setupClaudeHandlers() {
               abortController,
             },
           })
-          agentSessions.set(chatKey, {
-            query: q,
-            event,
-            abortController,
-            model,
-            cwd: resolvedCwd,
-            baseURL,
-            apiKey,
-            runMode: mode,
-          })
+          if (!ownsClaudeRun(agentSessions, chatKey, runId) || sessionRun.abortRequested) {
+            try { q.close?.() } catch (_) {}
+            return
+          }
+          sessionRun.query = q
           // Phase 3：TurnStore — 开始新 turn
           beginTurn({ provider: 'claude', chatKey, startedAt: Date.now() })
           const sdkUsageAccumulator = createClaudeTurnUsageAccumulator()
@@ -3122,14 +3146,20 @@ function setupClaudeHandlers() {
           // 启动 metrics 轮询器。只推送真实 transcript 样本，不伪造中间值；
           // 轮询间隔缩短到 1s，提升状态栏动态感。
           const pollStart = Date.now()
+          let pollerRecord = null
           const pollInterval = setInterval(async () => {
-            const s = agentSessions.get(chatKey)
-            if (!s) { clearInterval(pollInterval); return }
+            const s = getOwnedSession()
+            if (!s) {
+              clearInterval(pollInterval)
+              if (metricsPollers.get(chatKey) === pollerRecord) metricsPollers.delete(chatKey)
+              return
+            }
             const cliId = cliSessionIds.get(chatKey)
             if (!cliId) return
             const metrics = await claudeMetrics.pollMetrics(cliId, s.cwd, s.model, true, {
               tokenSinceMs: pollStart,
             })
+            if (!ownsClaudeRun(agentSessions, chatKey, runId)) return
             if (metrics) {
               const compactBoundarySampleAt = toNonNegativeMetricNumber(metrics.compactBoundarySampleAt)
               if ((metrics.compactBoundaryContextUsage || 0) > 0 && compactBoundarySampleAt > latestHandledCompactSampleAt) {
@@ -3171,11 +3201,13 @@ function setupClaudeHandlers() {
               })
             }
           }, CLAUDE_METRICS_POLL_INTERVAL_MS)
-          metricsPollers.set(chatKey, { interval: pollInterval, startTime: pollStart })
+          pollerRecord = { interval: pollInterval, startTime: pollStart, runId }
+          metricsPollers.set(chatKey, pollerRecord)
           const backgroundTaskTracker = createClaudeBackgroundTaskTracker()
 
           async function sendCompletedDoneIfReady(sender, donePayload, { force = false } = {}) {
             if (doneSent) return false
+            if (!ownsClaudeRun(agentSessions, chatKey, runId)) return false
             if (!force && backgroundTaskTracker.hasActiveTasks()) {
               backgroundTaskTracker.setPendingDonePayload(donePayload)
               return false
@@ -3185,11 +3217,10 @@ function setupClaudeHandlers() {
             doneSent = true
             backgroundTaskTracker.clearPendingDonePayload()
             console.log('[Claude] agent-done → filePath:', finalPayload.filePath || '(empty)')
-            safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, finalPayload)
             _agentRunDoneFilePath = finalPayload.filePath || ''
-            agentSessions.delete(chatKey)
             try {
               const { buildAgentTurnTerminalEvent, TerminalKind } = await getAgentProtocol()
+              if (!ownsClaudeRun(agentSessions, chatKey, runId)) return false
               safeSend(sender, CORE_CHANNELS.AGENT_EVENT, buildAgentTurnTerminalEvent({
                 agent: 'claudeCode',
                 chatKey: sessionId,
@@ -3199,12 +3230,17 @@ function setupClaudeHandlers() {
                 hasAssistantOutput: true,
               }))
             } catch (_) { /* 新通道发送失败不影响旧通道 */ }
+            if (!ownsClaudeRun(agentSessions, chatKey, runId)) return false
+            clearCurrentTurn(chatKey)
+            pendingSessionMetaByChatKey.delete(chatKey)
+            safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, finalPayload)
+            deleteClaudeRunIfOwned(agentSessions, chatKey, runId)
             return true
           }
 
           for await (const msg of q) {
-            if (!agentSessions.has(chatKey)) break
-            const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+            if (!ownsClaudeRun(agentSessions, chatKey, runId)) break
+            const sender = getOwnedSender()
             gotAnyMessage = true
             backgroundTaskTracker.updateFromSdkMessage(msg)
             const incomingCliSessionId = getClaudeSdkSessionId(msg)
@@ -3319,7 +3355,7 @@ function setupClaudeHandlers() {
               }
               // Phase 4：emitClaudeMetricsViaStore 已在 safeSend 前调用（TurnStore 已 finalize）
               resultReceived = true
-              const sessionCwd = agentSessions.get(chatKey)?.cwd || resolvedCwd
+              const sessionCwd = getOwnedSession()?.cwd || resolvedCwd
               const donePayload = buildClaudeAgentDonePayload({
                 sessionId,
                 cliSessionId: incomingCliSessionId || cliSessionIds.get(chatKey) || '',
@@ -3332,7 +3368,7 @@ function setupClaudeHandlers() {
             }
           }
           if (resultReceived && !doneSent && backgroundTaskTracker.hasPendingDonePayload()) {
-            const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+            const sender = getOwnedSender()
             await sendCompletedDoneIfReady(sender, null, { force: true })
           }
         } // end runQuery
@@ -3341,7 +3377,9 @@ function setupClaudeHandlers() {
           await runQuery(resumedSessionId)
         } catch (err) {
           exitCode = -1
-          const sender = agentSessions.get(chatKey)?.event?.sender || event.sender
+          if (!ownsClaudeRun(agentSessions, chatKey, runId)) return
+          if (sessionRun.abortRequested) return
+          const sender = getOwnedSender()
           const errMsg = err?.message || String(err)
           if (err?.message?.includes('No conversation found') && resumedSessionId) {
             console.warn(`[Claude] resume 失败 (No conversation found)，chatKey=${chatKey.slice(-8)}，cliSessionId=${resumedSessionId}，已阻止无上下文分支`)
@@ -3378,7 +3416,7 @@ function setupClaudeHandlers() {
           clearTimeout(bootWatch)
           // 停止 metrics 轮询器
           const poller = metricsPollers.get(chatKey)
-          if (poller) {
+          if (poller?.runId === runId) {
             clearInterval(poller.interval)
             metricsPollers.delete(chatKey)
           }
@@ -3386,12 +3424,14 @@ function setupClaudeHandlers() {
             provider: 'claude',
             chatKey,
             providerSessionId: cliSessionIds.get(chatKey) || '',
-            turnId: chatKey,
+            turnId: runId,
             ...liveSampleCounts,
           })
           // Phase 3：清理 TurnStore current turn
-          clearCurrentTurn(chatKey)
-          const s = agentSessions.get(chatKey)
+          const s = getOwnedSession()
+          let fallbackDonePayload = null
+          let fallbackDoneSender = null
+          if (s) clearCurrentTurn(chatKey)
           if (!resultReceived && s) {
             const fallbackCliSessionId = cliSessionIds.get(chatKey) || ''
             let finalCliSessionId = fallbackCliSessionId
@@ -3400,35 +3440,51 @@ function setupClaudeHandlers() {
               const jsonlPath = path.join(getClaudeProjectsRootDir(s.cwd || resolvedCwd), `${finalCliSessionId}.jsonl`)
               sessionFileIntegrity = analyzeClaudeJsonlFileIntegrity(jsonlPath)
             }
-            const doneReason = finalizeClaudeDoneReason({
-              resultReceived,
-              exitCode,
-              fallbackReason: exitCode === 0 ? 'interrupted' : 'failed',
-              sessionFileIntegrity,
-            })
-            const donePayload = buildClaudeAgentDonePayload({
+            const doneReason = s.abortRequested
+              ? 'aborted'
+              : finalizeClaudeDoneReason({
+                  resultReceived,
+                  exitCode,
+                  fallbackReason: exitCode === 0 ? 'interrupted' : 'failed',
+                  sessionFileIntegrity,
+                })
+            fallbackDonePayload = buildClaudeAgentDonePayload({
               sessionId,
               cliSessionId: finalCliSessionId,
               cwd: s.cwd || resolvedCwd,
               reason: doneReason,
             })
-            safeSend((s.event?.sender || event.sender), CLAUDE_CHANNELS.AGENT_DONE, donePayload)
-            _agentRunDoneFilePath = donePayload.filePath || ''  // PR 2：fallback 路径也捕获 filePath
+            fallbackDoneSender = s.event?.sender || event.sender
+            doneSent = true
+            _agentRunDoneFilePath = fallbackDonePayload.filePath || ''  // PR 2：fallback 路径也捕获 filePath
           }
           // PR 2：双发 agent.run.done（finally 统一发送，abort/success/failure 全部覆盖）
           // agent.turn.terminal 在 result 到达时已发，此处是 run 收尾事件。
           // filePath 从 result/fallback 的 donePayload 捕获，abort 交给 finally 统一发。
-          try {
-            const { buildAgentRunDoneEvent } = await getAgentProtocol()
-            safeSend(event.sender, CORE_CHANNELS.AGENT_EVENT, buildAgentRunDoneEvent({
-              agent: 'claudeCode',
-              chatKey: sessionId,
-              cliSessionId: cliSessionIds.get(chatKey) || '',
-              filePath: _agentRunDoneFilePath,
-            }))
-          } catch (_) { /* 新通道发送失败不影响旧通道 */ }
-          agentSessions.delete(chatKey)
-          pendingSessionMetaByChatKey.delete(chatKey)
+          const canEmitRunDone = ownsClaudeRun(agentSessions, chatKey, runId) ||
+            (doneSent && !agentSessions.has(chatKey))
+          let runDoneEvent = null
+          if (canEmitRunDone) {
+            try {
+              const { buildAgentRunDoneEvent } = await getAgentProtocol()
+              runDoneEvent = buildAgentRunDoneEvent({
+                agent: 'claudeCode',
+                chatKey: sessionId,
+                cliSessionId: cliSessionIds.get(chatKey) || '',
+                filePath: _agentRunDoneFilePath,
+              })
+            } catch (_) { /* 新通道发送失败不影响旧通道 */ }
+          }
+          const releasedOwnedRun = deleteClaudeRunIfOwned(agentSessions, chatKey, runId)
+          if (releasedOwnedRun) {
+            pendingSessionMetaByChatKey.delete(chatKey)
+          }
+          if (fallbackDonePayload && releasedOwnedRun) {
+            safeSend(fallbackDoneSender, CLAUDE_CHANNELS.AGENT_DONE, fallbackDonePayload)
+          }
+          if (runDoneEvent && (releasedOwnedRun || (doneSent && !agentSessions.has(chatKey)))) {
+            safeSend(event.sender, CORE_CHANNELS.AGENT_EVENT, runDoneEvent)
+          }
           resolve(exitCode)
         }
       })()
@@ -3438,18 +3494,10 @@ function setupClaudeHandlers() {
   ipcMain.handle(CLAUDE_CHANNELS.AGENT_ABORT, (_, sessionId) => {
     const chatKey = sessionId
     const s = agentSessions.get(chatKey)
-    if (s) {
+    if (s && !s.abortRequested) {
+      s.abortRequested = true
       try { s.abortController?.abort?.() } catch (_) {}
       try { s.query?.close?.() } catch (_) {}
-      agentSessions.delete(chatKey)
-      pendingSessionMetaByChatKey.delete(chatKey)
-      safeSend(s.event?.sender, CLAUDE_CHANNELS.AGENT_DONE, buildClaudeAgentDonePayload({
-        sessionId,
-        cliSessionId: cliSessionIds.get(chatKey) || '',
-        cwd: s.cwd || '',
-        reason: 'aborted',
-      }))
-      // PR 2：agent.run.done 由 query handler 的 finally 统一发送，此处不重复
     }
   })
 

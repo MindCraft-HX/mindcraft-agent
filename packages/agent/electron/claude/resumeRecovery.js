@@ -42,15 +42,78 @@ function isRealAssistant(entry) {
 }
 
 function isSafeAssistantCheckpoint(entry) {
-  return isRealAssistant(entry) && Boolean(entry?.uuid) && getToolUseBlocks(entry).length === 0
+  if (!isRealAssistant(entry) || !entry?.uuid || getToolUseBlocks(entry).length > 0) return false
+  const stopReason = String(entry?.message?.stop_reason || '')
+  if (stopReason && stopReason !== 'end_turn' && stopReason !== 'stop_sequence') return false
+  const content = getMessageContent(entry)
+  return Array.isArray(content) && content.some(
+    block => block?.type === 'text' && String(block.text || '').trim().length > 0,
+  )
 }
 
-function isOrphanedBackgroundNotification(entry) {
-  if (!isUserEntry(entry) || entry?.origin?.kind !== 'task-notification') return false
+function readTaskNotification(entry) {
+  if (!isUserEntry(entry)) return null
   const content = getMessageContent(entry)
-  return typeof content === 'string' &&
-    content.includes('No completion record was found') &&
-    content.includes('previous session')
+  if (typeof content !== 'string' || !content.includes('<task-notification>')) return null
+  const taskIds = [...content.matchAll(/<task-id>([^<]+)<\/task-id>/g)]
+    .map(match => String(match[1] || '').trim())
+    .filter(Boolean)
+  const status = String(content.match(/<status>([^<]+)<\/status>/)?.[1] || '').trim().toLowerCase()
+  return taskIds.length > 0 ? { taskIds, status } : null
+}
+
+function getBackgroundLaunch(entry, entriesByUuid) {
+  const result = entry?.toolUseResult
+  const taskId = String(result?.agentId || result?.backgroundTaskId || '')
+  if (!taskId || (!result?.isAsync && !result?.backgroundTaskId)) return null
+  const sourceUuid = String(entry?.sourceToolAssistantUUID || '')
+  const source = sourceUuid ? entriesByUuid.get(sourceUuid) : null
+  return { taskId, source }
+}
+
+function buildCurrentBranch(entries, entriesByUuid) {
+  const latest = entries.findLast(entry => Boolean(entry?.uuid))
+  if (!latest) return { entries: [], complete: true }
+
+  const branch = []
+  const visited = new Set()
+  let current = latest
+
+  while (current?.uuid && !visited.has(current.uuid)) {
+    visited.add(current.uuid)
+    branch.push(current)
+    const parentUuid = String(current.parentUuid || '')
+    if (!parentUuid) return { entries: branch.reverse(), complete: true }
+    current = entriesByUuid.get(parentUuid)
+    if (!current) return { entries: branch.reverse(), complete: false }
+  }
+
+  return { entries: branch.reverse(), complete: false }
+}
+
+function findUnresolvedBackgroundOrigin(branch, entriesByUuid) {
+  const launches = new Map()
+  const statuses = new Map()
+
+  for (let index = 0; index < branch.length; index += 1) {
+    const entry = branch[index]
+    const launch = getBackgroundLaunch(entry, entriesByUuid)
+    if (launch) launches.set(launch.taskId, { ...launch, index })
+    const notification = readTaskNotification(entry)
+    if (notification) {
+      for (const taskId of notification.taskIds) statuses.set(taskId, notification.status)
+    }
+  }
+
+  const missingLaunch = [...statuses.entries()].some(
+    ([taskId, status]) => status === 'stopped' && !launches.has(taskId),
+  ) || [...launches.values()].some(launch => !launch.source)
+  if (missingLaunch) return { origin: null, needsMoreHistory: true }
+
+  const origin = [...launches.values()]
+    .filter(launch => statuses.get(launch.taskId) !== 'completed')
+    .sort((a, b) => a.index - b.index)[0] || null
+  return { origin, needsMoreHistory: false }
 }
 
 function findSafeAssistantBefore(entry, entriesByUuid) {
@@ -68,14 +131,14 @@ function findSafeAssistantBefore(entry, entriesByUuid) {
   return null
 }
 
-function findBackgroundTaskOrigin(danglingToolUse, entries, entriesByUuid) {
+function findBackgroundTaskOrigin(danglingToolUse, branch, entriesByUuid) {
   const taskId = String(danglingToolUse?.block?.input?.task_id || '')
   if (!taskId || String(danglingToolUse?.block?.name || '').toLowerCase() !== 'taskoutput') {
     return danglingToolUse.entry
   }
 
   for (let index = danglingToolUse.index - 1; index >= 0; index -= 1) {
-    const entry = entries[index]
+    const entry = branch[index]
     if (String(entry?.toolUseResult?.backgroundTaskId || '') !== taskId) continue
     const sourceUuid = String(entry?.sourceToolAssistantUUID || '')
     if (sourceUuid && entriesByUuid.has(sourceUuid)) return entriesByUuid.get(sourceUuid)
@@ -86,19 +149,18 @@ function findBackgroundTaskOrigin(danglingToolUse, entries, entriesByUuid) {
 
 function analyzeClaudeResumeRecoveryEntries(entries) {
   const entriesByUuid = new Map()
-  const openToolUses = new Map()
-  let latestOrphanedNotificationIndex = -1
 
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index]
+  for (const entry of entries) {
     if (entry?.uuid) entriesByUuid.set(entry.uuid, entry)
-    if (isOrphanedBackgroundNotification(entry)) latestOrphanedNotificationIndex = index
+  }
 
-    if (getEntryType(entry) === 'result') {
-      openToolUses.clear()
-      continue
-    }
+  const currentBranch = buildCurrentBranch(entries, entriesByUuid)
+  const branch = currentBranch.entries
+  if (branch.length === 0) return { checkpoint: null, needsMoreHistory: false }
 
+  const openToolUses = new Map()
+  for (let index = 0; index < branch.length; index += 1) {
+    const entry = branch[index]
     for (const block of getToolUseBlocks(entry)) {
       openToolUses.set(String(block.id), { entry, block, index })
     }
@@ -106,54 +168,63 @@ function analyzeClaudeResumeRecoveryEntries(entries) {
       openToolUses.delete(String(block.tool_use_id))
     }
   }
-
   const dangling = [...openToolUses.values()].sort((a, b) => b.index - a.index)[0]
-  if (!dangling) {
-    const latestSafeAssistant = entries.findLast(isSafeAssistantCheckpoint)
-    if (latestSafeAssistant) {
+
+  const backgroundRecovery = findUnresolvedBackgroundOrigin(branch, entriesByUuid)
+  if (backgroundRecovery.needsMoreHistory) return { checkpoint: null, needsMoreHistory: true }
+  if (backgroundRecovery.origin) {
+    const safeAssistant = findSafeAssistantBefore(backgroundRecovery.origin.source, entriesByUuid)
+    if (!safeAssistant) return { checkpoint: null, needsMoreHistory: true }
+    return {
+      checkpoint: {
+        resumeSessionAt: safeAssistant.uuid,
+        interruptedToolName: String(
+          dangling?.block?.name || getToolUseBlocks(backgroundRecovery.origin.source)[0]?.name || 'background',
+        ),
+      },
+      needsMoreHistory: false,
+    }
+  }
+
+  if (dangling) {
+    const latestSafeAssistantAfterDangling = branch
+      .slice(dangling.index + 1)
+      .findLast(isSafeAssistantCheckpoint)
+    if (latestSafeAssistantAfterDangling) {
       return {
         checkpoint: {
-          resumeSessionAt: latestSafeAssistant.uuid,
-          interruptedToolName: '',
+          resumeSessionAt: latestSafeAssistantAfterDangling.uuid,
+          interruptedToolName: String(dangling.block?.name || ''),
         },
         needsMoreHistory: false,
       }
     }
-    const orphanHasLaterRealAssistant = entries.some(
-      (entry, index) => index > latestOrphanedNotificationIndex && isRealAssistant(entry),
-    )
-    return {
-      checkpoint: null,
-      needsMoreHistory: latestOrphanedNotificationIndex >= 0 && !orphanHasLaterRealAssistant,
-    }
-  }
 
-  const latestSafeAssistantAfterDangling = entries
-    .map((entry, index) => ({ entry, index }))
-    .filter(({ entry, index }) => index > dangling.index && isSafeAssistantCheckpoint(entry))
-    .at(-1)?.entry
+    const recoveryOrigin = findBackgroundTaskOrigin(dangling, branch, entriesByUuid)
+    const safeAssistant = findSafeAssistantBefore(recoveryOrigin, entriesByUuid)
+    if (!safeAssistant) return { checkpoint: null, needsMoreHistory: true }
 
-  if (latestSafeAssistantAfterDangling) {
     return {
       checkpoint: {
-        resumeSessionAt: latestSafeAssistantAfterDangling.uuid,
+        resumeSessionAt: safeAssistant.uuid,
         interruptedToolName: String(dangling.block?.name || ''),
       },
       needsMoreHistory: false,
     }
   }
 
-  const recoveryOrigin = findBackgroundTaskOrigin(dangling, entries, entriesByUuid)
-  const safeAssistant = findSafeAssistantBefore(recoveryOrigin, entriesByUuid)
-  if (!safeAssistant) return { checkpoint: null, needsMoreHistory: true }
-
-  return {
-    checkpoint: {
-      resumeSessionAt: safeAssistant.uuid,
-      interruptedToolName: String(dangling.block?.name || ''),
-    },
-    needsMoreHistory: false,
+  const latestSafeAssistant = branch.findLast(isSafeAssistantCheckpoint)
+  if (latestSafeAssistant) {
+    return {
+      checkpoint: {
+        resumeSessionAt: latestSafeAssistant.uuid,
+        interruptedToolName: '',
+      },
+      needsMoreHistory: false,
+    }
   }
+
+  return { checkpoint: null, needsMoreHistory: !currentBranch.complete }
 }
 
 function parseJsonlTail(buffer, startsAtFileBeginning) {

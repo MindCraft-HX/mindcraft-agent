@@ -49,6 +49,10 @@ export function isClaudeTurnLocked(tab = {}) {
   return Boolean(tab?.thinking || tab?.[RUNTIME_FIELD] === CLAUDE_RUNTIME_STATES.ABORT_REQUESTED)
 }
 
+export function isClaudeAbortPending(tab = {}) {
+  return tab?.[RUNTIME_FIELD] === CLAUDE_RUNTIME_STATES.ABORT_REQUESTED
+}
+
 export function markClaudeTurnStarting(tab, now = Date.now()) {
   if (!tab) return tab
   if (!tab.cliSessionId && !tab.filePath) tab._pendingSessionBinding = true
@@ -82,7 +86,11 @@ export function markClaudeDone(tab, { cliSessionId = '', filePath = '', reason =
   if (!tab) return tab
   if (cliSessionId) tab.cliSessionId = cliSessionId
   if (filePath) tab.filePath = filePath
-  setRuntimeState(tab, reason === 'completed' ? CLAUDE_RUNTIME_STATES.DONE : CLAUDE_RUNTIME_STATES.FAILED)
+  setRuntimeState(tab, reason === 'completed'
+    ? CLAUDE_RUNTIME_STATES.DONE
+    : reason === 'aborted'
+      ? CLAUDE_RUNTIME_STATES.ABORTED
+      : CLAUDE_RUNTIME_STATES.FAILED)
   touchRuntimeUpdatedAt(tab)
   clearRuntimeFields(tab, { clearState: false })
   return tab

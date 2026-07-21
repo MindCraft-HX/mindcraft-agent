@@ -385,7 +385,7 @@ import { sanitizeClaudeProjectsForPersistence } from './utils/historyPersistence
 import {
   applyClaudeMetrics,
   isClaudeTurnLocked,
-  markClaudeAborted,
+  isClaudeAbortPending,
   markClaudeAbortRequested,
   markClaudeIdle,
   markClaudeStreamActivity,
@@ -981,6 +981,7 @@ const canSend = computed(() => {
   const tab = activeTab.value
   if (!tab) return false
   if (!activeProject.value?.cwdLocked) return false
+  if (isClaudeAbortPending(tab)) return false
   const hasText = inputText.value.trim().length > 0
   const hasAttachments = pendingImages.value.length > 0
   return hasText || hasAttachments
@@ -3030,7 +3031,6 @@ function abortSession() {
   markClaudeAbortRequested(tab)
   metricsData.value.thinking = false
   stopMetricsLiveTimer()
-  markClaudeAborted(tab)
   pushTabMessage(tab,{ id: nextMsgId(), role: 'system', text: t('agent.aborted') })
   trimMessages(tab, true)
   scrollBottom(tab.id)
@@ -3055,6 +3055,7 @@ async function sendMessage() {
   const text = (raw || '').trim()
   const hasAttachments = pendingImages.value.length > 0
   if ((!text && !hasAttachments) || !tab) return
+  if (isClaudeAbortPending(tab)) return
   sessionDraft.clearTimer()
   if (!activeProject.value?.cwdLocked) return
   beginTaskBatch(tab, { reason: 'user_turn', now: Date.now() })
