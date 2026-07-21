@@ -386,3 +386,133 @@ test('BASELINE: non-tool item types handled by ITEM_TOOL_HANDLERS work correctly
     }
   }
 })
+
+// ---------------------------------------------------------------------------
+// Group 7: terminal sweep — turn 终态收尾所有 running 工具卡
+// ---------------------------------------------------------------------------
+
+function sendTurnCompleted(stream, sessionId = 'sess-1') {
+  stream.onAgentMessage({ sessionId, msg: { type: 'turn.completed' } })
+}
+
+test('FIXED: turn.completed sweeps stuck running tool cards to done', () => {
+  const { tab, stream } = createHarness()
+
+  // file_change 的 item.completed 事件丢失（或被 reducer 改写 id 对不上）时，
+  // 卡片会停在 running；turn.completed 必须兜底收尾。
+  sendItemStarted(stream, {
+    id: 'fc-1',
+    type: 'file_change',
+    status: 'in_progress',
+    changes: [{ path: 'src/a.ts', kind: 'update' }],
+  })
+  sendItemStarted(stream, {
+    id: 'tool-ws-3',
+    type: 'web_search',
+    call_id: 'call-ws-3',
+    query: 'q',
+    status: 'in_progress',
+  })
+
+  let toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.equal(toolMessages.length, 2)
+  assert.ok(toolMessages.every(m => m.status === 'running'))
+
+  sendTurnCompleted(stream)
+
+  toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.ok(toolMessages.every(m => m.status === 'done'),
+    'turn.completed should sweep all running tool cards to done')
+})
+
+test('FIXED: turn.failed also sweeps running tool cards', () => {
+  const { tab, stream } = createHarness()
+
+  sendItemStarted(stream, {
+    id: 'fc-2',
+    type: 'file_change',
+    status: 'in_progress',
+    changes: [{ path: 'src/b.ts', kind: 'update' }],
+  })
+
+  stream.onAgentMessage({ sessionId: 'sess-1', msg: { type: 'turn.failed', error: { message: 'boom' } } })
+
+  const toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.equal(toolMessages[0].status, 'done',
+    'turn.failed should not leave tool cards stuck at running')
+})
+
+test('FIXED: abort sweeps running tool cards', () => {
+  const { tab, stream } = createHarness()
+
+  sendItemStarted(stream, {
+    id: 'fc-3',
+    type: 'file_change',
+    status: 'in_progress',
+    changes: [{ path: 'src/c.ts', kind: 'update' }],
+  })
+
+  stream.onAgentMessage({ sessionId: 'sess-1', msg: { type: 'system', subtype: 'abort' } })
+
+  const toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.equal(toolMessages[0].status, 'done',
+    'abort should not leave tool cards stuck at running')
+})
+
+test('FIXED: item.updated carrying explicit completed status is honored', () => {
+  const { tab, stream } = createHarness()
+
+  sendItemStarted(stream, {
+    id: 'fc-4',
+    type: 'file_change',
+    status: 'in_progress',
+    changes: [{ path: 'src/d.ts', kind: 'update' }],
+  })
+
+  // 终态随 item.updated（而非 item.completed）到达：status 显式为 completed
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.updated',
+      item: {
+        id: 'fc-4',
+        type: 'file_change',
+        status: 'completed',
+        changes: [{ path: 'src/d.ts', kind: 'update' }],
+      },
+    },
+  })
+
+  const toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.equal(toolMessages[0].status, 'done',
+    'explicit completed status on non-final event should be honored')
+})
+
+test('FIXED: non-final event without explicit status stays running', () => {
+  const { tab, stream } = createHarness()
+
+  sendItemStarted(stream, {
+    id: 'fc-5',
+    type: 'file_change',
+    status: 'in_progress',
+    changes: [{ path: 'src/e.ts', kind: 'update' }],
+  })
+
+  // P0 异步 diff preview 补发的 item.updated（status 仍为 in_progress）不得误收尾
+  stream.onAgentMessage({
+    sessionId: 'sess-1',
+    msg: {
+      type: 'item.updated',
+      item: {
+        id: 'fc-5',
+        type: 'file_change',
+        status: 'in_progress',
+        changes: [{ path: 'src/e.ts', kind: 'update', unified_diff: '@@ -1 +1 @@' }],
+      },
+    },
+  })
+
+  const toolMessages = tab.messages.filter(msg => msg.role === 'tool')
+  assert.equal(toolMessages[0].status, 'running',
+    'in_progress item.updated must keep the card running')
+})

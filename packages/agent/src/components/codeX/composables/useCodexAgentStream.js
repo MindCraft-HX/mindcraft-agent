@@ -64,8 +64,24 @@ function attachPerTurnTokens(tab, perTurnTokens, options = {}) {
 }
 
 function normalizeToolStatus(itemStatus, isFinal) {
-  if (!isFinal) return 'running'
-  return itemStatus === 'failed' ? 'error' : 'done'
+  // 部分 item（如 file_change）的终态可能随 item.updated 而非 item.completed
+  // 到达；非 final 事件里显式携带 completed/failed 也应认账，否则卡片会
+  // 永远停在 running。
+  if (itemStatus === 'failed') return 'error'
+  if (itemStatus === 'completed') return 'done'
+  return isFinal ? 'done' : 'running'
+}
+
+/**
+ * turn 进入终态（完成/失败/中止）后不可能还有工具在执行：把所有 running
+ * 工具卡统一收尾。兜底 item.completed 事件丢失或 reducer 改写 id 导致
+ * 终态更新对不上原卡片时"运行中"卡死的问题。
+ */
+function sweepRunningToolMessages(tab, status = 'done') {
+  if (!Array.isArray(tab?.messages)) return
+  for (const m of tab.messages) {
+    if (m.role === 'tool' && m.status === 'running') m.status = status
+  }
 }
 
 /**
@@ -546,10 +562,7 @@ export function useCodexAgentStream({
     if (isWorking) markCodexStreamActivity(tab, msg)
 
     if (msg.type === 'turn.completed' || msg.type === 'task_complete') {
-      const lastThinking = [...tab.messages].reverse().find(
-        m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
-      )
-      if (lastThinking) lastThinking.status = 'done'
+      sweepRunningToolMessages(tab, 'done')
       attachPerTurnTokens(tab, msg._perTurnTokens, { replace: false })
       markCodexTerminalSeen(tab)
       throttledScroll(tab.id)
@@ -625,6 +638,7 @@ export function useCodexAgentStream({
 
     if (msg.type === 'turn.failed') {
       markCodexTerminalErrorSeen(tab, msg.error || msg.message)
+      sweepRunningToolMessages(tab, 'done')
       const errorText = msg.error?.message || msg.message || 'Turn 执行失败'
       pushMessage(tab, onNewMessage, { id: nextMsgId(), role: 'system', text: `⚠️ ${errorText}` })
       throttledScroll(tab.id)
@@ -641,10 +655,7 @@ export function useCodexAgentStream({
         // The provider may still be flushing stdout/transcript. Keep the send
         // lock until the main-process finalizer emits AGENT_DONE.
         markCodexAbortRequested(tab)
-        const lastThinking = [...tab.messages].reverse().find(
-          m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
-        )
-        if (lastThinking) lastThinking.status = 'done'
+        sweepRunningToolMessages(tab, 'done')
         throttledScroll(tab.id)
         throttledSave()
         return
@@ -653,10 +664,7 @@ export function useCodexAgentStream({
         // Error rendering is not ownership release. Keep the send lock until
         // the main-process finalizer emits the authoritative AGENT_DONE.
         markCodexTerminalErrorSeen(tab, msg)
-        const lastThinking = [...tab.messages].reverse().find(
-          m => m.role === 'tool' && String(m.toolName || '').toLowerCase() === 'thinking' && m.status === 'running'
-        )
-        if (lastThinking) lastThinking.status = 'done'
+        sweepRunningToolMessages(tab, 'done')
         const content = msg.message?.content
         const text = Array.isArray(content)
           ? content.filter(b => b.type === 'text').map(b => b.text).join('\n')
