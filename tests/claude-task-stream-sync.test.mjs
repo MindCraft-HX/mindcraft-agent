@@ -328,3 +328,22 @@ test('result usage without _turnTokens does not synthesize footer in renderer', 
   assert.equal(tab.messages.length, 2)
   assert.equal(tab.messages[1]._turnTokens, undefined)
 })
+
+test('agent completion clears a compacting state without compact_boundary', () => {
+  const { tab, stream } = createHarness()
+  tab.thinking = true
+  tab._compacting = true
+  tab.messages.push({
+    id: 'compact-1',
+    role: 'system',
+    text: '正在压缩上下文...',
+    _isCompact: true,
+    _compacting: true,
+  })
+
+  stream.onAgentDone({ sessionId: 'sess-1', reason: 'completed' })
+
+  assert.equal(tab.thinking, false)
+  assert.equal(tab._compacting, false)
+  assert.equal(tab.messages[0]._compacting, false)
+})

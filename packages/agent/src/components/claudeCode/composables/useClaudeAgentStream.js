@@ -638,6 +638,12 @@ export function useClaudeAgentStream({
     const tab = tabs.value.find(t => t.sessionId === chatKey)
     if (!tab) return
     replaceActiveBackgroundTasks(tab, [])
+    // The SDK can end a turn before emitting compact_boundary. Completion is
+    // authoritative, so clear temporary compact UI state here as a fallback.
+    for (const message of tab.messages) {
+      if (message?._isCompact && message._compacting) message._compacting = false
+    }
+    tab._compacting = false
     if (cliSessionId) window.electronAPI.claudeRegisterCliSessions?.({ [chatKey]: cliSessionId })
     if (filePath) debugLog('agentDone', 'onAgentDone', { filePath })
     if (tab._awaitingCompactResult) {
