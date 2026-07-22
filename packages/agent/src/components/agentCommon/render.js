@@ -59,6 +59,15 @@ async function openPathCandidateFromElement(target, source = '') {
   }
 }
 
+function isTrustedPrimaryPathOpen(event) {
+  return event?.isTrusted === true
+    && event.button === 0
+    && !event.ctrlKey
+    && !event.metaKey
+    && !event.shiftKey
+    && !event.altKey
+}
+
 function openExternalLinkFromElement(target) {
   const href = String(target?.getAttribute?.('href') || '').trim()
   if (!/^https?:\/\//i.test(href)) return false
@@ -72,6 +81,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
     const target = event.target?.closest?.('[data-path-candidate]')
     if (!target) return
     event.preventDefault()
+    if (!isTrustedPrimaryPathOpen(event)) return
     void openPathCandidateFromElement(target)
   })
 }
@@ -740,6 +750,7 @@ export { escapeHtml }
 export {
   getDocumentOpenErrorMessage,
   openPathCandidateFromElement,
+  isTrustedPrimaryPathOpen,
   isAbsoluteFilePath,
   isStrongLocalPathCandidate,
   normalizeLocalPathHref,

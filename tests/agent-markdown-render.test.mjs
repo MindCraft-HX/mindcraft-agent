@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
-import { renderContent } from '../packages/agent/src/components/agentCommon/render.js'
+import { renderContent, isTrustedPrimaryPathOpen } from '../packages/agent/src/components/agentCommon/render.js'
+
+assert.equal(isTrustedPrimaryPathOpen({ isTrusted: true, button: 0 }), true, 'trusted primary clicks should open local path links')
+assert.equal(isTrustedPrimaryPathOpen({ isTrusted: false, button: 0 }), false, 'synthetic clicks must not open local path links')
+assert.equal(isTrustedPrimaryPathOpen({ isTrusted: true, button: 1 }), false, 'non-primary clicks must not open local path links')
+assert.equal(isTrustedPrimaryPathOpen({ isTrusted: true, button: 0, ctrlKey: true }), false, 'modified clicks must not open local path links')
 
 const orderedListWithContinuation = `1. First item
    Explanation A
