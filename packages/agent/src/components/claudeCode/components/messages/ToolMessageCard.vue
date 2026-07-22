@@ -74,7 +74,7 @@ const props = defineProps({
   isReadTool: { type: Function, required: false, default: () => false },
 })
 
-const emit = defineEmits(['respondPermission', 'respondAskQuestion'])
+const emit = defineEmits(['respondPermission'])
 const showDiffModal = ref(false)
 
 const toolMeta = computed(() => resolveToolMeta(props.msg.toolName || ''))

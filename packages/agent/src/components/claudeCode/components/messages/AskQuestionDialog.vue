@@ -15,6 +15,7 @@
               v-for="(opt, oi) in currentQuestion.options"
               :key="oi"
               class="ask-q-option"
+              :disabled="submitting"
               @click="selectOption(opt)"
             >
               <span class="opt-label">{{ opt.label }}</span>
@@ -26,10 +27,12 @@
               class="ask-q-input"
               :placeholder="$t('agent.askPlaceholder')"
               v-model="customText"
+              :disabled="submitting"
               @keydown.enter.stop="submitCustom"
             />
-            <button class="ask-q-send" @click="submitCustom">{{ $t('agent.send') }}</button>
+            <button class="ask-q-send" :disabled="submitting" @click="submitCustom">{{ $t('agent.send') }}</button>
           </div>
+          <div v-if="responseError" class="ask-q-error">{{ responseError }}</div>
         </div>
       </div>
     </div>
@@ -43,6 +46,8 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
   questions: { type: Array, default: () => [] },
   themeClass: { type: String, default: '' },
+  submitting: { type: Boolean, default: false },
+  responseError: { type: String, default: '' },
 })
 
 const emit = defineEmits(['answer', 'close'])
@@ -65,15 +70,15 @@ function submitCustom() {
 function emitAndAdvance(opt) {
   emit('answer', currentQuestion.value, opt)
   customText.value = ''
-  currentIndex.value++
+  if (currentIndex.value + 1 < props.questions.length) currentIndex.value++
 }
 
 function handleClose() {
   emit('close')
 }
 
-function reset() {
-  currentIndex.value = 0
+function reset(index = 0) {
+  currentIndex.value = Math.min(Math.max(0, index), Math.max(0, props.questions.length - 1))
   customText.value = ''
 }
 
@@ -171,6 +176,9 @@ defineExpose({ reset })
   border-color: var(--cc-primary);
   background: var(--cc-bg-elevated);
 }
+.ask-q-option:disabled,
+.ask-q-input:disabled,
+.ask-q-send:disabled { opacity: 0.6; cursor: wait; }
 .opt-label {
   font-size: 13px;
   font-weight: 500;
@@ -209,6 +217,12 @@ defineExpose({ reset })
   cursor: pointer;
 }
 .ask-q-send:hover { opacity: 0.85; }
+.ask-q-error {
+  margin-top: 10px;
+  color: var(--cc-error-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
 
 .ask-dialog-fade-enter-active,
 .ask-dialog-fade-leave-active {

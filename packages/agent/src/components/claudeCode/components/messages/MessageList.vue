@@ -48,7 +48,6 @@
         :isReadTool="isReadTool"
         @openImage="(src) => emit('openImage', src)"
         @respondPermission="(toolMsg, allowed) => emit('respondPermission', toolMsg, allowed)"
-        @respondAskQuestion="(toolMsg, q, opt) => emit('respondAskQuestion', toolMsg, q, opt)"
       />
     </div>
 
@@ -84,7 +83,7 @@ defineProps({
   isReadTool: { type: Function, required: true },
 })
 
-const emit = defineEmits(['openImage', 'respondPermission', 'respondAskQuestion'])
+const emit = defineEmits(['openImage', 'respondPermission'])
 
 const listRef = ref(null)
 const { showBtn, btnStyle, copied, copySelection } = useSelectionCopy(listRef)

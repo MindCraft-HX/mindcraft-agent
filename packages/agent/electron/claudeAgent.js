@@ -85,6 +85,10 @@ const {
   setInstallingClaudeCode,
 } = require('./claude/environment')
 const { createClaudeBackgroundTaskTracker } = require('./claude/backgroundTaskTracker')
+const {
+  CANCELLED_INTERACTIVE_REQUEST,
+  createClaudeInteractiveRequestRegistry,
+} = require('./claude/interactiveRequestRegistry')
 const { inspectClaudeResumeRecovery } = require('./claude/resumeRecovery')
 const { deleteClaudeRunIfOwned, ownsClaudeRun } = require('./claude/runOwnership')
 
@@ -1022,8 +1026,6 @@ function setupClaudeHandlers() {
   } catch (e) {
     console.warn('[claude] settings migration failed (non-fatal):', e?.message || e)
   }
-
-  const pendingPermissionResolvers = new Map() // requestId -> resolver(allowed)
 
   ipcMain.handle(CLAUDE_CHANNELS.LOAD_CODE_PANEL_STATE, () => readClaudeCodePanelState())
   // T178: in-flight dedup — 同 cwd 并发调用共享同一结果
@@ -2732,6 +2734,13 @@ function setupClaudeHandlers() {
   const slashCommandsCache = new Map() // key -> { ts, commands }
   const compactSummaries = new Map() // chatKey -> { summary, trigger, updatedAt }
   const pendingSessionMetaByChatKey = new Map() // chatKey -> meta waiting for first cliSessionId
+  const interactiveRequests = createClaudeInteractiveRequestRegistry({
+    ownsRun: (chatKey, runId) => ownsClaudeRun(agentSessions, chatKey, runId),
+  })
+  const releaseClaudeRun = (chatKey, runId) => {
+    interactiveRequests.cancelRun(chatKey, runId)
+    return deleteClaudeRunIfOwned(agentSessions, chatKey, runId)
+  }
   let agentRunSequence = 0
 
   function nextClaudeRunId() {
@@ -2743,7 +2752,7 @@ function setupClaudeHandlers() {
     for (const [sid, session] of agentSessions.entries()) {
       try { session.abortController?.abort?.() } catch (_) {}
       try { session.query?.close?.() } catch (_) {}
-      agentSessions.delete(sid)
+      releaseClaudeRun(sid, session.runId)
     }
     clearAllStores()
     // 注意：不清理 cliSessionIds。它们是 renderer chatKey -> SDK 会话 UUID 的映射，
@@ -2822,7 +2831,7 @@ function setupClaudeHandlers() {
       })
       safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, donePayload)
       clearCurrentTurn(chatKey)
-      deleteClaudeRunIfOwned(agentSessions, chatKey, existingSession.runId)
+      releaseClaudeRun(chatKey, existingSession.runId)
       pendingSessionMetaByChatKey.delete(chatKey)
     }
 
@@ -2841,7 +2850,7 @@ function setupClaudeHandlers() {
         try { existing.abortController?.abort?.() } catch (_) {}
         try { existing.query?.close?.() } catch (_) {}
         // 只清除 SDK Query 对象，保留 cliSessionIds 以便 resume 对话历史。
-        deleteClaudeRunIfOwned(agentSessions, chatKey, existing.runId)
+        releaseClaudeRun(chatKey, existing.runId)
         console.log(`[Claude] 检测到运行时配置变更，chatKey=${chatKey.slice(-8)}，已中止旧查询。` +
           `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
           `cliSessionId: ${cliSessionIds.get(chatKey) || '(none)'}`)
@@ -3036,13 +3045,23 @@ function setupClaudeHandlers() {
                   const sender = getOwnedSender()
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
                   const answers = await new Promise((resolve) => {
-                    pendingPermissionResolvers.set(requestId, resolve)
-                    safeSend(sender, CLAUDE_CHANNELS.AGENT_ASK_QUESTION, {
+                    const registered = interactiveRequests.register({
+                      requestId,
+                      chatKey,
+                      runId,
+                      kind: 'ask-question',
+                      senderId: sender?.id,
+                      resolve,
+                    })
+                    if (registered) safeSend(sender, CLAUDE_CHANNELS.AGENT_ASK_QUESTION, {
                       sessionId,
                       requestId,
                       questions: input.questions || [],
                     })
                   })
+                  if (answers === CANCELLED_INTERACTIVE_REQUEST) {
+                    return { behavior: 'deny', message: 'Interactive request cancelled' }
+                  }
                   return { behavior: 'allow', updatedInput: { ...input, answers } }
                 }
                 // ExitPlanMode：专用计划审查流程（不论 runMode 是什么，始终让用户审查）
@@ -3052,8 +3071,15 @@ function setupClaudeHandlers() {
                   const plan = input.plan || ''
                   const planFilePath = input.planFilePath || ''
                   const action = await new Promise((resolve) => {
-                    pendingPermissionResolvers.set(requestId, resolve)
-                    safeSend(sender, CLAUDE_CHANNELS.AGENT_PLAN_REVIEW, {
+                    const registered = interactiveRequests.register({
+                      requestId,
+                      chatKey,
+                      runId,
+                      kind: 'plan-review',
+                      senderId: sender?.id,
+                      resolve,
+                    })
+                    if (registered) safeSend(sender, CLAUDE_CHANNELS.AGENT_PLAN_REVIEW, {
                       sessionId,
                       requestId,
                       plan,
@@ -3064,7 +3090,7 @@ function setupClaudeHandlers() {
                     })
                   })
                   // action: { type: 'accept' | 'reject' | 'feedback', feedback?: string }
-                  if (!action || action.type === 'reject') {
+                  if (action === CANCELLED_INTERACTIVE_REQUEST || !action || action.type === 'reject') {
                     return { behavior: 'deny', message: lt('plan.rejected') }
                   }
                   const updatedInput = { ...input, planAction: action.type }
@@ -3093,10 +3119,17 @@ function setupClaudeHandlers() {
                   description: meta.title || meta.description || `Claude 请求执行 ${toolName}`,
                 }
                 const allowed = await new Promise((permResolve) => {
-                  pendingPermissionResolvers.set(requestId, (allow) => {
-                    permResolve(!!allow)
+                  const registered = interactiveRequests.register({
+                    requestId,
+                    chatKey,
+                    runId,
+                    kind: 'permission',
+                    senderId: sender?.id,
+                    resolve: (allow) => {
+                      permResolve(allow === CANCELLED_INTERACTIVE_REQUEST ? false : !!allow)
+                    },
                   })
-                  safeSend(sender,CLAUDE_CHANNELS.AGENT_PERMISSION, {
+                  if (registered) safeSend(sender,CLAUDE_CHANNELS.AGENT_PERMISSION, {
                     sessionId,
                     msg: { ...msg, _requestId: requestId },
                   })
@@ -3234,7 +3267,7 @@ function setupClaudeHandlers() {
             clearCurrentTurn(chatKey)
             pendingSessionMetaByChatKey.delete(chatKey)
             safeSend(sender, CLAUDE_CHANNELS.AGENT_DONE, finalPayload)
-            deleteClaudeRunIfOwned(agentSessions, chatKey, runId)
+            releaseClaudeRun(chatKey, runId)
             return true
           }
 
@@ -3475,7 +3508,7 @@ function setupClaudeHandlers() {
               })
             } catch (_) { /* 新通道发送失败不影响旧通道 */ }
           }
-          const releasedOwnedRun = deleteClaudeRunIfOwned(agentSessions, chatKey, runId)
+          const releasedOwnedRun = releaseClaudeRun(chatKey, runId)
           if (releasedOwnedRun) {
             pendingSessionMetaByChatKey.delete(chatKey)
           }
@@ -3496,6 +3529,7 @@ function setupClaudeHandlers() {
     const s = agentSessions.get(chatKey)
     if (s && !s.abortRequested) {
       s.abortRequested = true
+      interactiveRequests.cancelRun(chatKey, s.runId)
       try { s.abortController?.abort?.() } catch (_) {}
       try { s.query?.close?.() } catch (_) {}
     }
@@ -3571,34 +3605,34 @@ function setupClaudeHandlers() {
     return null
   })
 
-  ipcMain.handle(CLAUDE_CHANNELS.PERMISSION_RESPONSE, (_, { sessionId, requestId, allowed }) => {
-    const chatKey = sessionId
-    const s = agentSessions.get(chatKey)
-    if (!s) return
-    if (!requestId) return
-    const clearPending = pendingPermissionResolvers.get(requestId)
-    if (clearPending) {
-      clearPending(allowed)
-      pendingPermissionResolvers.delete(requestId)
-    }
+  ipcMain.handle(CLAUDE_CHANNELS.PERMISSION_RESPONSE, (event, { sessionId, requestId, allowed }) => {
+    return interactiveRequests.respond({
+      requestId,
+      chatKey: sessionId,
+      kind: 'permission',
+      senderId: event.sender.id,
+      value: allowed,
+    })
   })
 
-  ipcMain.handle(CLAUDE_CHANNELS.ASK_QUESTION_RESPONSE, (_, { requestId, answers }) => {
-    if (!requestId) return
-    const resolve = pendingPermissionResolvers.get(requestId)
-    if (resolve) {
-      resolve(answers)
-      pendingPermissionResolvers.delete(requestId)
-    }
+  ipcMain.handle(CLAUDE_CHANNELS.ASK_QUESTION_RESPONSE, (event, { sessionId, requestId, answers }) => {
+    return interactiveRequests.respond({
+      requestId,
+      chatKey: sessionId,
+      kind: 'ask-question',
+      senderId: event.sender.id,
+      value: answers,
+    })
   })
 
-  ipcMain.handle(CLAUDE_CHANNELS.PLAN_REVIEW_RESPONSE, (_, { requestId, action }) => {
-    if (!requestId) return
-    const resolve = pendingPermissionResolvers.get(requestId)
-    if (resolve) {
-      resolve(action)
-      pendingPermissionResolvers.delete(requestId)
-    }
+  ipcMain.handle(CLAUDE_CHANNELS.PLAN_REVIEW_RESPONSE, (event, { sessionId, requestId, action }) => {
+    return interactiveRequests.respond({
+      requestId,
+      chatKey: sessionId,
+      kind: 'plan-review',
+      senderId: event.sender.id,
+      value: action,
+    })
   })
 
   ipcMain.handle(CLAUDE_CHANNELS.REGISTER_CLI_SESSIONS, async (_, map) => {

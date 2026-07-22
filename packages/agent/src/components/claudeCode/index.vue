@@ -96,7 +96,6 @@
               :isReadTool="isReadTool"
               @openImage="openImageLightbox"
               @respondPermission="respondPermission"
-              @respondAskQuestion="respondAskQuestion"
             />
           </div>
         </template>
@@ -240,6 +239,8 @@
         :visible="askDialogVisible"
         :questions="askDialogQuestions"
         :themeClass="themeClass"
+        :submitting="Boolean(askDialogToolMsg?.askSubmitting)"
+        :responseError="askDialogResponseError"
         @answer="handleAskDialogAnswer"
         @close="handleAskDialogClose"
       />
@@ -349,6 +350,7 @@ import { useSlashCommands } from './composables/useSlashCommands'
 import { useClaudeHistory } from './composables/useClaudeHistory'
 import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
 import { useClaudeAgentStream } from './composables/useClaudeAgentStream'
+import { useClaudeAskQuestion } from './composables/useClaudeAskQuestion.js'
 import {
   beginTaskBatch,
   createEmptyTaskState,
@@ -3565,117 +3567,36 @@ function respondPermission(toolMsg, allowed) {
   })
 }
 
-// AskQuestion 弹窗状态
-const askDialogVisible = ref(false)
-const askDialogQuestions = ref([])
-const askDialogToolMsg = ref(null)
-const askDialogRef = ref(null)
-const askDialogAnswers = ref({})
-// 失活/超时保护
-const _hadAskDialogOnDeactivate = ref(false)
-const _hadPlanReviewOnDeactivate = ref(false)
-let _askTimeout = null
-let _planReviewTimeout = null
-const ASK_TIMEOUT_MS = 10 * 60 * 1000  // 10 分钟超时自动应答
-
-function parseAskQuestions(msg) {
-  try {
-    const obj = JSON.parse(msg.text || '{}')
-    const questions = Array.isArray(obj?.questions) ? obj.questions : []
-    return questions.map(q => ({
-      id: q?.id || '',
-      prompt: q?.question || q?.prompt || '',
-      header: q?.header || '',
-      options: Array.isArray(q?.options) ? q.options : [],
-    }))
-  } catch (_) { return [] }
-}
-
-function respondAskQuestion(toolMsg, question, option) {
-  if (!toolMsg.requestId) return
-  toolMsg.askAnswered = true
-  toolMsg.status = 'done'
-  askDialogVisible.value = false
-  const answers = {}
-  answers[question.prompt || question.header || 'q'] = option.label
-  window.electronAPI.claudeAskQuestionResponse({
-    requestId: toolMsg.requestId,
-    answers,
-  })
-}
-
-function handleAskDialogAnswer(question, option) {
-  if (!askDialogToolMsg.value) return
-  const key = question.prompt || question.header || 'q'
-  askDialogAnswers.value[key] = option.label
-  const total = askDialogQuestions.value.length
-  const answered = Object.keys(askDialogAnswers.value).length
-  if (answered >= total) {
-    const toolMsg = askDialogToolMsg.value
-    toolMsg.askAnswered = true
-    toolMsg.askAnswerText = Object.entries(askDialogAnswers.value).map(([k, v]) => `${k}: ${v}`).join('; ')
-    toolMsg.status = 'done'
-    askDialogVisible.value = false
-    _clearAskTimeout()
-    window.electronAPI.claudeAskQuestionResponse({
-      requestId: toolMsg.requestId,
-      answers: { ...askDialogAnswers.value },
-    })
-  }
-}
-
-function _clearAskTimeout() {
-  if (_askTimeout) { clearTimeout(_askTimeout); _askTimeout = null }
-}
-function _clearPlanReviewTimeout() {
-  if (_planReviewTimeout) { clearTimeout(_planReviewTimeout); _planReviewTimeout = null }
-}
-
-// 供 ToolAskQuestion 的"回答"按钮调用，通过 provide/inject 传递
-function reopenAskDialog(toolMsg) {
-  if (!toolMsg || toolMsg.askAnswered) return
-  const questions = parseAskQuestions(toolMsg)
-  if (questions.length) showAskDialog(toolMsg, questions)
-}
+// AskUserQuestion 只在主进程确认 live request 已接收后完成。
+const {
+  visible: askDialogVisible,
+  questions: askDialogQuestions,
+  dialogRef: askDialogRef,
+  toolMsg: askDialogToolMsg,
+  responseError: askDialogResponseError,
+  answer: handleAskDialogAnswer,
+  close: handleAskDialogClose,
+  reopen: reopenAskDialog,
+  show: showAskDialog,
+  syncActiveTab: syncActiveAskDialog,
+  deactivate: deactivateAskDialog,
+  activate: activateAskDialog,
+} = useClaudeAskQuestion({
+  getActiveTab: () => activeTab.value,
+  sendResponse: payload => window.electronAPI.claudeAskQuestionResponse(payload),
+  notifyError: message => ElMessage.error(message),
+})
 provide('reopenAskDialog', reopenAskDialog)
 
-function showAskDialog(toolMsg, questions) {
-  askDialogToolMsg.value = toolMsg
-  askDialogQuestions.value = questions
-  askDialogAnswers.value = {}
-  askDialogVisible.value = true
-  askDialogRef.value?.reset?.()
-  // 10 分钟超时自动应答，防止 Agent 永久挂起
-  _clearAskTimeout()
-  _askTimeout = setTimeout(() => {
-    if (askDialogVisible.value) {
-      handleAskDialogClose()
-    }
-  }, ASK_TIMEOUT_MS)
-}
+watch(() => activeTab.value?.sessionId, () => {
+  nextTick(() => syncActiveAskDialog())
+})
 
-function handleAskDialogClose() {
-  // 关闭弹窗：未回答的问题自动选第一个选项
-  const questions = askDialogQuestions.value
-  for (const q of questions) {
-    const key = q.prompt || q.header || 'q'
-    if (!askDialogAnswers.value[key]) {
-      const firstOpt = q.options?.[0]
-      askDialogAnswers.value[key] = firstOpt?.label || ''
-    }
-  }
-  const toolMsg = askDialogToolMsg.value
-  if (toolMsg) {
-    toolMsg.askAnswered = true
-    toolMsg.askAnswerText = Object.entries(askDialogAnswers.value).map(([k, v]) => `${k}: ${v}`).join('; ')
-    toolMsg.status = 'done'
-    _clearAskTimeout()
-    window.electronAPI?.claudeAskQuestionResponse?.({
-      requestId: toolMsg.requestId,
-      answers: { ...askDialogAnswers.value },
-    })
-  }
-  askDialogVisible.value = false
+const _hadPlanReviewOnDeactivate = ref(false)
+let _planReviewTimeout = null
+const ASK_TIMEOUT_MS = 10 * 60 * 1000  // 计划审查超时后按安全策略拒绝
+function _clearPlanReviewTimeout() {
+  if (_planReviewTimeout) { clearTimeout(_planReviewTimeout); _planReviewTimeout = null }
 }
 
 // PlanReview 弹窗状态
@@ -3787,10 +3708,7 @@ async function checkFirstTimeSetup() {
 onDeactivated(() => {
   // D1: 保存当前聊天滚动位置，切到文档/其他页面后再回来时恢复
   if (activeChatId.value) saveChatScroll(activeChatId.value)
-  if (askDialogVisible.value) {
-    _hadAskDialogOnDeactivate.value = true
-    askDialogVisible.value = false
-  }
+  deactivateAskDialog()
   if (planReviewVisible.value) {
     _hadPlanReviewOnDeactivate.value = true
     planReviewVisible.value = false
@@ -3798,9 +3716,8 @@ onDeactivated(() => {
 })
 
 onActivated(() => {
-  _hadAskDialogOnDeactivate.value = false
+  activateAskDialog()
   _hadPlanReviewOnDeactivate.value = false
-  // 不自动恢复弹窗：用户通过蓝色 pending-dot + 消息感知，手动点击"回答"按钮打开
   // D1: 恢复之前保存的聊天滚动位置（如果之前不在底部则回到原位置，否则滚到底）
   nextTick(() => { if (activeChatId.value) restoreChatScroll(activeChatId.value) })
 })
@@ -3826,8 +3743,7 @@ onMounted(() => {
       if (!tab) return
       const lastMsg = tab.messages[tab.messages.length - 1]
       if (lastMsg && lastMsg.toolName === 'AskUserQuestion' && lastMsg.requestId) {
-        const questions = parseAskQuestions(lastMsg)
-        showAskDialog(lastMsg, questions)
+        showAskDialog(lastMsg)
       }
     })
   })
@@ -3949,7 +3865,6 @@ onUnmounted(() => {
     historyTopObserver = null
   }
   if (loadMoreCooldownTimer) { clearTimeout(loadMoreCooldownTimer); loadMoreCooldownTimer = null }
-  _clearAskTimeout()
   _clearPlanReviewTimeout()
   window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushHistoryOnUnload)

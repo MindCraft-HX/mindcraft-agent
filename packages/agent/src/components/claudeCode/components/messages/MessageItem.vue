@@ -18,7 +18,6 @@
     :isBashTool="isBashTool"
     :isReadTool="isReadTool"
     @respondPermission="(toolMsg, allowed) => emit('respondPermission', toolMsg, allowed)"
-    @respondAskQuestion="(toolMsg, q, opt) => emit('respondAskQuestion', toolMsg, q, opt)"
   />
   <SystemMessageCard
     v-else-if="msg.role === 'system'"
@@ -42,7 +41,7 @@ defineProps({
   isReadTool: { type: Function, required: true },
 })
 
-const emit = defineEmits(['openImage', 'respondPermission', 'respondAskQuestion'])
+const emit = defineEmits(['openImage', 'respondPermission'])
 
 // 检查用户消息是否有实际内容
 function hasUserContent(msg) {
