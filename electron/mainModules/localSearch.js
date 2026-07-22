@@ -398,9 +398,10 @@ function buildSearchError(message, backend, command, error, fallbackUsed = false
 
 function searchText(options = {}) {
   const capability = getLocalSearchCapability()
+  const searchOptions = { ...options, hidden: true }
   try {
     if (capability.backend === 'bundled-rg' || capability.backend === 'system-rg') {
-      const { results, truncated } = runRgTextSearch(capability.source, options)
+      const { results, truncated } = runRgTextSearch(capability.source, searchOptions)
       return {
         ok: true,
         backend: capability.backend,
@@ -411,7 +412,7 @@ function searchText(options = {}) {
       }
     }
     if (capability.backend === 'system-find') {
-      const { results, truncated } = runFindGrepTextSearch(options)
+      const { results, truncated } = runFindGrepTextSearch(searchOptions)
       return {
         ok: true,
         backend: 'system-find',
@@ -421,7 +422,7 @@ function searchText(options = {}) {
         error: null,
       }
     }
-    const { results, truncated } = runPowerShellTextSearch(options)
+    const { results, truncated } = runPowerShellTextSearch(searchOptions)
     return {
       ok: true,
       backend: 'powershell',
@@ -475,7 +476,7 @@ function runPowerShellFiles(options = {}) {
     `$ErrorActionPreference = 'Stop'`,
     `$root = ${JSON.stringify(resolvedCwd)}`,
     `$limit = ${limit}`,
-    `Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First $limit -ExpandProperty FullName | ConvertTo-Json -Compress`,
+    `Get-ChildItem -LiteralPath $root -Recurse -Force -File -ErrorAction SilentlyContinue | Select-Object -First $limit -ExpandProperty FullName | ConvertTo-Json -Compress`,
   ].join('; ')
   const output = execFileSync('powershell.exe', ['-NoProfile', '-Command', script], {
     encoding: 'utf8',
@@ -500,6 +501,7 @@ function listFiles(options = {}) {
   const fileOptions = {
     ...options,
     maxResults: enumLimit,
+    hidden: true,
   }
   const suggestionLimit = Number.isFinite(options.maxResults) && options.maxResults > 0
     ? Number(options.maxResults)

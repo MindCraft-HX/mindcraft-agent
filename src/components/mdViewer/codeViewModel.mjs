@@ -27,31 +27,55 @@ function splitDisplayLines(text = '') {
 function inferLanguage(filePath = '') {
   const ext = String(filePath || '').split('.').pop().toLowerCase()
   const langMap = {
+    // Script / general-purpose
+    js: 'javascript',  cjs: 'javascript',  mjs: 'javascript',
+    jsx: 'javascript',
+    ts: 'typescript',  tsx: 'typescript',
     py: 'python',
-    js: 'javascript',
-    ts: 'typescript',
-    vue: 'xml',
-    html: 'html',
-    htm: 'html',
-    css: 'css',
-    scss: 'scss',
-    less: 'less',
-    json: 'json',
-    sh: 'bash',
-    bash: 'bash',
-    md: 'markdown',
-    yaml: 'yaml',
-    yml: 'yaml',
-    rs: 'rust',
-    go: 'go',
-    java: 'java',
-    cpp: 'cpp',
-    c: 'c',
-    cs: 'csharp',
     rb: 'ruby',
-    xml: 'xml',
-    log: 'plaintext',
-    txt: 'plaintext',
+    php: 'php',
+    go: 'go',
+    rs: 'rust',
+    java: 'java',
+    cs: 'csharp',
+    kt: 'kotlin',  kts: 'kotlin',
+    swift: 'swift',
+    dart: 'dart',
+    lua: 'lua',
+    r: 'r',
+    scala: 'scala',
+    erl: 'erlang',  hrl: 'erlang',
+    ex: 'elixir',  exs: 'elixir',
+    clj: 'clojure',  cljs: 'clojure',  edn: 'clojure',
+    hs: 'haskell',
+    groovy: 'groovy',  gradle: 'groovy',
+    // C / C++
+    c: 'c',  cc: 'cpp',  cpp: 'cpp',
+    h: 'cpp',  hpp: 'cpp',
+    // Web / markup
+    html: 'xml',  htm: 'xml',  xml: 'xml',  svg: 'xml',
+    vue: 'xml',
+    css: 'css',  scss: 'scss',  sass: 'scss',  less: 'less',
+    // Data / config
+    json: 'json',
+    yaml: 'yaml',  yml: 'yaml',
+    toml: 'ini',
+    ini: 'ini',  conf: 'ini',  cfg: 'ini',  env: 'ini',
+    properties: 'ini',
+    // Shell / script
+    sh: 'bash',  bash: 'bash',
+    ps1: 'powershell',
+    bat: 'dos',  cmd: 'dos',
+    // Database / DSL
+    sql: 'sql',
+    graphql: 'graphql',  gql: 'graphql',
+    proto: 'protobuf',
+    tf: 'hcl',  tfvars: 'hcl',
+    // Document
+    md: 'markdown',  markdown: 'markdown',  mdx: 'markdown',
+    // Plain
+    txt: 'plaintext',  log: 'plaintext',
+    csv: 'plaintext',  rst: 'plaintext',  lock: 'plaintext',
   }
   return langMap[ext] || ''
 }

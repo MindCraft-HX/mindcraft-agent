@@ -10,14 +10,15 @@ import { python } from '@codemirror/lang-python'
 import { java } from '@codemirror/lang-java'
 import { cpp } from '@codemirror/lang-cpp'
 import { sql } from '@codemirror/lang-sql'
+import { yaml } from '@codemirror/lang-yaml'
 import { StreamLanguage } from '@codemirror/language'
-import { yaml as yamlMode } from '@codemirror/legacy-modes/mode/yaml'
 import { shell as shellMode } from '@codemirror/legacy-modes/mode/shell'
 
 // 扩展名 -> 语言扩展工厂
 const LANG_FACTORY_BY_EXT = {
   md: markdown,
   markdown: markdown,
+  mdx: markdown,
 
   js: javascript,
   cjs: javascript,
@@ -34,6 +35,8 @@ const LANG_FACTORY_BY_EXT = {
   html: html,
   htm: html,
   xml: xml,
+  svg: xml,
+  vue: xml,
 
   py: python,
   java: java,
@@ -44,8 +47,8 @@ const LANG_FACTORY_BY_EXT = {
   hpp: cpp,
 
   sql: sql,
-  yml: () => StreamLanguage.define(yamlMode),
-  yaml: () => StreamLanguage.define(yamlMode),
+  yml: yaml,
+  yaml: yaml,
 
   sh: () => StreamLanguage.define(shellMode),
   ps1: () => StreamLanguage.define(shellMode),
@@ -55,7 +58,8 @@ const LANG_FACTORY_BY_EXT = {
 
 // 无语法高亮的纯文本扩展
 const PLAIN_TEXT_EXTS = new Set([
-  'txt', 'log', 'toml', 'ini', 'conf', 'env', 'vue',
+  'txt', 'log', 'toml', 'ini', 'conf', 'env', 'cfg', 'properties',
+  'csv', 'rst', 'lock',
 ])
 
 /**
