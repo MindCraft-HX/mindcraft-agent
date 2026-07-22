@@ -412,9 +412,10 @@ function buildSearchError(message, backend, command, error, fallbackUsed = false
 
 async function searchText(options = {}) {
   const capability = await getLocalSearchCapability()
+  const searchOptions = { ...options, hidden: true }
   try {
     if (capability.backend === 'bundled-rg' || capability.backend === 'system-rg') {
-      const { results, truncated } = await runRgTextSearch(capability.source, options)
+      const { results, truncated } = await runRgTextSearch(capability.source, searchOptions)
       return {
         ok: true,
         backend: capability.backend,
@@ -425,7 +426,7 @@ async function searchText(options = {}) {
       }
     }
     if (capability.backend === 'system-find') {
-      const { results, truncated } = await runFindGrepTextSearch(options)
+      const { results, truncated } = await runFindGrepTextSearch(searchOptions)
       return {
         ok: true,
         backend: 'system-find',
@@ -435,7 +436,7 @@ async function searchText(options = {}) {
         error: null,
       }
     }
-    const { results, truncated } = await runPowerShellTextSearch(options)
+    const { results, truncated } = await runPowerShellTextSearch(searchOptions)
     return {
       ok: true,
       backend: 'powershell',
@@ -489,7 +490,7 @@ async function runPowerShellFiles(options = {}) {
     `$ErrorActionPreference = 'Stop'`,
     `$root = ${JSON.stringify(resolvedCwd)}`,
     `$limit = ${limit}`,
-    `Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First $limit -ExpandProperty FullName | ConvertTo-Json -Compress`,
+    `Get-ChildItem -LiteralPath $root -Recurse -Force -File -ErrorAction SilentlyContinue | Select-Object -First $limit -ExpandProperty FullName | ConvertTo-Json -Compress`,
   ].join('; ')
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], {
     encoding: 'utf8',
@@ -515,6 +516,7 @@ async function listFiles(options = {}) {
   const fileOptions = {
     ...options,
     maxResults: enumLimit,
+    hidden: true,
   }
   const suggestionLimit = Number.isFinite(options.maxResults) && options.maxResults > 0
     ? Number(options.maxResults)
