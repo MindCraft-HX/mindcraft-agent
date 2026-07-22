@@ -68,7 +68,11 @@ function getBackgroundLaunch(entry, entriesByUuid) {
   if (!taskId || (!result?.isAsync && !result?.backgroundTaskId)) return null
   const sourceUuid = String(entry?.sourceToolAssistantUUID || '')
   const source = sourceUuid ? entriesByUuid.get(sourceUuid) : null
-  return { taskId, source }
+  return {
+    taskId,
+    source,
+    kind: result?.isAsync && result?.agentId ? 'agent' : 'background-command',
+  }
 }
 
 function buildCurrentBranch(entries, entriesByUuid) {
@@ -173,6 +177,20 @@ function analyzeClaudeResumeRecoveryEntries(entries) {
   const backgroundRecovery = findUnresolvedBackgroundOrigin(branch, entriesByUuid)
   if (backgroundRecovery.needsMoreHistory) return { checkpoint: null, needsMoreHistory: true }
   if (backgroundRecovery.origin) {
+    if (backgroundRecovery.origin.kind === 'background-command') {
+      const latestCompletedAnswer = branch
+        .slice(backgroundRecovery.origin.index + 1)
+        .findLast(isSafeAssistantCheckpoint)
+      if (latestCompletedAnswer) {
+        return {
+          checkpoint: {
+            resumeSessionAt: latestCompletedAnswer.uuid,
+            interruptedToolName: String(getToolUseBlocks(backgroundRecovery.origin.source)[0]?.name || 'background'),
+          },
+          needsMoreHistory: false,
+        }
+      }
+    }
     const safeAssistant = findSafeAssistantBefore(backgroundRecovery.origin.source, entriesByUuid)
     if (!safeAssistant) return { checkpoint: null, needsMoreHistory: true }
     return {

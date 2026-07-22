@@ -10,7 +10,12 @@ function deleteClaudeRunIfOwned(sessions, chatKey, runId) {
   return true
 }
 
+function canStreamInputToClaudeRun(session) {
+  return Boolean(session?.query) && !session.abortRequested && !session.resultReceived
+}
+
 module.exports = {
+  canStreamInputToClaudeRun,
   deleteClaudeRunIfOwned,
   ownsClaudeRun,
 }

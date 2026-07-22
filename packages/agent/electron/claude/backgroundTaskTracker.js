@@ -7,6 +7,13 @@ function normalizeStatus(value) {
   return String(value || '').toLowerCase()
 }
 
+function isClaudeBackgroundCleanupResult(msg) {
+  return msg?.type === 'result' &&
+    msg?.origin?.kind === 'task-notification' &&
+    msg?.num_turns === 0 &&
+    msg?.result === ''
+}
+
 function createClaudeBackgroundTaskTracker() {
   const activeTasks = new Map()
   let pendingDonePayload = null
@@ -77,4 +84,5 @@ function createClaudeBackgroundTaskTracker() {
 
 module.exports = {
   createClaudeBackgroundTaskTracker,
+  isClaudeBackgroundCleanupResult,
 }

@@ -73,7 +73,7 @@ test('Claude runtime change: aborts old query before creating new one', () => {
   // Pattern: detect runtimeChanged → abort + close → delete → continue (not return)
   assert.match(
     source,
-    /runtimeChanged[\s\S]*abortController\?\.abort[\s\S]*query\?\.close[\s\S]*deleteClaudeRunIfOwned\(agentSessions, chatKey, existing\.runId\)/,
+    /runtimeChanged[\s\S]*abortController\?\.abort[\s\S]*query\?\.close[\s\S]*releaseClaudeRun\(chatKey, existing\.runId\)/,
     'expected old query to be aborted, closed, and removed on runtime change',
   )
 })
@@ -124,14 +124,15 @@ test('CodeX duplicate query guard: rejects if session still running', () => {
 // 3. Queued input delivery
 // ===========================================================================
 
-test('Claude queued input: uses streamInput() for existing running query', () => {
+test('Claude queued input: uses streamInput() only before the main result', () => {
   const source = fs.readFileSync(claudeAgentPath, 'utf8')
 
   assert.match(
     source,
-    /existing\.query\.streamInput/,
-    'expected streamInput() to feed queued input to running Claude query',
+    /canStreamInputToClaudeRun\(existing\)[\s\S]*existing\.query\.streamInput/,
+    'expected streamInput() only for a Query whose main turn is still active',
   )
+  assert.match(source, /const mainTurnFinished = existing\.resultReceived === true/)
 })
 
 test('CodeX queued input: codex-chat-continue handler exists', () => {
@@ -163,7 +164,7 @@ test('Claude done: cleanup deletes only the owned run', () => {
 
   assert.match(
     source,
-    /finally 统一发送[\s\S]*const releasedOwnedRun = deleteClaudeRunIfOwned\(agentSessions, chatKey, runId\)[\s\S]*fallbackDonePayload && releasedOwnedRun/,
+    /finally 统一发送[\s\S]*const releasedOwnedRun = releaseClaudeRun\(chatKey, runId\)[\s\S]*fallbackDonePayload && releasedOwnedRun/,
     'expected final cleanup to verify and release only the current run',
   )
 })

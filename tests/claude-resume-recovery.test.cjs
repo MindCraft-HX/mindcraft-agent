@@ -110,12 +110,12 @@ function runSyntheticResumeLoopStillRecoversTest() {
   assert.equal(analyzeClaudeResumeRecoveryEntries(entries).checkpoint.resumeSessionAt, 'stable-answer')
 }
 
-function runLaterAssistantDoesNotHideUnfinishedBackgroundTaskTest() {
+function runCompletedAnswerAfterBackgroundCommandRemainsTheCheckpointTest() {
   const entries = buildInterruptedBackgroundEntries()
   entries.push(assistant('later-response', 'backgrounded-result', [{ type: 'text', text: 'Recovered normally.' }], 'kimi-k3', 'end_turn'))
   assert.deepEqual(analyzeClaudeResumeRecoveryEntries(entries), {
     checkpoint: {
-      resumeSessionAt: 'stable-answer',
+      resumeSessionAt: 'later-response',
       interruptedToolName: 'Bash',
     },
     needsMoreHistory: false,
@@ -314,7 +314,7 @@ async function runFileInspectionTest() {
 async function run() {
   runInterruptedBackgroundCheckpointTest()
   runSyntheticResumeLoopStillRecoversTest()
-  runLaterAssistantDoesNotHideUnfinishedBackgroundTaskTest()
+  runCompletedAnswerAfterBackgroundCommandRemainsTheCheckpointTest()
   runCompletedToolDoesNotRecoverTest()
   runWrappedMessageEntriesRecoverTest()
   runIncompleteTextDoesNotBecomeCheckpointTest()

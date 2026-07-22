@@ -2,6 +2,7 @@ const assert = require('assert')
 
 const {
   createClaudeBackgroundTaskTracker,
+  isClaudeBackgroundCleanupResult,
 } = require('../packages/agent/electron/claude/backgroundTaskTracker')
 
 function runTaskStartedAndNotificationCompletionTest() {
@@ -84,8 +85,38 @@ function runPendingDonePayloadTest() {
   assert.equal(tracker.takePendingDonePayload(), null)
 }
 
+function runBackgroundCleanupResultClassificationTest() {
+  assert.equal(isClaudeBackgroundCleanupResult({
+    type: 'result',
+    subtype: 'success',
+    origin: { kind: 'task-notification' },
+    num_turns: 0,
+    result: '',
+  }), true)
+  assert.equal(isClaudeBackgroundCleanupResult({
+    type: 'result',
+    subtype: 'success',
+    num_turns: 0,
+    result: '',
+  }), false)
+  assert.equal(isClaudeBackgroundCleanupResult({
+    type: 'result',
+    subtype: 'success',
+    origin: { kind: 'task-notification' },
+    num_turns: 1,
+    result: '',
+  }), false)
+  assert.equal(isClaudeBackgroundCleanupResult({
+    type: 'result',
+    subtype: 'success',
+    origin: { kind: 'task-notification' },
+    num_turns: 0,
+  }), false)
+}
+
 runTaskStartedAndNotificationCompletionTest()
 runTerminalStatusVariantsTest()
 runNonTerminalStatusDoesNotCompleteTest()
 runBackgroundTaskLevelSignalReplacesStateTest()
 runPendingDonePayloadTest()
+runBackgroundCleanupResultClassificationTest()

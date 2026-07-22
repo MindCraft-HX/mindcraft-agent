@@ -84,13 +84,16 @@ const {
   isInstallingClaudeCode,
   setInstallingClaudeCode,
 } = require('./claude/environment')
-const { createClaudeBackgroundTaskTracker } = require('./claude/backgroundTaskTracker')
+const {
+  createClaudeBackgroundTaskTracker,
+  isClaudeBackgroundCleanupResult,
+} = require('./claude/backgroundTaskTracker')
 const {
   CANCELLED_INTERACTIVE_REQUEST,
   createClaudeInteractiveRequestRegistry,
 } = require('./claude/interactiveRequestRegistry')
 const { inspectClaudeResumeRecovery } = require('./claude/resumeRecovery')
-const { deleteClaudeRunIfOwned, ownsClaudeRun } = require('./claude/runOwnership')
+const { canStreamInputToClaudeRun, deleteClaudeRunIfOwned, ownsClaudeRun } = require('./claude/runOwnership')
 
 function getClaudeFreezeDiagEnabled() {
   return getDiagnosticsClaudeFreeze()
@@ -2835,7 +2838,7 @@ function setupClaudeHandlers() {
       pendingSessionMetaByChatKey.delete(chatKey)
     }
 
-    // 复用仍在运行的 Query（首轮 result 后 SDK 可能仍保持会话，需要 streamInput 续写）
+    // 主 turn 尚未返回 result 时可继续输入；result 后仍存活的 Query 只负责后台收尾。
     const existing = agentSessions.get(chatKey)
     if (existing) {
       if (existing.abortRequested) return false
@@ -2846,33 +2849,38 @@ function setupClaudeHandlers() {
         (existing.baseURL || '') !== (baseURL || '') ||
         (existing.apiKey || '') !== (apiKey || '')
       )
-      if (runtimeChanged) {
+      const mainTurnFinished = existing.resultReceived === true
+      if (runtimeChanged || mainTurnFinished) {
         try { existing.abortController?.abort?.() } catch (_) {}
         try { existing.query?.close?.() } catch (_) {}
         // 只清除 SDK Query 对象，保留 cliSessionIds 以便 resume 对话历史。
         releaseClaudeRun(chatKey, existing.runId)
-        console.log(`[Claude] 检测到运行时配置变更，chatKey=${chatKey.slice(-8)}，已中止旧查询。` +
-          `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
-          `cliSessionId: ${cliSessionIds.get(chatKey) || '(none)'}`)
-        // 不 return，继续执行后续逻辑以创建新查询并 resume
-      } else {
-      existing.event = event
-      const userMsg = {
-        type: 'user',
-        parent_tool_use_id: null,
-        message: {
-          role: 'user',
-          content: buildContent(prompt, images),
-        },
-      }
-      ;(async () => {
-        try {
-          await existing.query.streamInput((async function* () { yield userMsg })())
-        } catch (err) {
-          await finalizeReusedQueryFailure(existing, err)
+        if (runtimeChanged) {
+          console.log(`[Claude] 检测到运行时配置变更，chatKey=${chatKey.slice(-8)}，已中止旧查询。` +
+            `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
+            `cliSessionId: ${cliSessionIds.get(chatKey) || '(none)'}`)
         }
-      })()
-      return
+        // 不 return，继续执行后续逻辑以创建新查询并 resume
+      } else if (canStreamInputToClaudeRun(existing)) {
+        existing.event = event
+        const userMsg = {
+          type: 'user',
+          parent_tool_use_id: null,
+          message: {
+            role: 'user',
+            content: buildContent(prompt, images),
+          },
+        }
+        ;(async () => {
+          try {
+            await existing.query.streamInput((async function* () { yield userMsg })())
+          } catch (err) {
+            await finalizeReusedQueryFailure(existing, err)
+          }
+        })()
+        return
+      } else {
+        return false
       }
     }
 
@@ -2917,6 +2925,7 @@ function setupClaudeHandlers() {
         apiKey,
         runMode: mode,
         abortRequested: false,
+        resultReceived: false,
       }
       agentSessions.set(chatKey, sessionRun)
       const bootWatch = setTimeout(() => {
@@ -3296,6 +3305,9 @@ function setupClaudeHandlers() {
                 cliSessionIds.set(chatKey, incomingCliSessionId)
                 safeSend(sender, CLAUDE_CHANNELS.AGENT_EARLY_CLI_SESSION, { sessionId, cliSessionId: incomingCliSessionId })
             }
+            // Claude Code 2.1.214 may emit a zero-turn result while reconciling
+            // a stopped background task before it processes the current input.
+            if (isClaudeBackgroundCleanupResult(msg)) continue
             const compactBoundaryMetrics = extractClaudeCompactBoundaryMetricsFromSdkMessage(msg, model || '')
             if (compactBoundaryMetrics) {
               emitClaudeMetricsViaStore(sender, {
@@ -3345,6 +3357,8 @@ function setupClaudeHandlers() {
             }
             // Phase 4：对 result 消息，先 finalize TurnStore 再发送，确保前端收到 TurnStore snapshot
             if (msg.type === 'result') {
+              resultReceived = true
+              sessionRun.resultReceived = true
               liveSampleCounts.sdkResultCount += 1
               const usage = msg.usage || {}
               const finalTurnMetrics = buildClaudeFinalTurnMetricsFromResultUsage(usage, model || msg.model || '')
@@ -3387,7 +3401,6 @@ function setupClaudeHandlers() {
                 }
               }
               // Phase 4：emitClaudeMetricsViaStore 已在 safeSend 前调用（TurnStore 已 finalize）
-              resultReceived = true
               const sessionCwd = getOwnedSession()?.cwd || resolvedCwd
               const donePayload = buildClaudeAgentDonePayload({
                 sessionId,

@@ -146,12 +146,22 @@ test('claude reused query failures finalize the run instead of leaving session s
   )
   assert.match(
     source,
+    /mainTurnFinished[\s\S]*releaseClaudeRun\(chatKey, existing\.runId\)[\s\S]*canStreamInputToClaudeRun\(existing\)/,
+    'expected a Query trailing after result to be replaced instead of receiving streamInput',
+  )
+  assert.match(
+    source,
+    /isClaudeBackgroundCleanupResult\(msg\)\) continue/,
+    'expected background task cleanup results to remain distinct from user turn results',
+  )
+  assert.match(
+    source,
     /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*safeSend\(sender, CLAUDE_CHANNELS\.AGENT_DONE, donePayload\)/,
     'expected reused-query failure finalizer to emit claude-agent-done',
   )
   assert.match(
     source,
-    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*clearCurrentTurn\(chatKey\)[\s\S]*deleteClaudeRunIfOwned\(agentSessions, chatKey, existingSession\.runId\)[\s\S]*pendingSessionMetaByChatKey\.delete\(chatKey\)/,
+    /async function finalizeReusedQueryFailure\(existingSession, err\)[\s\S]*clearCurrentTurn\(chatKey\)[\s\S]*releaseClaudeRun\(chatKey, existingSession\.runId\)[\s\S]*pendingSessionMetaByChatKey\.delete\(chatKey\)/,
     'expected reused-query failure finalizer to clear runtime state after terminal failure',
   )
 })
