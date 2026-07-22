@@ -107,6 +107,15 @@ app-server and exec-server experimental features out of production. Consider
 `doctor` as a future diagnostics action and `output-schema` only when MindCraft
 has a product use case for structured agent output.
 
+### Chat-Completions Kimi On Windows
+
+The Chat-Completions adapter appends a Windows-only instruction for models
+whose name contains `kimi`: PowerShell commands must use ASCII quotes and
+backticks. This is a narrow provider-compatibility guard for observed Kimi
+multiline patch commands containing full-width punctuation. It belongs in the
+request transform, not session lifecycle, transcript ownership, or provider
+storage. The guard must remain covered by the transform regression test.
+
 ### Claude Code 2.1.214 / Agent SDK 0.3.214
 
 The installed CLI is already the registry latest. The latest Agent SDK matches

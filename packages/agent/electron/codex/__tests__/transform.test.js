@@ -9,7 +9,11 @@
 
 const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
-const { responsesToChatCompletions, canonicalizeJsonStringIfParseable } = require('../transformRequest')
+const {
+  appendWindowsKimiShellCompatibilityInstruction,
+  responsesToChatCompletions,
+  canonicalizeJsonStringIfParseable,
+} = require('../transformRequest')
 const { chatCompletionToResponse, chatErrorToResponseError } = require('../transformResponse')
 const { buildProxyCodexConfig, PROXY_PROVIDER_ID, __test__: chatProxyManagerTest } = require('../chatProxyManager')
 const { chatUsageToResponsesUsage } = require('../common')
@@ -350,6 +354,28 @@ async function runTests() {
   test('request: developer 鈫?system', () => {
     const result = responsesToChatCompletions({ model: 'm', input: [{ role: 'developer', content: 'Rules.' }] })
     assert.strictEqual(result.messages[0].role, 'system')
+  })
+
+  test('request: Windows Kimi receives ASCII PowerShell quoting constraint', () => {
+    const messages = [{ role: 'system', content: 'Base instructions.' }]
+    appendWindowsKimiShellCompatibilityInstruction(messages, 'kimi-k3', 'win32')
+    assert.strictEqual(messages.length, 2)
+    assert.match(messages[1].content, /ASCII quotes/)
+
+    const nonKimi = [{ role: 'system', content: 'Base instructions.' }]
+    appendWindowsKimiShellCompatibilityInstruction(nonKimi, 'gpt-5.6', 'win32')
+    assert.strictEqual(nonKimi.length, 1)
+
+    const nonWindows = [{ role: 'system', content: 'Base instructions.' }]
+    appendWindowsKimiShellCompatibilityInstruction(nonWindows, 'kimi-k3', 'darwin')
+    assert.strictEqual(nonWindows.length, 1)
+
+    const transformed = responsesToChatCompletions({
+      model: 'kimi-k3',
+      instructions: 'Base instructions.',
+      input: [{ role: 'user', content: 'Edit the file.' }],
+    })
+    assert.match(transformed.messages[0].content, /ASCII quotes/)
   })
 
   test('request: latest_reminder 鈫?user', () => {
