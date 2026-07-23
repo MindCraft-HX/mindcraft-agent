@@ -163,6 +163,7 @@ export function useClaudeAgentStream({
   trimMessages,
   onBackgroundTaskDone,
   onPendingApproval,
+  onRunModeChanged,
 }) {
   function onAgentMessage({ sessionId: chatKey, msg }) {
     const stopMsg = perfStart('claude.onAgentMessage')
@@ -225,13 +226,15 @@ export function useClaudeAgentStream({
             }
           }
 
-          const existingPlanReview = block.id
+          const existingInteractiveTool = block.id
             ? findToolMessage(tab, block.id)
             : null
-          if (existingPlanReview?.planReview && ['exitplanmode', 'exit_plan_mode'].includes(nameLower)) {
-            existingPlanReview.toolName = name
-            existingPlanReview.text = JSON.stringify(input, null, 2)
-            existingPlanReview.expanded = true
+          const isPlanReview = existingInteractiveTool?.planReview && ['exitplanmode', 'exit_plan_mode'].includes(nameLower)
+          const isAskQuestion = existingInteractiveTool?.requestId && ['askuserquestion', 'ask_user_question'].includes(nameLower)
+          if (isPlanReview || isAskQuestion) {
+            existingInteractiveTool.toolName = name
+            existingInteractiveTool.text = JSON.stringify(input, null, 2)
+            existingInteractiveTool.expanded = true
             throttledScrollBottom(tab.id, scrollBottom)
             continue
           }
@@ -332,6 +335,15 @@ export function useClaudeAgentStream({
       const content = msg.message?.content
       let text = ''
       const subtype = msg.subtype || ''
+
+      // Claude can enter native Plan mode itself via EnterPlanMode. The SDK reports
+      // that authoritative state on init/status messages; keep the app selector aligned.
+      if ((subtype === 'init' || subtype === 'status') && msg.permissionMode === 'plan') {
+        if (tab.runMode !== 'plan_mode') {
+          tab.runMode = 'plan_mode'
+          onRunModeChanged?.(tab, 'plan_mode')
+        }
+      }
 
       if (subtype === 'task_started') {
         upsertActiveBackgroundTask(tab, msg)
@@ -718,25 +730,37 @@ export function useClaudeAgentStream({
     saveHistory()
   }
 
-  function onAgentAskQuestion({ sessionId: chatKey, requestId, questions }) {
+  function onAgentAskQuestion({ sessionId: chatKey, requestId, toolUseId, questions }) {
     const tab = tabs.value.find(t => t.sessionId === chatKey)
-    if (!tab) return
+    if (!tab) return null
     markClaudeStreamActivity(tab, { type: 'ask_question' })
-    pushMessage(tab, onNewMessage, createToolMessage({
-      toolName: 'AskUserQuestion',
-      status: 'pending',
-      toolUseId: null,
-      requestId,
-      sessionId: chatKey,
-      permDesc: '',
-      filePath: '',
-      bashCmd: '',
-      text: JSON.stringify({ questions }, null, 2),
-      newContent: '',
-      diffLines: [],
-      expanded: true,
-    }))
+    let toolMsg = findToolMessage(tab, toolUseId)
+    if (!toolMsg) {
+      toolMsg = createToolMessage({
+        toolName: 'AskUserQuestion',
+        status: 'pending',
+        toolUseId: toolUseId || null,
+        requestId,
+        sessionId: chatKey,
+        permDesc: '',
+        filePath: '',
+        bashCmd: '',
+        text: JSON.stringify({ questions }, null, 2),
+        newContent: '',
+        diffLines: [],
+        expanded: true,
+      })
+      pushMessage(tab, onNewMessage, toolMsg)
+    } else {
+      toolMsg.toolName = 'AskUserQuestion'
+      toolMsg.status = 'pending'
+      toolMsg.requestId = requestId
+      toolMsg.sessionId = chatKey
+      toolMsg.text = JSON.stringify({ questions }, null, 2)
+      toolMsg.expanded = true
+    }
     scrollBottom(tab.id)
+    return toolMsg
   }
 
   // 主进程在流式首条消息时推送到此事件，提前告知 cliSessionId，

@@ -94,6 +94,24 @@ test('tab deactivation hides but reactivation restores a live plan review', () =
   assert.equal(state.visible.value, true)
 })
 
+test('plan review received in another tab opens when that live tab becomes active', () => {
+  const msg = makePlanMessage()
+  const otherTab = { sessionId: 'chat-2', thinking: false, messages: [] }
+  const targetTab = { sessionId: 'chat-1', thinking: true, messages: [msg] }
+  let activeTab = otherTab
+  const state = useClaudePlanReview({
+    getActiveTab: () => activeTab,
+    sendResponse: async () => ({ ok: true }),
+  })
+
+  assert.equal(state.show(msg), false)
+  assert.equal(state.visible.value, false)
+
+  activeTab = targetTab
+  state.syncActiveTab()
+  assert.equal(state.visible.value, true)
+})
+
 test('stale plan review response is visible and never becomes accepted', async () => {
   const msg = makePlanMessage()
   const tab = { sessionId: 'chat-1', thinking: true, messages: [msg] }

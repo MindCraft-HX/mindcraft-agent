@@ -3552,6 +3552,9 @@ const {
   onNewMessage: bumpScrollCount,
   trimMessages,
   onPendingApproval: playAskSound,
+  onRunModeChanged() {
+    saveHistory()
+  },
   onBackgroundTaskDone() {
     // 直推侧边栏通知：绕开 keep-alive 失活时 codeHub 的 watcher 暂停问题
     if (codehubHasNotification) codehubHasNotification.value = true
@@ -3717,15 +3720,8 @@ onMounted(() => {
   window.electronAPI.onClaudeAgentEarlyCliSession?.(onEarlyCliSession)
   window.electronAPI.onClaudeAgentAskQuestion?.((data) => {
     playAskSound()
-    onAgentAskQuestion(data)
-    nextTick(() => {
-      const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
-      if (!tab) return
-      const lastMsg = tab.messages[tab.messages.length - 1]
-      if (lastMsg && lastMsg.toolName === 'AskUserQuestion' && lastMsg.requestId) {
-        showAskDialog(lastMsg)
-      }
-    })
+    const toolMsg = onAgentAskQuestion(data)
+    if (toolMsg && toolMsg.sessionId === activeTab.value?.sessionId) showAskDialog(toolMsg)
   })
   window.electronAPI.onClaudeAgentPlanReview?.((data) => {
     playAskSound()

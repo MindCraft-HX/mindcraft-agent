@@ -3062,6 +3062,7 @@ function setupClaudeHandlers() {
                     if (registered) safeSend(sender, CLAUDE_CHANNELS.AGENT_ASK_QUESTION, {
                       sessionId,
                       requestId,
+                      toolUseId: meta.toolUseID || '',
                       questions: input.questions || [],
                     })
                   })

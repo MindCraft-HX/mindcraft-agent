@@ -60,6 +60,26 @@ test('historical pending cards do not reopen without a live turn', () => {
   assert.equal(state.visible.value, false)
 })
 
+test('AskUserQuestion received in another tab opens when that live tab becomes active', () => {
+  const msg = makeAskMessage()
+  const otherTab = { sessionId: 'chat-2', thinking: false, messages: [] }
+  const targetTab = { sessionId: 'chat-1', thinking: true, messages: [msg] }
+  let activeTab = otherTab
+  const state = useClaudeAskQuestion({
+    getActiveTab: () => activeTab,
+    sendResponse: async () => ({ ok: true }),
+  })
+
+  assert.equal(state.show(msg), false)
+  assert.equal(state.visible.value, false)
+
+  activeTab = targetTab
+  state.syncActiveTab()
+  assert.equal(state.visible.value, true)
+  assert.equal(state.toolMsg.value.requestId, msg.requestId)
+  assert.equal(state.toolMsg.value.sessionId, msg.sessionId)
+})
+
 test('AskUserQuestion completes only after main process acknowledges the answer', async () => {
   const msg = makeAskMessage()
   const tab = { sessionId: 'chat-1', messages: [msg] }
