@@ -244,18 +244,18 @@
         @answer="handleAskDialogAnswer"
         @close="handleAskDialogClose"
       />
-      <!-- [BISECT] PlanReviewDialog 临时禁用：排除法定位死机根因 -->
-      <!--
       <PlanReviewDialog
         :visible="planReviewVisible"
         :plan="planReviewPlan"
         :planFilePath="planReviewFilePath"
         :themeClass="themeClass"
+        :submitting="planReviewSubmitting"
+        :responseError="planReviewResponseError"
         @accept="handlePlanAccept"
         @reject="handlePlanReject"
         @feedback="handlePlanFeedback"
+        @close="closePlanReview"
       />
-      -->
       </div><!-- /cc-main -->
       </div><!-- /cc-content -->
 
@@ -351,6 +351,7 @@ import { useClaudeHistory } from './composables/useClaudeHistory'
 import { useInputHistory } from '../agentCommon/composables/useInputHistory.js'
 import { useClaudeAgentStream } from './composables/useClaudeAgentStream'
 import { useClaudeAskQuestion } from './composables/useClaudeAskQuestion.js'
+import { useClaudePlanReview } from './composables/useClaudePlanReview.js'
 import {
   beginTaskBatch,
   createEmptyTaskState,
@@ -1685,10 +1686,15 @@ const activeRunMode = computed({
   set: (v) => {
     const tab = activeTab.value
     if (!tab) return
+    const previousMode = tab.runMode || 'edit_automatically'
     tab.runMode = v || 'edit_automatically'
     // 通知主进程实时更新运行中的 session 模式
     if (tab.sessionId) {
-      window.electronAPI.claudeAgentUpdateRunMode(tab.sessionId, tab.runMode)
+      void window.electronAPI.claudeAgentUpdateRunMode(tab.sessionId, tab.runMode).catch((error) => {
+        if (tab.runMode === v) tab.runMode = previousMode
+        saveHistory()
+        ElMessage.error(error?.message || '模式切换失败，请重试。')
+      })
     }
     saveHistory()
   },
@@ -3589,71 +3595,48 @@ const {
 provide('reopenAskDialog', reopenAskDialog)
 
 watch(() => activeTab.value?.sessionId, () => {
-  nextTick(() => syncActiveAskDialog())
+  nextTick(() => {
+    syncActiveAskDialog()
+    syncActivePlanReview()
+  })
 })
 
-const _hadPlanReviewOnDeactivate = ref(false)
-let _planReviewTimeout = null
-const ASK_TIMEOUT_MS = 10 * 60 * 1000  // 计划审查超时后按安全策略拒绝
-function _clearPlanReviewTimeout() {
-  if (_planReviewTimeout) { clearTimeout(_planReviewTimeout); _planReviewTimeout = null }
-}
-
-// PlanReview 弹窗状态
-const planReviewVisible = ref(false)
-const planReviewPlan = ref('')
-const planReviewFilePath = ref('')
-const planReviewRequestId = ref('')
-const planReviewSessionId = ref('')
-const planReviewToolMsg = ref(null)
-
-function showPlanReviewDialog(data) {
-  planReviewPlan.value = data.plan || ''
-  planReviewFilePath.value = data.planFilePath || ''
-  planReviewRequestId.value = data.requestId || ''
-  planReviewSessionId.value = data.sessionId || ''
-  planReviewVisible.value = true
-  // 超时保护：10 分钟后自动拒绝计划（默认安全策略），防止 Agent 永久挂起
-  _clearPlanReviewTimeout()
-  _planReviewTimeout = setTimeout(() => {
-    if (planReviewVisible.value) {
-      finishPlanReview({ type: 'reject', reason: 'timeout' })
-    }
-  }, ASK_TIMEOUT_MS)
-}
-
-function finishPlanReview(action) {
-  _clearPlanReviewTimeout()
-  const toolMsg = planReviewToolMsg.value
-  if (toolMsg) {
-    if (action.type === 'accept') {
-      toolMsg.status = 'done'
-    } else if (action.type === 'reject') {
-      toolMsg.status = 'denied'
-    } else if (action.type === 'feedback') {
-      toolMsg.status = 'done'
-      toolMsg._planFeedback = action.feedback || ''
-    }
-    toolMsg.expanded = true
-  }
-  planReviewVisible.value = false
-  window.electronAPI.claudePlanReviewResponse({
-    requestId: planReviewRequestId.value,
-    sessionId: planReviewSessionId.value,
-    action,
-  })
-}
+const {
+  visible: planReviewVisible,
+  plan: planReviewPlan,
+  planFilePath: planReviewFilePath,
+  submitting: planReviewSubmitting,
+  responseError: planReviewResponseError,
+  show: showPlanReview,
+  reopen: reopenPlanReview,
+  close: closePlanReview,
+  finish: finishPlanReview,
+  syncActiveTab: syncActivePlanReview,
+  deactivate: deactivatePlanReview,
+  activate: activatePlanReview,
+} = useClaudePlanReview({
+  getActiveTab: () => activeTab.value,
+  sendResponse: payload => window.electronAPI.claudePlanReviewResponse(payload),
+  onAccepted: (msg) => {
+    const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === msg.sessionId)
+    if (!tab) return
+    tab.runMode = 'edit_automatically'
+    saveHistory()
+  },
+  notifyError: message => ElMessage.error(message),
+})
+provide('reopenPlanReview', reopenPlanReview)
 
 function handlePlanAccept() {
-  finishPlanReview({ type: 'accept' })
+  void finishPlanReview({ type: 'accept' })
 }
 
 function handlePlanReject() {
-  finishPlanReview({ type: 'reject' })
+  void finishPlanReview({ type: 'reject' })
 }
 
 function handlePlanFeedback(feedbackText) {
-  finishPlanReview({ type: 'feedback', feedback: feedbackText })
+  void finishPlanReview({ type: 'feedback', feedback: feedbackText })
 }
 
 function onKeydown(e) {
@@ -3709,15 +3692,12 @@ onDeactivated(() => {
   // D1: 保存当前聊天滚动位置，切到文档/其他页面后再回来时恢复
   if (activeChatId.value) saveChatScroll(activeChatId.value)
   deactivateAskDialog()
-  if (planReviewVisible.value) {
-    _hadPlanReviewOnDeactivate.value = true
-    planReviewVisible.value = false
-  }
+  deactivatePlanReview()
 })
 
 onActivated(() => {
   activateAskDialog()
-  _hadPlanReviewOnDeactivate.value = false
+  activatePlanReview()
   // D1: 恢复之前保存的聊天滚动位置（如果之前不在底部则回到原位置，否则滚到底）
   nextTick(() => { if (activeChatId.value) restoreChatScroll(activeChatId.value) })
 })
@@ -3752,25 +3732,26 @@ onMounted(() => {
     const tab = projects.value.flatMap(p => p.chats || []).find(c => c.sessionId === data.sessionId)
     if (!tab) return
     markClaudeStreamActivity(tab, data)
-    const toolMsg = createToolMessage({
+    const toolMsg = data.toolUseId
+      ? tab.messages.find(msg => msg?.role === 'tool' && msg.toolUseId === data.toolUseId)
+      : null
+    const reviewMsg = toolMsg || createToolMessage({
       toolName: data.toolName || 'exitplanmode',
-      status: 'pending',
-      toolUseId: null,
-      requestId: data.requestId,
+      status: 'running',
+      toolUseId: data.toolUseId || null,
       sessionId: data.sessionId,
-      permDesc: '',
-      filePath: '',
-      bashCmd: '',
       text: JSON.stringify(data.input || { plan: data.plan, planFilePath: data.planFilePath }, null, 2),
-      newContent: '',
-      diffLines: [],
       expanded: true,
     })
-    tab.messages.push(toolMsg)
+    reviewMsg.status = 'pending'
+    reviewMsg.requestId = data.requestId
+    reviewMsg.sessionId = data.sessionId
+    reviewMsg.planReview = true
+    reviewMsg.expanded = true
+    if (!toolMsg) tab.messages.push(reviewMsg)
     touchChatUpdatedAt(tab)
     onNewMessage?.()
-    planReviewToolMsg.value = toolMsg
-    showPlanReviewDialog(data)
+    if (tab.sessionId === activeTab.value?.sessionId) showPlanReview(reviewMsg)
     scrollBottom(tab.id)
   })
   window.electronAPI.onClaudeAgentMetrics?.(onMetricsUpdate)
@@ -3865,7 +3846,6 @@ onUnmounted(() => {
     historyTopObserver = null
   }
   if (loadMoreCooldownTimer) { clearTimeout(loadMoreCooldownTimer); loadMoreCooldownTimer = null }
-  _clearPlanReviewTimeout()
   window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushHistoryOnUnload)
   window.removeEventListener('mindcraft-provider-activated', onMindCraftProviderActivated)

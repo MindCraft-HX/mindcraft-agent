@@ -25,7 +25,7 @@
 
       <component :is="detailComponent" v-if="detailComponent" :msg="msg" v-bind="detailProps" @expand="showDiffModal = true" />
 
-      <div v-if="msg.status === 'pending' && !isAskQuestion" class="tool-permission">
+      <div v-if="msg.status === 'pending' && !isAskQuestion && !isExitPlan" class="tool-permission">
         <div class="perm-desc">{{ msg.permDesc }}</div>
         <div class="perm-actions">
           <button class="perm-btn allow-once" @click.stop="emit('respondPermission', msg, true)">{{ $t('agent.allow') }}</button>

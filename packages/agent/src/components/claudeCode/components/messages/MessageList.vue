@@ -33,7 +33,7 @@
     <div
       v-for="msg in tab.messages"
       :key="msg.id"
-      v-memo="[msg.text, msg.status, msg.toolError, msg.expanded, msg._turnTokens]"
+      v-memo="[msg.text, msg.status, msg.toolError, msg.expanded, msg._turnTokens, msg.planSubmitting, msg.planResponseError]"
       class="msg-row"
       :data-msg-id="msg.id"
       :class="msg.role"

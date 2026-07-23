@@ -225,6 +225,17 @@ export function useClaudeAgentStream({
             }
           }
 
+          const existingPlanReview = block.id
+            ? findToolMessage(tab, block.id)
+            : null
+          if (existingPlanReview?.planReview && ['exitplanmode', 'exit_plan_mode'].includes(nameLower)) {
+            existingPlanReview.toolName = name
+            existingPlanReview.text = JSON.stringify(input, null, 2)
+            existingPlanReview.expanded = true
+            throttledScrollBottom(tab.id, scrollBottom)
+            continue
+          }
+
           const filePath = input.path || input.file_path || input.filename || ''
           const isBash = nameLower === 'bash' || nameLower === 'execute' || nameLower === 'run_command'
           const bashCmd = isBash ? (input.command || input.cmd || '') : ''

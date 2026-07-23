@@ -1,23 +1,36 @@
 <template>
   <div class="exit-plan-panel">
     <div class="exit-plan-status" :class="{ 'plan-enter': isEnter }">
-      {{ isEnter ? '已进入计划模式' : '已退出计划模式' }}
+      {{ statusLabel }}
     </div>
     <div v-if="data.plan" class="exit-plan-markdown" v-html="renderContent(data.plan, 'ClaudeCode:ToolPlan')"></div>
     <div v-if="data.planFilePath" class="exit-plan-path-wrap">
       <span class="exit-plan-path-label">{{ $t('agent.planFile') }}</span>
       <span class="exit-plan-path">{{ data.planFilePath }}</span>
     </div>
+    <div v-if="!isEnter && !msg.planReviewAnswered" class="plan-review-state" :class="{ 'plan-review-error': msg.planResponseError }">
+      <span>{{ msg.planResponseError || (msg.planSubmitting ? '正在提交操作...' : '等待审查中...') }}</span>
+      <button v-if="msg.status === 'pending'" type="button" :disabled="msg.planSubmitting" @click.stop="reopenPlanReview?.(msg)">审查</button>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { renderContent } from '../../../../agentCommon/render.js'
 
 const props = defineProps({
   msg: { type: Object, required: true },
   isEnter: { type: Boolean, default: false },
+})
+
+const reopenPlanReview = inject('reopenPlanReview', null)
+
+const statusLabel = computed(() => {
+  if (props.isEnter) return '已进入计划模式'
+  if (props.msg?.status === 'pending') return '等待退出计划模式'
+  if (props.msg?.planAction === 'accept') return '已退出计划模式'
+  return '仍在计划模式'
 })
 
 const data = computed(() => {
@@ -56,4 +69,9 @@ const data = computed(() => {
   font-family: 'Cascadia Code', Consolas, monospace;
   overflow-wrap: anywhere;
 }
+.plan-review-state { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--cc-text-muted); }
+.plan-review-state button { padding: 2px 10px; border: 1px solid var(--cc-primary); border-radius: 4px; background: transparent; color: var(--cc-primary); cursor: pointer; }
+.plan-review-state button:hover { background: var(--cc-primary); color: #fff; }
+.plan-review-state button:disabled { opacity: 0.55; cursor: wait; }
+.plan-review-error { color: var(--cc-error-text); }
 </style>

@@ -213,7 +213,7 @@ SDK 的 MCP 能力完全未使用：
 
 | SDK 能力 | 接入状态 |
 |------|:---:|
-| `permissionMode: 'plan'` | 当前用 `canUseTool` 拒绝所有来模拟 |
+| `permissionMode: 'plan'` | 已接入；新 Query 直接使用原生 plan，运行中切换调用 `Query.setPermissionMode()` |
 | `permissionMode: 'acceptEdits'` | 当前用 `canUseTool` 实现 |
 | `permissionMode: 'auto'` | 未接入（模型分类器决定 approve/deny） |
 | `permissionMode: 'dontAsk'` | 未接入 |

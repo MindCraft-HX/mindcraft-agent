@@ -92,6 +92,8 @@ const {
   CANCELLED_INTERACTIVE_REQUEST,
   createClaudeInteractiveRequestRegistry,
 } = require('./claude/interactiveRequestRegistry')
+const { normalizeClaudeRunMode, resolveClaudePermissionMode } = require('./claude/runMode')
+const { normalizeClaudePlanReviewAction } = require('./claude/planReview')
 const { inspectClaudeResumeRecovery } = require('./claude/resumeRecovery')
 const { canStreamInputToClaudeRun, deleteClaudeRunIfOwned, ownsClaudeRun } = require('./claude/runOwnership')
 
@@ -2796,9 +2798,7 @@ function setupClaudeHandlers() {
     const effort = requestedMeta.effort || readEffortLevel()
     pendingSessionMetaByChatKey.set(chatKey, { model, effort, modelTier: requestedMeta.modelTier })
     const permissionPolicy = readPermissionPolicy()
-    const mode = ['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)
-      ? runMode
-      : 'edit_automatically'
+    const mode = normalizeClaudeRunMode(runMode)
 
     function buildContent(text, imgs) {
       const blocks = []
@@ -2990,7 +2990,7 @@ function setupClaudeHandlers() {
               ...(extraDirs.length ? { additionalDirectories: extraDirs } : {}),
               model,
               maxTurns: 200,
-              permissionMode: 'default',
+              permissionMode: resolveClaudePermissionMode(mode),
               resume: rid,
               ...(rid && resumeRecovery?.resumeSessionAt ? { resumeSessionAt: resumeRecovery.resumeSessionAt } : {}),
               settingSources: ['user'],
@@ -3004,9 +3004,6 @@ function setupClaudeHandlers() {
                 const parts = [
                   buildSystemPrompt(resolvedCwd),
                   sessionInstructionPrompt,
-                  mode === 'plan_mode'
-                    ? '当前模式为 Plan mode：在执行任何文件写入、修改或命令执行之前，必须先输出一份清晰的实施计划（包含步骤、涉及文件、预期效果）。计划输出后，可以按步骤逐步执行，不要一次性批量修改。'
-                    : '',
                 ]
                 const injectMode = readMemoryInjectMode()
                 if (injectMode === 'system') {
@@ -3077,8 +3074,8 @@ function setupClaudeHandlers() {
                 if (nameLower === 'exitplanmode' || nameLower === 'exit_plan_mode') {
                   const sender = getOwnedSender()
                   const requestId = `${sessionId}:${meta.toolUseID}:${Date.now()}`
-                  const plan = input.plan || ''
-                  const planFilePath = input.planFilePath || ''
+                  const plan = typeof input.plan === 'string' ? input.plan : ''
+                  const planFilePath = typeof input.planFilePath === 'string' ? input.planFilePath : ''
                   const action = await new Promise((resolve) => {
                     const registered = interactiveRequests.register({
                       requestId,
@@ -3095,18 +3092,27 @@ function setupClaudeHandlers() {
                       planFilePath,
                       toolName,
                       description: meta.title || meta.description || '',
+                      toolUseId: meta.toolUseID || '',
                       input,
                     })
                   })
                   // action: { type: 'accept' | 'reject' | 'feedback', feedback?: string }
-                  if (action === CANCELLED_INTERACTIVE_REQUEST || !action || action.type === 'reject') {
+                  if (action === CANCELLED_INTERACTIVE_REQUEST || !action) {
+                    return { behavior: 'deny', message: 'Interactive request cancelled' }
+                  }
+                  const normalizedAction = normalizeClaudePlanReviewAction(action)
+                  if (!normalizedAction) {
+                    return { behavior: 'deny', message: 'Invalid plan review action' }
+                  }
+                  if (normalizedAction.type === 'feedback') {
+                    return { behavior: 'deny', message: normalizedAction.feedback }
+                  }
+                  if (normalizedAction.type === 'reject') {
                     return { behavior: 'deny', message: lt('plan.rejected') }
                   }
-                  const updatedInput = { ...input, planAction: action.type }
-                  if (action.type === 'feedback' && action.feedback) {
-                    updatedInput.feedback = action.feedback
-                  }
-                  return { behavior: 'allow', updatedInput }
+                  const ownedSession = getOwnedSession()
+                  if (ownedSession) ownedSession.runMode = 'edit_automatically'
+                  return { behavior: 'allow', updatedInput: input }
                 }
                 if (getOwnedSession()?.runMode === 'edit_automatically') {
                   return { behavior: 'allow', updatedInput: input }
@@ -3181,6 +3187,9 @@ function setupClaudeHandlers() {
             return
           }
           sessionRun.query = q
+          if (sessionRun.runMode !== mode) {
+            await q.setPermissionMode(resolveClaudePermissionMode(sessionRun.runMode))
+          }
           // Phase 3：TurnStore — 开始新 turn
           beginTurn({ provider: 'claude', chatKey, startedAt: Date.now() })
           const sdkUsageAccumulator = createClaudeTurnUsageAccumulator()
@@ -3549,13 +3558,16 @@ function setupClaudeHandlers() {
   })
 
   // 运行时更新 runMode（用户在运行中途切换模式时生效）
-  ipcMain.handle(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE, (_, { sessionId, runMode }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.AGENT_UPDATE_RUNMODE, async (_, { sessionId, runMode }) => {
     const chatKey = sessionId
     const s = agentSessions.get(chatKey)
-    if (!s) return
-    if (['ask_before_edits', 'edit_automatically', 'plan_mode'].includes(runMode)) {
-      s.runMode = runMode
+    if (!s) return { ok: true, active: false }
+    const normalizedMode = normalizeClaudeRunMode(runMode)
+    if (!s.resultReceived && s.query?.setPermissionMode) {
+      await s.query.setPermissionMode(resolveClaudePermissionMode(normalizedMode))
     }
+    s.runMode = normalizedMode
+    return { ok: true, active: true }
   })
 
   // 主动查询会话 metrics（用于切换 tab 时恢复历史数据）
