@@ -19,6 +19,10 @@ MindCraft handles this in `electron/claude/resumeRecovery.js`:
 
 - Only a fresh Query resume is inspected; an attached live Query is untouched.
 - Transcript reads are tail-first and read-only.
+- A trailing `last-prompt.leafUuid` that resolves to a completed assistant text
+  is the SDK's authoritative completed head, so normal resume is left unpinned.
+  The marker is stale if a newer UUID-bearing entry follows it; a leaf outside
+  the current tail window expands the read instead of guessing a checkpoint.
 - A resumed Query is pinned by walking the current tail entry's `parentUuid`
   chain to the nearest completed, non-synthetic assistant text message. File
   order is not branch order: a later JSONL row can belong to an abandoned branch

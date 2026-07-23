@@ -51,6 +51,26 @@ function isSafeAssistantCheckpoint(entry) {
   )
 }
 
+function inspectCompletedLeafMarker(entries, entriesByUuid) {
+  const markerIndex = entries.findLastIndex(entry => getEntryType(entry) === 'last-prompt')
+  if (markerIndex < 0) return { completed: false, needsMoreHistory: false }
+
+  const hasNewerConversationEntry = entries
+    .slice(markerIndex + 1)
+    .some(entry => Boolean(entry?.uuid))
+  if (hasNewerConversationEntry) return { completed: false, needsMoreHistory: false }
+
+  const leafUuid = String(entries[markerIndex]?.leafUuid || '')
+  if (!leafUuid) return { completed: false, needsMoreHistory: false }
+  const leaf = entriesByUuid.get(leafUuid)
+  if (!leaf) return { completed: false, needsMoreHistory: true }
+
+  return {
+    completed: isSafeAssistantCheckpoint(leaf),
+    needsMoreHistory: false,
+  }
+}
+
 function readTaskNotification(entry) {
   if (!isUserEntry(entry)) return null
   const content = getMessageContent(entry)
@@ -157,6 +177,10 @@ function analyzeClaudeResumeRecoveryEntries(entries) {
   for (const entry of entries) {
     if (entry?.uuid) entriesByUuid.set(entry.uuid, entry)
   }
+
+  const completedLeaf = inspectCompletedLeafMarker(entries, entriesByUuid)
+  if (completedLeaf.completed) return { checkpoint: null, needsMoreHistory: false }
+  if (completedLeaf.needsMoreHistory) return { checkpoint: null, needsMoreHistory: true }
 
   const currentBranch = buildCurrentBranch(entries, entriesByUuid)
   const branch = currentBranch.entries

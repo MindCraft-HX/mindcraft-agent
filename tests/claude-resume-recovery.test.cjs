@@ -43,6 +43,10 @@ function taskNotification(uuid, parentUuid, taskId, status) {
   }
 }
 
+function lastPrompt(leafUuid) {
+  return { type: 'last-prompt', lastPrompt: 'previous prompt', leafUuid }
+}
+
 function buildInterruptedBackgroundEntries() {
   return [
     assistant('stable-answer', 'previous-user', [{ type: 'text', text: 'Background checks started.' }], 'kimi-k3', 'end_turn'),
@@ -231,6 +235,49 @@ function runUnresolvedAsyncAgentRollsBackBeforeLaunchTest() {
   })
 }
 
+function runCompletedLeafOverridesOldUnresolvedAgentTest() {
+  const entries = [
+    assistant('stable-answer', 'user-1', [{ type: 'text', text: 'Stable response.' }], 'kimi-k3', 'end_turn'),
+    { type: 'user', uuid: 'review-user', parentUuid: 'stable-answer', message: { role: 'user', content: 'Review this.' } },
+    assistant('agent-launch', 'review-user', [{ type: 'tool_use', id: 'agent-tool', name: 'Agent', input: {} }], 'kimi-k3', 'tool_use'),
+    toolResult('agent-result', 'agent-launch', 'agent-tool', {
+      sourceToolAssistantUUID: 'agent-launch',
+      toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'agent-1' },
+    }),
+    assistant('complete-review', 'agent-result', [{ type: 'text', text: 'Here are all review findings.' }], 'kimi-k3', 'end_turn'),
+    lastPrompt('complete-review'),
+  ]
+
+  assert.deepEqual(analyzeClaudeResumeRecoveryEntries(entries), {
+    checkpoint: null,
+    needsMoreHistory: false,
+  })
+}
+
+function runStaleCompletedLeafDoesNotHideNewInterruptedTurnTest() {
+  const entries = [
+    assistant('complete-answer', 'user-1', [{ type: 'text', text: 'Previous turn complete.' }], 'kimi-k3', 'end_turn'),
+    lastPrompt('complete-answer'),
+    { type: 'user', uuid: 'new-user', parentUuid: 'complete-answer', message: { role: 'user', content: 'Continue.' } },
+    assistant('new-tool', 'new-user', [{ type: 'tool_use', id: 'new-tool-use', name: 'Read', input: {} }], 'kimi-k3', 'tool_use'),
+  ]
+
+  assert.deepEqual(analyzeClaudeResumeRecoveryEntries(entries), {
+    checkpoint: {
+      resumeSessionAt: 'complete-answer',
+      interruptedToolName: 'Read',
+    },
+    needsMoreHistory: false,
+  })
+}
+
+function runCompletedLeafOutsideTailRequestsMoreHistoryTest() {
+  assert.deepEqual(analyzeClaudeResumeRecoveryEntries([lastPrompt('outside-tail')]), {
+    checkpoint: null,
+    needsMoreHistory: true,
+  })
+}
+
 function runCompletedAsyncAgentKeepsLatestStableHeadTest() {
   const entries = [
     assistant('stable-answer', 'user-1', [{ type: 'text', text: 'Stable response.' }], 'kimi-k3', 'end_turn'),
@@ -322,6 +369,9 @@ async function run() {
   runFileOrderBranchDoesNotOverrideCanonicalParentChainTest()
   runMissingParentRequestsMoreTailHistoryTest()
   runUnresolvedAsyncAgentRollsBackBeforeLaunchTest()
+  runCompletedLeafOverridesOldUnresolvedAgentTest()
+  runStaleCompletedLeafDoesNotHideNewInterruptedTurnTest()
+  runCompletedLeafOutsideTailRequestsMoreHistoryTest()
   runCompletedAsyncAgentKeepsLatestStableHeadTest()
   runAbandonedAsyncBranchDoesNotRollbackCurrentBranchTest()
   runStoppedNotificationWithoutLaunchRequestsMoreHistoryTest()
