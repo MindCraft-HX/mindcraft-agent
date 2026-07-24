@@ -331,6 +331,7 @@ import { isValidSandboxMode, migrateSandboxValue } from '../agentCommon/utils/sa
 import { canHydrateChatFromDisk, shouldResetMessagesForDiskReload } from '../agentCommon/utils/historyHydrationAuthority.mjs'
 import { normalizeCodexReasoningEffort } from './utils/providerToml.mjs'
 import { buildCodexModelSlots } from './utils/modelSlots.mjs'
+import { shouldApplyCodexProviderDefaultsToChat } from './utils/codexProviderDefaults.mjs'
 
 const themeStore = useClaudeThemeStore()
 const codexConfigStore = useCodexConfigStore()
@@ -2135,18 +2136,35 @@ function openSettings() {
 
 async function handleProviderActivated() {
   await loadCodexModelDefaults()
-  const tab = activeTab.value
-  if (!tab) return
-  tab.metrics = {
-    ...(tab.metrics || {}),
-    model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
+  const nextModel = String(codexDefaultModel.value || '').trim()
+  const nextEffort = normalizeCodexReasoningEffort(codexDefaultReasoningEffort.value)
+  const activeId = activeTab.value?.id || ''
+
+  for (const project of projects.value) {
+    for (const chat of project?.chats || []) {
+      if (!shouldApplyCodexProviderDefaultsToChat(chat, activeId)) continue
+      chat.model = nextModel || null
+      chat.reasoningEffort = nextEffort || null
+      chat.metrics = { ...(chat.metrics || {}), model: nextModel }
+    }
   }
-  syncActiveMetricsFromTab(tab, {
-    model: tab.model || tab.metrics?.model || codexDefaultModel.value || '',
-    compacting: !!tab._compacting,
-  })
-  pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
+
+  slashModelName.value = nextModel || slashModelName.value
+  slashEffortLevel.value = nextEffort || 'medium'
+  const tab = activeTab.value
+  if (tab) {
+    syncActiveMetricsFromTab(tab, {
+      model: tab.model || tab.metrics?.model || nextModel,
+      compacting: !!tab._compacting,
+    })
+    pushTabMessage(tab, { id: nextMsgId(), role: 'system', text: t('agent.switchedApi') })
+  }
   saveHistory()
+}
+
+function onMindCraftProviderActivated(event) {
+  if (event?.detail?.agentType !== 'codex') return
+  void handleProviderActivated()
 }
 
 function openSessionInstruction() {
@@ -3157,6 +3175,7 @@ onMounted(async () => {
   await loadGlobalCodexSafeMode()
   window.addEventListener('beforeunload', persistActiveInputDraft)
   window.addEventListener('beforeunload', flushOnUnload)
+  window.addEventListener('mindcraft-provider-activated', onMindCraftProviderActivated)
   window.addEventListener('codex-open-plugins', () => { codexPluginsRef.value?.open?.() })
   window.electronAPI.onCodexAgentMessage(onAgentMessage)
   window.electronAPI.onCodexAgentDone((payload) => {
@@ -3265,6 +3284,7 @@ onUnmounted(() => {
   stopMetricsTimer()
   window.removeEventListener('beforeunload', persistActiveInputDraft)
   window.removeEventListener('beforeunload', flushOnUnload)
+  window.removeEventListener('mindcraft-provider-activated', onMindCraftProviderActivated)
   for (const sessionId of codexDoneMetricsRetryTimers.keys()) clearCodexDoneMetricsRetry(sessionId)
   void persistActiveInputDraft()
   flushOnUnload()
