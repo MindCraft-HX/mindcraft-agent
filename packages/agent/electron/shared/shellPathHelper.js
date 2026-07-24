@@ -9,6 +9,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// login shell PATH 与 npm prefix 在进程生命周期内视为不变，进程级缓存避免每次
+// getFullEnv() 都 execSync 冻结主进程事件循环。
+let _loginShellPathCache;
+let _npmPrefixCache;
+
 /**
  * 构建包含 Node.js/npm 路径的 env 对象。
  * 打包后 process.env.PATH 可能缺失 node/npm 所在目录，此处按平台补齐。
@@ -56,6 +61,28 @@ function getEnvWithNodePath() {
  * @returns {string|null} 扩展后的 PATH 字符串，失败返回 null。
  */
 function resolveLoginShellPath() {
+  if (_loginShellPathCache !== undefined) return _loginShellPathCache;
+  const result = resolveLoginShellPathUncached();
+  _loginShellPathCache = result;
+  return result;
+}
+
+function getNpmGlobalPrefix() {
+  if (_npmPrefixCache !== undefined) return _npmPrefixCache;
+  let prefix = null;
+  try {
+    const out = execSync('npm config get prefix', {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    prefix = out || null;
+  } catch (_) {}
+  _npmPrefixCache = prefix;
+  return prefix;
+}
+
+function resolveLoginShellPathUncached() {
   // 1. 直接 ask login shell
   const shell = process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
   try {
@@ -140,11 +167,7 @@ function getCommonGlobalBinDirs() {
 
   // npm 全局 prefix
   try {
-    const prefix = execSync('npm config get prefix', {
-      encoding: 'utf8',
-      timeout: 5000,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    const prefix = getNpmGlobalPrefix();
     if (prefix) {
       dirs.push(path.join(prefix, 'bin'));
       dirs.push(path.join(prefix, 'lib', 'node_modules'));

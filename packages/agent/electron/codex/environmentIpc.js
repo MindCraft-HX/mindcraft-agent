@@ -15,90 +15,108 @@ const { getCodexCliCapabilities } = require('./cliCapabilities');
 
 function registerEnvironmentIpc(ipcMain, {
   findGlobalCodexPath,
+  findGlobalCodexPathAsync,
   getConfiguredExecutablePath,
   isExecutableHealthy,
+  isExecutableHealthyAsync,
   clearGlobalCodexPathCache,
   isInstallingCodex,
   setInstallingCodex,
   hasActiveCodexRuns,
   lt,
 }) {
-  ipcMain.handle(CODEX_CHANNELS.CHECK_ENVIRONMENT, async () => {
-    const result = { node: null, npm: null, codex: null };
-    try {
-      const env = getFullEnv();
-      const ver = (await new Promise((resolve, reject) => {
-        exec('node --version', { encoding: 'utf8', timeout: 5000, windowsHide: true, env }, (err, stdout) => {
-          if (err) reject(err); else resolve(stdout);
-        });
-      })).trim();
-      const match = ver.match(/^v(\d+)\./);
-      const major = match ? parseInt(match[1], 10) : 0;
-      result.node = { installed: true, version: ver, compatible: major >= 18 };
-    } catch (_) { result.node = { installed: false, version: null, compatible: false }; }
-    try {
-      const env = getFullEnv();
-      const ver = (await new Promise((resolve, reject) => {
-        exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true, env }, (err, stdout) => {
-          if (err) reject(err); else resolve(stdout);
-        });
-      })).trim();
-      result.npm = { installed: true, version: ver };
-    } catch (_) { result.npm = { installed: false, version: null }; }
-    try {
-      const fullEnv = getFullEnv();
-      const configuredPath = typeof getConfiguredExecutablePath === 'function'
-        ? String(getConfiguredExecutablePath() || '').trim()
-        : '';
-      const detectedPath = findGlobalCodexPath() || '';
-      const codexPath = configuredPath || detectedPath || null;
-      const installed = !!(codexPath && typeof isExecutableHealthy === 'function' && isExecutableHealthy(codexPath, fullEnv));
+  ipcMain.handle(CODEX_CHANNELS.CHECK_ENVIRONMENT, async (_, forceRefresh = false) => {
+    // 三项检测并行；健康检查走异步版本，避免 execFileSync 冻结主进程。
+    // 路径缓存默认复用，仅用户点“重新检测”时强制重新探测。
+    const checkNode = async () => {
+      try {
+        const env = getFullEnv();
+        const ver = (await new Promise((resolve, reject) => {
+          exec('node --version', { encoding: 'utf8', timeout: 5000, windowsHide: true, env }, (err, stdout) => {
+            if (err) reject(err); else resolve(stdout);
+          });
+        })).trim();
+        const match = ver.match(/^v(\d+)\./);
+        const major = match ? parseInt(match[1], 10) : 0;
+        return { installed: true, version: ver, compatible: major >= 18 };
+      } catch (_) { return { installed: false, version: null, compatible: false }; }
+    };
+    const checkNpm = async () => {
+      try {
+        const env = getFullEnv();
+        const ver = (await new Promise((resolve, reject) => {
+          exec('npm --version', { encoding: 'utf8', timeout: 5000, windowsHide: true, env }, (err, stdout) => {
+            if (err) reject(err); else resolve(stdout);
+          });
+        })).trim();
+        return { installed: true, version: ver };
+      } catch (_) { return { installed: false, version: null }; }
+    };
+    const checkCodex = async () => {
+      try {
+        const fullEnv = getFullEnv();
+        if (forceRefresh && typeof clearGlobalCodexPathCache === 'function') clearGlobalCodexPathCache();
+        const configuredPath = typeof getConfiguredExecutablePath === 'function'
+          ? String(getConfiguredExecutablePath() || '').trim()
+          : '';
+        const findAsync = typeof findGlobalCodexPathAsync === 'function' ? findGlobalCodexPathAsync : async () => findGlobalCodexPath();
+        const detectedPath = (await findAsync()) || '';
+        const codexPath = configuredPath || detectedPath || null;
+        const healthyAsync = typeof isExecutableHealthyAsync === 'function'
+          ? isExecutableHealthyAsync
+          : async (p, env) => isExecutableHealthy(p, env);
+        const installed = !!(codexPath && await healthyAsync(codexPath, fullEnv));
 
-      let codexVersion = null;
-      if (!codexVersion && codexPath) {
-        try {
-          const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath);
-          const cmd = isCmdShim ? 'cmd.exe' : codexPath;
-          const args = isCmdShim ? ['/c', codexPath, '--version'] : ['--version'];
-          codexVersion = (await new Promise((resolve, reject) => {
-            execFile(cmd, args, {
-              encoding: 'utf8', timeout: 5000, windowsHide: true,
-              stdio: ['ignore', 'pipe', 'pipe'],
-              env: fullEnv,
-            }, (err, stdout) => {
-              if (err) reject(err); else resolve(stdout);
-            });
-          })).trim();
-          // Normalize: "codex-cli 0.144.4" → "0.144.4"
-          if (codexVersion) {
-            const parts = codexVersion.split(/\s+/);
-            const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0];
-            codexVersion = verToken.replace(/^v/, '').trim();
-          }
-        } catch (_) {}
+        let codexVersion = null;
+        if (!codexVersion && codexPath) {
+          try {
+            const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath);
+            const cmd = isCmdShim ? 'cmd.exe' : codexPath;
+            const args = isCmdShim ? ['/c', codexPath, '--version'] : ['--version'];
+            codexVersion = (await new Promise((resolve, reject) => {
+              execFile(cmd, args, {
+                encoding: 'utf8', timeout: 5000, windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                env: fullEnv,
+              }, (err, stdout) => {
+                if (err) reject(err); else resolve(stdout);
+              });
+            })).trim();
+            // Normalize: "codex-cli 0.144.4" → "0.144.4"
+            if (codexVersion) {
+              const parts = codexVersion.split(/\s+/);
+              const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0];
+              codexVersion = verToken.replace(/^v/, '').trim();
+            }
+          } catch (_) {}
+        }
+        let capability = null;
+        if (installed && codexPath) {
+          try { capability = await getCodexCliCapabilities(codexPath, { env: fullEnv }); } catch (_) {}
+        }
+        return {
+          installed,
+          path: codexPath,
+          version: capability?.version || codexVersion,
+          capabilities: capability?.capabilities || null,
+          compatible: capability?.compatible ?? false,
+        };
+      } catch (_) {
+        const configuredPath = typeof getConfiguredExecutablePath === 'function'
+          ? String(getConfiguredExecutablePath() || '').trim()
+          : '';
+        const healthyAsync = typeof isExecutableHealthyAsync === 'function'
+          ? isExecutableHealthyAsync
+          : async (p, env) => isExecutableHealthy(p, env);
+        return {
+          installed: !!(configuredPath && await healthyAsync(configuredPath)),
+          path: configuredPath || null,
+          version: null,
+        };
       }
-      let capability = null;
-      if (installed && codexPath) {
-        try { capability = await getCodexCliCapabilities(codexPath, { env: fullEnv }); } catch (_) {}
-      }
-      result.codex = {
-        installed,
-        path: codexPath,
-        version: capability?.version || codexVersion,
-        capabilities: capability?.capabilities || null,
-        compatible: capability?.compatible ?? false,
-      };
-    } catch (_) {
-      const configuredPath = typeof getConfiguredExecutablePath === 'function'
-        ? String(getConfiguredExecutablePath() || '').trim()
-        : '';
-      result.codex = {
-        installed: !!(configuredPath && typeof isExecutableHealthy === 'function' && isExecutableHealthy(configuredPath)),
-        path: configuredPath || null,
-        version: null,
-      };
-    }
-    return result;
+    };
+    const [node, npm, codex] = await Promise.all([checkNode(), checkNpm(), checkCodex()]);
+    return { node, npm, codex };
   });
 
   ipcMain.handle(CODEX_CHANNELS.CHECK_LATEST_VERSION, async () => {

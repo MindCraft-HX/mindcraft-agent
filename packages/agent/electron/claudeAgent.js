@@ -1648,77 +1648,81 @@ function setupClaudeHandlers() {
   })
 
   // 检测运行环境：Node、npm、Claude Code
-  ipcMain.handle(CLAUDE_CHANNELS.CHECK_ENVIRONMENT, async () => {
-    const result = { node: null, npm: null, claude: null }
-
-    // 检测 Node.js
-    try {
-      const env = getFullEnv()
-      const nodeVer = (await new Promise((resolve, reject) => {
-        exec('node --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
-          if (err) reject(err); else resolve(stdout)
-        })
-      })).trim()
-      const match = nodeVer.match(/^v(\d+)\./)
-      const major = match ? parseInt(match[1], 10) : 0
-      result.node = { installed: true, version: nodeVer, compatible: major >= 18 }
-    } catch (e) {
-      console.warn('[claude] node check failed:', e?.message || e)
-      result.node = { installed: false, version: null, compatible: false }
-    }
-
-    // 检测 npm
-    try {
-      const env = getFullEnv()
-      const npmVer = (await new Promise((resolve, reject) => {
-        exec('npm --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
-          if (err) reject(err); else resolve(stdout)
-        })
-      })).trim()
-      result.npm = { installed: true, version: npmVer }
-    } catch (e) {
-      console.warn('[claude] npm check failed:', e?.message || e)
-      result.npm = { installed: false, version: null }
-    }
-
-    // 检测 Claude Code
-    try {
-      resetSystemClaudeCache()
-      const claudePath = await findSystemClaude()
-      const customPath = String(confGet('claudeExecutablePath', '') || '').trim()
-      let claudeVersion = null
-      if (claudePath) {
-        try {
-          const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)
-          const cmd = isCmdShim ? 'cmd.exe' : claudePath
-          const args = isCmdShim ? ['/c', claudePath, '--version'] : ['--version']
-          const fullEnv = getFullEnv()
-          claudeVersion = (await new Promise((resolve, reject) => {
-            execFile(cmd, args, {
-              encoding: 'utf8',
-              timeout: 5000,
-              windowsHide: true,
-              stdio: ['ignore', 'pipe', 'pipe'],
-              env: fullEnv,
-            }, (err, stdout) => {
-              if (err) reject(err); else resolve(stdout)
-            })
-          })).trim()
-          // Normalize: "claude-code 1.0.3" → "1.0.3"
-          if (claudeVersion) {
-            const parts = claudeVersion.split(/\s+/)
-            const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0]
-            claudeVersion = verToken.replace(/^v/, '').trim()
-          }
-        } catch (_) {}
+  ipcMain.handle(CLAUDE_CHANNELS.CHECK_ENVIRONMENT, async (_, forceRefresh = false) => {
+    // 三项检测并行；全异步，避免 execSync 冻结主进程导致设置页整体卡死。
+    // 路径缓存默认复用，仅用户点“重新检测”时强制重新探测。
+    const checkNode = async () => {
+      try {
+        const env = getFullEnv()
+        const nodeVer = (await new Promise((resolve, reject) => {
+          exec('node --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
+            if (err) reject(err); else resolve(stdout)
+          })
+        })).trim()
+        const match = nodeVer.match(/^v(\d+)\./)
+        const major = match ? parseInt(match[1], 10) : 0
+        return { installed: true, version: nodeVer, compatible: major >= 18 }
+      } catch (e) {
+        console.warn('[claude] node check failed:', e?.message || e)
+        return { installed: false, version: null, compatible: false }
       }
-      result.claude = { installed: !!claudePath, path: claudePath || null, customPath, version: claudeVersion }
-    } catch (e) {
-      console.error('[claude] findSystemClaude error:', e?.message || e)
-      result.claude = { installed: false, path: null, customPath: '', version: null }
     }
 
-    return result
+    const checkNpm = async () => {
+      try {
+        const env = getFullEnv()
+        const npmVer = (await new Promise((resolve, reject) => {
+          exec('npm --version', { encoding: 'utf8', timeout: 5000, env }, (err, stdout) => {
+            if (err) reject(err); else resolve(stdout)
+          })
+        })).trim()
+        return { installed: true, version: npmVer }
+      } catch (e) {
+        console.warn('[claude] npm check failed:', e?.message || e)
+        return { installed: false, version: null }
+      }
+    }
+
+    const checkClaude = async () => {
+      try {
+        if (forceRefresh) resetSystemClaudeCache()
+        const claudePath = await findSystemClaude()
+        const customPath = String(confGet('claudeExecutablePath', '') || '').trim()
+        let claudeVersion = null
+        if (claudePath) {
+          try {
+            const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(claudePath)
+            const cmd = isCmdShim ? 'cmd.exe' : claudePath
+            const args = isCmdShim ? ['/c', claudePath, '--version'] : ['--version']
+            const fullEnv = getFullEnv()
+            claudeVersion = (await new Promise((resolve, reject) => {
+              execFile(cmd, args, {
+                encoding: 'utf8',
+                timeout: 5000,
+                windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                env: fullEnv,
+              }, (err, stdout) => {
+                if (err) reject(err); else resolve(stdout)
+              })
+            })).trim()
+            // Normalize: "claude-code 1.0.3" → "1.0.3"
+            if (claudeVersion) {
+              const parts = claudeVersion.split(/\s+/)
+              const verToken = parts.find(p => /^v?\d/.test(p)) || parts[0]
+              claudeVersion = verToken.replace(/^v/, '').trim()
+            }
+          } catch (_) {}
+        }
+        return { installed: !!claudePath, path: claudePath || null, customPath, version: claudeVersion }
+      } catch (e) {
+        console.error('[claude] findSystemClaude error:', e?.message || e)
+        return { installed: false, path: null, customPath: '', version: null }
+      }
+    }
+
+    const [node, npm, claude] = await Promise.all([checkNode(), checkNpm(), checkClaude()])
+    return { node, npm, claude }
   })
 
   // 安装 Claude Code（需要 Node >= 18 且 npm 可用）

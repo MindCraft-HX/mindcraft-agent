@@ -222,7 +222,7 @@ function createAgentBridge(ipcRenderer) {
   codexSetExecutablePath: (p) => ipcRenderer.invoke(CODEX_CHANNELS.SET_EXECUTABLE_PATH, p),
   codexBrowseExecutable: () => ipcRenderer.invoke(CODEX_CHANNELS.BROWSE_EXECUTABLE),
   codexGetLastCwd: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_LAST_CWD),
-  codexCheckEnvironment: () => ipcRenderer.invoke(CODEX_CHANNELS.CHECK_ENVIRONMENT),
+  codexCheckEnvironment: (forceRefresh = false) => ipcRenderer.invoke(CODEX_CHANNELS.CHECK_ENVIRONMENT, forceRefresh),
   codexCheckLatestVersion: () => ipcRenderer.invoke(CODEX_CHANNELS.CHECK_LATEST_VERSION),
   codexInstallCodex: () => ipcRenderer.invoke(CODEX_CHANNELS.INSTALL_CODEX),
   codexGetKey: () => ipcRenderer.invoke(CODEX_CHANNELS.GET_KEY),

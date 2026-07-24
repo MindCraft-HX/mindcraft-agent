@@ -104,7 +104,7 @@
               >{{ envInstalling ? $t('settings.installing') : $t('settings.oneClickInstall') }}</button>
               <span v-if="!envStatus.codex?.installed && !envStatus.node?.compatible" class="env-hint-inline">{{ $t('settings.needNodeHint') }}</span>
               <span v-else-if="!envStatus.codex?.installed && !envStatus.npm?.installed" class="env-hint-inline">{{ $t('settings.needNpmHint') }}</span>
-              <button class="env-refresh-btn" @click="checkEnvironment" :title="$t('settings.redetect')">↻</button>
+              <button class="env-refresh-btn" @click="checkEnvironment(true)" :title="$t('settings.redetect')">↻</button>
             </div>
             <div v-if="envStatus.codex?.installed && envStatus.codex.path" class="env-path-hint">
               {{ $t('agent.path') }}{{ envStatus.codex.path }}

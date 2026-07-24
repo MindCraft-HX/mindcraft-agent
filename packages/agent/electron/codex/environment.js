@@ -7,7 +7,7 @@
  * 维护内部可变缓存（_globalCodexPath）。
  */
 
-const { execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { getEnvWithNodePath, getFullEnv, resolveLoginShellPath } = require('../shared/shellPathHelper');
@@ -49,6 +49,23 @@ function getConfiguredCodexPath() {
   }
 }
 
+/** 异步健康检查：供 IPC 检测路径使用，避免 execFileSync 冻结主进程事件循环 */
+function isExecutableHealthyAsync(exePath, env) {
+  if (!exePath || !fs.existsSync(exePath)) return Promise.resolve(false);
+  const isCmdShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(exePath);
+  const cmd = isCmdShim ? 'cmd.exe' : exePath;
+  const args = isCmdShim ? ['/c', exePath, '--version'] : ['--version'];
+  return new Promise((resolve) => {
+    execFile(cmd, args, {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: env || undefined,
+    }, (err) => resolve(!err));
+  });
+}
+
 function findCodexCommandInPath(env, platform = process.platform, isHealthy = isExecutableHealthy) {
   const rawPath = env?.Path || env?.PATH || ''
   const names = platform === 'win32' ? ['codex.cmd', 'codex.exe', 'codex.bat'] : ['codex']
@@ -58,6 +75,20 @@ function findCodexCommandInPath(env, platform = process.platform, isHealthy = is
     for (const name of names) {
       const candidate = path.join(base, name)
       if (isHealthy(candidate, env)) return candidate
+    }
+  }
+  return null
+}
+
+async function findCodexCommandInPathAsync(env, platform = process.platform) {
+  const rawPath = env?.Path || env?.PATH || ''
+  const names = platform === 'win32' ? ['codex.cmd', 'codex.exe', 'codex.bat'] : ['codex']
+  for (const directory of String(rawPath).split(path.delimiter)) {
+    const base = directory.trim().replace(/^"|"$/g, '')
+    if (!base) continue
+    for (const name of names) {
+      const candidate = path.join(base, name)
+      if (await isExecutableHealthyAsync(candidate, env)) return candidate
     }
   }
   return null
@@ -98,6 +129,36 @@ function findGlobalCodexPath() {
   return null;
 }
 
+/** findGlobalCodexPath 的异步版本：探测结果同样写入 _globalCodexPath 缓存 */
+async function findGlobalCodexPathAsync() {
+  if (_globalCodexPath !== undefined) return _globalCodexPath;
+
+  if (_codexConfRef) {
+    try {
+      const custom = getConfiguredCodexPath();
+      if (custom && await isExecutableHealthyAsync(custom)) {
+        _globalCodexPath = custom;
+        return custom;
+      }
+    } catch (_) {}
+  }
+
+  const candidateEnvs = [getFullEnv(), getEnvWithNodePath()]
+  const loginPath = resolveLoginShellPath()
+  if (loginPath) candidateEnvs.push({ ...process.env, PATH: loginPath, Path: loginPath })
+
+  for (const env of candidateEnvs) {
+    const direct = await findCodexCommandInPathAsync(env)
+    if (direct) {
+      _globalCodexPath = direct
+      return direct
+    }
+  }
+
+  _globalCodexPath = null;
+  return null;
+}
+
 /** 重置全局路径缓存（主要用于测试） */
 function clearGlobalCodexPathCache() {
   _globalCodexPath = undefined;
@@ -124,9 +185,11 @@ function setInstallingCodex(v) {
 
 module.exports = {
   findGlobalCodexPath,
+  findGlobalCodexPathAsync,
   findCodexCommandInPath,
   getConfiguredCodexPath,
   isExecutableHealthy,
+  isExecutableHealthyAsync,
   clearGlobalCodexPathCache,
   setCodexConfRef,
   isInstallingCodex,

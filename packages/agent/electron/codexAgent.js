@@ -69,8 +69,10 @@ const {
 // ---- CodeX Environment (extracted leaf module, Phase 5) ----
 const {
   findGlobalCodexPath,
+  findGlobalCodexPathAsync,
   getConfiguredCodexPath,
   isExecutableHealthy,
+  isExecutableHealthyAsync,
   clearGlobalCodexPathCache,
   setCodexConfRef,
   isInstallingCodex,
@@ -3905,8 +3907,10 @@ function setupCodexCliHandlers() {
     codexConfigDir: CODEX_CONFIG_DIR,
     configTomlFile: CONFIG_TOML_FILE,
     findGlobalCodexPath,
+    findGlobalCodexPathAsync,
     getConfiguredExecutablePath: getConfiguredCodexPath,
     isExecutableHealthy,
+    isExecutableHealthyAsync,
     clearGlobalCodexPathCache,
     isInstallingCodex,
     setInstallingCodex,

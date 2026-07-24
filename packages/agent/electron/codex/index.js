@@ -59,8 +59,10 @@ function registerCodexLeafIpcs(ipcMain, deps) {
 
   registerEnvironmentIpc(ipcMain, {
     findGlobalCodexPath: deps.findGlobalCodexPath,
+    findGlobalCodexPathAsync: deps.findGlobalCodexPathAsync,
     getConfiguredExecutablePath: deps.getConfiguredExecutablePath,
     isExecutableHealthy: deps.isExecutableHealthy,
+    isExecutableHealthyAsync: deps.isExecutableHealthyAsync,
     clearGlobalCodexPathCache: deps.clearGlobalCodexPathCache,
     isInstallingCodex: deps.isInstallingCodex,
     setInstallingCodex: deps.setInstallingCodex,

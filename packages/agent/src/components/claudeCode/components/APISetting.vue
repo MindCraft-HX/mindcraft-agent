@@ -254,11 +254,11 @@ function ensureProviderConfig(provider) {
   provider.config = obj
 }
 
-async function checkEnvironment() {
+async function checkEnvironment(forceRefresh = false) {
   envInitialized.value = true
   envChecking.value = true
   try {
-    const res = await window.electronAPI?.claudeCheckEnvironment?.()
+    const res = await window.electronAPI?.claudeCheckEnvironment?.(forceRefresh === true)
     envStatus.value = res || null
     customExePath.value = envStatus.value?.claude?.customPath || ''
   } catch (e) {
@@ -377,34 +377,33 @@ async function openSettings() {
   let tierModels = {}
   let currentModel = ''
 
-  try { key = await window.electronAPI?.claudeGetKey?.() || '' } catch (e) {}
-  try { url = await window.electronAPI?.claudeGetBaseURL?.() || '' } catch (e) {}
-  try { tierModels = await window.electronAPI?.claudeGetTierModels?.() || {} } catch (e) {}
-  try { currentModel = await window.electronAPI?.claudeGetModel?.() || '' } catch (e) {}
-
-  try {
-    const policy = await window.electronAPI?.claudeGetPermissionPolicy?.()
-    settingsPermissionPolicy.value = ['ask', 'allow_all', 'read_only'].includes(policy) ? policy : 'ask'
-  } catch (e) { settingsPermissionPolicy.value = 'ask' }
-
-  try {
-    const language = await window.electronAPI?.claudeGetLanguage?.()
-    settingsLanguage.value = ['zh-CN', 'en-US'].includes(language) ? language : 'zh-CN'
-  } catch (e) { settingsLanguage.value = 'zh-CN' }
-
-  try {
-    const effort = await window.electronAPI?.claudeGetEffortLevel?.()
-    settingsEffortLevel.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
-  } catch (e) { settingsEffortLevel.value = 'medium' }
-
-  try {
-    settingsSkipWebFetchPreflight.value = await window.electronAPI?.claudeGetSkipWebFetchPreflight?.() ?? true
-  } catch (e) { settingsSkipWebFetchPreflight.value = true }
-
-  try {
-    settingsAutoCompactWindow.value = await window.electronAPI?.claudeGetAutoCompactWindow?.() ?? null
-    compactWindowLocal.value = settingsAutoCompactWindow.value
-  } catch (e) { settingsAutoCompactWindow.value = null; compactWindowLocal.value = null }
+  // 所有读取相互独立，并行发起，避免逐个 await 串行放大 IPC 延迟
+  const safe = async (fn, fallback) => {
+    try { return (await fn?.()) ?? fallback } catch (e) { return fallback }
+  }
+  const [k, u, tm, cm, policy, language, effort, skipPreflight, compactWindow, storedTierR, storedR] = await Promise.all([
+    safe(window.electronAPI?.claudeGetKey, ''),
+    safe(window.electronAPI?.claudeGetBaseURL, ''),
+    safe(window.electronAPI?.claudeGetTierModels, {}),
+    safe(window.electronAPI?.claudeGetModel, ''),
+    safe(window.electronAPI?.claudeGetPermissionPolicy, null),
+    safe(window.electronAPI?.claudeGetLanguage, null),
+    safe(window.electronAPI?.claudeGetEffortLevel, null),
+    safe(window.electronAPI?.claudeGetSkipWebFetchPreflight, true),
+    safe(window.electronAPI?.claudeGetAutoCompactWindow, null),
+    safe(window.electronAPI?.claudeGetSelectedTier, ''),
+    safe(window.electronAPI?.claudeGetProviders, null),
+  ])
+  key = k
+  url = u
+  tierModels = tm
+  currentModel = cm
+  settingsPermissionPolicy.value = ['ask', 'allow_all', 'read_only'].includes(policy) ? policy : 'ask'
+  settingsLanguage.value = ['zh-CN', 'en-US'].includes(language) ? language : 'zh-CN'
+  settingsEffortLevel.value = ['low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : 'medium'
+  settingsSkipWebFetchPreflight.value = skipPreflight ?? true
+  settingsAutoCompactWindow.value = compactWindow ?? null
+  compactWindowLocal.value = settingsAutoCompactWindow.value
 
   currentGlobalModel.value = currentModel.trim()
   settingsTierModels.value = {
@@ -414,8 +413,7 @@ async function openSettings() {
     reasoning: (tierModels.reasoning || '').trim(),
   }
 
-  let storedTier = ''
-  try { storedTier = await window.electronAPI?.claudeGetSelectedTier?.() || '' } catch (e) {}
+  const storedTier = storedTierR || ''
   let inferred = ['haiku', 'sonnet', 'opus', 'reasoning'].includes(storedTier) ? storedTier : ''
   if (!inferred) {
     inferred = 'sonnet'
@@ -432,8 +430,7 @@ async function openSettings() {
   }
   settingsSelectedTierKey.value = inferred
 
-  let stored = null
-  try { stored = await window.electronAPI?.claudeGetProviders?.() ?? null } catch (e) {}
+  const stored = storedR || null
   if (stored && stored.providers?.length) {
     settingsForm.value.providers = stored.providers.map(p => ({
       ...p,
