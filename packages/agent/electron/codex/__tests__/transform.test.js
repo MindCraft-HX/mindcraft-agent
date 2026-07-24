@@ -10,7 +10,7 @@
 const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
 const {
-  appendWindowsKimiShellCompatibilityInstruction,
+  appendKimiChatCompatibilityInstructions,
   responsesToChatCompletions,
   canonicalizeJsonStringIfParseable,
 } = require('../transformRequest')
@@ -356,25 +356,29 @@ async function runTests() {
     assert.strictEqual(result.messages[0].role, 'system')
   })
 
-  test('request: Windows Kimi receives ASCII PowerShell quoting constraint', () => {
+  test('request: Kimi receives tool continuity and platform shell constraints', () => {
     const messages = [{ role: 'system', content: 'Base instructions.' }]
-    appendWindowsKimiShellCompatibilityInstruction(messages, 'kimi-k3', 'win32')
+    appendKimiChatCompatibilityInstructions(messages, 'kimi-k3', 'win32')
     assert.strictEqual(messages.length, 2)
+    assert.match(messages[1].content, /first tool call in the same response/)
     assert.match(messages[1].content, /ASCII quotes/)
 
     const nonKimi = [{ role: 'system', content: 'Base instructions.' }]
-    appendWindowsKimiShellCompatibilityInstruction(nonKimi, 'gpt-5.6', 'win32')
+    appendKimiChatCompatibilityInstructions(nonKimi, 'gpt-5.6', 'win32')
     assert.strictEqual(nonKimi.length, 1)
 
     const nonWindows = [{ role: 'system', content: 'Base instructions.' }]
-    appendWindowsKimiShellCompatibilityInstruction(nonWindows, 'kimi-k3', 'darwin')
-    assert.strictEqual(nonWindows.length, 1)
+    appendKimiChatCompatibilityInstructions(nonWindows, 'kimi-k3', 'darwin')
+    assert.strictEqual(nonWindows.length, 2)
+    assert.match(nonWindows[1].content, /first tool call in the same response/)
+    assert.doesNotMatch(nonWindows[1].content, /ASCII quotes/)
 
     const transformed = responsesToChatCompletions({
       model: 'kimi-k3',
       instructions: 'Base instructions.',
       input: [{ role: 'user', content: 'Edit the file.' }],
     })
+    assert.match(transformed.messages[0].content, /first tool call in the same response/)
     assert.match(transformed.messages[0].content, /ASCII quotes/)
   })
 

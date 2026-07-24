@@ -62,7 +62,7 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
   if (Array.isArray(body.input)) {
     appendInputMessages(body.input, messages)
   }
-  appendWindowsKimiShellCompatibilityInstruction(messages, result.model)
+  appendKimiChatCompatibilityInstructions(messages, result.model)
   result.messages = collapseSystemMessages(messages)
 
   // max_tokens / max_output_tokens
@@ -114,11 +114,18 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
   return result
 }
 
-function appendWindowsKimiShellCompatibilityInstruction(messages, model, platform = process.platform) {
-  if (platform !== 'win32' || !/kimi/i.test(String(model || ''))) return
+function appendKimiChatCompatibilityInstructions(messages, model, platform = process.platform) {
+  if (!/kimi/i.test(String(model || ''))) return
+
+  const constraints = [
+    'When a task requires inspection, commands, or edits, issue the first tool call in the same response as any progress update. Never end a turn with only a promise to inspect, run, or change something; either call the tool now or provide the completed answer.',
+  ]
+  if (platform === 'win32') {
+    constraints.push('Windows shell commands must use ASCII quotes and ASCII backticks only. Never place full-width or smart quotation marks/backticks in PowerShell commands, especially when sending multiline patches.')
+  }
   messages.push({
     role: 'system',
-    content: 'Windows shell commands must use ASCII quotes and ASCII backticks only. Never place full-width or smart quotation marks/backticks in PowerShell commands, especially when sending multiline patches.',
+    content: constraints.join('\n'),
   })
 }
 
@@ -469,7 +476,7 @@ function sanitizeToolChoiceForChat(toolChoice, tools) {
 
 module.exports = {
   responsesToChatCompletions,
-  appendWindowsKimiShellCompatibilityInstruction,
+  appendKimiChatCompatibilityInstructions,
   instructionText,
   appendInputMessages,
   collapseSystemMessages,

@@ -109,12 +109,19 @@ has a product use case for structured agent output.
 
 ### Chat-Completions Kimi On Windows
 
-The Chat-Completions adapter appends a Windows-only instruction for models
-whose name contains `kimi`: PowerShell commands must use ASCII quotes and
-backticks. This is a narrow provider-compatibility guard for observed Kimi
-multiline patch commands containing full-width punctuation. It belongs in the
-request transform, not session lifecycle, transcript ownership, or provider
-storage. The guard must remain covered by the transform regression test.
+The Chat-Completions adapter appends narrow compatibility instructions for
+models whose name contains `kimi`. Kimi has intermittently returned a progress
+promise followed by `finish_reason: "stop"` even when the request contained
+valid tools with `tool_choice: "auto"`. It is instructed to issue the first
+tool call in the same response instead of ending after the promise. On Windows,
+it is also instructed to use ASCII quotes and backticks in PowerShell commands
+because multiline patches have contained full-width punctuation.
+
+These are request-transform guards, not session lifecycle, transcript
+ownership, or provider-storage behavior. Do not force every Kimi response to
+`tool_choice: "required"` and do not retry completed text automatically: both
+can cause unwanted or duplicate tool side effects. Keep the guards covered by
+the transform regression test.
 
 ### Claude Code 2.1.214 / Agent SDK 0.3.214
 
