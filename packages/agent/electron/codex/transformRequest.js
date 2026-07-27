@@ -62,6 +62,7 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
   if (Array.isArray(body.input)) {
     appendInputMessages(body.input, messages)
   }
+  mergeKimiProgressIntoToolCalls(messages, result.model)
   appendKimiChatCompatibilityInstructions(messages, result.model)
   result.messages = collapseSystemMessages(messages)
 
@@ -127,6 +128,27 @@ function appendKimiChatCompatibilityInstructions(messages, model, platform = pro
     role: 'system',
     content: constraints.join('\n'),
   })
+}
+
+function mergeKimiProgressIntoToolCalls(messages, model) {
+  if (!/kimi/i.test(String(model || '')) || !Array.isArray(messages)) return messages
+
+  for (let index = 1; index < messages.length; index++) {
+    const toolCallMessage = messages[index]
+    const progressMessage = messages[index - 1]
+    if (progressMessage?.role !== 'assistant' || typeof progressMessage.content !== 'string' || !progressMessage.content.trim()) continue
+    if (Array.isArray(progressMessage.tool_calls) && progressMessage.tool_calls.length) continue
+    if (toolCallMessage?.role !== 'assistant' || !Array.isArray(toolCallMessage.tool_calls) || toolCallMessage.tool_calls.length === 0) continue
+
+    toolCallMessage.content = progressMessage.content
+    toolCallMessage.reasoning_content = [progressMessage.reasoning_content, toolCallMessage.reasoning_content]
+      .filter(Boolean)
+      .join('\n\n') || undefined
+    messages.splice(index - 1, 1)
+    index--
+  }
+
+  return messages
 }
 
 function shouldFilterDeferredCodexTools() {
@@ -477,6 +499,7 @@ function sanitizeToolChoiceForChat(toolChoice, tools) {
 module.exports = {
   responsesToChatCompletions,
   appendKimiChatCompatibilityInstructions,
+  mergeKimiProgressIntoToolCalls,
   instructionText,
   appendInputMessages,
   collapseSystemMessages,

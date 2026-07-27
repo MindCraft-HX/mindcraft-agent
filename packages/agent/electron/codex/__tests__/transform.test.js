@@ -11,6 +11,7 @@ const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
 const {
   appendKimiChatCompatibilityInstructions,
+  mergeKimiProgressIntoToolCalls,
   responsesToChatCompletions,
   canonicalizeJsonStringIfParseable,
 } = require('../transformRequest')
@@ -380,6 +381,58 @@ async function runTests() {
     })
     assert.match(transformed.messages[0].content, /first tool call in the same response/)
     assert.match(transformed.messages[0].content, /ASCII quotes/)
+  })
+
+  test('request: Kimi merges progress text into the following tool-call message', () => {
+    const messages = [
+      { role: 'assistant', content: 'Inspecting the file now.' },
+      {
+        role: 'assistant',
+        content: null,
+        reasoning_content: 'Need the file.',
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: 'contents' },
+    ]
+
+    mergeKimiProgressIntoToolCalls(messages, 'kimi-k3')
+
+    assert.deepStrictEqual(messages.map(message => message.role), ['assistant', 'tool'])
+    assert.strictEqual(messages[0].content, 'Inspecting the file now.')
+    assert.strictEqual(messages[0].tool_calls[0].id, 'call_1')
+    assert.strictEqual(messages[0].reasoning_content, 'Need the file.')
+  })
+
+  test('request: progress merging is Kimi-only and preserves final assistant text', () => {
+    const nonKimi = [
+      { role: 'assistant', content: 'Inspecting.' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1' }] },
+    ]
+    const completed = [{ role: 'assistant', content: 'Finished.' }]
+
+    mergeKimiProgressIntoToolCalls(nonKimi, 'gpt-5.6')
+    mergeKimiProgressIntoToolCalls(completed, 'kimi-k3')
+
+    assert.strictEqual(nonKimi.length, 2)
+    assert.deepStrictEqual(completed, [{ role: 'assistant', content: 'Finished.' }])
+  })
+
+  test('request: transformed Kimi history keeps progress and tool call in one Chat message', () => {
+    const result = responsesToChatCompletions({
+      model: 'kimi-k3',
+      input: [
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Running tests now.' }] },
+        { type: 'function_call', call_id: 'call_1', name: 'shell_command', arguments: { command: 'npm test' } },
+        { type: 'function_call_output', call_id: 'call_1', output: 'passed' },
+      ],
+      tools: [{ type: 'function', name: 'shell_command', parameters: { type: 'object' } }],
+    })
+
+    const assistantMessages = result.messages.filter(message => message.role === 'assistant')
+    assert.strictEqual(assistantMessages.length, 1)
+    assert.strictEqual(assistantMessages[0].content, 'Running tests now.')
+    assert.strictEqual(assistantMessages[0].tool_calls[0].id, 'call_1')
+    assert.strictEqual(result.messages.at(-1).role, 'tool')
   })
 
   test('request: latest_reminder 鈫?user', () => {

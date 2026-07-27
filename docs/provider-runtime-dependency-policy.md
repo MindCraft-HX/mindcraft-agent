@@ -113,15 +113,21 @@ The Chat-Completions adapter appends narrow compatibility instructions for
 models whose name contains `kimi`. Kimi has intermittently returned a progress
 promise followed by `finish_reason: "stop"` even when the request contained
 valid tools with `tool_choice: "auto"`. It is instructed to issue the first
-tool call in the same response instead of ending after the promise. On Windows,
-it is also instructed to use ASCII quotes and backticks in PowerShell commands
-because multiline patches have contained full-width punctuation.
+tool call in the same response instead of ending after the promise. The adapter
+also merges an assistant progress item immediately followed by an assistant
+tool-call item into one native Chat message with both `content` and
+`tool_calls`. Responses represents these as separate items, while forwarding
+them as consecutive Chat assistant messages teaches Kimi that progress text can
+stand alone as a completed response. On Windows, Kimi is also instructed to use
+ASCII quotes and backticks in PowerShell commands because multiline patches
+have contained full-width punctuation.
 
 These are request-transform guards, not session lifecycle, transcript
 ownership, or provider-storage behavior. Do not force every Kimi response to
 `tool_choice: "required"` and do not retry completed text automatically: both
 can cause unwanted or duplicate tool side effects. Keep the guards covered by
-the transform regression test.
+the transform regression test. The structural merge is Kimi-only, preserves the
+progress text, and never changes a standalone final assistant message.
 
 ### Claude Code 2.1.214 / Agent SDK 0.3.214
 
