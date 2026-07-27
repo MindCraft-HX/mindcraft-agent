@@ -11,6 +11,7 @@ const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
 const {
   appendKimiChatCompatibilityInstructions,
+  appendKimiToolContinuationReminder,
   responsesToChatCompletions,
   canonicalizeJsonStringIfParseable,
 } = require('../transformRequest')
@@ -380,6 +381,55 @@ async function runTests() {
     })
     assert.match(transformed.messages[0].content, /first tool call in the same response/)
     assert.match(transformed.messages[0].content, /ASCII quotes/)
+  })
+
+  test('request: Kimi tool continuation reminder stays at the request tail', () => {
+    const messages = [
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'shell_command', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', content: 'done' },
+    ]
+    const tools = [{ type: 'function', function: { name: 'shell_command', parameters: { type: 'object' } } }]
+
+    appendKimiToolContinuationReminder(messages, 'kimi-k3', tools)
+
+    assert.strictEqual(messages.length, 3)
+    assert.strictEqual(messages[2].role, 'user')
+    assert.match(messages[2].content, /If the requested work is complete, provide the final answer/)
+    assert.match(messages[2].content, /call the next available tool now/)
+  })
+
+  test('request: tool continuation reminder is limited to Kimi tool-output tails', () => {
+    const tools = [{ type: 'function', function: { name: 'shell_command', parameters: { type: 'object' } } }]
+    const nonKimi = [{ role: 'tool', tool_call_id: 'call_1', content: 'done' }]
+    const noTools = [{ role: 'tool', tool_call_id: 'call_1', content: 'done' }]
+    const toolsDisabled = [{ role: 'tool', tool_call_id: 'call_1', content: 'done' }]
+    const completed = [{ role: 'assistant', content: 'Finished.' }]
+
+    appendKimiToolContinuationReminder(nonKimi, 'gpt-5.6', tools)
+    appendKimiToolContinuationReminder(noTools, 'kimi-k3', [])
+    appendKimiToolContinuationReminder(toolsDisabled, 'kimi-k3', tools, 'none')
+    appendKimiToolContinuationReminder(completed, 'kimi-k3', tools)
+
+    assert.strictEqual(nonKimi.length, 1)
+    assert.strictEqual(noTools.length, 1)
+    assert.strictEqual(toolsDisabled.length, 1)
+    assert.strictEqual(completed.length, 1)
+  })
+
+  test('request: transformed Kimi continuation preserves tool sequence and appends reminder last', () => {
+    const result = responsesToChatCompletions({
+      model: 'kimi-k3',
+      input: [
+        { type: 'function_call', call_id: 'call_1', name: 'shell_command', arguments: { command: 'git status' } },
+        { type: 'function_call_output', call_id: 'call_1', output: 'clean' },
+      ],
+      tools: [{ type: 'function', name: 'shell_command', description: 'run command', parameters: { type: 'object' } }],
+      tool_choice: 'auto',
+    })
+
+    assert.deepStrictEqual(result.messages.slice(-3).map(message => message.role), ['assistant', 'tool', 'user'])
+    assert.strictEqual(result.messages.at(-2).tool_call_id, 'call_1')
+    assert.match(result.messages.at(-1).content, /Do not end the turn with only a progress update/)
   })
 
   test('request: latest_reminder 鈫?user', () => {

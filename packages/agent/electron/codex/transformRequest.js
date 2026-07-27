@@ -87,7 +87,6 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
       .filter(Boolean)
     if (result.tools.length === 0) delete result.tools
   }
-
   // tool_choice
   if (body.tool_choice !== undefined && Array.isArray(result.tools) && result.tools.length) {
     result.tool_choice = sanitizeToolChoiceForChat(
@@ -95,6 +94,7 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
       result.tools
     )
   }
+  appendKimiToolContinuationReminder(result.messages, result.model, result.tools, result.tool_choice)
 
   // parallel_tool_calls
   if (Array.isArray(result.tools) && result.tools.length && body.parallel_tool_calls !== undefined) {
@@ -126,6 +126,18 @@ function appendKimiChatCompatibilityInstructions(messages, model, platform = pro
   messages.push({
     role: 'system',
     content: constraints.join('\n'),
+  })
+}
+
+function appendKimiToolContinuationReminder(messages, model, tools, toolChoice) {
+  if (!/kimi/i.test(String(model || ''))) return
+  if (!Array.isArray(tools) || tools.length === 0) return
+  if (toolChoice === 'none') return
+  if (!Array.isArray(messages) || messages.at(-1)?.role !== 'tool') return
+
+  messages.push({
+    role: 'user',
+    content: 'Runtime rule: Continue from the latest tool output. If the requested work is complete, provide the final answer. Otherwise call the next available tool now. Do not end the turn with only a progress update or a description of the next step.',
   })
 }
 
@@ -477,6 +489,7 @@ function sanitizeToolChoiceForChat(toolChoice, tools) {
 module.exports = {
   responsesToChatCompletions,
   appendKimiChatCompatibilityInstructions,
+  appendKimiToolContinuationReminder,
   instructionText,
   appendInputMessages,
   collapseSystemMessages,
