@@ -11,6 +11,7 @@ const assert = require('assert')
 const { ChatToResponsesState, createResponsesSseFromChat } = require('../transformStream')
 const {
   appendKimiChatCompatibilityInstructions,
+  stripKimiModelSwitchContext,
   mergeKimiProgressIntoToolCalls,
   responsesToChatCompletions,
   canonicalizeJsonStringIfParseable,
@@ -401,6 +402,40 @@ async function runTests() {
     assert.strictEqual(messages[0].content, 'Inspecting the file now.')
     assert.strictEqual(messages[0].tool_calls[0].id, 'call_1')
     assert.strictEqual(messages[0].reasoning_content, 'Need the file.')
+  })
+
+  test('request: Kimi drops model-switch metadata but keeps other system context', () => {
+    const messages = [{
+      role: 'system',
+      content: '<model_switch>Old model instructions.</model_switch>\n\n<permissions_instructions>Keep this.</permissions_instructions>',
+    }]
+
+    stripKimiModelSwitchContext(messages, 'kimi-k3')
+
+    assert.strictEqual(messages.length, 1)
+    assert.strictEqual(messages[0].content, '<permissions_instructions>Keep this.</permissions_instructions>')
+
+    const nonKimi = [{ role: 'system', content: '<model_switch>Keep for native models.</model_switch>' }]
+    stripKimiModelSwitchContext(nonKimi, 'gpt-5.6')
+    assert.match(nonKimi[0].content, /model_switch/)
+  })
+
+  test('request: transformed Kimi input excludes model-switch metadata only', () => {
+    const result = responsesToChatCompletions({
+      model: 'kimi-k3',
+      instructions: 'Base instructions.',
+      input: [{
+        role: 'developer',
+        content: [
+          { type: 'input_text', text: '<model_switch>Old model instructions.</model_switch>' },
+          { type: 'input_text', text: '<permissions_instructions>Keep this.</permissions_instructions>' },
+        ],
+      }],
+    })
+
+    assert.doesNotMatch(result.messages[0].content, /model_switch/)
+    assert.match(result.messages[0].content, /permissions_instructions/)
+    assert.match(result.messages[0].content, /Base instructions/)
   })
 
   test('request: progress merging is Kimi-only and preserves final assistant text', () => {

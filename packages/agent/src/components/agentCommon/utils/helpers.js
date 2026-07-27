@@ -1,4 +1,9 @@
 import { diffArrays } from 'diff'
+import systemContextTags from '../../../../shared/systemContextTags.cjs'
+
+const {
+  stripSystemContextTags: stripSystemContextTagsShared,
+} = systemContextTags
 
 export function buildDiffLines(oldStr, newStr) {
   if (!oldStr && !newStr) return []
@@ -204,27 +209,5 @@ export function safeIpcPayload(obj, label = 'ipc') {
  * @returns {string} 剥离系统上下文后的文本
  */
 export function stripSystemContextTags(text) {
-  if (!text || typeof text !== 'string') return ''
-
-  let result = text
-
-  // Pass 1: 含 _ 或 - 的标签（SDK 主要命名风格，排除标准 HTML 标签）
-  result = result.replace(
-    /<([a-zA-Z][\w-]*(?:[_-])[\w-]*)\b[^>]*>[\s\S]*?<\/\1>/g,
-    ''
-  )
-
-  // Pass 2: 全大写长标签（≥5 字符），如 INSTRUCTIONS
-  // 阈值排除 CODE, HTML, DIV 等短标签
-  result = result.replace(
-    /<([A-Z][A-Z_]{4,})\b[^>]*>[\s\S]*?<\/\1>/g,
-    ''
-  )
-
-  // Pass 3: SDK 注入的纯文本标记行（非 XML 包装）
-  // "<name>.md instructions for <path>" — 如 AGENTS.md / CLAUDE.md 等
-  // 这些行在对应的 <INSTRUCTIONS> 块被 Pass 2 剥离后残留在消息文本中
-  result = result.replace(/^\s{0,3}#{0,6}\s*[A-Z]+\.md instructions for .+$/gim, '')
-
-  return result.trim()
+  return stripSystemContextTagsShared(text)
 }

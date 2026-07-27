@@ -122,6 +122,13 @@ stand alone as a completed response. On Windows, Kimi is also instructed to use
 ASCII quotes and backticks in PowerShell commands because multiline patches
 have contained full-width punctuation.
 
+Codex records a full `<model_switch>` developer block whenever a thread changes
+models. Native Responses treats that block as turn-scoped control context, but
+the Chat adapter otherwise promotes every accumulated block into the global
+system message. Kimi Chat requests strip only these stale model-switch blocks
+through the shared system-context tag pattern; current instructions,
+permissions, skills, user messages, and tool history remain unchanged.
+
 These are request-transform guards, not session lifecycle, transcript
 ownership, or provider-storage behavior. Do not force every Kimi response to
 `tool_choice: "required"` and do not retry completed text automatically: both

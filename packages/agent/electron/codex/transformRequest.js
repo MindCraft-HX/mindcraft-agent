@@ -6,6 +6,7 @@
  */
 
 const { applyReasoningToChatBody, inferReasoningConfig } = require('./reasoningMapper')
+const { stripSystemContextTags } = require('../../shared/systemContextTags.cjs')
 
 function canonicalizeJsonValue(value) {
   if (Array.isArray(value)) {
@@ -62,6 +63,7 @@ function responsesToChatCompletions(body, model, baseUrl, runtimeReasoningEffort
   if (Array.isArray(body.input)) {
     appendInputMessages(body.input, messages)
   }
+  stripKimiModelSwitchContext(messages, result.model)
   mergeKimiProgressIntoToolCalls(messages, result.model)
   appendKimiChatCompatibilityInstructions(messages, result.model)
   result.messages = collapseSystemMessages(messages)
@@ -128,6 +130,20 @@ function appendKimiChatCompatibilityInstructions(messages, model, platform = pro
     role: 'system',
     content: constraints.join('\n'),
   })
+}
+
+function stripKimiModelSwitchContext(messages, model) {
+  if (!/kimi/i.test(String(model || '')) || !Array.isArray(messages)) return messages
+
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message?.role !== 'system' || typeof message.content !== 'string') continue
+    const stripped = stripSystemContextTags(message.content, { tags: ['model_switch'] })
+    if (stripped) message.content = stripped
+    else messages.splice(index, 1)
+  }
+
+  return messages
 }
 
 function mergeKimiProgressIntoToolCalls(messages, model) {
@@ -499,6 +515,7 @@ function sanitizeToolChoiceForChat(toolChoice, tools) {
 module.exports = {
   responsesToChatCompletions,
   appendKimiChatCompatibilityInstructions,
+  stripKimiModelSwitchContext,
   mergeKimiProgressIntoToolCalls,
   instructionText,
   appendInputMessages,
