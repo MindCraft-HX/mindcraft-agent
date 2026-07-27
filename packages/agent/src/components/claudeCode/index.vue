@@ -242,6 +242,7 @@
         :submitting="Boolean(askDialogToolMsg?.askSubmitting)"
         :responseError="askDialogResponseError"
         @answer="handleAskDialogAnswer"
+        @cancel="handleAskDialogCancel(askDialogToolMsg)"
         @close="handleAskDialogClose"
       />
       <PlanReviewDialog
@@ -3583,6 +3584,7 @@ const {
   dialogRef: askDialogRef,
   toolMsg: askDialogToolMsg,
   responseError: askDialogResponseError,
+  cancel: handleAskDialogCancel,
   answer: handleAskDialogAnswer,
   close: handleAskDialogClose,
   reopen: reopenAskDialog,

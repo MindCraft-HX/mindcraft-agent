@@ -4,6 +4,9 @@
       <span class="ask-answered-label">{{ $t('agent.selected') }}</span>
       <span class="ask-answered-text">{{ msg.askAnswerText }}</span>
     </div>
+    <div v-else-if="msg.askCancelled" class="ask-answered">
+      <span class="ask-answered-label">{{ $t('agent.askSkipped') }}</span>
+    </div>
     <div v-else-if="!msg.askAnswered" class="ask-waiting" :class="{ 'ask-error': msg.askResponseError }">
       <span>{{ msg.askResponseError || (msg.askSubmitting ? '正在提交回答…' : '等待回答中…') }}</span>
       <button v-if="msg.status === 'pending'" class="ask-reopen-btn" :disabled="msg.askSubmitting" @click.stop="handleReopen">{{ $t('agent.answer') }}</button>

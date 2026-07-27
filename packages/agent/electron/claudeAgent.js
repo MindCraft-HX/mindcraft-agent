@@ -92,6 +92,9 @@ const {
   CANCELLED_INTERACTIVE_REQUEST,
   createClaudeInteractiveRequestRegistry,
 } = require('./claude/interactiveRequestRegistry')
+
+// 用户在询问弹窗中主动选择 '暂不回答' 的哨兵值，与中断取消区分。
+const USER_DECLINED_ASK_QUESTION = Symbol('user-declined-ask-question')
 const { normalizeClaudeRunMode, resolveClaudePermissionMode } = require('./claude/runMode')
 const { normalizeClaudePlanReviewAction } = require('./claude/planReview')
 const { inspectClaudeResumeRecovery } = require('./claude/resumeRecovery')
@@ -2854,11 +2857,15 @@ function setupClaudeHandlers() {
         (existing.apiKey || '') !== (apiKey || '')
       )
       const mainTurnFinished = existing.resultReceived === true
-      if (runtimeChanged || mainTurnFinished) {
+      const controlStreamBroken = existing.controlStreamBroken === true
+      if (runtimeChanged || mainTurnFinished || controlStreamBroken) {
         try { existing.abortController?.abort?.() } catch (_) {}
         try { existing.query?.close?.() } catch (_) {}
         // 只清除 SDK Query 对象，保留 cliSessionIds 以便 resume 对话历史。
         releaseClaudeRun(chatKey, existing.runId)
+        if (controlStreamBroken && !runtimeChanged) {
+          console.log(`[Claude] 权限控制流已断裂，chatKey=${chatKey.slice(-8)}，废弃旧查询并以新进程 resume。`)
+        }
         if (runtimeChanged) {
           console.log(`[Claude] 检测到运行时配置变更，chatKey=${chatKey.slice(-8)}，已中止旧查询。` +
             `模型: ${existing.model || '(none)'} → ${model || '(none)'}，` +
@@ -3072,6 +3079,9 @@ function setupClaudeHandlers() {
                   })
                   if (answers === CANCELLED_INTERACTIVE_REQUEST) {
                     return { behavior: 'deny', message: 'Interactive request cancelled' }
+                  }
+                  if (answers === USER_DECLINED_ASK_QUESTION) {
+                    return { behavior: 'deny', message: '用户选择暂不回答该问题，请基于已有信息继续，不要再次询问同一问题。' }
                   }
                   return { behavior: 'allow', updatedInput: { ...input, answers } }
                 }
@@ -3401,6 +3411,23 @@ function setupClaudeHandlers() {
                 }
               }
             }
+            // 权限控制流断裂检测：SDK 关闭权限流时会把该工具调用记为
+            // "Tool permission request failed: AbortError: ... stream closed"。
+            // 该 Query 的控制流此后不可恢复：取消挂起的交互请求，并在下一条消息强制重建查询。
+            if (!sessionRun.controlStreamBroken && msg.type === 'user' && Array.isArray(msg.message?.content)) {
+              const hitBrokenControlStream = msg.message.content.some((block) => {
+                if (block?.type !== 'tool_result' || block.is_error !== true) return false
+                const text = typeof block.content === 'string'
+                  ? block.content
+                  : (Array.isArray(block.content) ? block.content.map(item => item?.text || '').join('\n') : '')
+                return /tool permission request failed/i.test(text) && /stream closed/i.test(text)
+              })
+              if (hitBrokenControlStream) {
+                sessionRun.controlStreamBroken = true
+                const cancelledCount = interactiveRequests.cancelRun(chatKey, runId)
+                console.warn(`[Claude] 检测到权限控制流断裂（Stream closed），chatKey=${chatKey.slice(-8)}，已取消 ${cancelledCount} 个挂起交互请求；下一条消息将重建查询。`)
+              }
+            }
             safeSend(sender,CLAUDE_CHANNELS.AGENT_MESSAGE, { sessionId, msg })
             if (resultReceived && !doneSent && !backgroundTaskTracker.hasActiveTasks() && backgroundTaskTracker.hasPendingDonePayload()) {
               await sendCompletedDoneIfReady(sender, null, { force: true })
@@ -3645,13 +3672,13 @@ function setupClaudeHandlers() {
     })
   })
 
-  ipcMain.handle(CLAUDE_CHANNELS.ASK_QUESTION_RESPONSE, (event, { sessionId, requestId, answers }) => {
+  ipcMain.handle(CLAUDE_CHANNELS.ASK_QUESTION_RESPONSE, (event, { sessionId, requestId, answers, cancelled }) => {
     return interactiveRequests.respond({
       requestId,
       chatKey: sessionId,
       kind: 'ask-question',
       senderId: event.sender.id,
-      value: answers,
+      value: cancelled === true ? USER_DECLINED_ASK_QUESTION : answers,
     })
   })
 

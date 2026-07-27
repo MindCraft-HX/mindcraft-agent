@@ -32,6 +32,9 @@
             />
             <button class="ask-q-send" :disabled="submitting" @click="submitCustom">{{ $t('agent.send') }}</button>
           </div>
+          <div class="ask-q-actions">
+            <button class="ask-q-skip" :disabled="submitting" @click="handleCancel">{{ $t('agent.askSkip') }}</button>
+          </div>
           <div v-if="responseError" class="ask-q-error">{{ responseError }}</div>
         </div>
       </div>
@@ -50,7 +53,7 @@ const props = defineProps({
   responseError: { type: String, default: '' },
 })
 
-const emit = defineEmits(['answer', 'close'])
+const emit = defineEmits(['answer', 'cancel', 'close'])
 
 const currentIndex = ref(0)
 const customText = ref('')
@@ -75,6 +78,10 @@ function emitAndAdvance(opt) {
 
 function handleClose() {
   emit('close')
+}
+
+function handleCancel() {
+  emit('cancel')
 }
 
 function reset(index = 0) {
@@ -217,6 +224,13 @@ defineExpose({ reset })
   cursor: pointer;
 }
 .ask-q-send:hover { opacity: 0.85; }
+.ask-q-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.ask-q-skip {
+  padding: 6px 10px; border: none; background: transparent;
+  color: var(--cc-text-muted); font-size: 12px; cursor: pointer;
+}
+.ask-q-skip:hover { color: var(--cc-text-secondary); text-decoration: underline; }
+.ask-q-skip:disabled { opacity: 0.6; cursor: wait; }
 .ask-q-error {
   margin-top: 10px;
   color: var(--cc-error-text);

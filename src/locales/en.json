@@ -514,6 +514,8 @@
 		"deny": "Deny",
 		"askTitle": "Claude needs your answer",
 		"askPlaceholder": "Enter custom answer…",
+		"askSkip": "Skip for now",
+		"askSkipped": "Skipped for now",
 		"planReview": "Plan Review",
 		"planEmpty": "(Plan content is empty)",
 		"planFeedback": "Enter feedback…",

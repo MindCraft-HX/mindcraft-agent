@@ -111,6 +111,46 @@ export function useClaudeAskQuestion({ getActiveTab, sendResponse, notifyError }
     }
   }
 
+  async function cancel(msg) {
+    if (!msg?.requestId || msg.askSubmitting) return
+    msg.askSubmitting = true
+    msg.askResponseError = ''
+    responseError.value = ''
+    try {
+      const result = await sendResponse({
+        sessionId: msg.sessionId,
+        requestId: msg.requestId,
+        cancelled: true,
+      })
+      if (!result?.ok) {
+        const stale = result?.error === 'stale-request'
+        const message = stale
+          ? '该询问已失效，Claude 未收到操作。请重新发送消息。'
+          : (result?.error || '操作提交失败，请重试。')
+        msg.askResponseError = message
+        responseError.value = message
+        if (stale) {
+          msg.status = 'error'
+          visible.value = false
+        }
+        notifyError?.(message)
+        return
+      }
+      msg.askCancelled = true
+      msg.askDraftAnswers = null
+      msg.askDialogDismissed = false
+      msg.status = 'denied'
+      visible.value = false
+    } catch (error) {
+      const message = error?.message || '操作提交失败，请重试。'
+      msg.askResponseError = message
+      responseError.value = message
+      notifyError?.(message)
+    } finally {
+      msg.askSubmitting = false
+    }
+  }
+
   function answer(question, option) {
     const msg = toolMsg.value
     if (!msg || msg.askSubmitting) return
@@ -152,6 +192,7 @@ export function useClaudeAskQuestion({ getActiveTab, sendResponse, notifyError }
     dialogRef,
     toolMsg,
     responseError,
+    cancel,
     answer,
     close,
     reopen,

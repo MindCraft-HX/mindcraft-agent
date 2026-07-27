@@ -130,8 +130,9 @@ export function applyToolResult(messages, toolUseId, content, isErrorFlag, {
     resultContent = content
   }
 
-  const failed = isErrorFlag === true || inferToolFailureFromText(resultContent)
-  t.status = failed ? 'error' : 'done'
+  const isDeclinedAskQuestion = ['askuserquestion', 'ask_user_question'].includes(toolNameLower) && t.askCancelled === true
+  const failed = !isDeclinedAskQuestion && (isErrorFlag === true || inferToolFailureFromText(resultContent))
+  t.status = isDeclinedAskQuestion ? 'denied' : (failed ? 'error' : 'done')
   t.toolError = failed ? resultContent : ''
   if (isBashTool(t.toolName)) { t.bashOutput = resultContent; t.expanded = true }
   else if (isReadTool(t.toolName)) { t.readContent = resultContent; t.expanded = false }

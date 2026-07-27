@@ -514,6 +514,8 @@
 		"deny": "拒绝",
 		"askTitle": "Claude 需要你的回答",
 		"askPlaceholder": "输入自定义回答…",
+		"askSkip": "暂不回答",
+		"askSkipped": "已选择暂不回答",
 		"planReview": "计划审查",
 		"planEmpty": "（计划内容为空）",
 		"planFeedback": "输入反馈意见…",

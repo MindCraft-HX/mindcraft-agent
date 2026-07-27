@@ -102,6 +102,32 @@ test('AskUserQuestion completes only after main process acknowledges the answer'
   assert.equal(msg.askAnswerText, 'Continue?: Yes')
 })
 
+test('AskUserQuestion can be skipped without fabricating an answer', async () => {
+  const msg = makeAskMessage()
+  const tab = { sessionId: 'chat-1', messages: [msg] }
+  let payload
+  const state = useClaudeAskQuestion({
+    getActiveTab: () => tab,
+    sendResponse: async (nextPayload) => {
+      payload = nextPayload
+      return { ok: true }
+    },
+  })
+
+  state.show(msg)
+  await state.cancel(msg)
+
+  assert.deepEqual(payload, {
+    sessionId: 'chat-1',
+    requestId: 'request-1',
+    cancelled: true,
+  })
+  assert.equal(msg.status, 'denied')
+  assert.equal(msg.askCancelled, true)
+  assert.equal(msg.askAnswered, undefined)
+  assert.equal(state.visible.value, false)
+})
+
 test('stale AskUserQuestion response is visible as an error, never fake completion', async () => {
   const msg = makeAskMessage()
   const tab = { sessionId: 'chat-1', messages: [msg] }

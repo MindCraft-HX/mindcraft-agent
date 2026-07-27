@@ -27,5 +27,6 @@ test('streamInput is limited to a Query whose main turn has not produced result'
   assert.equal(canStreamInputToClaudeRun({ query: {}, abortRequested: false, resultReceived: false }), true)
   assert.equal(canStreamInputToClaudeRun({ query: {}, abortRequested: false, resultReceived: true }), false)
   assert.equal(canStreamInputToClaudeRun({ query: {}, abortRequested: true, resultReceived: false }), false)
+  assert.equal(canStreamInputToClaudeRun({ query: {}, abortRequested: false, resultReceived: false, controlStreamBroken: true }), false)
   assert.equal(canStreamInputToClaudeRun({ query: null, abortRequested: false, resultReceived: false }), false)
 })
